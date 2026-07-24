@@ -73,25 +73,25 @@ export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleO
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center py-10 px-4 relative overflow-hidden text-white" style={{ backgroundImage:"linear-gradient(180deg,rgba(3,8,22,.68),rgba(3,8,22,.96)),url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"center" }}>
-      <div aria-hidden="true" className="absolute -right-28 bottom-0 h-80 w-80 opacity-25 pointer-events-none" style={{backgroundImage:"url(/art/characters/adventure-men-roster-v1.png)",backgroundSize:"500% 200%",backgroundPosition:"50% 0%",backgroundRepeat:"no-repeat",filter:"drop-shadow(0 0 28px rgba(96,165,250,.65))"}} />
+    <div className="min-h-screen flex flex-col items-center py-8 px-4 relative overflow-x-hidden text-white"
+      style={{ backgroundImage:"linear-gradient(180deg,rgba(7,11,22,.62),rgba(10,15,28,.82) 45%,rgba(15,23,42,.95)),url(/assets/dungeon/dungeon_team_lobby_bg.jpg)", backgroundSize:"cover", backgroundPosition:"center" }}>
       <div className="w-full max-w-md relative z-10">
         {/* Header */}
-        <div className="text-center mb-8 rounded-3xl border border-sky-200/15 bg-slate-950/45 px-4 py-6 shadow-2xl backdrop-blur-md">
+        <div className="relative text-center mb-6 rounded-3xl border border-amber-500/25 bg-gradient-to-b from-slate-900/70 to-slate-950/85 px-4 py-6 shadow-2xl backdrop-blur-md">
           {onBack && (
-            <button onClick={onBack} className="absolute left-4 top-4 text-slate-400 text-sm font-bold hover:text-white transition-colors">← 返回</button>
+            <button onClick={onBack} className="absolute left-4 top-4 text-slate-300 text-sm font-bold hover:text-white transition-colors">← 返回</button>
           )}
-          <div className="text-5xl mb-3">👥</div>
-          <div className="text-2xl font-black text-white">組隊模式</div>
-          <div className="text-sm text-slate-400 mt-1">與夥伴一起練習、一起打怪</div>
+          <div className="text-5xl mb-2 drop-shadow">⚔️</div>
+          <div className="text-2xl font-black text-amber-200">組隊打怪</div>
+          <div className="text-sm text-slate-400 mt-1">揪隊合力討伐怪物・每人射箭一起計傷</div>
         </div>
 
         {/* Tab */}
-        <div className="flex border border-white/10 bg-slate-950/60 rounded-2xl p-1 mb-6 shadow-xl backdrop-blur-md">
+        <div className="flex border border-white/10 bg-slate-950/60 rounded-2xl p-1 mb-5 shadow-xl backdrop-blur-md">
           {[["create","✨ 建立房間"], ["join","🏹 加入房間"]].map(([id, label]) => (
             <button key={id} onClick={() => { setTab(id); setErr(""); }}
               className={`flex-1 py-2.5 rounded-xl text-sm font-black transition-all ${
-                tab === id ? "bg-white text-slate-800 shadow" : "text-slate-400"
+                tab === id ? "bg-gradient-to-r from-amber-400 to-orange-500 text-slate-900 shadow" : "text-slate-400"
               }`}>
               {label}
             </button>
@@ -100,67 +100,55 @@ export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleO
 
         {tab === "create" ? (
           <div className="flex flex-col gap-4">
-            <div className="text-xs font-black text-slate-400 tracking-widest uppercase px-1">選擇模式</div>
             {(battleOnly ? TYPE_OPTIONS.filter(t => t.id === "battle") : TYPE_OPTIONS).map(t => (
               <button key={t.id} onClick={() => setSelType(t.id)}
-                className={`relative w-full rounded-2xl border-2 p-4 text-left transition-all ${
-                  selType === t.id
-            ? `${t.border} ${t.bg} shadow-[0_0_22px_rgba(251,146,60,.15)]`
-                    : "border-slate-600/70 bg-slate-950/55 backdrop-blur"
-                }`}>
+                className="relative w-full rounded-2xl border p-4 text-left transition-all"
+                style={{
+                  borderColor: selType === t.id ? "rgba(251,146,60,0.5)" : "rgba(255,255,255,0.1)",
+                  background: "linear-gradient(135deg, rgba(159,18,57,0.25), rgba(15,23,42,0.65))",
+                  boxShadow: selType === t.id ? "0 0 22px rgba(251,146,60,.18)" : "none",
+                }}>
                 <div className="flex items-center gap-3">
-                  <span className="text-3xl">{t.icon}</span>
-                  <div>
-                    <div className={`font-black text-base ${selType === t.id ? t.textColor : "text-white"}`}>
-                      {t.label}
-                    </div>
-                    <div className={`text-xs mt-0.5 ${selType === t.id ? t.textColor + "/80" : "text-slate-400"}`}>
-                      {t.desc}
-                    </div>
+                  <div className="w-12 h-12 rounded-2xl bg-rose-500/15 border border-rose-400/30 flex items-center justify-center text-2xl shrink-0">{t.icon}</div>
+                  <div className="min-w-0">
+                    <div className="font-black text-base text-white">{t.label}</div>
+                    <div className="text-xs mt-0.5 text-slate-400">{t.desc}</div>
                   </div>
-                  {selType === t.id && (
-                    <span className="ml-auto text-lg">✅</span>
-                  )}
+                  {selType === t.id && <span className="ml-auto text-lg">✅</span>}
                 </div>
               </button>
             ))}
 
             <button onClick={handleCreate} disabled={loading}
-              className="mt-2 w-full py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-black text-base rounded-2xl shadow-lg active:scale-95 transition-transform disabled:opacity-50">
-              {loading ? "建立中…" : "🚀 建立房間"}
+              className="mt-1 w-full py-4 bg-gradient-to-r from-amber-400 to-orange-500 text-slate-900 font-black text-base rounded-2xl shadow-lg active:scale-95 transition-transform disabled:opacity-50">
+              {loading ? "建立中…" : "🚀 建立房間，揪人打怪"}
             </button>
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            <div className="text-xs font-black text-slate-400 tracking-widest uppercase px-1">開放中的房間</div>
+            <div className="text-xs font-black text-slate-400 tracking-widest uppercase px-1">🏠 開放中的隊伍（{openRooms.length}）</div>
             {openRooms.length === 0 ? (
-              <div className="rounded-2xl bg-white/5 border border-white/10 p-8 text-center">
+              <div className="rounded-2xl bg-white/5 border border-dashed border-white/15 p-8 text-center">
                 <div className="text-3xl mb-2 animate-pulse">🔍</div>
-                <div className="text-slate-400 text-sm">目前沒有開放中的房間</div>
-                <div className="text-slate-600 text-xs mt-1">等待夥伴建立房間後自動更新</div>
+                <div className="text-slate-400 text-sm">目前沒有開放的隊伍</div>
+                <div className="text-slate-600 text-xs mt-1">建立一個揪人吧！</div>
               </div>
             ) : openRooms.map(r => {
               const memberCount = Object.keys(r.members || {}).length;
               const hostName    = r.members?.[r.hostId]?.name || "未知";
               const typeInfo    = TYPE_OPTIONS.find(t => t.id === r.type);
+              const full        = memberCount >= 8;
               return (
-                <div key={r.id} className={`rounded-2xl border-2 p-4 shadow-xl backdrop-blur ${typeInfo?.border || "border-slate-600"} bg-slate-950/65`}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl">{typeInfo?.icon || "👥"}</span>
-                      <div>
-                        <div className="text-white font-black text-sm">{typeInfo?.label || r.type}</div>
-                        <div className="text-slate-400 text-xs mt-0.5">🧙 {hostName} 的房間・{memberCount} 人等待中</div>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => handleJoinRoom(r)}
-                      disabled={loading}
-                      className="px-5 py-2 rounded-xl font-black text-sm bg-gradient-to-r from-teal-500 to-emerald-600 text-white disabled:opacity-40 active:scale-95 transition-all"
-                    >
-                      {loading ? "…" : "加入"}
-                    </button>
+                <div key={r.id} className="rounded-2xl border border-amber-500/20 bg-slate-900/75 p-3 shadow-xl backdrop-blur flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-slate-950/60 border border-white/10 flex items-center justify-center text-xl shrink-0">{typeInfo?.icon || "⚔️"}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-white font-black text-sm truncate">{hostName} 的隊伍</div>
+                    <div className="text-slate-400 text-[11px] mt-0.5">👤 {memberCount}/8 人等待中</div>
                   </div>
+                  <button onClick={() => handleJoinRoom(r)} disabled={loading || full}
+                    className="px-4 py-2 rounded-xl font-black text-xs bg-gradient-to-r from-amber-500 to-orange-500 text-white disabled:opacity-40 active:scale-95 transition-all">
+                    {full ? "已滿" : loading ? "…" : "加入"}
+                  </button>
                 </div>
               );
             })}

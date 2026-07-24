@@ -966,7 +966,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   // ── 等待/大廳畫面 ──────────────────────────────────────────
   if (room.status === "waiting") {
     return (
-      <div className="min-h-screen flex flex-col px-4 py-6 gap-5 max-w-lg mx-auto relative overflow-hidden" style={{background:"linear-gradient(180deg,rgba(5,11,25,.72),rgba(7,12,24,.92))",backgroundImage:"linear-gradient(180deg,rgba(5,11,25,.72),rgba(7,12,24,.92)),url(/ui/page-bg.webp)",backgroundSize:"cover",backgroundPosition:"center"}}>
+      <div className="min-h-screen flex flex-col px-4 py-6 gap-5 max-w-lg mx-auto relative overflow-hidden" style={{backgroundImage:"linear-gradient(180deg,rgba(7,11,22,.6),rgba(10,15,28,.8) 45%,rgba(15,23,42,.94)),url(/assets/dungeon/dungeon_team_lobby_bg.jpg)",backgroundSize:"cover",backgroundPosition:"center"}}>
         <div className="flex items-center justify-between">
           <div className="text-white font-black text-lg">⚔️ 組隊打怪</div>
           <button onClick={handleLeave} className="px-3 py-1.5 bg-slate-700 text-slate-300 text-xs font-bold rounded-lg">離開</button>
@@ -980,17 +980,28 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
           {memberList.map(m => {
             const isMe = m.id === myId;
             const mRole = m.role || "front";
+            const cos = m.battleCosmetics?.wbFrame; // 世界王卡：{ color, title, stars }
+            const frameColor = cos?.color || (m.id === room.hostId ? "#fbbf24" : isMe ? "#818cf8" : "#475569");
             return (
-              <div key={m.id} className={`rounded-xl p-3 flex flex-col gap-1.5 ${isMe ? "bg-indigo-900/40 border border-indigo-500/30" : "bg-slate-700/30"}`}>
+              <div key={m.id} className="rounded-xl p-3 flex flex-col gap-1.5 bg-slate-900/70"
+                style={{ border:`1px solid ${frameColor}aa`, boxShadow:`0 0 0 1px ${frameColor}33` }}>
                 <div className="flex items-center gap-2">
                   <span className="text-sm">{m.id === room.hostId ? "👑" : "🏹"}</span>
-                  <span className={`font-black text-sm ${isMe ? "text-indigo-300" : "text-white"}`}>
+                  <span className={`font-black text-sm truncate ${isMe ? "text-indigo-200" : "text-white"}`}>
                     {m.name}{isMe ? " (我)" : ""}
                   </span>
-                  <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full ${mRole === "front" ? "bg-rose-500/20 text-rose-300" : "bg-sky-500/20 text-sky-300"}`}>
+                  <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md shrink-0"
+                    style={{ background:`${frameColor}22`, color:frameColor, border:`1px solid ${frameColor}55` }}>Lv.{m.level || 1}</span>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${mRole === "front" ? "bg-rose-500/20 text-rose-300" : "bg-sky-500/20 text-sky-300"}`}>
                     {mRole === "front" ? "前衛" : "後衛"}
                   </span>
                 </div>
+                {cos?.title && (
+                  <div className="text-[10px] font-black px-1.5 py-0.5 rounded-md truncate self-start"
+                    style={{ background:`${cos.color}1f`, color:cos.color, border:`1px solid ${cos.color}55` }}>
+                    🏆 {cos.title}{cos.stars ? ` ${"★".repeat(Math.min(cos.stars, 5))}` : ""}
+                  </div>
+                )}
                 {m.maxHP > 0 && (
                   <div className="flex gap-3 text-xs text-slate-400 flex-wrap">
                     <span>❤️ {m.maxHP}</span>
