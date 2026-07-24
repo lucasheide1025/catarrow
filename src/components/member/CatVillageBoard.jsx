@@ -399,12 +399,12 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
               style={{ transformStyle: "preserve-3d", transform: eventCard.flipped ? "rotateY(180deg)" : "rotateY(0deg)" }}>
               {/* 卡背 */}
               <div className="absolute inset-0 rounded-3xl border-4 flex items-center justify-center [backface-visibility:hidden]"
-                style={{ borderColor: eventCard.event.deck === "fate" ? "#f59e0b" : "#38bdf8", backgroundImage: `url(${ASSET}/card_${eventCard.event.deck}_back.webp)`, backgroundSize: "cover", background: eventCard.event.deck === "fate" ? "linear-gradient(160deg,#7c2d12,#431407)" : "linear-gradient(160deg,#075985,#0c4a6e)" }}>
-                <div className="text-4xl">{eventCard.event.deck === "fate" ? "🎴 命運" : "🎴 機會"}</div>
+                style={{ borderColor: eventCard.event.deck === "fate" ? "#f59e0b" : "#38bdf8", backgroundColor: eventCard.event.deck === "fate" ? "#431407" : "#0c4a6e", backgroundImage: `url(${ASSET}/card_${eventCard.event.deck}_back.webp)`, backgroundSize: "cover", backgroundPosition: "center" }}>
+                <div className="text-3xl font-black" style={{ color: eventCard.event.deck === "fate" ? "#fcd34d" : "#7dd3fc" }}>{eventCard.event.deck === "fate" ? "命運" : "機會"}</div>
               </div>
               {/* 卡面 */}
-              <div className="absolute inset-0 rounded-3xl border-4 flex flex-col items-center justify-center p-5 text-center [backface-visibility:hidden]"
-                style={{ transform: "rotateY(180deg)", borderColor: eventCard.event.deck === "fate" ? "#f59e0b" : "#38bdf8", backgroundImage: `url(${ASSET}/card_${eventCard.event.deck}.webp)`, backgroundSize: "cover", background: eventCard.event.deck === "fate" ? "linear-gradient(160deg,#fed7aa,#fdba74)" : "linear-gradient(160deg,#bae6fd,#7dd3fc)" }}>
+              <div className="absolute inset-0 rounded-3xl border-4 flex flex-col items-center justify-center p-6 text-center [backface-visibility:hidden]"
+                style={{ transform: "rotateY(180deg)", borderColor: eventCard.event.deck === "fate" ? "#f59e0b" : "#38bdf8", backgroundColor: eventCard.event.deck === "fate" ? "#fde8cf" : "#d4f0fe", backgroundImage: `url(${ASSET}/card_${eventCard.event.deck}.webp)`, backgroundSize: "cover", backgroundPosition: "center" }}>
                 <div className="text-slate-900 font-black text-lg mb-2">{eventCard.event.deck === "fate" ? "命運" : "機會"}</div>
                 <div className="text-slate-800 font-bold text-base leading-relaxed">{eventCard.event.text}</div>
                 <div className="text-slate-700 text-xs mt-4 font-bold">（點擊套用）</div>

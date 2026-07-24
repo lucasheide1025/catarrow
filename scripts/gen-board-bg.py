@@ -25,6 +25,15 @@ MAPS = {
 }
 NEG = "realistic, photorealistic, text, letters, watermark, ui, people, mascot, character, blurry, lowres, close-up single object"
 
+# 命運/機會 卡框（直式 2:3；卡面中央留亮面給文字疊上）
+CARD_COMMON = "ornate decorative playing card, painterly casual game art, symmetrical border frame, portrait orientation, no text, no letters. "
+CARDS = {
+    "card_fate_back": "a mysterious FORTUNE card BACK, deep purple and gold, swirling mystical patterns and a glowing central question-mark emblem, ornate gilded border",
+    "card_fate":      "a FORTUNE card FRAME, purple and gold ornate gilded border, a large aged cream parchment panel in the center (empty), mystical corners",
+    "card_opp_back":  "a lucky OPPORTUNITY card BACK, teal and gold, a glowing four-leaf clover and gift emblem in the center, ornate gilded border",
+    "card_opp":       "an OPPORTUNITY card FRAME, teal and gold ornate gilded border, a large light cream panel in the center (empty), lucky corners",
+}
+
 
 def post(path, payload):
     req = urllib.request.Request(COMFY + path, data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"})
@@ -82,6 +91,14 @@ def run_map(mode):
     print(f"  OK map_{mode}", flush=True)
 
 
+def run_card(name):
+    os.makedirs(OUTDIR, exist_ok=True)
+    print(f"[card/{name}] generating...", flush=True)
+    png = generate(CARD_COMMON + CARDS[name], NEG, 832, 1216)  # 直式 2:3
+    save(png, os.path.abspath(os.path.join(OUTDIR, f"{name}.webp")), 640, 936)
+    print(f"  OK {name}", flush=True)
+
+
 if __name__ == "__main__":
     which = sys.argv[1] if len(sys.argv) > 1 else "all"
     if which in ("bg", "all"):
@@ -89,4 +106,7 @@ if __name__ == "__main__":
     if which in ("maps", "all"):
         for m in MAPS:
             run_map(m)
+    if which in ("cards", "all"):
+        for c in CARDS:
+            run_card(c)
     print("DONE", flush=True)
