@@ -101,6 +101,11 @@ export async function equipCat(memberId, catId, type) {
   try {
     const cat = CATS[catId];
     if (!cat) return { ok: false, reason: "貓咪不存在" };
+    // 一隻貓同時只能在一個地方工作（挖掘/遠征/建築工作）
+    const { catBusyElsewhere, catBusyReason } = await import("./catAssignment");
+    const memSnap = await getDoc(doc(db, "members", memberId));
+    const busy = catBusyElsewhere(memSnap.data() || {}, catId, "equipped");
+    if (busy) return { ok: false, reason: catBusyReason(busy.job) };
     const catSnap = await getDoc(catRef(memberId, catId));
     const data  = catSnap.exists() ? catSnap.data() : {};
     const bond  = data.bond  || 0;

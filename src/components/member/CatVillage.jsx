@@ -1320,8 +1320,9 @@ function WorkerCatSettings({ buildingId, village, myCats, memberId, profile, onS
     if (saving || !memberId) return;
     setSaving(true);
     sfxTap();
-    await assignVillageWorker(memberId, buildingId, catId);
+    const res = await assignVillageWorker(memberId, buildingId, catId);
     setSaving(false);
+    if (res && res.ok === false) { alert(res.reason || "這隻貓正在別處工作"); return; }
     setEditing(false);
     onSaved?.(buildingId, catId);
   }

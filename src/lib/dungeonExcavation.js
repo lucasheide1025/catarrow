@@ -7,6 +7,7 @@ import { db } from "./firebase";
 import { drawExpeditionBoss, drawTreasureKing } from "./monsterData";
 import { createLockedDungeonBossEncounter } from "./dungeonBossEncounter";
 import { addCatXP } from "./catDb";
+import { catBusyElsewhere, catBusyReason } from "./catAssignment";
 
 // 地下城儲存槽上限（2026-07-23 作者：3 → 6）
 export const MAX_SAVED_DUNGEONS = 6;
@@ -360,19 +361,11 @@ export async function assignDigCat(memberId, catId) {
     const snap = await getDoc(doc(db, "members", memberId));
     if (!snap.exists()) return { ok: false, reason: "找不到會員" };
     const data = snap.data();
-    
-    // 防呆：檢查貓貓是否被常規遠征或組隊佔用
-    const expeditions = data.expeditions || {};
-    const activeCatIds = Object.values(expeditions).filter(Boolean).map(e => e.catId);
-    if (activeCatIds.includes(catId)) {
-      return { ok: false, reason: "這隻貓貓目前正在遠征中，無法同時指派為挖掘陪練貓！" };
-    }
 
-    // 防呆：檢查貓貓是否已經在貓貓村建築物工作
-    const villageWorkers = data.village?.workers || {};
-    const villageWorkerCatIds = Object.values(villageWorkers).filter(Boolean);
-    if (villageWorkerCatIds.includes(catId)) {
-      return { ok: false, reason: "這隻貓貓目前正在貓貓村建築物工作，無法同時指派為挖掘陪練貓！" };
+    // 一隻貓同時只能在一個地方工作（戰鬥夥伴/遠征/建築工作/挖掘）——統一偵測
+    if (catId) {
+      const busy = catBusyElsewhere(data, catId, "dig");
+      if (busy) return { ok: false, reason: catBusyReason(busy.job) };
     }
 
     await updateDoc(doc(db, "members", memberId), {

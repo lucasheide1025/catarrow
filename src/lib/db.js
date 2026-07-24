@@ -20,6 +20,7 @@ import { WB_CARDS } from "./worldBossCards";
 import { getMilestonesReached, getRewardsForMilestone } from "./arrowMilestone";
 import { openVillagePacks } from "./villagePack";
 import { addCatBond, addCatXP } from "./catDb";
+import { catBusyElsewhere, catBusyReason } from "./catAssignment";
 import { SHOOTING_SCHEMA_VERSION, buildMonsterShootingRecord, buildPracticeShootingRecord, buildShootingEnds, calculateSessionMetrics } from "./shootingPerformance";
 import { assertCostCapability, COST_CAPABILITIES, isCostCapabilityAllowed } from "./costControl";
 import {
@@ -4524,6 +4525,10 @@ export async function grantKingVaultReward(memberId, reward = {}) {
 export async function startExpedition(memberId, slotIdx, catId, catName, missionTier, hours, archerCost) {
   if (!memberId || !catId || !missionTier) return { ok: false, reason: "參數錯誤" };
   try {
+    // 一隻貓同時只能在一個地方工作
+    const busySnap = await getDoc(doc(db, C.members, memberId));
+    const busy = catBusyElsewhere(busySnap.data() || {}, catId, "expedition");
+    if (busy) return { ok: false, reason: catBusyReason(busy.job) };
     const endsAt = new Date(Date.now() + hours * 3600000);
     const updates = {
       [`expeditions.${slotIdx}`]: {
@@ -5407,11 +5412,19 @@ export async function saveDailyGeneralSettings(settings, adminId) {
 
 
 export async function assignVillageWorker(memberId, buildingId, catId) {
-  if (!memberId || !buildingId) return;
+  if (!memberId || !buildingId) return { ok: false, reason: "參數錯誤" };
   const fieldPath = 'village.workers.' + buildingId;
   if (catId) {
+    // 一隻貓同時只能在一個地方工作（此格自己的貓可重複指派＝不算 busy）
+    const snap = await getDoc(doc(db, C.members, memberId));
+    const data = snap.data() || {};
+    if (data.village?.workers?.[buildingId] !== catId) {
+      const busy = catBusyElsewhere(data, catId, "worker");
+      if (busy) return { ok: false, reason: catBusyReason(busy.job) };
+    }
     await updateDoc(doc(db, C.members, memberId), { [fieldPath]: catId });
   } else {
     await updateDoc(doc(db, C.members, memberId), { [fieldPath]: deleteField() });
   }
+  return { ok: true };
 }
