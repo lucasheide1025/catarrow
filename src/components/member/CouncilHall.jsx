@@ -10,6 +10,7 @@ import {
 import ExpeditionPanel from "./ExpeditionPanel";
 import GatheringPartyPanel from "./GatheringPartyPanel";
 import GatheringRun from "./GatheringRun";
+import CatVillageBoard from "./CatVillageBoard";
 import BattleShootingProfile from "../shared/BattleShootingProfile";
 import { loadBattleShootingProfile } from "../../lib/battlePractice";
 
@@ -18,7 +19,7 @@ const CSS = `
 `;
 
 export default function CouncilHall({ profile, village, onBack }) {
-  const [tab, setTab] = useState("collect");
+  const [tab, setTab] = useState("expedition");
   const [activeSite, setActiveSite] = useState(null);
   const [activeRunNonce, setActiveRunNonce] = useState(0);
   const [partySite, setPartySite] = useState(null);
@@ -211,7 +212,7 @@ export default function CouncilHall({ profile, village, onBack }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
         {[
-          ["collect", "採集地圖"],
+          ["collect", "🎲 探索地圖"],
           ["expedition", "探險隊"],
         ].map(([key, label]) => (
           <button
@@ -240,7 +241,9 @@ export default function CouncilHall({ profile, village, onBack }) {
 
       {tab === "expedition" && <ExpeditionPanel profile={profile} />}
 
-      {tab === "collect" && (
+      {tab === "collect" && <CatVillageBoard profile={profile} onClose={() => setTab("expedition")} />}
+
+      {false && (
         <>
           <section style={{ padding: "12px", borderRadius: 8, background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)", marginBottom: 12 }}>
             <div style={{ fontWeight: 950, color: "#facc15", marginBottom: 6 }}>新版採集</div>
