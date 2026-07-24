@@ -111,6 +111,8 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
   const lastSettleRef = useRef(0);
   const lastEventRef = useRef(0);
   const shootSeqRef = useRef(0);
+  const animDoneRef = useRef(0); // 已完整跑完動畫的 pendingMove.seq；房主 commit 要等它對上才觸發
+  const [pendingEventMsg, setPendingEventMsg] = useState(null); // 事件結果訊息，等全員確認後才跳
 
   const showToast = t => { setToast(t); setTimeout(() => setToast(null), 2400); };
 
@@ -157,9 +159,10 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     return unsub;
   }, [room?.hostId]);
 
-  // pendingMove → 所有客戶端同步動畫（房主執骰後雙方一起看棋子移動）
+  // pendingMove → 所有客戶端同步動畫（房主執骰後雙方一起看棋子移動）。
+  // 依賴 pendingMove.seq（每次擲骰都變）→ 動畫才會重跑；不看 animating 以免殘留 true 卡死後續動畫。
   useEffect(() => {
-    if (!room?.pendingMove || animating) return;
+    if (!room?.pendingMove) return;
     const pm = room.pendingMove;
     setAnimating(true);
     setDisplayPos(pm.from);
@@ -175,8 +178,8 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
         if (cur === pm.to) {
           clearInterval(stepIv); stepIv = null;
           sfxSuccess();
-          // ② 落點停頓：讓「踩到格子上」看得清楚，才 setAnimating(false) → 房主 commit → 觸發事件/結算
-          landT = setTimeout(() => setAnimating(false), 850);
+          // ② 落點停頓：讓「踩到格子上」看得清楚，才記錄動畫完成 + setAnimating(false) → 房主 commit → 觸發事件/結算
+          landT = setTimeout(() => { animDoneRef.current = pm.seq; setAnimating(false); }, 850);
         }
       }, 260);
     }, 900);
@@ -186,9 +189,12 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
   // boardPos 同步（頁面重整/動畫結束後確保棋子位置正確）
   useEffect(() => { if (room && !animating) setDisplayPos(room.boardPos || 0); }, [room?.boardPos, animating]);
 
-  // 動畫結束後房主確認移動 → 寫入 boardPos + pendingSettle/Event
+  // 動畫結束後房主確認移動 → 寫入 boardPos + pendingSettle/Event。
+  // 必須等這次 pendingMove 的動畫「真的跑完」（animDoneRef 對上 seq）才 commit，
+  // 否則骰子一擲、動畫還沒跑就 commit，會變成「沒動畫直接跳結果」。
   useEffect(() => {
     if (animating || !room?.pendingMove || !isHost) return;
+    if (animDoneRef.current !== room.pendingMove.seq) return;
     const pm = room.pendingMove;
 
     if (TILE_TYPES[pm.tile]?.shooting) {
@@ -359,16 +365,18 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     // 設為 waiting 不馬上消失，讓隊員有時間確認
     setCard(c => c && c.event ? { event: c.event, flipped: true, waiting: true } : null);
     const res = await claimBoardEvent(roomId, myId, { villageBuildings, catId });
-    // 顯示事件結果，讓玩家知道拿到／失去什麼
+    // 先算好「拿到/失去什麼」的訊息，但不立刻跳——等全員都確認後（allPassed）才顯示（見下方 effect）
     if (res?.ok) {
       const label = r => ({ coins:"金幣", arrowdew:"箭露", gachaToken:"扭蛋幣", catXP:"貓咪經驗", material:"家族素材", ...RESOURCE_NAMES }[r] || r);
-      if (res.kind === "gain")        showToast(`✨ 獲得 ${res.amount} ${label(res.resource)}`);
-      else if (res.kind === "lose")   showToast(`💸 失去 ${res.amount} ${label(res.resource)}`);
-      else if (res.kind === "micro")  showToast(`🪙 獲得 ${res.amount} 金幣`);
-      else if (res.kind === "chest")  showToast("🎁 獲得寶箱！");
-      else if (res.kind === "catBond")showToast(`🐱 貓咪 +${res.xp || 0} 經驗`);
-      else if (res.kind === "dice")   showToast(res.delta > 0 ? `🎲 骰子 +${res.delta}` : "😴 暫停一回合");
-      else                            showToast(`😸 ${ev.text?.length > 14 ? "會心一笑" : ev.text}`);
+      let msg = "";
+      if (res.kind === "gain")        msg = `✨ 獲得 ${res.amount} ${label(res.resource)}`;
+      else if (res.kind === "lose")   msg = `💸 失去 ${res.amount} ${label(res.resource)}`;
+      else if (res.kind === "micro")  msg = `🪙 獲得 ${res.amount} 金幣`;
+      else if (res.kind === "chest")  msg = "🎁 獲得寶箱！";
+      else if (res.kind === "catBond")msg = `🐱 貓咪 +${res.xp || 0} 經驗`;
+      else if (res.kind === "dice")   msg = res.delta > 0 ? `🎲 骰子 +${res.delta}` : "😴 暫停一回合";
+      else                            msg = `😸 ${ev.text?.length > 14 ? "會心一笑" : ev.text}`;
+      setPendingEventMsg(msg);
     }
     if (isHost) {
       const r = await applyEventEffect(myId, ev, { villageBuildings, catId });
@@ -378,12 +386,13 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     }
   }, [card, roomId, myId, isHost, room, catId]);
 
-  // 全員領取後自動關閉卡片
+  // 全員確認後才關卡片 + 跳事件結果通知（不能先跑，要等大家都通過）
   useEffect(() => {
     if (card?.waiting && allPassed) {
       setCard(null);
+      if (pendingEventMsg) { showToast(pendingEventMsg); setPendingEventMsg(null); }
     }
-  }, [card?.waiting, allPassed]);
+  }, [card?.waiting, allPassed, pendingEventMsg]);
 
   // ── 大廳畫面 ──
   if (!roomId || !room) {

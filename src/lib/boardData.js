@@ -6,10 +6,6 @@
 //   site.id 同時是「村建築 id」→ getBuildingStage(建築等級) 決定該模式可刷的素材階級上限（T1~T5）。
 import { GATHERING_SITES } from "./catVillageGathering";
 import { getBuildingStage } from "./villageData";
-import { drawMaterial } from "./monsterMaterials";
-
-// 數字階級 → 字串階級（對應 monsterMaterials 的 rarity）
-const TIER_NO_TO_STR = { 1:'common', 2:'rare', 3:'elite', 4:'fierce', 5:'boss', 6:'mythic' };
 
 // ── 6 模式（家族/資源/建築）──────────────────────────────
 export const BOARD_MODES = GATHERING_SITES.map(s => ({
@@ -68,14 +64,15 @@ export function scoreToBand(scoreRatio = 0) {
 
 // ── 小工具 ───────────────────────────────────────────────
 function randInt(min, max) { return min + Math.floor(Math.random() * (max - min + 1)); }
-// 依 tierCap 加權抽一個階級（越高階機率越低，但 cap 越高整體越好）
+// 在 1~cap 加權抽一個階級，權重偏向「選定的高階」（以房主的 T 為主），但仍保留低階變化。
 function rollTier(tierCap) {
+  const cap = Math.min(6, Math.max(1, tierCap || 1));
   const weights = [];
-  for (let t = 1; t <= tierCap; t++) weights.push({ t, w: Math.max(1, tierCap - t + 1) });
+  for (let t = 1; t <= cap; t++) weights.push({ t, w: t }); // 高階權重高 → 以 cap 為主
   const total = weights.reduce((s, x) => s + x.w, 0);
   let r = Math.random() * total;
   for (const x of weights) { r -= x.w; if (r <= 0) return x.t; }
-  return 1;
+  return cap;
 }
 
 // ── 獎勵計算（純函式）────────────────────────────────────
@@ -92,7 +89,7 @@ export function rollTileReward(tileType, ctx = {}) {
     case "material": {
       // 家族素材 ×3~6（隨機抽多種材料）
       const count = scale(randInt(3, 6));
-      addRandomFamilyMat(r, mode.family, rollTier(T), count);
+      addRandomFamilyMat(r, mode.family, T, count);
       break;
     }
     case "mining": {
@@ -110,7 +107,7 @@ export function rollTileReward(tileType, ctx = {}) {
       r.villageResources[mode.resource] = (r.villageResources[mode.resource] || 0) + Math.max(1, Math.round(base * miningMult));
       if (Math.random() < 0.15) {
         if (Math.random() < 0.5) r.villageResources.fur = (r.villageResources.fur || 0) + scale(1);
-        else addRandomFamilyMat(r, mode.family, rollTier(T), scale(1));
+        else addRandomFamilyMat(r, mode.family, T, scale(1));
       }
       // band 改用完成度文字
       r.band = basePct >= 180 ? "大豐收" : basePct >= 130 ? "豐收" : basePct >= 100 ? "完成" : basePct >= 50 ? "半成品" : "安慰獎";
@@ -125,7 +122,7 @@ export function rollTileReward(tileType, ctx = {}) {
       const monsterMult = passed ? 1.5 : 0.8;
       const base = randInt(6, 15);
       r.villageResources[mode.resource] = (r.villageResources[mode.resource] || 0) + scale(Math.round(base * monsterMult));
-      addRandomFamilyMat(r, mode.family, rollTier(T), scale(passed ? 3 : 1));
+      addRandomFamilyMat(r, mode.family, T, scale(passed ? 3 : 1));
       if (passed && Math.random() < 0.3) r.chests.push({ kind: "family", family: mode.family, tier: T });
       r.band = passed ? (scoreRatio >= 0.75 ? "S" : "A") : "C";
       r.passed = passed;
@@ -147,7 +144,7 @@ export function rollTileReward(tileType, ctx = {}) {
     case "potion":   r.potions.push(rollPotionByTier(T)); break;
     case "catbond":  r.catXP = scale(randInt(50, 150)); r.catBond = randInt(1, 2); break;
     case "start": {  // 繞圈普通一輪包
-      addRandomFamilyMat(r, mode.family, rollTier(T), scale(3));
+      addRandomFamilyMat(r, mode.family, T, scale(3));
       r.arrowdew = scale(randInt(15, 40) * T);
       r.coins = scale(randInt(50, 150) * T);
       r.lap = true;
@@ -167,12 +164,13 @@ function addFamilyMat(r, family, tier, count) {
   r.familyMaterials[id] = (r.familyMaterials[id] || 0) + count;
 }
 
-// 隨機抽材料（每份獨立抽，讓同次掉落更多樣化）
-function addRandomFamilyMat(r, family, tierNo, count) {
-  const tierStr = TIER_NO_TO_STR[Math.min(6, Math.max(1, tierNo))] || 'common';
+// 家族素材：每份獨立在 1~tierCap 抽階級（偏向高階，以房主選的 T 為主），emit family_m{tier}。
+// 直接用 family_m{t}，不走會偏向 common 的 drawMaterial，避免高階房間也一直掉最低階材料。
+function addRandomFamilyMat(r, family, tierCap, count) {
   for (let i = 0; i < count; i++) {
-    const mat = drawMaterial(family, tierStr);
-    if (mat) r.familyMaterials[mat.id] = (r.familyMaterials[mat.id] || 0) + 1;
+    const t = rollTier(tierCap);
+    const id = `${family}_m${t}`;
+    r.familyMaterials[id] = (r.familyMaterials[id] || 0) + 1;
   }
 }
 function rollPotionByTier(tier) {

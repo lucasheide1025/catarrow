@@ -171,10 +171,12 @@ export async function roomRollAndMove(roomId, hostId) {
       // 等所有客戶端動畫結束後，房主再呼叫 commitBoardMove 完成結算
       // hostDiceLeft：把房主剩餘骰數寫進房間，讓所有客戶端都讀得到（不必各自讀房主文件），
       // 結算畫面才不會因隊員讀不到房主 dice、預設 0 而誤觸發。
+      const nextSeq = (room.seq || 0) + 1;
       tx.update(roomRef, {
-        pendingMove: { from, to, roll, lapped, tile, partyMult: partyMultOf(count), modeId: room.mode, tier: room.tier || 1 },
+        // seq 放進 pendingMove 物件內：動畫 effect 依賴 pendingMove.seq，每次擲骰都變 → 動畫才會重跑
+        pendingMove: { seq: nextSeq, from, to, roll, lapped, tile, partyMult: partyMultOf(count), modeId: room.mode, tier: room.tier || 1 },
         hostDiceLeft: dice - 1,
-        seq: (room.seq || 0) + 1,
+        seq: nextSeq,
         updatedAt: serverTimestamp(),
       });
       result = { ok: true, roll, from, to, lapped, tile };
