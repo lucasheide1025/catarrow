@@ -4249,15 +4249,22 @@ export async function unequipSlot(memberId, slotId) {
     const memberRef = doc(db, C.members, memberId);
     const memberSnap = await getDoc(memberRef);
     const member = memberSnap.data() || {};
-    const currentItemId = member.rpgEquip?.[slotId]?.itemId;
-    await updateDoc(doc(db, C.members, memberId), {
+    const equip = member.rpgEquip?.[slotId];
+    const currentItemId = equip?.itemId;
+    // 卸下裝備時，把孔上的符文歸還背包（否則符文會跟著裝備一起消失）。
+    // 依 runeId 彙總數量：同一種符文在多個孔時，用單一 increment(n)，避免物件同 key 覆蓋只回一顆。
+    const returns = {};
+    (Array.isArray(equip?.sockets) ? equip.sockets : []).forEach(r => { if (r) returns[r] = (returns[r] || 0) + 1; });
+    const update = {
       [`rpgEquip.${slotId}`]: deleteField(),
       ...(currentItemId ? {
         unlockedEquipItems:{ ...(member.unlockedEquipItems || {}), [currentItemId]:true },
       } : {}),
       updatedAt: serverTimestamp(),
-    });
-    return { ok: true };
+    };
+    Object.entries(returns).forEach(([rid, n]) => { update[`equipmentRuneInventory.${rid}`] = increment(n); });
+    await updateDoc(memberRef, update);
+    return { ok: true, returnedRunes: returns };
   } catch (e) { return { ok: false, reason: e?.message }; }
 }
 
