@@ -347,19 +347,52 @@ export async function claimBoardEvent(roomId, memberId, { villageBuildings = {},
     const roomTier = room.tier || tierCap;
     const rnd = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
     // 只處理「資源類/寶箱/貓咪/微獎勵/team.allBuff」——這些每人各自入帳。
+    // 回傳實際變動明細，讓 UI 顯示「獲得/失去 X」，玩家才知道結果。
+    let result = { kind: eff?.type || "flavor" };
     if (eff) {
-      if (eff.type === "micro") await applyBoardReward(memberId, { coins: eff.coins || 0 }, { catId });
-      else if (eff.type === "gain") await applyGain(memberId, mode, eff.resource, rnd(eff.min, eff.max), roomTier, catId);
-      else if (eff.type === "chest") await applyBoardReward(memberId, { chests: [{ kind: eff.kind, family: mode.family, tier: roomTier }] }, {});
-      else if (eff.type === "catBond") await applyBoardReward(memberId, { catXP: eff.xp || 0, catBond: eff.bond || 0 }, { catId });
-      else if (eff.type === "team") { // allBuff/gift/steal 在合作模式一律視為全員得益
-        if (eff.resource) await applyGain(memberId, mode, eff.resource, rnd(eff.min ?? 1, eff.max ?? 3), roomTier, catId);
+      if (eff.type === "micro") {
+        await applyBoardReward(memberId, { coins: eff.coins || 0 }, { catId });
+        result = { kind: "micro", resource: "coins", amount: eff.coins || 0, sign: 1 };
+      } else if (eff.type === "gain") {
+        const amt = rnd(eff.min, eff.max);
+        await applyGain(memberId, mode, eff.resource, amt, roomTier, catId);
+        result = { kind: "gain", resource: eff.resource, amount: amt, sign: 1 };
+      } else if (eff.type === "lose") {
+        const amt = rnd(eff.min, eff.max);
+        await applyLose(memberId, eff.resource, amt);
+        result = { kind: "lose", resource: eff.resource, amount: amt, sign: -1 };
+      } else if (eff.type === "chest") {
+        await applyBoardReward(memberId, { chests: [{ kind: eff.kind, family: mode.family, tier: roomTier }] }, {});
+        result = { kind: "chest" };
+      } else if (eff.type === "catBond") {
+        await applyBoardReward(memberId, { catXP: eff.xp || 0, catBond: eff.bond || 0 }, { catId });
+        result = { kind: "catBond", xp: eff.xp || 0, bond: eff.bond || 0 };
+      } else if (eff.type === "team") { // allBuff/gift/steal 在合作模式一律視為全員得益
+        if (eff.resource) {
+          const amt = rnd(eff.min ?? 1, eff.max ?? 3);
+          await applyGain(memberId, mode, eff.resource, amt, roomTier, catId);
+          result = { kind: "gain", resource: eff.resource, amount: amt, sign: 1 };
+        } else result = { kind: "team" };
+      } else if (eff.type === "dice") {
+        result = { kind: "dice", delta: eff.delta }; // 骰數由房主端套用，這裡只回報給 UI 顯示
       }
-      // move/teleport/dice/multiplier/trigger 由房主端處理共享棋，不在此重複
+      // move/teleport/multiplier/trigger 由房主端處理共享棋，不在此重複
     }
     await updateDoc(ref, { [`eventClaims.${memberId}`]: pe.seq });
-    return { ok: true, kind: eff?.type || "flavor" };
+    return { ok: true, ...result };
   } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+// 事件「失去」：直接對 member 文件扣（coins/gachaCoins/村資源；家族素材不扣）
+async function applyLose(memberId, resource, amount) {
+  const n = -Math.abs(amount || 0);
+  if (!n) return;
+  const patch = {};
+  if (resource === "coins") patch.coins = increment(n);
+  else if (resource === "gachaToken") patch.gachaCoins = increment(n);
+  else if (resource === "material" || resource === "catXP") return; // 這兩類不扣
+  else patch[`village.resources.${resource}`] = increment(n); // arrowdew/ore/melon…
+  await updateDoc(doc(db, "members", memberId), patch).catch(() => {});
 }
 
 async function applyGain(memberId, mode, resource, amount, tierCap, catId) {

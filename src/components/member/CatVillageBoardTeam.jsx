@@ -107,6 +107,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
   const [card, setCard] = useState(null);      // { event, flipped }
   const [reward, setReward] = useState(null);
   const [toast, setToast] = useState(null);
+  const [showTeamSummary, setShowTeamSummary] = useState(false);
   const lastSettleRef = useRef(0);
   const lastEventRef = useRef(0);
   const shootSeqRef = useRef(0);
@@ -163,17 +164,23 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     setAnimating(true);
     setDisplayPos(pm.from);
     let cur = pm.from;
-    const iv = setInterval(() => {
-      cur = (cur + 1) % BOARD_SIZE;
-      setDisplayPos(cur);
-      sfxTap();
-      if (cur === pm.to) {
-        clearInterval(iv);
-        sfxSuccess();
-        setAnimating(false);
-      }
-    }, 200);
-    return () => clearInterval(iv);
+    let stepIv = null;
+    let landT = null;
+    // ① 起步前停頓：讓房主端的骰子數字先亮出來、隊員看清「準備移動」，避免骰子與棋子同時動
+    const startT = setTimeout(() => {
+      stepIv = setInterval(() => {
+        cur = (cur + 1) % BOARD_SIZE;
+        setDisplayPos(cur);
+        sfxTap();
+        if (cur === pm.to) {
+          clearInterval(stepIv); stepIv = null;
+          sfxSuccess();
+          // ② 落點停頓：讓「踩到格子上」看得清楚，才 setAnimating(false) → 房主 commit → 觸發事件/結算
+          landT = setTimeout(() => setAnimating(false), 850);
+        }
+      }, 260);
+    }, 900);
+    return () => { clearTimeout(startT); if (stepIv) clearInterval(stepIv); if (landT) clearTimeout(landT); };
   }, [room?.pendingMove?.seq]);
 
   // boardPos 同步（頁面重整/動畫結束後確保棋子位置正確）
@@ -259,6 +266,14 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     }
   }, [isHost, room?.pendingShoot, roomId, myId]);
 
+  // 房主骰子用完 + 全部結算完 → 進結算畫面（全員都看得到）
+  useEffect(() => {
+    if (room?.status !== "active") return;
+    const idle = hostDice <= 0 && !animating && !room?.pendingMove && !room?.pendingShoot
+      && !room?.pendingSettle && !room?.pendingEvent && !shoot && !shootResult && !card;
+    if (idle) setShowTeamSummary(true);
+  }, [hostDice, room?.status, animating, room?.pendingMove, room?.pendingShoot, room?.pendingSettle, room?.pendingEvent, shoot, shootResult, card]);
+
   // ── 大廳動作 ──
   async function create() {
     setBusy(true); setErr("");
@@ -341,7 +356,18 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     if (!ev) return;
     // 設為 waiting 不馬上消失，讓隊員有時間確認
     setCard(c => c && c.event ? { event: c.event, flipped: true, waiting: true } : null);
-    await claimBoardEvent(roomId, myId, { villageBuildings, catId });
+    const res = await claimBoardEvent(roomId, myId, { villageBuildings, catId });
+    // 顯示事件結果，讓玩家知道拿到／失去什麼
+    if (res?.ok) {
+      const label = r => ({ coins:"金幣", arrowdew:"箭露", gachaToken:"扭蛋幣", catXP:"貓咪經驗", material:"家族素材", ...RESOURCE_NAMES }[r] || r);
+      if (res.kind === "gain")        showToast(`✨ 獲得 ${res.amount} ${label(res.resource)}`);
+      else if (res.kind === "lose")   showToast(`💸 失去 ${res.amount} ${label(res.resource)}`);
+      else if (res.kind === "micro")  showToast(`🪙 獲得 ${res.amount} 金幣`);
+      else if (res.kind === "chest")  showToast("🎁 獲得寶箱！");
+      else if (res.kind === "catBond")showToast(`🐱 貓咪 +${res.xp || 0} 經驗`);
+      else if (res.kind === "dice")   showToast(res.delta > 0 ? `🎲 骰子 +${res.delta}` : "😴 暫停一回合");
+      else                            showToast(`😸 ${ev.text?.length > 14 ? "會心一笑" : ev.text}`);
+    }
     if (isHost) {
       const r = await applyEventEffect(myId, ev, { villageBuildings, catId });
       if (r.kind === "move") await roomApplyBoardEffect(roomId, myId, { pos: (((room.boardPos + r.steps) % BOARD_SIZE) + BOARD_SIZE) % BOARD_SIZE });
@@ -532,6 +558,20 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
               {reward.items.map((it, i) => <div key={i} className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-2"><span className="text-sm font-bold text-slate-100">{it.icon} {it.name}</span><span className="text-amber-300 font-black">×{it.amount}</span></div>)}
             </div>
             <button onClick={() => setReward(null)} className="w-full py-2.5 rounded-xl bg-amber-400 text-slate-900 font-black">收下！</button>
+          </div>
+        </div>
+      )}
+
+      {showTeamSummary && (
+        <div className="fixed inset-0 z-[220] bg-black/85 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border-2 border-amber-400/50 rounded-3xl p-6 w-full max-w-xs text-center animate-[fx-pop-in_0.35s_cubic-bezier(.34,1.56,.64,1)]">
+            <div className="text-5xl mb-2">🎲</div>
+            <div className="text-amber-200 font-black text-lg mb-1">今日探索結束</div>
+            <div className="text-slate-300 text-sm mb-1">房主骰子已用完</div>
+            <div className="text-amber-300/80 text-sm font-bold mb-5">本局共繞了 {room.lapCount || 0} 圈 🏁</div>
+            <button onClick={() => { setShowTeamSummary(false); exitRoom(); }} className="w-full py-3 rounded-2xl bg-amber-400 text-slate-900 font-black">
+              {isHost ? "結束並解散房間" : "離開房間"}
+            </button>
           </div>
         </div>
       )}

@@ -162,6 +162,8 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
     }
     setRolling(false);
     if (res.lapped) showToast("🏁 繞完一圈！");
+    // 落點停頓：讓「踩到格子上」看得清楚，才觸發事件/結算（避免一瞬間就過去）
+    await new Promise(r => setTimeout(r, 750));
     await settle(res.tile);
   }, [rolling, board, myId, settle]);
 
