@@ -21,6 +21,7 @@ import { GOAL_TYPE_MAP, buildGoalTitle } from "../../lib/villageGoalData";
 import { Card, ST } from "../shared/UI";
 import { SectionHeader, StatBar, ProgressRing, HubTile } from "../shared/Widgets";
 import ShareCard from "./ShareCard";
+import HomeLeaderboardBlock from "./HomeLeaderboardBlock";
 
 const CERT_SHOW = ["recurve_bare", "compound", "traditional"];
 
@@ -36,6 +37,7 @@ const HOME_HUBS = [
 const QUICK_LINKS = [
   { page:"guide",       icon:"📘", label:"說明書" },
   { page:"monster",     icon:"⚔️", label:"打怪" },
+  { page:"leaderboard", icon:"📊", label:"排行榜" },
   { page:"practice",    icon:"🎯", label:"自主練習" },
   { page:"coinshop",    icon:"🛒", label:"商店" },
   { page:"equipment",   icon:"🛡️", label:"我的裝備" },
@@ -405,6 +407,9 @@ export default function MemberHome({
             accent={hub.accent} image={`/ui/home/${hub.page.replace("-hub", "")}.webp`} onClick={() => onPageChange(hub.page)} />
         ))}
       </div>
+
+      {/* ── 我的排行榜（入圍前五名的榜）───────────────────────── */}
+      <HomeLeaderboardBlock myId={profile?.id} onPageChange={onPageChange} />
 
       {/* 廣播訊息（分類篩選）*/}
       {notifications.length > 0 && (

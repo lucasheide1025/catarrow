@@ -38,7 +38,13 @@ export default function MemberLeaderboard({ guestProfile }) {
   const [cardMap, setCardMap] = useState({});
   const [snapshot, setSnapshot] = useState({});
 
-  const [tabId, setTabId] = useState("event");
+  const [tabId, setTabId] = useState(() => {
+    try {
+      const t = sessionStorage.getItem("leaderboard_initial_tab");
+      if (t) { sessionStorage.removeItem("leaderboard_initial_tab"); if (LB_TAB_MAP[t]) return t; }
+    } catch { /* ignore */ }
+    return "event";
+  });
   const [fam, setFam] = useState("all");
   const [useSeason, setUseSeason] = useState(false);
 
