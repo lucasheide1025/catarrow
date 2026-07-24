@@ -78,10 +78,11 @@ function rollTier(tierCap) {
 // ctx = { mode:BOARD_MODES項, tierCap, partyMult=1, scoreRatio(射箭格用) }
 // 回傳統一 reward descriptor，由 villageBoardDb 套用到 Firestore。
 export function rollTileReward(tileType, ctx = {}) {
-  const { mode, tierCap = 1, partyMult = 1, scoreRatio = 0 } = ctx;
+  const { mode, tierCap = 1, partyMult = 1, scoreRatio = 0, tier } = ctx;
   const r = emptyReward();
   const scale = n => Math.max(1, Math.round(n * partyMult));
-  const T = tierCap;
+  // 玩家在前頁選的 tier（上限受建築 stage 限制）；未選則用建築上限
+  const T = tier ? Math.max(1, Math.min(tier, tierCap)) : tierCap;
 
   switch (tileType) {
     case "material": {

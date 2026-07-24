@@ -16,7 +16,7 @@ function todayKey() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-const DEFAULT_BOARD = { dice: DAILY_DICE, diceGrantedDate: "", boardPos: 0, lapCount: 0, boardSeed: 0, mode: "mine", pendingEvent: null };
+const DEFAULT_BOARD = { dice: DAILY_DICE, diceGrantedDate: "", boardPos: 0, lapCount: 0, boardSeed: 0, mode: "mine", tier: null, pendingEvent: null };
 
 export function subscribeBoardState(memberId, cb) {
   if (!memberId) return () => {};
@@ -58,6 +58,15 @@ export async function setBoardMode(memberId, modeId) {
   if (!memberId || !BOARD_MODE_MAP[modeId]) return { ok: false, reason: "模式錯誤" };
   try {
     await updateDoc(doc(db, "members", memberId), { "villageBoard.mode": modeId });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+// 前頁選定「採集地圖(族) + T階」進場
+export async function setBoardSession(memberId, modeId, tier) {
+  if (!memberId || !BOARD_MODE_MAP[modeId]) return { ok: false, reason: "模式錯誤" };
+  try {
+    await updateDoc(doc(db, "members", memberId), { "villageBoard.mode": modeId, "villageBoard.tier": tier || 1 });
     return { ok: true };
   } catch (e) { return { ok: false, reason: e?.message }; }
 }
@@ -104,10 +113,11 @@ export async function addBoardDice(memberId, delta) {
 export async function settleBoardTile(memberId, tileType, { villageBuildings = {}, catId, partyMult = 1, scoreRatio = 0 } = {}) {
   const ref = doc(db, "members", memberId);
   const snap = await getDoc(ref);
-  const modeId = snap.data()?.villageBoard?.mode || "mine";
+  const vb = snap.data()?.villageBoard || {};
+  const modeId = vb.mode || "mine";
   const mode = BOARD_MODE_MAP[modeId];
   const tierCap = getModeTierCap(modeId, villageBuildings);
-  const reward = rollTileReward(tileType, { mode, tierCap, partyMult, scoreRatio });
+  const reward = rollTileReward(tileType, { mode, tierCap, partyMult, scoreRatio, tier: vb.tier || tierCap });
   await applyBoardReward(memberId, reward, { catId });
   return { ok: true, reward, mode };
 }

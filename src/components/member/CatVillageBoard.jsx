@@ -3,11 +3,11 @@
 // 規格見 docs/second_brain/village-board-spec.md。
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
-  subscribeBoardState, ensureDailyDice, setBoardMode, rollAndMove,
+  subscribeBoardState, ensureDailyDice, setBoardSession, rollAndMove,
   settleBoardTile, applyEventEffect, setBoardPos, refillBoardDice, DAILY_DICE,
 } from "../../lib/villageBoardDb";
 import { useAuth } from "../../hooks/useAuth";
-import { BOARD_LAYOUT, BOARD_SIZE, TILE_TYPES, BOARD_MODES } from "../../lib/boardData";
+import { BOARD_LAYOUT, BOARD_SIZE, TILE_TYPES, BOARD_MODES, getModeTierCap } from "../../lib/boardData";
 import { drawBoardEvent } from "../../lib/boardEvents";
 import { sfxTap, sfxSuccess, sfxCast } from "../../lib/sound";
 import { MATERIALS } from "../../lib/monsterMaterials";
@@ -77,6 +77,9 @@ export default function CatVillageBoard({ profile, onClose }) {
   const catId = profile?.equippedCat?.catId || null;
 
   const [board, setBoard] = useState(null);
+  const [selecting, setSelecting] = useState(true);      // 前頁：選採集地圖(族)+T階
+  const [selMode, setSelMode] = useState(BOARD_MODES[0].id);
+  const [selTier, setSelTier] = useState(1);
   const [rolling, setRolling] = useState(false);
   const [displayPos, setDisplayPos] = useState(0);      // 動畫用的當前顯示位置
   const [toast, setToast] = useState(null);
@@ -190,6 +193,52 @@ export default function CatVillageBoard({ profile, onClose }) {
   }, [eventCard, myId, villageBuildings, catId, board, settle, flushSummary]);
 
   if (!board) return null;
+
+  // ── 前頁：選擇採集地圖(族) + T階 ──
+  if (selecting) {
+    const cap = getModeTierCap(selMode, villageBuildings);
+    const tiers = Array.from({ length: cap }, (_, i) => i + 1);
+    const m = BOARD_MODES.find(x => x.id === selMode) || BOARD_MODES[0];
+    return (
+      <div className="fixed inset-0 z-[200] flex flex-col overflow-y-auto"
+        style={{ backgroundColor: "#140a04", backgroundImage: `linear-gradient(rgba(18,10,4,0.82),rgba(12,7,3,0.93)), url(${ASSET}/board_bg.webp)`, backgroundSize: "cover", backgroundPosition: "center" }}>
+        <div className="w-full max-w-lg mx-auto p-4">
+          <div className="flex items-center justify-between mb-4">
+            <button onClick={onClose} className="w-9 h-9 rounded-full bg-black/40 text-amber-200 font-black">←</button>
+            <div className="text-amber-100 font-black">🗺️ 選擇採集地圖</div>
+            <div className="rounded-xl bg-amber-500/20 border border-amber-400/40 px-2.5 py-1 text-amber-200 text-xs font-black">🎲 {board.dice}</div>
+          </div>
+          <div className="text-amber-200/80 text-xs font-bold mb-2">① 要刷哪一族的資源？</div>
+          <div className="grid grid-cols-2 gap-2 mb-5">
+            {BOARD_MODES.map(mo => (
+              <button key={mo.id} onClick={() => { setSelMode(mo.id); setSelTier(1); }}
+                className={`rounded-2xl p-3 text-left border-2 transition ${mo.id === selMode ? "border-amber-300 scale-[1.02]" : "border-amber-500/20"}`}
+                style={{ background: `linear-gradient(135deg, ${mo.palette?.[0] || "#334155"}, ${mo.palette?.[1] || "#0f172a"})` }}>
+                <div className="text-white font-black text-sm">{mo.icon} {mo.familyName}</div>
+                <div className="text-white/70 text-[11px] mt-0.5">{mo.name}・{mo.resourceName}</div>
+              </button>
+            ))}
+          </div>
+          <div className="text-amber-200/80 text-xs font-bold mb-2">② 進入哪個階級？<span className="text-amber-200/50 font-normal">（上限由「{m.name}」建築等級決定）</span></div>
+          {tiers.length === 0 ? (
+            <div className="text-rose-300/80 text-xs mb-5 bg-rose-900/20 border border-rose-500/20 rounded-xl px-3 py-2">此地圖尚未解鎖，請先在貓貓村升級「{m.name}」建築。</div>
+          ) : (
+            <div className="flex flex-wrap gap-2 mb-6">
+              {tiers.map(t => (
+                <button key={t} onClick={() => setSelTier(t)}
+                  className={`px-4 py-2 rounded-xl font-black text-sm border-2 ${t === selTier ? "bg-amber-400 text-slate-900 border-amber-300" : "bg-black/30 text-amber-100 border-amber-500/20"}`}>T{t}</button>
+              ))}
+            </div>
+          )}
+          <button disabled={tiers.length === 0} onClick={async () => { await setBoardSession(myId, selMode, selTier); sessionRef.current = {}; setSelecting(false); }}
+            className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-900 font-black text-base shadow-lg active:scale-95 disabled:opacity-40">
+            🎲 進入 {m.familyName} T{selTier} 探索
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const mode = BOARD_MODES.find(m => m.id === board.mode) || BOARD_MODES[0];
 
   return (
@@ -208,14 +257,11 @@ export default function CatVillageBoard({ profile, onClose }) {
         </div>
       </div>
 
-      {/* 模式選擇 */}
-      <div className="w-full max-w-lg px-3 flex gap-1.5 flex-wrap justify-center mb-1">
-        {BOARD_MODES.map(m => (
-          <button key={m.id} onClick={() => setBoardMode(myId, m.id)}
-            className={`px-2 py-1 rounded-lg text-[10px] font-bold border ${m.id === board.mode ? "bg-amber-400 text-slate-900 border-amber-300" : "bg-black/30 text-amber-100 border-amber-400/20"}`}>
-            {m.icon}{m.familyName}
-          </button>
-        ))}
+      {/* 當前地圖 + 換地圖 */}
+      <div className="w-full max-w-lg px-3 flex items-center justify-center gap-2 mb-1">
+        <div className="rounded-xl bg-black/30 border border-amber-500/25 px-3 py-1 text-amber-100 text-xs font-black">{mode.icon} {mode.familyName} · T{board.tier || 1}</div>
+        <button onClick={() => setSelecting(true)}
+          className="rounded-xl bg-amber-500/20 border border-amber-400/30 px-2.5 py-1 text-amber-200 text-xs font-bold">🗺️ 換地圖</button>
       </div>
 
       {/* 8×8 棋盤（羊皮紙金框） */}
