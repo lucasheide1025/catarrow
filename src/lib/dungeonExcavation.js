@@ -702,6 +702,8 @@ export async function saveExcavation(memberId) {
       bossRunId: pending.bossRunId || null,
       fromAutoDig: pending.fromAutoDig || false,
       fromWorldBoss: pending.fromWorldBoss || false,
+      // 領取地下城時就鎖定掉落倍率（2~5），不再等開房時隨機，避免重開房洗倍率
+      lootMult: 2 + Math.floor(Math.random() * 4),
       revealedAt: new Date().toISOString(),
     };
 
@@ -841,6 +843,8 @@ export async function useDungeonScroll(memberId) {
       bossEncounter: rolled.bossEncounter,
       bossRunId,
       fromWorldBoss: true,
+      // 領取地下城時就鎖定掉落倍率（2~5），避免重開房洗倍率
+      lootMult: 2 + Math.floor(Math.random() * 4),
       revealedAt: new Date().toISOString(),
     };
 
