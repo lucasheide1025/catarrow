@@ -364,7 +364,7 @@ export async function assignDigCat(memberId, catId) {
 
     // 一隻貓同時只能在一個地方工作（戰鬥夥伴/遠征/建築工作/挖掘）——統一偵測
     if (catId) {
-      const busy = catBusyElsewhere(data, catId, "dig");
+      const busy = catBusyElsewhere(data, catId, { job: "dig" });
       if (busy) return { ok: false, reason: catBusyReason(busy.job) };
     }
 

@@ -291,7 +291,9 @@ function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, 
       await unequipCat(memberId);
     } else {
       await setCatType(memberId, catId, catFixedType);
-      await equipCat(memberId, catId, catFixedType);
+      // 一隻貓只能在一個地方工作：被 guard 擋下（挖掘/遠征/建築中）要提示，不能當作裝備成功
+      const res = await equipCat(memberId, catId, catFixedType);
+      if (res && res.ok === false) { alert(res.reason || "這隻貓正在別處工作，無法擔任戰鬥夥伴"); setUpdating(false); return; }
     }
     onEquipChange();
     setUpdating(false);

@@ -4,6 +4,7 @@ import { subscribeMyCats } from "../../lib/catDb";
 import { CATS, CAT_TYPE_MAP } from "../../lib/catData";
 import { catLevelFromXP } from "../../lib/catLevel";
 import { startExpedition, collectExpedition } from "../../lib/db";
+import { busyCatIdSet } from "../../lib/catAssignment";
 import {
   EXPEDITION_MISSIONS, calcExpeditionRewards, fmtCountdown,
   calcCatFullStats, catPowerMult,
@@ -220,8 +221,6 @@ export default function ExpeditionPanel({ profile }) {
   }, []);
 
   const villageRes        = profile?.village?.resources || {};
-  const equippedCatId     = profile?.equippedCat?.catId;
-  const dungeonAssignedId = profile?.dungeonExcavation?.assignedCatId;
 
   // 向後兼容：支援舊的單一 expedition 欄位
   const rawExpeditions = profile?.expeditions || {};
@@ -229,15 +228,9 @@ export default function ExpeditionPanel({ profile }) {
     ? rawExpeditions
     : (profile?.expedition ? { 0: profile.expedition } : {});
 
-  // 已在遠征的貓咪 IDs
-  const onExpeditionCatIds = new Set(
-    Object.values(expeditions).filter(Boolean).map(e => e.catId)
-  );
-
-  // 可派遣：持有、非裝備中、非遠征中、非地下城挖掘中
-  const availableCats = Object.values(myCats).filter(
-    c => c.catId !== equippedCatId && !onExpeditionCatIds.has(c.catId) && c.catId !== dungeonAssignedId
-  );
+  // 可派遣：持有且沒有在任何地方工作（戰鬥夥伴/挖掘/其他遠征欄位/建築工作）——統一用 busyCatIdSet
+  const busyCatIds = busyCatIdSet(profile);
+  const availableCats = Object.values(myCats).filter(c => !busyCatIds.has(c.catId));
 
   const mission    = selectedTier ? EXPEDITION_MISSIONS.find(m => m.tier === selectedTier) : null;
   const selCatData = selectedCat ? myCats[selectedCat] : null;

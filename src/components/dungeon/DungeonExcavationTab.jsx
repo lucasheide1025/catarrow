@@ -18,6 +18,7 @@ import {
   CAT_DIG_SPECIALTIES,
   MAX_SAVED_DUNGEONS,
 } from "../../lib/dungeonExcavation";
+import { busyCatIdSet } from "../../lib/catAssignment";
 import { getDigSpeech } from "../cat/catSpeeches";
 import { getPendingArrowOperationCount, flushPendingArrowProgress } from "../../lib/db";
 
@@ -272,6 +273,9 @@ export default function DungeonExcavationTab({ profile }) {
     setAssigningCat(false);
   }
 
+  // 一隻貓只能在一個地方工作：挖掘 picker 反灰所有在別處工作的貓（保留目前挖掘貓可重選）
+  const digBusy = busyCatIdSet(profile, { job: "dig" });
+
   const catDigProgress = Math.min(100, Math.round(excavation?.catDigProgress || 0));
   const isCatDigComplete = catDigProgress >= 100;
 
@@ -399,13 +403,11 @@ export default function DungeonExcavationTab({ profile }) {
             <div className="grid grid-cols-1 gap-2.5">
               {Object.values(CAT_DIG_SPECIALTIES).map(cat => {
                 const isSelected = assignedCatId === cat.id;
-                // 檢查是否正處於遠征中
-                const activeExpeditions = profile?.expeditions || {};
-                const inExpedition = Object.values(activeExpeditions).some(e => e && e.catId === cat.id);
-                // 檢查是否正在貓貓村建築物工作
-                const villageWorkers = profile?.village?.workers || {};
-                const inVillage = Object.values(villageWorkers).includes(cat.id);
-                const isBlocked = inExpedition || inVillage;
+                // 一隻貓只能在一個地方工作：排除戰鬥夥伴/遠征/建築工作（保留目前挖掘貓可重選）
+                const inExpedition = Object.values(profile?.expeditions || {}).some(e => e && e.catId === cat.id);
+                const inVillage = Object.values(profile?.village?.workers || {}).includes(cat.id);
+                const inEquipped = profile?.equippedCat?.catId === cat.id;
+                const isBlocked = digBusy.has(cat.id);
 
                 return (
                   <button
@@ -443,6 +445,11 @@ export default function DungeonExcavationTab({ profile }) {
                       {inVillage && (
                         <div className="text-[10px] font-bold text-emerald-400 mt-1">
                           🏘️ 正在貓貓村工作（無法同時挖掘）
+                        </div>
+                      )}
+                      {inEquipped && !inExpedition && !inVillage && (
+                        <div className="text-[10px] font-bold text-sky-400 mt-1">
+                          🎯 正在擔任戰鬥夥伴（無法同時挖掘）
                         </div>
                       )}
                     </div>
