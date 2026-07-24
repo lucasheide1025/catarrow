@@ -266,13 +266,15 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     }
   }, [isHost, room?.pendingShoot, roomId, myId]);
 
-  // 房主骰子用完 + 全部結算完 → 進結算畫面（全員都看得到）
+  // 房主骰子用完 + 全部結算完 → 進結算畫面（全員都看得到）。
+  // 用房間權威的 hostDiceLeft（=== 0 才算，未定義代表還沒擲過骰）——不用各自讀房主 dice 的 hostDice，
+  // 否則隊員讀不到房主文件時 hostDice 預設 0 會誤觸發結算。
   useEffect(() => {
     if (room?.status !== "active") return;
-    const idle = hostDice <= 0 && !animating && !room?.pendingMove && !room?.pendingShoot
+    const idle = room?.hostDiceLeft === 0 && !animating && !room?.pendingMove && !room?.pendingShoot
       && !room?.pendingSettle && !room?.pendingEvent && !shoot && !shootResult && !card;
     if (idle) setShowTeamSummary(true);
-  }, [hostDice, room?.status, animating, room?.pendingMove, room?.pendingShoot, room?.pendingSettle, room?.pendingEvent, shoot, shootResult, card]);
+  }, [room?.hostDiceLeft, room?.status, animating, room?.pendingMove, room?.pendingShoot, room?.pendingSettle, room?.pendingEvent, shoot, shootResult, card]);
 
   // ── 大廳動作 ──
   async function create() {
@@ -494,7 +496,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
       <div className="w-full max-w-lg flex items-center justify-between px-4 py-3">
         <button onClick={exitRoom} className="w-9 h-9 rounded-full bg-black/40 text-amber-200 font-black">←</button>
         <div className="text-amber-100 font-black text-sm">👥 房號 {room.code}・{memberCount}人</div>
-        <div className="rounded-xl bg-amber-500/20 border border-amber-400/40 px-2.5 py-1 text-amber-200 text-xs font-black">🎲 {hostDice}</div>
+        <div className="rounded-xl bg-amber-500/20 border border-amber-400/40 px-2.5 py-1 text-amber-200 text-xs font-black">🎲 {room?.hostDiceLeft ?? hostDice}</div>
       </div>
       <div className="w-full max-w-lg px-3 flex items-center justify-center gap-2 mb-1">
         <div className="rounded-xl bg-black/30 border border-amber-500/25 px-3 py-1 text-amber-100 text-xs font-black">

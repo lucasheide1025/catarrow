@@ -169,8 +169,11 @@ export async function roomRollAndMove(roomId, hostId) {
       tx.update(hostRef, { "villageBoard.dice": increment(-1) });
       // 只寫 pendingMove，不直接更新 boardPos / pendingSettle / pendingEvent
       // 等所有客戶端動畫結束後，房主再呼叫 commitBoardMove 完成結算
+      // hostDiceLeft：把房主剩餘骰數寫進房間，讓所有客戶端都讀得到（不必各自讀房主文件），
+      // 結算畫面才不會因隊員讀不到房主 dice、預設 0 而誤觸發。
       tx.update(roomRef, {
         pendingMove: { from, to, roll, lapped, tile, partyMult: partyMultOf(count), modeId: room.mode, tier: room.tier || 1 },
+        hostDiceLeft: dice - 1,
         seq: (room.seq || 0) + 1,
         updatedAt: serverTimestamp(),
       });
@@ -297,6 +300,7 @@ export async function roomApplyBoardEffect(roomId, hostId, { pos, diceDelta }) {
   try {
     const patch = { updatedAt: serverTimestamp() };
     if (pos != null) patch.boardPos = ((pos % BOARD_SIZE) + BOARD_SIZE) % BOARD_SIZE;
+    if (diceDelta) patch.hostDiceLeft = increment(diceDelta); // 房間同步房主骰數（+骰事件）
     await updateDoc(doc(db, R, roomId), patch);
     if (diceDelta) await updateDoc(doc(db, "members", hostId), { "villageBoard.dice": increment(diceDelta) });
     return { ok: true };
