@@ -106,7 +106,9 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
     return unsub;
   }, [myId]);
 
-  useEffect(() => { if (board) setDisplayPos(board.boardPos || 0); }, [board?.boardPos]);
+  // 同步棋子位置到 Firestore；但動畫進行中（busyRef）不可搶跑，
+  // 否則 rollAndMove 一寫入 boardPos，棋子會在骰子還沒出數字前就瞬移到終點。
+  useEffect(() => { if (board && !busyRef.current) setDisplayPos(board.boardPos || 0); }, [board?.boardPos]);
 
   const showToast = (t) => { setToast(t); setTimeout(() => setToast(null), 2600); };
 

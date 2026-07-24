@@ -105,7 +105,9 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     return unsub;
   }, [room?.hostId]);
 
-  useEffect(() => { if (room) setDisplayPos(room.boardPos || 0); }, [room?.boardPos]);
+  // 房主擲骰動畫進行中（rolling）不可搶跑，否則 roomRollAndMove 一寫入 boardPos，
+  // 棋子會在骰子還沒出數字前就瞬移到終點；rolling 收尾時再對齊最終位置。
+  useEffect(() => { if (room && !rolling) setDisplayPos(room.boardPos || 0); }, [room?.boardPos, rolling]);
 
   // 成員自動 claim 結算獎勵
   useEffect(() => {
