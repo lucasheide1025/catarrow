@@ -174,6 +174,7 @@
 
 **Phase 1c（美術）**
 - ComfyUI 生命運/機會卡框 + 格子圖示（沿用 gen 管線）。
+- **作者指示：一切盡量用生成圖片、少用 SVG/emoji**。UI 一律「`<img>` + emoji fallback」（比照 RuneImg），素材由 ComfyUI 生：`public/assets/board/`（格子圖示 tile_<type>.webp、羊皮紙框 frame.webp、命運/機會卡框 card_fate/opp.webp、骰子 dice.webp）。
 
 ---
 

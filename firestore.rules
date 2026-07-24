@@ -108,7 +108,7 @@ service cloud.firestore {
           "totalArrowsAllTime", "dungeonExcavation", "expeditionRecords", "lastCheckinDate", "kingSeals",
           "equipmentRuneFragments", "equipmentRuneInventory", "activeExpedition",
           "dungeonBossCardProgress", "expeditions", "starterCoinsGranted", "lastSessionSourceId",
-          "teamSavedProgress",
+          "teamSavedProgress", "villageBoard",
           "name", "phone"
         ])
       ) || (
@@ -123,7 +123,7 @@ service cloud.firestore {
           "totalArrowsAllTime", "dungeonExcavation", "expeditionRecords", "lastCheckinDate", "kingSeals",
           "equipmentRuneFragments", "equipmentRuneInventory", "activeExpedition",
           "dungeonBossCardProgress", "expeditions", "starterCoinsGranted", "lastSessionSourceId",
-          "teamSavedProgress",
+          "teamSavedProgress", "villageBoard",
           "name", "phone"
         ])
       );
