@@ -279,6 +279,8 @@ export async function attackWorldBoss({ eventId, memberId, memberName, weapon, r
     if (!isGuest && memberId) {
       const rewardCoins = 60;
       await addCoins(memberId, rewardCoins).catch(() => {});
+      // 排行榜：世界王個人累計傷害
+      await updateDoc(doc(db, "members", memberId), { worldBossDmgTotal: increment(Math.round(combinedDmg) || 0) }).catch(() => {});
 
       const pct = combinedDmg / (ev.bossMaxHP || 1);
       let chestType = null;

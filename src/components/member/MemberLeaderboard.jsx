@@ -1,660 +1,298 @@
-// src/components/member/MemberLeaderboard.jsx
-import { useState, useEffect } from "react";
-import { getMembers, getCompetitions, getAllCertRecords, getResults, getAllMonsterDex } from "../../lib/db";
-import { getAllDuelStats } from "../../lib/duelDb";
+// src/components/member/MemberLeaderboard.jsx — 排行榜（RPG 改版 + 季賽）
+// 資料/算分集中在 lib/leaderboardData.js；季賽快照在 lib/seasonDb.js。
+import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { COMP_TYPE_COLOR, calcBadgePoints, getCertLevel, certLevelStyle } from "../../lib/constants";
-import { Card, Spinner, Empty } from "../shared/UI";
-import { MONSTERS, FAMILIES } from "../../lib/monsterData";
-import { levelFromXP, rankFromLevel, rankIdxFromLevel, xpProgress, RANKS } from "../../lib/adventurerSystem";
+import { getMembers, getAllCertRecords, getAllMonsterDex, getAllCardCollections } from "../../lib/db";
+import { getAllDuelStats } from "../../lib/duelDb";
+import { Spinner } from "../shared/UI";
+import { certLevelStyle } from "../../lib/constants";
+import {
+  LB_GROUPS, LB_TABS, LB_TAB_MAP, LB_FAMILY_LIST,
+  rankBoard, buildCertMaps, computeSeasonMetrics,
+  CERT_BOW_OF, getCertLevel, DUNGEON_DEX_TOTAL,
+} from "../../lib/leaderboardData";
+import {
+  seasonIdOf, seasonLabelOf, seasonDaysLeft, ensureSeasonSnapshot,
+} from "../../lib/seasonDb";
 
-const TABS = [
-  { id: "event",             label: "🎪 賽事積分",  group: "活動" },
-  { id: "duel",              label: "⚔️ 決鬥排行",  group: "活動" },
-  { id: "checkin",           label: "📋 報到達人",  group: "活動" },
-  { id: "fatcat",            label: "🐱 肥貓章",    group: "徽章" },
-  { id: "score",             label: "⭐ 積分章",    group: "徽章" },
-  { id: "achieve",           label: "🏆 成就章",    group: "徽章" },
-  { id: "cert_recurve_bare", label: "🏹 競技反曲弓", group: "檢定" },
-  { id: "cert_compound",     label: "🦅 獵弓檢定",  group: "檢定" },
-  { id: "cert_traditional",  label: "🌿 傳統檢定",  group: "檢定" },
-  { id: "monster_family",    label: "🐾 六大族",    group: "魔物獵人" },
-  { id: "monster_boss",      label: "💀 頭目+",     group: "魔物獵人" },
-  { id: "adventurer",        label: "⚔️ 冒險者",   group: "公會" },
-];
+const MEDALS = ["🥇", "🥈", "🥉"];
+const nm = (m) => m?.nickname || m?.name || "射手";
+const fmt = (n) => (Number(n) || 0).toLocaleString();
 
-// 查 monster id → family/tier
-const MONSTER_MAP = {};
-MONSTERS.forEach(m => { MONSTER_MAP[m.id] = m; });
-const BOSS_TIERS = new Set(["boss", "mythic"]);
+// 名次色（前三名金銀銅、其餘石板）
+function rankColor(i) {
+  return i === 0 ? "#fbbf24" : i === 1 ? "#cbd5e1" : i === 2 ? "#f59e0b" : "#64748b";
+}
 
-const CERT_TAB = {
-  cert_recurve_bare: ["recurve_bare", "recurve_full"],
-  cert_compound:     ["compound"],
-  cert_traditional:  ["traditional"],
-};
+export default function MemberLeaderboard({ guestProfile }) {
+  const { profile: authProfile } = useAuth();
+  const profile = guestProfile || authProfile;
+  const myId = profile?.id;
+  const isGuest = !!guestProfile;
 
-export default function MemberLeaderboard() {
-  const { profile } = useAuth();
-  const [tab, setTab]               = useState("event");
-  const [members, setMembers]         = useState([]);
-  const [comps, setComps]             = useState([]);
-  const [compResults, setCompResults] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [members, setMembers] = useState([]);
   const [certRecords, setCertRecords] = useState([]);
-  const [duelStatsMap,   setDuelStatsMap]   = useState({});
-  const [monsterDexList, setMonsterDexList] = useState([]);
-  const [loading, setLoading]              = useState(true);
-  const [rankFilter, setRankFilter]        = useState(null); // null = 全部
+  const [duelMap, setDuelMap] = useState({});
+  const [dexMap, setDexMap] = useState({});
+  const [cardMap, setCardMap] = useState({});
+  const [snapshot, setSnapshot] = useState({});
+
+  const [tabId, setTabId] = useState("event");
+  const [fam, setFam] = useState("all");
+  const [useSeason, setUseSeason] = useState(false);
+
+  const year = new Date().getFullYear();
+  const seasonId = seasonIdOf();
 
   useEffect(() => {
-    Promise.all([getMembers(), getCompetitions(), getAllCertRecords(), getAllDuelStats(), getAllMonsterDex()])
-      .then(async ([ms, cs, certs, duelList, dexList]) => {
+    let alive = true;
+    Promise.all([getMembers(), getAllCertRecords(), getAllDuelStats(), getAllMonsterDex(), getAllCardCollections()])
+      .then(async ([ms, certs, duelList, dexList, cards]) => {
+        if (!alive) return;
         setMembers(ms);
         setCertRecords(Array.isArray(certs) ? certs : []);
+        const dm = {}; duelList.forEach((d) => { dm[d.memberId] = d; }); setDuelMap(dm);
+        const dx = {}; dexList.forEach((d) => { dx[d.memberId] = d.monsters || {}; }); setDexMap(dx);
+        setCardMap(cards || {});
 
-        // duelStats map
-        const dm = {};
-        duelList.forEach(d => { dm[d.memberId] = d; });
-        setDuelStatsMap(dm);
-        setMonsterDexList(dexList);
-
-        // 只抓已結算比賽的 results
-        const settled = cs.filter(c => c.status === "settled");
-        const resultsMap = {};
-        await Promise.all(
-          settled.map(async c => {
-            try { resultsMap[c.id] = await getResults(c.id); }
-            catch { resultsMap[c.id] = []; }
-          })
-        );
-        setComps(cs);
-        setCompResults(resultsMap);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, []);
-
-  const thisYear = new Date().getFullYear();
-
-  // ✅ 修復：直接讀 member.eventPoints（由結算比賽＋日常任務＋打怪共同累積）
-  function calcEventPts(memberId) {
-    const m = members.find(x => x.id === memberId);
-    return m?.eventPoints || 0;
-  }
-
-  function badgePts(member, type) {
-    return calcBadgePoints(member, type);
-  }
-
-  function certRanking(bowTypes) {
-    const keys = Array.isArray(bowTypes) ? bowTypes : [bowTypes];
-    const map = {};
-    certRecords
-      .filter(r => keys.includes(r.bowType) && Number(r.year) === thisYear)
-      .forEach(r => {
-        const score = r.score || 0;
-        if (map[r.memberId] === undefined || score > map[r.memberId]) {
-          map[r.memberId] = score;
+        // 季賽快照：訪客不觸發寫入
+        if (!isGuest) {
+          try {
+            const data = {
+              certMaps: buildCertMaps(certs, year), certRecords: certs,
+              duelMap: dm, dexMap: dx, cardMap: cards, year,
+            };
+            const snap = await ensureSeasonSnapshot(computeSeasonMetrics(ms, data), seasonId);
+            if (alive) setSnapshot(snap || {});
+          } catch { /* 快照失敗 → 本季榜退回總榜 */ }
         }
-      });
-    return Object.entries(map)
-      .map(([memberId, total]) => {
-        const m = members.find(x => x.id === memberId);
-        return { memberId, total, name: m?.name, nickname: m?.nickname };
+        if (alive) setLoading(false);
       })
-      .filter(x => x.total > 0)
-      .sort((a, b) => b.total - a.total);
-  }
+      .catch(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [isGuest, year, seasonId]);
 
-  function BadgeSummary({ member, type }) {
-    if (type === "fatcat") {
-      const d = member.fatCat || {};
-      return (
-        <div className="flex gap-1 text-xs">
-          <span className="bg-yellow-500/15 text-yellow-300 font-bold px-1.5 py-0.5 rounded">金{d.gold||0}</span>
-          <span className="bg-white/10 text-gray-300 font-bold px-1.5 py-0.5 rounded">銀{d.silver||0}</span>
-          <span className="bg-orange-500/15 text-orange-300 font-bold px-1.5 py-0.5 rounded">銅{d.bronze||0}</span>
-        </div>
-      );
-    }
-    if (type === "score") {
-      const d = member.score || {};
-      return (
-        <div className="flex gap-1 text-xs">
-          <span className="bg-yellow-500/15 text-yellow-300 font-bold px-1.5 py-0.5 rounded">金{d.gold||0}</span>
-          <span className="bg-white/10 text-gray-300 font-bold px-1.5 py-0.5 rounded">銀{d.silver||0}</span>
-          <span className="bg-orange-500/15 text-orange-300 font-bold px-1.5 py-0.5 rounded">銅{d.bronze||0}</span>
-        </div>
-      );
-    }
-    if (type === "achieve") {
-      const d = member.achievement || {};
-      return (
-        <div className="flex gap-1 text-xs">
-          <span className="bg-black/40 text-gray-100 font-bold px-1.5 py-0.5 rounded border border-white/20">黑{d.black||0}</span>
-          <span className="bg-yellow-500/15 text-yellow-300 font-bold px-1.5 py-0.5 rounded">金{d.gold||0}</span>
-          <span className="bg-white/10 text-gray-300 font-bold px-1.5 py-0.5 rounded">銀{d.silver||0}</span>
-        </div>
-      );
-    }
-    return null;
-  }
+  const data = useMemo(() => ({
+    certMaps: buildCertMaps(certRecords, year), certRecords,
+    duelMap, dexMap, cardMap, year,
+  }), [certRecords, duelMap, dexMap, cardMap, year]);
 
-  // 魔物獵人：六大族擊殺統計
-  const familyKillsRanked = (() => {
-    const famIds = Object.keys(FAMILIES);
-    return members.map(m => {
-      const dex = monsterDexList.find(d => d.memberId === m.id)?.monsters || {};
-      const byFam = {};
-      famIds.forEach(f => { byFam[f] = 0; });
-      let total = 0;
-      Object.entries(dex).forEach(([mId, stat]) => {
-        const monster = MONSTER_MAP[mId];
-        if (!monster) return;
-        const wins = stat.wins || 0;
-        byFam[monster.family] = (byFam[monster.family] || 0) + wins;
-        total += wins;
-      });
-      return { ...m, byFam, total };
-    }).filter(m => m.total > 0).sort((a, b) => b.total - a.total);
-  })();
+  const tab = LB_TAB_MAP[tabId];
+  const boardId = tab?.kind === "family" ? `${tab.base}:${fam}` : tabId;
+  const seasonActive = !isGuest && useSeason && tab?.season;
 
-  // 魔物獵人：頭目以上擊殺排行
-  const bossKillsRanked = (() => {
-    return members.map(m => {
-      const dex = monsterDexList.find(d => d.memberId === m.id)?.monsters || {};
-      let bossKills = 0;
-      Object.entries(dex).forEach(([mId, stat]) => {
-        const monster = MONSTER_MAP[mId];
-        if (monster && BOSS_TIERS.has(monster.tier)) bossKills += (stat.wins || 0);
-      });
-      return { ...m, bossKills };
-    }).filter(m => m.bossKills > 0).sort((a, b) => b.bossKills - a.bossKills);
-  })();
+  const rows = useMemo(
+    () => (members.length ? rankBoard(boardId, members, data, { useSeason: seasonActive, snapshot }) : []),
+    [boardId, members, data, seasonActive, snapshot],
+  );
+
+  const myIdx = rows.findIndex((r) => r.id === myId);
+  const daysLeft = seasonDaysLeft();
 
   if (loading) return <Spinner />;
 
-  const isCertTab       = !!CERT_TAB[tab];
-  const isDuelTab       = tab === "duel";
-  const isCheckinTab    = tab === "checkin";
-  const isMonsterFamily  = tab === "monster_family";
-  const isMonsterBoss    = tab === "monster_boss";
-  const isAdventurerTab  = tab === "adventurer";
-
-  // 決鬥排行
-  const duelRanked = isDuelTab
-    ? members
-        .map(m => {
-          const s = duelStatsMap[m.id] || {};
-          const wins   = s.wins   || 0;
-          const losses = s.losses || 0;
-          const draws  = s.draws  || 0;
-          const total  = wins + losses + draws;
-          const rate   = total > 0 ? Math.round(wins / total * 100) : 0;
-          return { ...m, wins, losses, draws, flawless: s.flawless || 0, totalDmg: s.totalDmg || 0, total, rate };
-        })
-        .filter(m => m.total > 0)
-        .sort((a, b) => b.wins - a.wins || b.rate - a.rate)
-    : [];
-
-  // 報到達人
-  const checkinRanked = isCheckinTab
-    ? [...members]
-        .map(m => ({ ...m, cnt: m.dailyQuestCount || 0 }))
-        .filter(m => m.cnt > 0)
-        .sort((a, b) => b.cnt - a.cnt)
-    : [];
-
-  // 一般榜排序
-  const ranked = !isCertTab && !isDuelTab && !isCheckinTab && !isMonsterFamily && !isMonsterBoss
-    ? [...members].map(m => ({
-        ...m,
-        pts: tab === "event" ? calcEventPts(m.id) : badgePts(m, tab),
-      })).sort((a, b) => b.pts - a.pts)
-    : [];
-
-  // 檢定榜
-  const isRecurveTab = tab === "cert_recurve_bare";
-  const certList     = isCertTab && !isRecurveTab ? certRanking(CERT_TAB[tab]) : [];
-  const certBow      = Array.isArray(CERT_TAB[tab]) ? CERT_TAB[tab][0] : CERT_TAB[tab];
-  const certBareList = isRecurveTab ? certRanking(["recurve_bare"]) : [];
-  const certFullList = isRecurveTab ? certRanking(["recurve_full"]) : [];
-
-  // ✅ 修復：用 status === "settled" 判斷，不再依賴 c.results
-  const settledComps = comps.filter(c => c.status === "settled");
+  const top3 = rows.slice(0, 3);
+  const rest = rows.slice(3);
 
   return (
-    <div className="p-4 flex flex-col gap-4">
-      <h2 className="text-gray-100 font-black text-xl">📊 排行榜</h2>
+    <div className="p-4 flex flex-col gap-4 text-slate-100">
+      <div className="flex items-end justify-between">
+        <h2 className="text-xl font-black">📊 排行榜</h2>
+        {tab?.season && !isGuest && (
+          <div className="flex rounded-full border border-white/10 bg-slate-900/70 p-0.5 text-xs font-black">
+            {[["total", "總榜"], ["season", "本季"]].map(([k, lb]) => {
+              const on = (k === "season") === useSeason;
+              return (
+                <button key={k} onClick={() => setUseSeason(k === "season")}
+                  className="rounded-full px-3 py-1 transition-colors"
+                  style={on ? { background: "#fbbf24", color: "#111827" } : { color: "#94a3b8" }}>
+                  {lb}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
-      {/* Tab 切換（按分組排列）*/}
-      {["活動","徽章","檢定","魔物獵人","公會"].map(group => (
-        <div key={group}>
-          <div className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2">{group}</div>
-          <div className="grid grid-cols-3 gap-2">
-            {TABS.filter(t => t.group === group).map(t => (
-              <button key={t.id} onClick={() => setTab(t.id)}
-                className={`py-2 rounded-xl text-xs font-bold border transition-all
-                  ${tab === t.id ? "bg-blue-600 text-white border-blue-600" : "bg-white/10 text-gray-300 border-white/15"}`}>
-                {t.label}
-              </button>
-            ))}
+      {/* 季賽資訊條 */}
+      {seasonActive && (
+        <div className="flex items-center gap-2 rounded-xl border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs">
+          <span className="font-black text-amber-300">🏆 {seasonLabelOf(seasonId)}</span>
+          <span className="text-amber-200/70">本季新增量排名</span>
+          <span className="ml-auto font-bold text-amber-300">距季末 {daysLeft} 天</span>
+        </div>
+      )}
+
+      {/* 分組 + 分頁 */}
+      {LB_GROUPS.map((g) => (
+        <div key={g.id}>
+          <div className="mb-1.5 text-[11px] font-black uppercase tracking-wider text-slate-500">{g.icon} {g.label}</div>
+          <div className="flex flex-wrap gap-1.5">
+            {LB_TABS.filter((t) => t.group === g.id).map((t) => {
+              const on = t.id === tabId;
+              return (
+                <button key={t.id} onClick={() => { setTabId(t.id); setFam("all"); }}
+                  className="rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-all"
+                  style={on
+                    ? { background: "#2563eb", color: "#fff", borderColor: "#2563eb" }
+                    : { background: "rgba(255,255,255,.06)", color: "#cbd5e1", borderColor: "rgba(148,163,184,.16)" }}>
+                  {t.icon} {t.label}
+                </button>
+              );
+            })}
           </div>
         </div>
       ))}
 
-      {/* 規則提示 */}
-      {tab === "event" && <InfoBar color="blue">累積賽事積分 = 比賽名次積分 + 日常任務完成 + 打怪勝利，越多越高！</InfoBar>}
-      {tab === "duel"  && <InfoBar color="indigo">依總勝場數排名，勝場相同時比較勝率。至少需有 1 場紀錄才上榜。</InfoBar>}
-      {tab === "checkin" && <InfoBar color="emerald">累積報到（每日打卡）次數，持續練習的就是達人！</InfoBar>}
-      {["fatcat","score","achieve"].includes(tab) && (
-        <InfoBar color="blue">{tab === "achieve" ? "計分：銀 1 分、金 2 分、黑 3 分" : "計分：銅 1 分、銀 10 分、金 50 分"}</InfoBar>
-      )}
-      {isCertTab && <InfoBar color="teal">{thisYear} 年度檢定 · 取每人今年最高分（已通過審核）</InfoBar>}
-      {isMonsterFamily && <InfoBar color="indigo">各族擊殺數統計，依總擊殺數排名，展開可看六大族分布。</InfoBar>}
-      {isMonsterBoss   && <InfoBar color="indigo">擊倒頭目（🔴）或神話（⭐）等級怪物的累計數量排行。</InfoBar>}
-
-      {/* 決鬥排行 */}
-      {isDuelTab && (
-        <Card className="p-4">
-          {duelRanked.length === 0
-            ? <Empty message="尚無決鬥紀錄" />
-            : duelRanked.map((m, i) => {
-                const isMe = m.id === profile?.id;
-                return (
-                  <div key={m.id}
-                    className={`flex items-center gap-3 py-3 border-b border-white/10 last:border-0 ${isMe ? "bg-blue-500/10 -mx-4 px-4 rounded-xl" : ""}`}>
-                    <div className="w-8 text-center flex-shrink-0">
-                      {["🥇","🥈","🥉"][i]
-                        ? <span className="text-2xl">{["🥇","🥈","🥉"][i]}</span>
-                        : <span className="text-gray-400 font-bold text-sm">{i+1}</span>}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className={`font-bold text-sm ${isMe ? "text-blue-300" : "text-gray-100"}`}>
-                        {m.nickname || m.name}{isMe && <span className="ml-1 text-xs text-blue-400">（我）</span>}
-                      </div>
-                      <div className="flex gap-2 mt-0.5 flex-wrap">
-                        <span className="text-xs text-gray-500">{m.wins}勝 {m.losses}負{m.draws > 0 ? ` ${m.draws}平` : ""}</span>
-                        <span className="text-xs text-gray-400">勝率 {m.rate}%</span>
-                        {m.flawless > 0 && (
-                          <span className="text-xs bg-yellow-500/15 text-yellow-300 font-bold px-1.5 py-0.5 rounded">全勝 ×{m.flawless}</span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <div className={`font-black text-2xl ${isMe ? "text-blue-400" : "text-gray-100"}`}>{m.wins}</div>
-                      <div className="text-gray-400 text-xs">勝場</div>
-                    </div>
-                  </div>
-                );
-              })
-          }
-        </Card>
+      {/* 族群子頁 */}
+      {tab?.kind === "family" && (
+        <div className="flex gap-1.5 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+          <FamBtn on={fam === "all"} onClick={() => setFam("all")} label="全部" icon="🌐" color="#94a3b8" />
+          {LB_FAMILY_LIST.map((f) => (
+            <FamBtn key={f.id} on={fam === f.id} onClick={() => setFam(f.id)} label={f.label} icon={f.icon} color={f.color} />
+          ))}
+        </div>
       )}
 
-      {/* 報到達人 */}
-      {isCheckinTab && (
-        <Card className="p-4">
-          {checkinRanked.length === 0
-            ? <Empty message="尚無報到紀錄" />
-            : checkinRanked.map((m, i) => {
-                const isMe = m.id === profile?.id;
-                return (
-                  <div key={m.id}
-                    className={`flex items-center gap-3 py-3 border-b border-white/10 last:border-0 ${isMe ? "bg-blue-500/10 -mx-4 px-4 rounded-xl" : ""}`}>
-                    <div className="w-8 text-center flex-shrink-0">
-                      {["🥇","🥈","🥉"][i]
-                        ? <span className="text-2xl">{["🥇","🥈","🥉"][i]}</span>
-                        : <span className="text-gray-400 font-bold text-sm">{i+1}</span>}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className={`font-bold text-sm ${isMe ? "text-blue-300" : "text-gray-100"}`}>
-                        {m.nickname || m.name}{isMe && <span className="ml-1 text-xs text-blue-400">（我）</span>}
-                      </div>
-                      <div className="text-xs text-gray-400 mt-0.5">累積報到 {m.cnt} 天</div>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <div className={`font-black text-2xl ${isMe ? "text-blue-400" : "text-gray-100"}`}>{m.cnt}</div>
-                      <div className="text-gray-400 text-xs">次</div>
-                    </div>
-                  </div>
-                );
-              })
-          }
-        </Card>
-      )}
+      {/* 我的名次卡 */}
+      {!isGuest && <MyRankCard rows={rows} myIdx={myIdx} tab={tab} />}
 
-      {/* 檢定榜 — 競技反曲弓：裸弓 / 全配各自獨立排名 */}
-      {isRecurveTab && (
-        <Card className="p-4 flex flex-col gap-5">
-          {certBareList.length === 0 && certFullList.length === 0
-            ? <Empty message="今年尚無已審核的檢定成績" />
-            : <>
-                {[{ list: certBareList, label: "🏹 裸弓", tag: null },
-                  { list: certFullList, label: "🎯 全配", tag: "(全配)" }]
-                  .filter(({ list }) => list.length > 0)
-                  .map(({ list, label, tag }) => (
-                    <div key={label}>
-                      <div className="text-xs font-black text-gray-400 mb-2">{label}</div>
-                      {list.map((m, i) => {
-                        const isMe  = m.memberId === profile?.id;
-                        const level = getCertLevel("recurve_bare", m.total);
-                        return (
-                          <div key={m.memberId}
-                            className={`flex items-center gap-3 py-3 border-b border-white/10 last:border-0 ${isMe ? "bg-blue-500/10 -mx-4 px-4 rounded-xl" : ""}`}>
-                            <div className="w-8 text-center flex-shrink-0">
-                              {["🥇","🥈","🥉"][i]
-                                ? <span className="text-2xl">{["🥇","🥈","🥉"][i]}</span>
-                                : <span className="text-gray-400 font-bold text-sm">{i+1}</span>}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className={`font-bold text-sm ${isMe ? "text-blue-300" : "text-gray-100"}`}>
-                                {m.nickname || m.name}
-                                {tag && <span className="ml-1 text-xs text-gray-400">{tag}</span>}
-                                {isMe && <span className="ml-1 text-xs text-blue-400">（我）</span>}
-                              </div>
-                              {level && (
-                                <span className={`inline-block mt-0.5 text-xs font-bold px-2 py-0.5 rounded-full ${certLevelStyle(level, "soft")}`}>
-                                  {level} 級
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-right flex-shrink-0">
-                              <div className={`font-black text-2xl ${isMe ? "text-blue-400" : "text-gray-100"}`}>{m.total}</div>
-                              <div className="text-gray-400 text-xs">分</div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ))
-                }
-              </>
-          }
-        </Card>
-      )}
+      {/* 頒獎台 */}
+      {top3.length > 0 && <Podium top3={top3} tab={tab} boardId={boardId} data={data} myId={myId} />}
 
-      {/* 檢定榜 — 其他弓種 */}
-      {isCertTab && !isRecurveTab ? (
-        <Card className="p-4">
-          {certList.length === 0
-            ? <Empty message="今年尚無已審核的檢定成績" />
-            : certList.map((m, i) => {
-                const isMe  = m.memberId === profile?.id;
-                const level = getCertLevel(certBow, m.total);
-                return (
-                  <div key={m.memberId}
-                    className={`flex items-center gap-3 py-3 border-b border-white/10 last:border-0 ${isMe ? "bg-blue-500/10 -mx-4 px-4 rounded-xl" : ""}`}>
-                    <div className="w-8 text-center flex-shrink-0">
-                      {["🥇","🥈","🥉"][i]
-                        ? <span className="text-2xl">{["🥇","🥈","🥉"][i]}</span>
-                        : <span className="text-gray-400 font-bold text-sm">{i+1}</span>}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className={`font-bold text-sm ${isMe ? "text-blue-300" : "text-gray-100"}`}>
-                        {m.nickname || m.name}
-                        {isMe && <span className="ml-1 text-xs text-blue-400">（我）</span>}
-                      </div>
-                      {level && (
-                        <span className={`inline-block mt-0.5 text-xs font-bold px-2 py-0.5 rounded-full ${certLevelStyle(level, "soft")}`}>
-                          {level} 級
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <div className={`font-black text-2xl ${isMe ? "text-blue-400" : "text-gray-100"}`}>{m.total}</div>
-                      <div className="text-gray-400 text-xs">分</div>
-                    </div>
-                  </div>
-                );
-              })
-          }
-        </Card>
-      ) : !isDuelTab && !isCheckinTab && !isMonsterFamily && !isMonsterBoss && !isRecurveTab && !isAdventurerTab && (
-        /* 一般榜 */
-        <Card className="p-4">
-          {ranked.length === 0 && <Empty message="尚無資料" />}
-          {ranked.map((m, i) => {
-            const isMe  = m.id === profile?.id;
-            const medal = ["🥇","🥈","🥉"][i];
-            return (
-              <div key={m.id}
-                className={`flex items-center gap-3 py-3 border-b border-white/10 last:border-0 ${isMe ? "bg-blue-500/10 -mx-4 px-4 rounded-xl" : ""}`}>
-                <div className="w-8 text-center flex-shrink-0">
-                  {medal
-                    ? <span className="text-2xl">{medal}</span>
-                    : <span className="text-gray-400 font-bold text-sm">{i+1}</span>}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className={`font-bold text-sm ${isMe ? "text-blue-300" : "text-gray-100"}`}>
-                    {m.nickname || m.name}
-                    {isMe && <span className="ml-1 text-xs text-blue-400">（我）</span>}
-                  </div>
-                  {tab !== "event" && <BadgeSummary member={m} type={tab} />}
-                  {tab === "event" && (
-                    <div className="text-gray-400 text-xs">賽事積分 {m.pts} 分</div>
-                  )}
-                </div>
-                <div className="text-right flex-shrink-0">
-                  <div className={`font-black text-2xl ${isMe ? "text-blue-400" : "text-gray-100"}`}>{m.pts}</div>
-                  <div className="text-gray-400 text-xs">{tab === "event" ? "積分" : "徽章分"}</div>
-                </div>
-              </div>
-            );
-          })}
-        </Card>
-      )}
+      {/* 榜單 */}
+      <div className="rounded-2xl border border-white/10 bg-slate-900/60 p-2">
+        {rows.length === 0 ? (
+          <div className="py-10 text-center text-sm text-slate-500">尚無資料</div>
+        ) : (
+          rest.map((r, i) => (
+            <Row key={r.id} r={r} rank={i + 4} isMe={r.id === myId} tab={tab} boardId={boardId} data={data} />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
 
-      {/* 六大族擊殺排行 */}
-      {isMonsterFamily && (
-        <Card className="p-4">
-          {familyKillsRanked.length === 0
-            ? <Empty message="尚無擊殺紀錄" />
-            : familyKillsRanked.map((m, i) => {
-                const isMe = m.id === profile?.id;
-                return (
-                  <div key={m.id}
-                    className={`flex flex-col gap-1.5 py-3 border-b border-white/10 last:border-0 ${isMe ? "bg-blue-500/10 -mx-4 px-4 rounded-xl" : ""}`}>
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 text-center flex-shrink-0">
-                        {["🥇","🥈","🥉"][i]
-                          ? <span className="text-2xl">{["🥇","🥈","🥉"][i]}</span>
-                          : <span className="text-gray-400 font-bold text-sm">{i+1}</span>}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className={`font-bold text-sm ${isMe ? "text-blue-300" : "text-gray-100"}`}>
-                          {m.nickname || m.name}{isMe && <span className="ml-1 text-xs text-blue-400">（我）</span>}
-                        </div>
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        <div className={`font-black text-2xl ${isMe ? "text-blue-400" : "text-gray-100"}`}>{m.total}</div>
-                        <div className="text-gray-400 text-xs">總擊殺</div>
-                      </div>
-                    </div>
-                    <div className="flex gap-1.5 flex-wrap pl-11">
-                      {Object.entries(FAMILIES).map(([fid, fam]) => {
-                        const cnt = m.byFam[fid] || 0;
-                        if (!cnt) return null;
-                        return (
-                          <span key={fid} className="text-xs px-2 py-0.5 rounded-full font-bold"
-                            style={{ background: fam.color + "22", color: fam.color }}>
-                            {fam.icon} {fam.label} ×{cnt}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })
-          }
-        </Card>
-      )}
+function FamBtn({ on, onClick, label, icon, color }) {
+  return (
+    <button onClick={onClick}
+      className="shrink-0 rounded-lg border px-2.5 py-1.5 text-xs font-black transition-all"
+      style={on
+        ? { background: color, color: "#0b1220", borderColor: color }
+        : { background: "rgba(255,255,255,.05)", color, borderColor: `${color}44` }}>
+      {icon} {label}
+    </button>
+  );
+}
 
-      {/* 頭目以上擊殺排行 */}
-      {isMonsterBoss && (
-        <Card className="p-4">
-          {bossKillsRanked.length === 0
-            ? <Empty message="尚無頭目以上擊殺紀錄" />
-            : bossKillsRanked.map((m, i) => {
-                const isMe = m.id === profile?.id;
-                return (
-                  <div key={m.id}
-                    className={`flex items-center gap-3 py-3 border-b border-white/10 last:border-0 ${isMe ? "bg-blue-500/10 -mx-4 px-4 rounded-xl" : ""}`}>
-                    <div className="w-8 text-center flex-shrink-0">
-                      {["🥇","🥈","🥉"][i]
-                        ? <span className="text-2xl">{["🥇","🥈","🥉"][i]}</span>
-                        : <span className="text-gray-400 font-bold text-sm">{i+1}</span>}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className={`font-bold text-sm ${isMe ? "text-blue-300" : "text-gray-100"}`}>
-                        {m.nickname || m.name}{isMe && <span className="ml-1 text-xs text-blue-400">（我）</span>}
-                      </div>
-                      <div className="text-xs text-gray-400 mt-0.5">頭目級以上</div>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <div className={`font-black text-2xl ${isMe ? "text-blue-400" : "text-gray-100"}`}>{m.bossKills}</div>
-                      <div className="text-gray-400 text-xs">擊殺</div>
-                    </div>
-                  </div>
-                );
-              })
-          }
-        </Card>
-      )}
+// 每列右側的顯示值（含單位／等級）
+function valueLabel(r, tab, boardId, data) {
+  if (boardId?.startsWith("cert_")) {
+    const lv = getCertLevel(CERT_BOW_OF[boardId], r.value);
+    return { big: fmt(r.value), unit: "分", sub: lv ? `${lv} 級` : null, subStyle: lv ? certLevelStyle(lv, "soft") : null };
+  }
+  if (boardId === "max_cat") return { big: `Lv.${r.value}`, unit: "", sub: null };
+  if (boardId === "dungeon_dex") return { big: fmt(r.value), unit: `/${DUNGEON_DEX_TOTAL}`, sub: null };
+  if (boardId === "duel") {
+    const s = data.duelMap[r.id] || {};
+    const tot = (s.wins || 0) + (s.losses || 0) + (s.draws || 0);
+    const rate = tot ? Math.round((s.wins || 0) / tot * 100) : 0;
+    return { big: fmt(r.value), unit: "勝", sub: `勝率 ${rate}%` };
+  }
+  return { big: fmt(r.value), unit: tab?.unit || "", sub: null };
+}
 
-      {/* 冒險者等級榜 */}
-      {isAdventurerTab && (() => {
-        const allAdventurers = [...members]
-          .map(m => {
-            const xp    = m.adventurerXP || 0;
-            const level = levelFromXP(xp);
-            const rank  = rankFromLevel(level);
-            const prog  = xpProgress(xp, level);
-            return { ...m, xp, level, rank, rankIdx: rankIdxFromLevel(level), prog };
-          })
-          .sort((a, b) => b.xp - a.xp);
-
-        const displayed = rankFilter === null
-          ? allAdventurers
-          : allAdventurers.filter(m => m.rankIdx === rankFilter);
-
-        return (
-          <>
-            {/* 階級篩選 */}
-            <Card className="p-3">
-              <div className="text-xs text-gray-400 font-black mb-2">按階級篩選</div>
-              <div className="flex flex-wrap gap-2">
-                <button onClick={() => setRankFilter(null)}
-                  className={`px-3 py-1 rounded-full text-xs font-bold border transition-all ${rankFilter === null ? "bg-slate-700 text-white border-slate-700" : "bg-white/10 text-gray-400 border-white/15"}`}>
-                  全部
-                </button>
-                {RANKS.map((r, idx) => (
-                  <button key={idx} onClick={() => setRankFilter(idx === rankFilter ? null : idx)}
-                    className={`px-3 py-1 rounded-full text-xs font-bold border transition-all ${rankFilter === idx ? "text-white border-transparent" : "bg-white/10 text-gray-400 border-white/15"}`}
-                    style={rankFilter === idx ? { background: r.color, borderColor: r.color } : {}}>
-                    {r.icon} {r.name}
-                  </button>
-                ))}
-              </div>
-            </Card>
-            <Card className="p-4">
-              {displayed.length === 0
-                ? <Empty message="此階級尚無冒險者" />
-                : displayed.map((m, i) => {
-                    const isMe = m.id === profile?.id;
-                    const medal = rankFilter === null ? ["🥇","🥈","🥉"][i] : null;
-                    return (
-                      <div key={m.id}
-                        className={`flex items-center gap-3 py-3 border-b border-white/10 last:border-0 ${isMe ? "bg-blue-500/10 -mx-4 px-4 rounded-xl" : ""}`}>
-                        <div className="w-8 text-center flex-shrink-0">
-                          {medal
-                            ? <span className="text-2xl">{medal}</span>
-                            : <span className="text-gray-400 font-bold text-sm">{i+1}</span>}
-                        </div>
-                        <div className="text-xl flex-shrink-0">{m.rank.icon}</div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className={`font-bold text-sm ${isMe ? "text-blue-300" : "text-gray-100"}`}>
-                              {m.nickname || m.name}
-                            </span>
-                            {isMe && <span className="text-xs text-blue-400">（我）</span>}
-                            <span className="text-xs font-bold px-1.5 py-0.5 rounded-full"
-                              style={{ background: m.rank.color + "22", color: m.rank.color }}>
-                              Lv.{m.level} {m.rank.name}
-                            </span>
-                          </div>
-                          {m.level < 60 && (
-                            <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-                              <div className="h-full rounded-full transition-all"
-                                style={{ width: `${m.prog.pct}%`, background: m.rank.color }} />
-                            </div>
-                          )}
-                        </div>
-                        <div className="text-right flex-shrink-0">
-                          <div className={`font-black text-lg ${isMe ? "text-blue-400" : "text-gray-100"}`}>
-                            {m.xp.toLocaleString()}
-                          </div>
-                          <div className="text-gray-400 text-xs">XP</div>
-                        </div>
-                      </div>
-                    );
-                  })
-              }
-            </Card>
-          </>
-        );
-      })()}
-
-      {/* 各場比賽排名（賽事積分 tab）*/}
-
-      {tab === "event" && settledComps.length > 0 && (
-        <div>
-          <div className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-3">各場比賽排名</div>
-          {settledComps.map(c => {
-            const tc     = COMP_TYPE_COLOR[c.type] || {};
-            // ✅ 修復：從 compResults 取，不從 c.results
-            const sorted = [...(compResults[c.id] || [])].sort((a, b) => b.total - a.total);
-            if (sorted.length === 0) return null;
-            return (
-              <Card key={c.id} className="p-4 mb-3">
-                <div className={`text-xs font-bold mb-1 ${tc.darkText || "text-gray-400"}`}>{c.type}</div>
-                <div className="text-gray-100 font-bold text-sm mb-3">{c.title}</div>
-                {sorted.map((r, i) => {
-                  const isMe = r.memberId === profile?.id;
-                  return (
-                    <div key={r.memberId}
-                      className={`flex items-center gap-2 py-1.5 border-b border-white/10 last:border-0 ${isMe ? "text-blue-400" : "text-gray-200"}`}>
-                      <span className="w-6 text-center text-sm">{["🥇","🥈","🥉"][i] || i+1}</span>
-                      <span className="flex-1 text-sm font-medium">
-                        {r.nickname || r.name}{isMe && " (我)"}
-                      </span>
-                      <span className="font-black text-lg">{r.total}</span>
-                      <span className="text-xs text-gray-400 w-12 text-right">
-                        {i===0?"+3":i===1?"+2":i===2?"+1":""}
-                      </span>
-                    </div>
-                  );
-                })}
-              </Card>
-            );
-          })}
+function MyRankCard({ rows, myIdx, tab }) {
+  if (myIdx < 0) {
+    return (
+      <div className="rounded-2xl border border-white/10 bg-gradient-to-r from-slate-800/70 to-slate-900/70 p-4 text-center">
+        <div className="text-sm font-bold text-slate-400">你在這個榜還沒有紀錄</div>
+        <div className="text-xs text-slate-500 mt-0.5">去累積一點成績就會上榜！</div>
+      </div>
+    );
+  }
+  const me = rows[myIdx];
+  const above = myIdx > 0 ? rows[myIdx - 1] : null;
+  const gap = above ? above.value - me.value : 0;
+  return (
+    <div className="rounded-2xl border border-blue-400/30 bg-gradient-to-r from-blue-600/25 to-indigo-700/20 p-4 shadow-lg">
+      <div className="flex items-center gap-3">
+        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-blue-500/20 text-2xl font-black text-blue-200">
+          {myIdx < 3 ? MEDALS[myIdx] : `#${myIdx + 1}`}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-[11px] font-black uppercase tracking-wider text-blue-300">我的名次</div>
+          <div className="truncate text-base font-black text-white">{nm(me.member)}</div>
+        </div>
+        <div className="text-right">
+          <div className="text-2xl font-black text-blue-200">{fmt(me.value)}</div>
+          <div className="text-[10px] text-blue-300/70">{tab?.unit}</div>
+        </div>
+      </div>
+      {above && (
+        <div className="mt-2 text-center text-xs text-blue-200/80">
+          距上一名還差 <span className="font-black text-amber-300">{fmt(gap)}</span> {tab?.unit}
         </div>
       )}
     </div>
   );
 }
 
-// 深色原生：語意淡色底 + 同色系亮字（不再依賴覆寫層）
-const COLOR_MAP = {
-  blue:    "bg-blue-500/10 border-blue-400/20 text-blue-300",
-  indigo:  "bg-indigo-500/10 border-indigo-400/20 text-indigo-300",
-  teal:    "bg-teal-500/10 border-teal-400/20 text-teal-300",
-  emerald: "bg-emerald-500/10 border-emerald-400/20 text-emerald-300",
-};
-function InfoBar({ color = "blue", children }) {
+function Podium({ top3, tab, boardId, data, myId }) {
+  // 版位：中(1) 高、左(2)、右(3)
+  const order = [top3[1], top3[0], top3[2]].filter(Boolean);
+  const heights = { 0: "h-16", 1: "h-24", 2: "h-12" };
+  const posOfRank = (r) => (r === top3[0] ? 1 : r === top3[1] ? 0 : 2);
   return (
-    <div className={`border rounded-xl px-3 py-2 text-xs ${COLOR_MAP[color] || COLOR_MAP.blue}`}>
-      {children}
+    <div className="flex items-end justify-center gap-2 rounded-2xl border border-amber-400/20 bg-gradient-to-b from-slate-800/50 to-slate-950/60 p-4">
+      {order.map((r) => {
+        const rankIdx = top3.indexOf(r);
+        const pos = posOfRank(r);
+        const vl = valueLabel(r, tab, boardId, data);
+        const isMe = r.id === myId;
+        return (
+          <div key={r.id} className="flex w-1/3 flex-col items-center">
+            <div className="mb-1 text-2xl">{MEDALS[rankIdx]}</div>
+            <div className="grid h-12 w-12 place-items-center rounded-full text-lg font-black shadow-lg"
+              style={{ background: `${rankColor(rankIdx)}33`, border: `2px solid ${rankColor(rankIdx)}`, color: rankColor(rankIdx) }}>
+              {nm(r.member).slice(0, 1)}
+            </div>
+            <div className={`mt-1 max-w-full truncate text-center text-xs font-black ${isMe ? "text-blue-300" : "text-white"}`}>
+              {nm(r.member)}
+            </div>
+            <div className="text-[13px] font-black" style={{ color: rankColor(rankIdx) }}>
+              {vl.big}<span className="text-[9px] text-slate-400"> {vl.unit}</span>
+            </div>
+            <div className={`mt-1 w-full rounded-t-lg ${heights[pos]}`}
+              style={{ background: `linear-gradient(180deg, ${rankColor(rankIdx)}55, ${rankColor(rankIdx)}11)` }} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function Row({ r, rank, isMe, tab, boardId, data }) {
+  const vl = valueLabel(r, tab, boardId, data);
+  return (
+    <div className={`flex items-center gap-3 rounded-xl px-2.5 py-2.5 ${isMe ? "bg-blue-500/12 ring-1 ring-blue-400/30" : ""}`}>
+      <div className="w-7 shrink-0 text-center text-sm font-black text-slate-400">{rank}</div>
+      <div className="min-w-0 flex-1">
+        <div className={`truncate text-sm font-bold ${isMe ? "text-blue-300" : "text-slate-100"}`}>
+          {nm(r.member)}{isMe && <span className="ml-1 text-xs text-blue-400">（我）</span>}
+        </div>
+        {vl.sub && (
+          vl.subStyle
+            ? <span className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${vl.subStyle}`}>{vl.sub}</span>
+            : <div className="text-[11px] text-slate-500">{vl.sub}</div>
+        )}
+      </div>
+      <div className="shrink-0 text-right">
+        <div className={`text-lg font-black ${isMe ? "text-blue-300" : "text-slate-100"}`}>{vl.big}</div>
+        <div className="text-[10px] text-slate-500">{vl.unit}</div>
+      </div>
     </div>
   );
 }

@@ -12,7 +12,7 @@ import {
   resetPartyRoom, sendPartyCheer, clearPartyProcessing,
   applyPartyCarryPotion, applyPartyUtilityPotion,
 } from "../../lib/partyDb";
-import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs, addArrowdew, addArcherXP, recordPotionUsed, addRoundArrows, recordGuestBattleStats, finalizeGameShootingSession } from "../../lib/db";
+import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs, addArrowdew, addArcherXP, recordPotionUsed, addRoundArrows, recordGuestBattleStats, finalizeGameShootingSession, addPartyDamage } from "../../lib/db";
 import { MONSTER_TIER_XP, PARTY_XP_MULT, PARTY_BONUS_CHEST_CHANCE, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_TIER_XP } from "../../lib/catLevel";
@@ -870,6 +870,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       if (!isLimitedAccount && !dexRecordedRef.current && room.monster?.id) {
         dexRecordedRef.current = true;
         recordBattleDex(myId, room.monster.id, "win", myDmg).catch(() => {});
+        addPartyDamage(myId, myDmg).catch(() => {}); // 排行榜：組隊個人累計傷害
       }
       if (myId && !isLimitedAccount) {
         const { rounds:practiceRounds, arrowPositions, capturedEnds } = getPartyPracticeData(room.log, myId, activeTargetFmt);

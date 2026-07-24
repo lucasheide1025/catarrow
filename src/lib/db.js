@@ -3275,6 +3275,35 @@ export async function getAllMonsterDex() {
   return snap.docs.map(d => ({ memberId: d.id, monsters: d.data().monsters || {} }));
 }
 
+// 供排行榜：一次讀全部卡片收藏（memberId → { cards, wbCards, equipped }）
+export async function getAllCardCollections() {
+  const snap = await getDocs(collection(db, C_CARDS));
+  const map = {};
+  snap.docs.forEach(d => { map[d.id] = d.data() || {}; });
+  return map;
+}
+
+// ─── 排行榜累計計數器（埋點）────────────────────────────
+// 貓貓村探索繞圈（累計，不隨每日重置歸零）
+export async function addVillageLap(memberId, n = 1) {
+  if (!memberId || n <= 0) return;
+  try { await updateDoc(doc(db, "members", memberId), { villageTotalLaps: increment(n) }); }
+  catch (e) { console.warn("addVillageLap:", e?.message); }
+}
+// 突破地下城（打贏 boss）：分族累計
+export async function addDungeonClear(memberId, family, n = 1) {
+  if (!memberId || !family || n <= 0) return;
+  try { await updateDoc(doc(db, "members", memberId), { [`dungeonClears.${family}`]: increment(n) }); }
+  catch (e) { console.warn("addDungeonClear:", e?.message); }
+}
+// 組隊打怪個人累計傷害
+export async function addPartyDamage(memberId, dmg = 0) {
+  const d = Math.round(Number(dmg) || 0);
+  if (!memberId || d <= 0) return;
+  try { await updateDoc(doc(db, "members", memberId), { partyDmgTotal: increment(d) }); }
+  catch (e) { console.warn("addPartyDamage:", e?.message); }
+}
+
 // 供 partyDb 呼叫：更新怪物圖鑑（勝/敗記錄）
 export async function recordBattleDex(memberId, monsterId, result, dmgDealt) {
   if (!memberId || !monsterId || await isGuestOrKidMember(memberId)) return;

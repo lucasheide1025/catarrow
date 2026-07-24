@@ -48,6 +48,7 @@ import {
   addArcherXP,
   addMaterials,
   grantKingVaultReward,
+  addDungeonClear,
 } from "../../lib/db";
 import { rollDungeonKillReward, getDungeonDewMultiplier } from "../../lib/dungeonKillRewards";
 import {
@@ -401,6 +402,7 @@ export default function DungeonExpedition({
   // 完整保存目前地圖結構 (gridFloor, playerPos, visitedIds) 確保地圖絕不重置！
   // 遠征已結束（領獎/放棄）後，禁止自動存檔 effect 再把進度寫回 → 否則「領完獎還能從第三層續玩」重複打王
   const expeditionEndedRef = useRef(false);
+  const clearCountedRef = useRef(false); // 防重複計「突破地下城次數」
   useEffect(() => {
     if (!myId || expeditionEndedRef.current || phase === "intro" || phase === "consume" || phase === "entry_error" || phase === "result" || phase === "won") return;
     const mapState = {
@@ -511,6 +513,11 @@ export default function DungeonExpedition({
   const showResult = useCallback((won, cleared) => {
     setWonLast(won);
     setFloorsCleared(cleared);
+    // 排行榜：突破地下城次數（打贏＝擊敗王，分族累計；非訪客、每場一次）
+    if (won && !isGuest && myId && !clearCountedRef.current) {
+      clearCountedRef.current = true;
+      addDungeonClear(myId, family).catch(() => {});
+    }
     const baseRewards = calculateExpeditionRewards({
       difficultyTier,
       floorsCleared: cleared,
@@ -520,7 +527,7 @@ export default function DungeonExpedition({
     // 箭露：基準 × 難度倍率 × 5（與組隊遠征同規格,dungeonKillRewards）
     setResultRewards({ ...baseRewards, arrowDew: Math.round((baseRewards.arrowDew || 0) * getDungeonDewMultiplier(difficultyTier)) });
     setPhase("result");
-  }, [difficultyTier, family, myId]); // eslint-disable-line
+  }, [difficultyTier, family, myId, isGuest]); // eslint-disable-line
 
   // ── 分支序列（第 3 層）──────────────────────────────────
   const branchSeq = useMemo(() => {

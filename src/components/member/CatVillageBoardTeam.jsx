@@ -17,7 +17,7 @@ import { MATERIALS } from "../../lib/monsterMaterials";
 import { NORMAL_MATERIALS } from "../../lib/monsterEconomyCatalog";
 import { RESOURCE_NAMES } from "../../lib/villageData";
 import { calculateGatheringRound } from "../../lib/catVillageGathering";
-import { addRoundArrows } from "../../lib/db";
+import { addRoundArrows, addVillageLap } from "../../lib/db";
 import { getCatSpeech } from "../cat/catSpeeches";
 import { sfxTap, sfxSuccess, sfxCast } from "../../lib/sound";
 
@@ -185,11 +185,14 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
       animatedSeqRef.current = lm.seq;
       setAnimatedSeq(lm.seq);
       setAnimating(false);
-      if (isHost && lm.lapped) { // 繞圈獎勵（房主自己領）
-        const lapMode = BOARD_MODES.find(x => x.id === lm.modeId) || BOARD_MODES[0];
-        const rw = rollTileReward("start", { mode: lapMode, tierCap: getModeTierCap(lm.modeId, villageBuildings), tier: lm.tier, partyMult: lm.partyMult || 1 });
-        applyBoardReward(myId, rw, { catId }).catch(() => {});
-        setReward({ items: describeReward(rw), band: rw.band });
+      if (lm.lapped) {
+        addVillageLap(myId).catch(() => {}); // 排行榜繞圈數：每位成員各自累計
+        if (isHost) { // 繞圈獎勵（房主自己領）
+          const lapMode = BOARD_MODES.find(x => x.id === lm.modeId) || BOARD_MODES[0];
+          const rw = rollTileReward("start", { mode: lapMode, tierCap: getModeTierCap(lm.modeId, villageBuildings), tier: lm.tier, partyMult: lm.partyMult || 1 });
+          applyBoardReward(myId, rw, { catId }).catch(() => {});
+          setReward({ items: describeReward(rw), band: rw.band });
+        }
       }
     };
     const startT = setTimeout(() => {

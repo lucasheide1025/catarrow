@@ -109,6 +109,7 @@ service cloud.firestore {
           "equipmentRuneFragments", "equipmentRuneInventory", "activeExpedition",
           "dungeonBossCardProgress", "expeditions", "starterCoinsGranted", "lastSessionSourceId",
           "teamSavedProgress", "villageBoard",
+          "villageTotalLaps", "dungeonClears", "worldBossDmgTotal", "partyDmgTotal", "maxCatXP",
           "name", "phone"
         ])
       ) || (
@@ -124,9 +125,17 @@ service cloud.firestore {
           "equipmentRuneFragments", "equipmentRuneInventory", "activeExpedition",
           "dungeonBossCardProgress", "expeditions", "starterCoinsGranted", "lastSessionSourceId",
           "teamSavedProgress", "villageBoard",
+          "villageTotalLaps", "dungeonClears", "worldBossDmgTotal", "partyDmgTotal", "maxCatXP",
           "name", "phone"
         ])
       );
+    }
+
+    // seasons：季賽快照。登入者可讀；首位開榜者可建立快照，之後不覆寫。
+    match /seasons/{seasonId} {
+      allow read:   if isLoggedIn();
+      allow create: if isLoggedIn();
+      allow update, delete: if isAdmin();
     }
 
     // campSessions：夏令營場次管理，登入者可讀，admin 可寫

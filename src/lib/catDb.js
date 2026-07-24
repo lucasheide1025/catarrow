@@ -173,12 +173,17 @@ export async function addBlessing(memberId, memberName, catId, text) {
 export async function addCatXP(memberId, catId, amount) {
   if (!amount || amount <= 0) return { ok: true };
   try {
+    // 讀舊值以算出這隻貓的新總 XP（供最高等級貓貓排行榜用）
+    const catSnap = await getDoc(catRef(memberId, catId));
+    const newCatXP = (catSnap.data()?.catXP || 0) + amount;
     await updateDoc(catRef(memberId, catId), { catXP: increment(amount) });
+
     const memberSnap = await getDoc(doc(db, "members", memberId));
-    if (memberSnap.data()?.equippedCat?.catId === catId) {
-      const newXP = (memberSnap.data()?.equippedCat?.catXP || 0) + amount;
-      await updateDoc(doc(db, "members", memberId), { "equippedCat.catXP": newXP });
-    }
+    const md = memberSnap.data() || {};
+    const upd = {};
+    if (md.equippedCat?.catId === catId) upd["equippedCat.catXP"] = (md.equippedCat?.catXP || 0) + amount;
+    if (newCatXP > (md.maxCatXP || 0)) upd.maxCatXP = newCatXP; // 排行榜：全隊最高貓 XP
+    if (Object.keys(upd).length) await updateDoc(doc(db, "members", memberId), upd);
     return { ok: true };
   } catch (e) { return { ok: false, reason: e.message }; }
 }

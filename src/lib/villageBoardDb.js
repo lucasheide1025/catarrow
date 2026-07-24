@@ -89,7 +89,7 @@ export async function rollAndMove(memberId) {
     await updateDoc(ref, {
       "villageBoard.dice": increment(-1),
       "villageBoard.boardPos": to,
-      ...(lapped ? { "villageBoard.lapCount": increment(1) } : {}),
+      ...(lapped ? { "villageBoard.lapCount": increment(1), villageTotalLaps: increment(1) } : {}),
     });
     // 繞圈 → 貢獻村目標「繞 N 圈」
     if (lapped) import("./villageGoalDb").then(m => m.contributeLapToGoal(memberId, 1)).catch(() => {});
