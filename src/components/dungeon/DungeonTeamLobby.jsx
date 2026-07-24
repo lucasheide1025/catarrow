@@ -26,6 +26,13 @@ const FAMILY_LABEL = {
   treasure:  { emoji:"📦", label:"寶箱族", color:"#f59e0b" },
 };
 
+// 圖片載入失敗就退回 emoji（地下城外觀 / 首領怪物圖用）
+function ImgOrEmoji({ src, emoji, className }) {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) return <span>{emoji}</span>;
+  return <img src={src} alt="" className={className} onError={() => setFailed(true)} draggable={false} />;
+}
+
 export default function DungeonTeamLobby({
   roomId,
   dungeon,
@@ -175,8 +182,12 @@ export default function DungeonTeamLobby({
         <div className="relative overflow-hidden rounded-3xl border border-amber-500/30 bg-gradient-to-r from-slate-900/90 via-slate-900/70 to-amber-950/40 p-5 shadow-2xl backdrop-blur-md space-y-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
             <div className="flex items-center gap-4">
-              <div className="w-16 h-16 rounded-2xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-4xl shadow-inner shrink-0">
-                {dungeonIsHidden ? "🎁" : family.emoji}
+              <div className="w-16 h-16 rounded-2xl bg-amber-500/20 border border-amber-400/40 overflow-hidden flex items-center justify-center text-4xl shadow-inner shrink-0">
+                <ImgOrEmoji
+                  src={`/assets/dungeon/cover_${dungeonIsHidden ? "treasure" : dungeonFamilyKey}.webp`}
+                  emoji={dungeonIsHidden ? "🎁" : family.emoji}
+                  className="w-full h-full object-cover"
+                />
               </div>
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
@@ -222,7 +233,13 @@ export default function DungeonTeamLobby({
           {dungeonBoss && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-amber-500/20 relative z-10">
               <div className="flex items-center gap-3 bg-slate-950/60 p-3 rounded-2xl border border-rose-500/30">
-                <span className="text-3xl shrink-0">{dungeonBoss.icon || "👹"}</span>
+                <div className="w-14 h-14 rounded-xl overflow-hidden bg-black/30 border border-rose-500/30 flex items-center justify-center text-3xl shrink-0">
+                  <ImgOrEmoji
+                    src={`/monsters/${dungeonBoss.artKey || dungeonBoss.monsterId || dungeonBoss.id || ""}.webp`}
+                    emoji={dungeonBoss.icon || "👹"}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
                 <div className="min-w-0">
                   <div className="text-[10px] font-black text-rose-300 uppercase">守關 BOSS</div>
                   <div className="text-sm font-black text-white truncate">{dungeonBoss.name || "未知首領"}</div>
