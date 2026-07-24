@@ -28,6 +28,7 @@ import {
 import GachaMachine from "./GachaMachine";
 import CouncilHall  from "./CouncilHall";
 import VillageGoalBanner from "./VillageGoalBanner";
+import CatVillageBoard from "./CatVillageBoard";
 import { autoSpawnVillageGoal } from "../../lib/villageGoalDb";
 import { craftPotion, subscribePotions } from "../../lib/db";
 import { CARRY_POTIONS, THROW_POTIONS, RAID_POTIONS } from "../../lib/itemData";
@@ -2377,6 +2378,7 @@ function getVillagePrimaryTab(tab) {
 // ── 主元件 ───────────────────────────────────────────────────
 export default function CatVillage({ catCards, gachaCoins, initialTab = "village" }) {
   const { profile } = useAuth();
+  const [showBoard, setShowBoard] = useState(false);
   const [tab, setTab]               = useState(initialTab);
   const [selectedBuilding, setSelectedBuilding] = useState(null);
   const [collecting, setCollecting] = useState(false);
@@ -2630,6 +2632,20 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
               每 {MAX_COLLECT_HOURS} 小時可領取一次
             </div>
           </div>
+
+          {/* 🎲 大富翁探索地圖入口 */}
+          <button onClick={() => setShowBoard(true)}
+            className="mx-4 my-2 rounded-2xl border-2 border-amber-400/50 px-4 py-3 flex items-center gap-3 active:scale-[0.98] transition"
+            style={{ background: "linear-gradient(135deg, rgba(120,53,15,0.55), rgba(180,83,9,0.35))" }}>
+            <span className="text-3xl">🎲</span>
+            <div className="flex-1 text-left">
+              <div className="text-amber-100 font-black text-sm">貓貓村探索地圖</div>
+              <div className="text-amber-200/80 text-[11px]">擲骰踩格、刷素材與寶箱・命運/機會事件</div>
+            </div>
+            <span className="text-amber-300 text-xl">›</span>
+          </button>
+
+          {showBoard && <CatVillageBoard profile={profile} onClose={() => setShowBoard(false)} />}
 
           <VillageGoalBanner />
 

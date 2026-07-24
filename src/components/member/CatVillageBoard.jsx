@@ -1,0 +1,273 @@
+// src/components/member/CatVillageBoard.jsx
+// 貓貓村大富翁探索地圖（Phase 1a 單人）。全螢幕 overlay。
+// 規格見 docs/second_brain/village-board-spec.md。
+import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  subscribeBoardState, ensureDailyDice, setBoardMode, rollAndMove,
+  settleBoardTile, applyEventEffect, setBoardPos, DAILY_DICE,
+} from "../../lib/villageBoardDb";
+import { BOARD_LAYOUT, BOARD_SIZE, TILE_TYPES, BOARD_MODES } from "../../lib/boardData";
+import { drawBoardEvent } from "../../lib/boardEvents";
+import { sfxTap, sfxSuccess, sfxCast } from "../../lib/sound";
+
+const ASSET = "/assets/board";
+
+// 8×8 格：邊框 28 格順時針，index 0 起點在左上。回傳 CSS grid 的 {row,col}（1-based）
+function gridPos(i) {
+  if (i < 8) return { row: 1, col: i + 1 };
+  if (i < 15) return { row: i - 8 + 2, col: 8 };
+  if (i < 22) return { row: 8, col: 7 - (i - 15) };
+  return { row: 7 - (i - 22), col: 1 };
+}
+
+// tile 圖示：img + emoji fallback（作者指示少用 SVG）
+function TileIcon({ type, size = 30 }) {
+  const [failed, setFailed] = useState(false);
+  const meta = TILE_TYPES[type] || {};
+  if (!failed) {
+    return <img src={`${ASSET}/tile_${type}.webp`} alt="" width={size} height={size}
+      onError={() => setFailed(true)} className="object-contain" draggable={false} />;
+  }
+  return <span style={{ fontSize: size * 0.8, lineHeight: 1 }}>{meta.icon || "❔"}</span>;
+}
+
+const SCORE_PAD = [["X", 10], ["10", 10], ["9", 9], ["8", 8], ["7", 7], ["6", 6], ["5", 5], ["3", 3], ["M", 0]];
+
+export default function CatVillageBoard({ profile, onClose }) {
+  const myId = profile?.id;
+  const villageBuildings = profile?.village?.buildings || {};
+  const catId = profile?.equippedCat?.catId || null;
+
+  const [board, setBoard] = useState(null);
+  const [rolling, setRolling] = useState(false);
+  const [displayPos, setDisplayPos] = useState(0);      // 動畫用的當前顯示位置
+  const [toast, setToast] = useState(null);
+  const [shootTile, setShootTile] = useState(null);      // 6 箭格：{type}
+  const [arrows, setArrows] = useState([]);
+  const [eventCard, setEventCard] = useState(null);      // { event, flipped }
+  const busyRef = useRef(false);
+
+  useEffect(() => {
+    if (!myId) return;
+    ensureDailyDice(myId);
+    const unsub = subscribeBoardState(myId, s => { setBoard(s); });
+    return unsub;
+  }, [myId]);
+
+  useEffect(() => { if (board) setDisplayPos(board.boardPos || 0); }, [board?.boardPos]);
+
+  const showToast = (t) => { setToast(t); setTimeout(() => setToast(null), 2600); };
+
+  const settle = useCallback(async (tileType) => {
+    const meta = TILE_TYPES[tileType];
+    if (meta?.shooting) { setShootTile({ type: tileType }); setArrows([]); return; }
+    if (tileType === "fate" || tileType === "opp") {
+      const ev = drawBoardEvent(tileType);
+      setEventCard({ event: ev, flipped: false });
+      setTimeout(() => setEventCard(c => c && { ...c, flipped: true }), 550);
+      return;
+    }
+    const res = await settleBoardTile(myId, tileType, { villageBuildings, catId });
+    if (res?.ok) { sfxSuccess(); showToast(rewardText(res.reward)); }
+    busyRef.current = false;
+  }, [myId, villageBuildings, catId]);
+
+  // 骰 → 逐格動畫 → 落點結算
+  const handleRoll = useCallback(async () => {
+    if (rolling || busyRef.current || !board || (board.dice || 0) <= 0) return;
+    busyRef.current = true; setRolling(true); sfxCast();
+    const res = await rollAndMove(myId);
+    if (!res?.ok) { showToast(res?.reason || "無法擲骰"); setRolling(false); busyRef.current = false; return; }
+    // 逐格前進動畫
+    let cur = res.from;
+    for (let s = 0; s < res.roll; s++) {
+      cur = (cur + 1) % BOARD_SIZE;
+      setDisplayPos(cur);
+      sfxTap();
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise(r => setTimeout(r, 230));
+    }
+    setRolling(false);
+    if (res.lapped) showToast("🏁 繞完一圈！");
+    await settle(res.tile);
+  }, [rolling, board, myId, settle]);
+
+  // 6 箭計分完成
+  const finishShoot = useCallback(async () => {
+    if (arrows.length < 6) return;
+    const ratio = arrows.reduce((s, v) => s + v, 0) / (6 * 10);
+    const type = shootTile.type;
+    setShootTile(null);
+    const res = await settleBoardTile(myId, type, { villageBuildings, catId, scoreRatio: ratio });
+    if (res?.ok) { sfxSuccess(); showToast(`${res.reward.band || ""} ${rewardText(res.reward)}`); }
+    busyRef.current = false;
+  }, [arrows, shootTile, myId, villageBuildings, catId]);
+
+  // 事件卡效果套用
+  const applyEvent = useCallback(async () => {
+    const ev = eventCard?.event; setEventCard(null);
+    if (!ev) { busyRef.current = false; return; }
+    const r = await applyEventEffect(myId, ev, { villageBuildings, catId });
+    // 需要 UI 反應的效果
+    if (r.kind === "move") { const np = (((board.boardPos + r.steps) % BOARD_SIZE) + BOARD_SIZE) % BOARD_SIZE; await setBoardPos(myId, np); setDisplayPos(np); await settle(BOARD_LAYOUT[np]); return; }
+    if (r.kind === "teleport") { const np = nearestTile(board.boardPos, r.tile); await setBoardPos(myId, np); setDisplayPos(np); await settle(BOARD_LAYOUT[np]); return; }
+    if (r.kind === "trigger") { await settle(r.event); return; }
+    if (r.kind === "gain") showToast(`獲得 ${r.amount} ${resName(r.resource)}`);
+    else if (r.kind === "lose") showToast(`失去 ${r.amount} ${resName(r.resource)}`);
+    else if (r.kind === "dice") showToast(r.delta > 0 ? `🎲 +${r.delta} 骰` : "😴 暫停一回合");
+    else if (r.kind === "flavor") showToast("😸 " + (ev.text.length > 14 ? "會心一笑" : ev.text));
+    else sfxSuccess();
+    busyRef.current = false;
+  }, [eventCard, myId, villageBuildings, catId, board, settle]);
+
+  if (!board) return null;
+  const mode = BOARD_MODES.find(m => m.id === board.mode) || BOARD_MODES[0];
+
+  return (
+    <div className="fixed inset-0 z-[120] flex flex-col items-center overflow-y-auto"
+      style={{ background: "linear-gradient(180deg,#2a1a0e,#160c05)", backgroundImage: `url(${ASSET}/frame.webp)`, backgroundSize: "cover" }}>
+      {/* 頂列 */}
+      <div className="w-full max-w-lg flex items-center justify-between px-4 py-3">
+        <button onClick={onClose} className="w-9 h-9 rounded-full bg-black/40 text-amber-200 font-black">←</button>
+        <div className="text-amber-100 font-black text-sm">🎲 貓貓村探索地圖</div>
+        <div className="rounded-xl bg-amber-500/20 border border-amber-400/40 px-2.5 py-1 text-amber-200 text-xs font-black">🎲 {board.dice}/{DAILY_DICE}</div>
+      </div>
+
+      {/* 模式選擇 */}
+      <div className="w-full max-w-lg px-3 flex gap-1.5 flex-wrap justify-center mb-1">
+        {BOARD_MODES.map(m => (
+          <button key={m.id} onClick={() => setBoardMode(myId, m.id)}
+            className={`px-2 py-1 rounded-lg text-[10px] font-bold border ${m.id === board.mode ? "bg-amber-400 text-slate-900 border-amber-300" : "bg-black/30 text-amber-100 border-amber-400/20"}`}>
+            {m.icon}{m.familyName}
+          </button>
+        ))}
+      </div>
+
+      {/* 8×8 棋盤 */}
+      <div className="w-full max-w-lg p-3">
+        <div className="grid aspect-square w-full rounded-2xl border-4 border-amber-700/60 bg-amber-950/40 p-1"
+          style={{ gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", gap: 3 }}>
+          {/* 中央地圖/資訊 */}
+          <div style={{ gridColumn: "2 / 8", gridRow: "2 / 8" }}
+            className="rounded-xl overflow-hidden">
+            <div className="w-full h-full rounded-xl flex flex-col items-center justify-center text-center p-2"
+              style={{ background: `linear-gradient(135deg, ${mode.palette?.[0] || "#1e293b"}, ${mode.palette?.[1] || "#0f172a"})` }}>
+              <div className="text-amber-100 font-black text-lg drop-shadow">{mode.name}</div>
+              <div className="text-amber-200/80 text-xs mt-1">刷「{mode.familyName}」資源</div>
+              <div className="text-amber-300/70 text-[11px] mt-2">已繞 {board.lapCount} 圈</div>
+              <button onClick={handleRoll} disabled={rolling || board.dice <= 0}
+                className="mt-3 px-6 py-2.5 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-900 font-black text-sm shadow-lg disabled:opacity-40 active:scale-95">
+                {rolling ? "🎲 前進中…" : board.dice <= 0 ? "骰子用完了" : "🎲 擲骰前進"}
+              </button>
+            </div>
+          </div>
+
+          {/* 28 邊框格 */}
+          {BOARD_LAYOUT.map((type, i) => {
+            const { row, col } = gridPos(i);
+            const here = displayPos === i;
+            const meta = TILE_TYPES[type];
+            return (
+              <div key={i} style={{ gridColumn: col, gridRow: row }}
+                className={`relative rounded-lg flex items-center justify-center border ${here ? "ring-2 ring-yellow-300 scale-105 z-10" : "border-amber-500/20"}`}
+                >
+                <div className={`w-full h-full rounded-lg flex items-center justify-center ${tileBg(type)}`}>
+                  <TileIcon type={type} size={26} />
+                  {here && <div className="absolute -top-1 -right-1 text-base">🐱</div>}
+                </div>
+                {i === 0 && <span className="absolute bottom-0 text-[7px] text-amber-200 font-black">起</span>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Toast */}
+      {toast && <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[130] rounded-2xl bg-black/85 border border-amber-400/40 px-4 py-2.5 text-amber-100 text-sm font-black shadow-xl max-w-[90vw] text-center">{toast}</div>}
+
+      {/* 6 箭計分 overlay */}
+      {shootTile && (
+        <div className="fixed inset-0 z-[135] bg-black/85 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-amber-500/40 rounded-3xl p-5 w-full max-w-sm">
+            <div className="text-center text-amber-100 font-black mb-1">{TILE_TYPES[shootTile.type].icon} {TILE_TYPES[shootTile.type].label}格・射 6 箭</div>
+            <div className="text-center text-slate-400 text-xs mb-3">依實際命中輸入 6 箭分數（完成度決定獎勵）</div>
+            <div className="flex justify-center gap-1 mb-3">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black border ${arrows[i] != null ? "bg-emerald-600 text-white border-emerald-400" : "bg-slate-800 text-slate-500 border-slate-700"}`}>{arrows[i] != null ? arrows[i] : "?"}</div>
+              ))}
+            </div>
+            <div className="grid grid-cols-5 gap-1.5">
+              {SCORE_PAD.map(([label, val]) => (
+                <button key={label} disabled={arrows.length >= 6}
+                  onClick={() => { sfxTap(); setArrows(a => a.length < 6 ? [...a, val] : a); }}
+                  className="py-2 rounded-lg bg-amber-500/20 text-amber-100 font-black text-xs border border-amber-400/30 disabled:opacity-40">{label}</button>
+              ))}
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => setArrows([])} className="flex-1 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold">清除</button>
+              <button onClick={finishShoot} disabled={arrows.length < 6} className="flex-[2] py-2 rounded-xl bg-amber-400 text-slate-900 font-black text-sm disabled:opacity-40">結算（{arrows.length}/6）</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 命運/機會 抽卡翻牌 */}
+      {eventCard && (
+        <div className="fixed inset-0 z-[135] bg-black/85 flex items-center justify-center p-4" onClick={applyEvent}>
+          <div className="[perspective:1000px]">
+            <div className="relative w-64 h-96 transition-transform duration-500"
+              style={{ transformStyle: "preserve-3d", transform: eventCard.flipped ? "rotateY(180deg)" : "rotateY(0deg)" }}>
+              {/* 卡背 */}
+              <div className="absolute inset-0 rounded-3xl border-4 flex items-center justify-center [backface-visibility:hidden]"
+                style={{ borderColor: eventCard.event.deck === "fate" ? "#f59e0b" : "#38bdf8", backgroundImage: `url(${ASSET}/card_${eventCard.event.deck}_back.webp)`, backgroundSize: "cover", background: eventCard.event.deck === "fate" ? "linear-gradient(160deg,#7c2d12,#431407)" : "linear-gradient(160deg,#075985,#0c4a6e)" }}>
+                <div className="text-4xl">{eventCard.event.deck === "fate" ? "🎴 命運" : "🎴 機會"}</div>
+              </div>
+              {/* 卡面 */}
+              <div className="absolute inset-0 rounded-3xl border-4 flex flex-col items-center justify-center p-5 text-center [backface-visibility:hidden]"
+                style={{ transform: "rotateY(180deg)", borderColor: eventCard.event.deck === "fate" ? "#f59e0b" : "#38bdf8", backgroundImage: `url(${ASSET}/card_${eventCard.event.deck}.webp)`, backgroundSize: "cover", background: eventCard.event.deck === "fate" ? "linear-gradient(160deg,#fed7aa,#fdba74)" : "linear-gradient(160deg,#bae6fd,#7dd3fc)" }}>
+                <div className="text-slate-900 font-black text-lg mb-2">{eventCard.event.deck === "fate" ? "命運" : "機會"}</div>
+                <div className="text-slate-800 font-bold text-base leading-relaxed">{eventCard.event.text}</div>
+                <div className="text-slate-700 text-xs mt-4 font-bold">（點擊套用）</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function tileBg(type) {
+  return {
+    start: "bg-amber-300/25", material: "bg-emerald-500/20", mining: "bg-orange-500/20",
+    monster: "bg-rose-500/25", arrowdew: "bg-sky-500/20", coins: "bg-yellow-500/20",
+    gacha: "bg-pink-500/20", potion: "bg-lime-500/20", chest: "bg-amber-500/25",
+    catbond: "bg-fuchsia-500/20", fate: "bg-orange-500/25", opp: "bg-cyan-500/25",
+  }[type] || "bg-slate-700/30";
+}
+function resName(r) {
+  return { coins: "金幣", arrowdew: "箭露", gachaToken: "扭蛋幣", material: "素材", catXP: "貓咪經驗" }[r] || r;
+}
+function rewardText(rw) {
+  if (!rw) return "獲得獎勵";
+  const p = [];
+  if (rw.coins) p.push(`金幣+${rw.coins}`);
+  if (rw.arrowdew) p.push(`箭露+${rw.arrowdew}`);
+  if (rw.gachaToken) p.push(`扭蛋+${rw.gachaToken}`);
+  const matN = Object.values(rw.familyMaterials || {}).reduce((s, n) => s + n, 0);
+  if (matN) p.push(`素材×${matN}`);
+  const resN = Object.values(rw.villageResources || {}).reduce((s, n) => s + n, 0);
+  if (resN) p.push(`資源×${resN}`);
+  if (rw.chests?.length) p.push(`寶箱×${rw.chests.length}`);
+  if (rw.catXP) p.push(`貓咪XP+${rw.catXP}`);
+  if (rw.potions?.length) p.push(`藥水×${rw.potions.length}`);
+  return p.length ? "獲得 " + p.join("、") : "獲得獎勵";
+}
+// 從 pos 往前找最近的某類格 index
+function nearestTile(pos, tileType) {
+  for (let d = 1; d <= BOARD_SIZE; d++) {
+    const idx = (pos + d) % BOARD_SIZE;
+    if (BOARD_LAYOUT[idx] === tileType) return idx;
+  }
+  return pos;
+}
