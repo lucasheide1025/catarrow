@@ -23,13 +23,13 @@ function activeMembers(data) {
 }
 
 // ── 房間生命週期 ─────────────────────────────────────────
-export async function createBoardRoom({ hostId, hostName, mode, accountType, avatarId }) {
+export async function createBoardRoom({ hostId, hostName, mode, tier, accountType, avatarId }) {
   if (!hostId || !BOARD_MODE_MAP[mode]) return { ok: false, reason: "參數錯誤" };
   try {
     const code = genCode();
     const ref = await addDoc(collection(db, R), {
       code, hostId, hostName: hostName || "房主",
-      status: "waiting", mode,
+      status: "waiting", mode, tier: tier || 1,
       boardPos: 0, lapCount: 0,
       seq: 0, pendingSettle: null, pendingEvent: null,
       settleClaims: {}, eventClaims: {},
@@ -103,13 +103,20 @@ export function subscribeOpenBoardRooms(cb) {
   }, () => cb([]));
 }
 
-// 斷線重連：找回仍含自己的進行中房間
+// 斷線重連：找回仍含自己的進行中房間（取最新建立的，避免抓到舊殘房）
 export async function findReconnectableBoardRoom(memberId) {
   if (!memberId) return { ok: false, room: null };
   try {
     const snap = await getDocs(query(collection(db, R), where("status", "in", ["waiting", "active"])));
-    const room = snap.docs.map(d => ({ id: d.id, ...d.data() })).find(r => r.members?.[memberId]);
-    return { ok: true, room: room || null };
+    const rooms = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .filter(r => r.members?.[memberId])
+      .sort((a, b) => {
+        // 以 createdAt 排序，最新的在前
+        const ta = a.createdAt?.toMillis?.() || a.createdAt || 0;
+        const tb = b.createdAt?.toMillis?.() || b.createdAt || 0;
+        return tb - ta;
+      });
+    return { ok: true, room: rooms[0] || null };
   } catch (e) { return { ok: false, reason: e?.message, room: null }; }
 }
 
@@ -125,7 +132,7 @@ export async function setRoomMode(roomId, hostId, mode) {
   } catch (e) { return { ok: false, reason: e?.message }; }
 }
 
-// ── 房主行動：擲骰（吃房主 members.villageBoard.dice）→ 前進共享棋 → 設定待結算 ──
+// ── 房主行動：擲骰 → 寫 pendingMove（所有客戶端一起看動畫後才結算）──
 export async function roomRollAndMove(roomId, hostId) {
   try {
     let result = { ok: false };
@@ -138,6 +145,20 @@ export async function roomRollAndMove(roomId, hostId) {
       if (room.hostId !== hostId) throw new Error("只有房主可擲骰");
       const dice = hs.data()?.villageBoard?.dice || 0;
       if (dice <= 0) throw new Error("房主骰子用完了");
+
+      // ── 伺服器端防呆：檢查是否有未領取的 pending 事件/結算 ──
+      const curSeq = room.seq || 0;
+      const hasPendingSettle = room.pendingSettle?.seq === curSeq;
+      const hasPendingEvent = room.pendingEvent?.seq === curSeq;
+      if (hasPendingSettle || hasPendingEvent) {
+        const memberIds = Object.keys(room.members || {}).filter(m => room.members[m] != null);
+        const allClaimed = memberIds.every(mid =>
+          (room.settleClaims?.[mid] || 0) >= curSeq ||
+          (room.eventClaims?.[mid] || 0) >= curSeq
+        );
+        if (!allClaimed) throw new Error("請等待所有隊員領取獎勵後再擲骰");
+      }
+
       const roll = 1 + Math.floor(Math.random() * 6);
       const from = room.boardPos || 0;
       const to = (from + roll) % BOARD_SIZE;
@@ -145,24 +166,58 @@ export async function roomRollAndMove(roomId, hostId) {
       const tile = BOARD_LAYOUT[to];
       const count = activeMembers(room).length;
       tx.update(hostRef, { "villageBoard.dice": increment(-1) });
+      // 只寫 pendingMove，不直接更新 boardPos / pendingSettle / pendingEvent
+      // 等所有客戶端動畫結束後，房主再呼叫 commitBoardMove 完成結算
       tx.update(roomRef, {
-        boardPos: to, ...(lapped ? { lapCount: increment(1) } : {}),
-        // 射箭/事件格先不結算（等房主射箭/翻牌）；其餘立即設 pendingSettle
-        ...(TILE_TYPES[tile]?.shooting || tile === "fate" || tile === "opp"
-          ? {}
-          : { pendingSettle: { seq: (room.seq || 0) + 1, tileType: tile, scoreRatio: 0, partyMult: partyMultOf(count) }, seq: (room.seq || 0) + 1 }),
+        pendingMove: { from, to, roll, lapped, tile, partyMult: partyMultOf(count), modeId: room.mode, tier: room.tier || 1 },
+        seq: (room.seq || 0) + 1,
         updatedAt: serverTimestamp(),
       });
       result = { ok: true, roll, from, to, lapped, tile };
     });
-    // 繞圈 → 貢獻村目標「繞 N 圈」（組隊共享一圈算 1）
     if (result.lapped) import("./villageGoalDb").then(m => m.contributeLapToGoal(hostId, 1)).catch(() => {});
     return result;
   } catch (e) { return { ok: false, reason: e?.message }; }
 }
 
-// 房主：射箭格結算（房主代表射，帶 scoreRatio）
-export async function roomSettleShoot(roomId, hostId, tileType, scoreRatio) {
+// 動畫結束後房主確認移動 → 更新 boardPos + 設定 pendingSettle / pendingEvent
+export async function commitBoardMove(roomId, hostId, { eventCard } = {}) {
+  try {
+    await runTransaction(db, async tx => {
+      const ref = doc(db, R, roomId);
+      const s = await tx.get(ref);
+      if (!s.exists() || s.data().hostId !== hostId) throw new Error("只有房主可確認");
+      const room = s.data();
+      const pm = room.pendingMove;
+      if (!pm) throw new Error("無待確認的移動");
+
+      const isShooting = TILE_TYPES[pm.tile]?.shooting;
+      const isEventTile = pm.tile === "fate" || pm.tile === "opp";
+
+      const updates = {
+        boardPos: pm.to,
+        ...(pm.lapped ? { lapCount: increment(1) } : {}),
+        pendingMove: null,
+        updatedAt: serverTimestamp(),
+      };
+
+      if (isEventTile && eventCard) {
+        // 命運/機會：房主已抽牌，寫入 pendingEvent 讓隊員一起看
+        updates.pendingEvent = { seq: room.seq, event: eventCard, partyMult: pm.partyMult };
+      } else if (!isShooting && !isEventTile) {
+        // 一般格子：直接設定結算
+        updates.pendingSettle = { seq: room.seq, tileType: pm.tile, scoreRatio: 0, partyMult: pm.partyMult };
+      }
+      // 射箭格：不設 pendingSettle，UI 會處理射擊介面
+
+      tx.update(ref, updates);
+    });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+// 房主：射箭格結算（房主代表射，帶 scoreRatio、threshold、gatheringProgress）
+export async function roomSettleShoot(roomId, hostId, tileType, scoreRatio, { threshold, gatheringProgress } = {}) {
   try {
     await runTransaction(db, async tx => {
       const ref = doc(db, R, roomId);
@@ -170,7 +225,12 @@ export async function roomSettleShoot(roomId, hostId, tileType, scoreRatio) {
       if (!s.exists() || s.data().hostId !== hostId) throw new Error("只有房主可結算");
       const room = s.data();
       const count = activeMembers(room).length;
-      tx.update(ref, { pendingSettle: { seq: (room.seq || 0) + 1, tileType, scoreRatio, partyMult: partyMultOf(count) }, seq: (room.seq || 0) + 1, updatedAt: serverTimestamp() });
+      tx.update(ref, { pendingSettle: {
+        seq: (room.seq || 0) + 1, tileType, scoreRatio,
+        threshold: threshold ?? null,
+        gatheringProgress: gatheringProgress ?? null,
+        partyMult: partyMultOf(count),
+      }, seq: (room.seq || 0) + 1, updatedAt: serverTimestamp() });
     });
     return { ok: true };
   } catch (e) { return { ok: false, reason: e?.message }; }
@@ -214,8 +274,16 @@ export async function claimBoardSettle(roomId, memberId, { villageBuildings = {}
     if (!ps) return { ok: false, reason: "無待結算" };
     if ((room.settleClaims?.[memberId] || 0) >= ps.seq) return { ok: false, reason: "已領取" };
     const mode = BOARD_MODE_MAP[room.mode];
-    const tierCap = getModeTierCap(room.mode, villageBuildings);
-    const reward = rollTileReward(ps.tileType, { mode, tierCap, partyMult: ps.partyMult || 1, scoreRatio: ps.scoreRatio || 0 });
+    // 以房主開房時選的 T 階（room.tier）為上限，不看各隊員自己的建築等級，
+    // 否則低階隊員在房主的高階房間也只能拿到 T1 材料。
+    const roomTier = room.tier || getModeTierCap(room.mode, villageBuildings);
+    const reward = rollTileReward(ps.tileType, {
+      mode, tierCap: roomTier, tier: roomTier,
+      partyMult: ps.partyMult || 1,
+      scoreRatio: ps.scoreRatio || 0,
+      threshold: ps.threshold || 0,
+      gatheringProgress: ps.gatheringProgress || 0,
+    });
     await applyBoardReward(memberId, reward, { catId });
     await updateDoc(ref, { [`settleClaims.${memberId}`]: ps.seq });
     return { ok: true, reward };
@@ -235,15 +303,16 @@ export async function claimBoardEvent(roomId, memberId, { villageBuildings = {},
     const eff = pe.event?.effect;
     const mode = BOARD_MODE_MAP[room.mode];
     const tierCap = getModeTierCap(room.mode, villageBuildings);
+    const roomTier = room.tier || tierCap;
     const rnd = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
     // 只處理「資源類/寶箱/貓咪/微獎勵/team.allBuff」——這些每人各自入帳。
     if (eff) {
       if (eff.type === "micro") await applyBoardReward(memberId, { coins: eff.coins || 0 }, { catId });
-      else if (eff.type === "gain") await applyGain(memberId, mode, eff.resource, rnd(eff.min, eff.max), tierCap, catId);
-      else if (eff.type === "chest") await applyBoardReward(memberId, { chests: [{ kind: eff.kind, family: mode.family, tier: tierCap }] }, {});
+      else if (eff.type === "gain") await applyGain(memberId, mode, eff.resource, rnd(eff.min, eff.max), roomTier, catId);
+      else if (eff.type === "chest") await applyBoardReward(memberId, { chests: [{ kind: eff.kind, family: mode.family, tier: roomTier }] }, {});
       else if (eff.type === "catBond") await applyBoardReward(memberId, { catXP: eff.xp || 0, catBond: eff.bond || 0 }, { catId });
       else if (eff.type === "team") { // allBuff/gift/steal 在合作模式一律視為全員得益
-        if (eff.resource) await applyGain(memberId, mode, eff.resource, rnd(eff.min ?? 1, eff.max ?? 3), tierCap, catId);
+        if (eff.resource) await applyGain(memberId, mode, eff.resource, rnd(eff.min ?? 1, eff.max ?? 3), roomTier, catId);
       }
       // move/teleport/dice/multiplier/trigger 由房主端處理共享棋，不在此重複
     }

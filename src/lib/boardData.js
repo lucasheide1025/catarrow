@@ -6,6 +6,10 @@
 //   site.id 同時是「村建築 id」→ getBuildingStage(建築等級) 決定該模式可刷的素材階級上限（T1~T5）。
 import { GATHERING_SITES } from "./catVillageGathering";
 import { getBuildingStage } from "./villageData";
+import { drawMaterial } from "./monsterMaterials";
+
+// 數字階級 → 字串階級（對應 monsterMaterials 的 rarity）
+const TIER_NO_TO_STR = { 1:'common', 2:'rare', 3:'elite', 4:'fierce', 5:'boss', 6:'mythic' };
 
 // ── 6 模式（家族/資源/建築）──────────────────────────────
 export const BOARD_MODES = GATHERING_SITES.map(s => ({
@@ -86,31 +90,46 @@ export function rollTileReward(tileType, ctx = {}) {
 
   switch (tileType) {
     case "material": {
-      // 家族素材 ×3~6（family_m{tier}）
+      // 家族素材 ×3~6（隨機抽多種材料）
       const count = scale(randInt(3, 6));
-      addFamilyMat(r, mode.family, rollTier(T), count);
+      addRandomFamilyMat(r, mode.family, rollTier(T), count);
       break;
     }
     case "mining": {
-      // 村資源 ×6~15 × 完成度加乘；15% 額外皮草/家族素材
+      // 採集進度制：使用 scoreToGatheringProgress 計算進度，最高 180%
+      const progressPct = ctx.gatheringProgress || 0;
       const band = scoreToBand(scoreRatio);
+      const basePct = Math.max(0, Math.min(180, progressPct));
+      let miningMult;
+      if (basePct >= 180)      miningMult = 1.8;
+      else if (basePct >= 130) miningMult = 1.5;
+      else if (basePct >= 100) miningMult = 1.2;
+      else if (basePct >= 50)  miningMult = 0.8;
+      else                     miningMult = 0.5;
       const base = randInt(6, 15);
-      r.villageResources[mode.resource] = (r.villageResources[mode.resource] || 0) + scale(Math.round(base * band.miningMult));
+      r.villageResources[mode.resource] = (r.villageResources[mode.resource] || 0) + Math.max(1, Math.round(base * miningMult));
       if (Math.random() < 0.15) {
         if (Math.random() < 0.5) r.villageResources.fur = (r.villageResources.fur || 0) + scale(1);
-        else addFamilyMat(r, mode.family, rollTier(T), scale(1));
+        else addRandomFamilyMat(r, mode.family, rollTier(T), scale(1));
       }
-      r.band = band.band;
+      // band 改用完成度文字
+      r.band = basePct >= 180 ? "大豐收" : basePct >= 130 ? "豐收" : basePct >= 100 ? "完成" : basePct >= 50 ? "半成品" : "安慰獎";
+      r.progressPct = basePct;
       break;
     }
     case "monster": {
-      // 6 箭完成度 S/A/B/C → ×挖礦基準；S 送寶箱
-      const band = scoreToBand(scoreRatio);
+      // 6 箭完成度 → 門檻判定（threshold 在 pendingSettle 內，由 UI 設定）
+      // 若通過門檻 ×1.5 獎勵，未通過 ×0.8
+      const threshold = ctx.threshold || 0;
+      const passed = (scoreRatio * 60) >= threshold;
+      const monsterMult = passed ? 1.5 : 0.8;
       const base = randInt(6, 15);
-      r.villageResources[mode.resource] = (r.villageResources[mode.resource] || 0) + scale(Math.round(base * band.monsterMult));
-      addFamilyMat(r, mode.family, rollTier(T), scale(band.band === "S" ? 3 : band.band === "A" ? 2 : 1));
-      if (band.band === "S") r.chests.push({ kind: "family", family: mode.family, tier: T });
-      r.band = band.band;
+      r.villageResources[mode.resource] = (r.villageResources[mode.resource] || 0) + scale(Math.round(base * monsterMult));
+      addRandomFamilyMat(r, mode.family, rollTier(T), scale(passed ? 3 : 1));
+      if (passed && Math.random() < 0.3) r.chests.push({ kind: "family", family: mode.family, tier: T });
+      r.band = passed ? (scoreRatio >= 0.75 ? "S" : "A") : "C";
+      r.passed = passed;
+      r.threshold = threshold;
       break;
     }
     case "chest": {
@@ -128,7 +147,7 @@ export function rollTileReward(tileType, ctx = {}) {
     case "potion":   r.potions.push(rollPotionByTier(T)); break;
     case "catbond":  r.catXP = scale(randInt(50, 150)); r.catBond = randInt(1, 2); break;
     case "start": {  // 繞圈普通一輪包
-      addFamilyMat(r, mode.family, rollTier(T), scale(3));
+      addRandomFamilyMat(r, mode.family, rollTier(T), scale(3));
       r.arrowdew = scale(randInt(15, 40) * T);
       r.coins = scale(randInt(50, 150) * T);
       r.lap = true;
@@ -146,6 +165,15 @@ function emptyReward() {
 function addFamilyMat(r, family, tier, count) {
   const id = `${family}_m${Math.min(6, tier)}`;
   r.familyMaterials[id] = (r.familyMaterials[id] || 0) + count;
+}
+
+// 隨機抽材料（每份獨立抽，讓同次掉落更多樣化）
+function addRandomFamilyMat(r, family, tierNo, count) {
+  const tierStr = TIER_NO_TO_STR[Math.min(6, Math.max(1, tierNo))] || 'common';
+  for (let i = 0; i < count; i++) {
+    const mat = drawMaterial(family, tierStr);
+    if (mat) r.familyMaterials[mat.id] = (r.familyMaterials[mat.id] || 0) + 1;
+  }
 }
 function rollPotionByTier(tier) {
   // 藥水品質隨階級（實作端對照 itemData 藥水表；先給階級標記由 db 解析）

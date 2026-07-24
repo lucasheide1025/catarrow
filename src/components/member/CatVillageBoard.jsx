@@ -12,6 +12,7 @@ import { drawBoardEvent } from "../../lib/boardEvents";
 import { sfxTap, sfxSuccess, sfxCast } from "../../lib/sound";
 import { MATERIALS } from "../../lib/monsterMaterials";
 import { RESOURCE_NAMES } from "../../lib/villageData";
+import { addRoundArrows } from "../../lib/db";
 
 const MAT_BY_ID = Object.fromEntries(MATERIALS.map(m => [m.id, m]));
 const RES_ICON = { ore:"⛏️", melon:"🍈", fish:"🐟", meat:"🍖", driedfish:"🐠", can:"🥫", fur:"🧶", arrowdew:"💧" };
@@ -170,6 +171,7 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
     const ratio = arrows.reduce((s, v) => s + v, 0) / (6 * 10);
     const type = shootTile.type;
     setShootTile(null);
+    addRoundArrows(myId, 6).catch(() => {}); // 射箭格＝射出 6 箭，累積今日/終身箭數與里程碑
     const res = await settleBoardTile(myId, type, { villageBuildings, catId, scoreRatio: ratio });
     if (res?.ok) { sfxSuccess(); showReward(res.reward, res.reward.band); }
     busyRef.current = false;
@@ -407,9 +409,11 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
               {/* 卡面 */}
               <div className="absolute inset-0 rounded-3xl border-4 flex flex-col items-center justify-center p-6 text-center [backface-visibility:hidden]"
                 style={{ transform: "rotateY(180deg)", borderColor: eventCard.event.deck === "fate" ? "#f59e0b" : "#38bdf8", backgroundColor: eventCard.event.deck === "fate" ? "#fde8cf" : "#d4f0fe", backgroundImage: `url(${ASSET}/card_${eventCard.event.deck}.webp)`, backgroundSize: "cover", backgroundPosition: "center" }}>
-                <div className="text-slate-900 font-black text-lg mb-2">{eventCard.event.deck === "fate" ? "命運" : "機會"}</div>
-                <div className="text-slate-800 font-bold text-base leading-relaxed">{eventCard.event.text}</div>
-                <div className="text-slate-700 text-xs mt-4 font-bold">（點擊套用）</div>
+                <div className="rounded-2xl px-4 py-3" style={{ background:"rgba(255,255,255,0.86)", boxShadow:"0 2px 10px rgba(0,0,0,0.15)" }}>
+                  <div className="text-slate-900 font-black text-lg mb-2">{eventCard.event.deck === "fate" ? "命運" : "機會"}</div>
+                  <div className="text-slate-800 font-bold text-base leading-relaxed">{eventCard.event.text}</div>
+                  <div className="text-slate-600 text-xs mt-3 font-bold">（點擊套用）</div>
+                </div>
               </div>
             </div>
           </div>

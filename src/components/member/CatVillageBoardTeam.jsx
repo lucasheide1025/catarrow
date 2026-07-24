@@ -7,20 +7,25 @@ import { db } from "../../lib/firebase";
 import { useAuth } from "../../hooks/useAuth";
 import {
   createBoardRoom, joinBoardRoom, subscribeBoardRoom, leaveBoardRoom, disbandBoardRoom,
-  findReconnectableBoardRoom, setRoomMode, startBoardRoom, roomRollAndMove, roomSettleShoot, roomDrawEvent,
+  findReconnectableBoardRoom, startBoardRoom, roomRollAndMove, roomSettleShoot,
   roomApplyBoardEffect, claimBoardSettle, claimBoardEvent, partyMultOf, subscribeOpenBoardRooms,
+  commitBoardMove,
 } from "../../lib/villageBoardTeamDb";
-import { ensureDailyDice, applyEventEffect, DAILY_DICE } from "../../lib/villageBoardDb";
-import { BOARD_LAYOUT, BOARD_SIZE, TILE_TYPES, BOARD_MODES, getModeTierCap } from "../../lib/boardData";
+import { ensureDailyDice, applyEventEffect, DAILY_DICE, applyBoardReward } from "../../lib/villageBoardDb";
+import { BOARD_LAYOUT, BOARD_SIZE, TILE_TYPES, BOARD_MODES, getModeTierCap, rollTileReward } from "../../lib/boardData";
 import { drawBoardEvent } from "../../lib/boardEvents";
 import { MATERIALS } from "../../lib/monsterMaterials";
 import { RESOURCE_NAMES } from "../../lib/villageData";
+import { calculateGatheringRound } from "../../lib/catVillageGathering";
+import { addRoundArrows } from "../../lib/db";
 import { sfxTap, sfxSuccess, sfxCast } from "../../lib/sound";
 
 const ASSET = "/assets/board";
 const MAT_BY_ID = Object.fromEntries(MATERIALS.map(m => [m.id, m]));
 const RES_ICON = { ore:"⛏️", melon:"🍈", fish:"🐟", meat:"🍖", driedfish:"🐠", can:"🥫", fur:"🧶", arrowdew:"💧" };
 const SCORE_PAD = [["X",10],["10",10],["9",9],["8",8],["7",7],["6",6],["5",5],["3",3],["M",0]];
+// 藥水品質
+const POTION_QUALITY = { 1: "初級", 2: "中級", 3: "高級" };
 
 function gridPos(i) {
   if (i < 8) return { row: 1, col: i + 1 };
@@ -39,16 +44,41 @@ function TileIcon({ type, size = 24 }) {
   if (!failed) return <img src={`${ASSET}/tile_${type}.webp`} alt="" width={size} height={size} onError={() => setFailed(true)} className="object-contain" draggable={false} />;
   return <span style={{ fontSize: size * 0.8 }}>{meta.icon || "❔"}</span>;
 }
+// 解析 ore_t1 → { resource:'ore', tier:'T1' }，無 tier 的 key 原樣回傳
+function parseTieredKey(key) {
+  const m = key?.match(/^(.+)_t(\d+)$/);
+  return m ? { resource: m[1], tier: `T${m[2]}` } : null;
+}
+
+
+
 function describeReward(rw) {
   if (!rw) return [];
   const out = [];
   if (rw.coins) out.push({ icon:"🪙", name:"金幣", amount:rw.coins });
   if (rw.arrowdew) out.push({ icon:"💧", name:"箭露", amount:rw.arrowdew });
   if (rw.gachaToken) out.push({ icon:"🎰", name:"扭蛋幣", amount:rw.gachaToken });
-  Object.entries(rw.familyMaterials || {}).forEach(([id,n]) => { const m = MAT_BY_ID[id]; out.push({ icon:m?.icon||"🧩", name:m?.name||id, amount:n }); });
-  Object.entries(rw.villageResources || {}).forEach(([k,n]) => out.push({ icon:RES_ICON[k]||"📦", name:RESOURCE_NAMES[k]||k, amount:n }));
-  (rw.chests||[]).forEach(() => out.push({ icon:"🎁", name:"寶箱", amount:1 }));
-  if (rw.catXP) out.push({ icon:"🐱", name:"貓咪經驗", amount:rw.catXP });
+  Object.entries(rw.familyMaterials || {}).forEach(([id, n]) => {
+    const m = MAT_BY_ID[id];
+    out.push({ icon: m?.icon || "🧩", name: m?.name || id, amount: n });
+  });
+  // 村資源：分級 key（ore_t1）顯示「T1 礦物」；無 tier 原樣顯示
+  Object.entries(rw.villageResources || {}).forEach(([k, n]) => {
+    const parsed = parseTieredKey(k);
+    if (parsed) {
+      out.push({ icon: RES_ICON[parsed.resource] || "📦", name: `${parsed.tier} ${RESOURCE_NAMES[parsed.resource] || parsed.resource}`, amount: n });
+    } else {
+      out.push({ icon: RES_ICON[k] || "📦", name: RESOURCE_NAMES[k] || k, amount: n });
+    }
+  });
+  // 藥水（applyBoardReward 會在入帳時隨機抽選實際藥水，此處顯示品質）
+  (rw.potions || []).forEach(p => {
+    const q = p?.tier || 1;
+    out.push({ icon: "🧪", name: `${POTION_QUALITY[q] || ""}藥水`, amount: 1 });
+  });
+  (rw.chests || []).forEach(() => out.push({ icon: "🎁", name: "寶箱", amount: 1 }));
+  if (rw.catXP) out.push({ icon: "🐱", name: "貓咪經驗", amount: rw.catXP });
+  if (rw.catBond) out.push({ icon: "💕", name: "貓咪羈絆", amount: rw.catBond });
   return out;
 }
 
@@ -66,11 +96,14 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
   const [selTier, setSelTier] = useState(1);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const joinedRef = useRef(false); // 避免重連覆蓋使用者主動建立/加入
   const [displayPos, setDisplayPos] = useState(0);
   const [rolling, setRolling] = useState(false);
+  const [animating, setAnimating] = useState(false); // 棋子動畫進行中（所有客戶端同步）
   const [diceAnim, setDiceAnim] = useState(null);
   const [shoot, setShoot] = useState(null);   // 房主射箭 { type }
-  const [arrows, setArrows] = useState([]);
+  const [arrows, setArrows] = useState([]);   // 6 箭標籤（"X","10","9"...）
+  const [shootResult, setShootResult] = useState(null); // { type, scoreRatio, threshold, passed, band, progressPct }
   const [card, setCard] = useState(null);      // { event, flipped }
   const [reward, setReward] = useState(null);
   const [toast, setToast] = useState(null);
@@ -79,11 +112,22 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
 
   const showToast = t => { setToast(t); setTimeout(() => setToast(null), 2400); };
 
-  // 重連
+  // ── allPassed 等全域閘門變數（需在 useEffect 前計算，避免 TDZ）──
+  const activeMems = room ? Object.entries(room.members || {}).filter(([, mm]) => mm) : [];
+  const memberCount = room ? Object.values(room.members || {}).filter(Boolean).length : 0;
+  const curSeq = room?.seq || 0;
+  const passedStep = mid => (room?.settleClaims?.[mid] || 0) >= curSeq || (room?.eventClaims?.[mid] || 0) >= curSeq;
+  const hasPending = curSeq > 0 && ((room?.pendingSettle?.seq === curSeq) || (room?.pendingEvent?.seq === curSeq));
+  const claimedN = activeMems.filter(([id]) => passedStep(id)).length;
+  const allPassed = !hasPending || activeMems.every(([id]) => passedStep(id));
+
+  // 重連（僅在使用者尚未主動建立/加入房間時才自動重連）
   useEffect(() => {
     if (!myId) return;
     ensureDailyDice(myId);
-    findReconnectableBoardRoom(myId).then(r => { if (r.room) setRoomId(r.room.id); });
+    findReconnectableBoardRoom(myId).then(r => {
+      if (!joinedRef.current && r.room) setRoomId(r.room.id);
+    });
   }, [myId]);
 
   // 大廳：訂閱可加入的等待中房間（跟其他模式一樣列出房間讓玩家選）
@@ -111,9 +155,61 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     return unsub;
   }, [room?.hostId]);
 
-  // 房主擲骰動畫進行中（rolling）不可搶跑，否則 roomRollAndMove 一寫入 boardPos，
-  // 棋子會在骰子還沒出數字前就瞬移到終點；rolling 收尾時再對齊最終位置。
-  useEffect(() => { if (room && !rolling) setDisplayPos(room.boardPos || 0); }, [room?.boardPos, rolling]);
+  // pendingMove → 所有客戶端同步動畫（房主執骰後雙方一起看棋子移動）
+  useEffect(() => {
+    if (!room?.pendingMove || animating) return;
+    const pm = room.pendingMove;
+    setAnimating(true);
+    setDisplayPos(pm.from);
+    let cur = pm.from;
+    const iv = setInterval(() => {
+      cur = (cur + 1) % BOARD_SIZE;
+      setDisplayPos(cur);
+      sfxTap();
+      if (cur === pm.to) {
+        clearInterval(iv);
+        sfxSuccess();
+        setAnimating(false);
+      }
+    }, 200);
+    return () => clearInterval(iv);
+  }, [room?.pendingMove?.seq]);
+
+  // boardPos 同步（頁面重整/動畫結束後確保棋子位置正確）
+  useEffect(() => { if (room && !animating) setDisplayPos(room.boardPos || 0); }, [room?.boardPos, animating]);
+
+  // 動畫結束後房主確認移動 → 寫入 boardPos + pendingSettle/Event
+  useEffect(() => {
+    if (animating || !room?.pendingMove || !isHost) return;
+    const pm = room.pendingMove;
+
+    if (TILE_TYPES[pm.tile]?.shooting) {
+      // 射箭格：先確認移動，再顯示射擊介面
+      commitBoardMove(roomId, myId).then(() => {
+        setShoot({ type: pm.tile });
+        setArrows([]);
+      }).catch(() => {});
+    } else if (pm.tile === "fate" || pm.tile === "opp") {
+      // 命運/機會：抽牌後提交（pendingEvent 會讓雙方都看到卡片）
+      const card = drawBoardEvent(pm.tile);
+      commitBoardMove(roomId, myId, { eventCard: card }).catch(() => {});
+    } else {
+      // 一般格子：提交 pendingSettle → 雙方自動領取
+      commitBoardMove(roomId, myId).catch(() => {});
+    }
+
+    // 繞圈獎勵（房主自己領）
+    if (pm.lapped) {
+      const lapMode = BOARD_MODES.find(x => x.id === pm.modeId) || BOARD_MODES[0];
+      const rw = rollTileReward("start", {
+        mode: lapMode, tierCap: getModeTierCap(pm.modeId, villageBuildings),
+        tier: pm.tier, partyMult: pm.partyMult || 1,
+      });
+      applyBoardReward(myId, rw, { catId }).catch(() => {});
+      sfxSuccess();
+      setReward({ items: describeReward(rw), band: rw.band });
+    }
+  }, [animating, room?.pendingMove, isHost, roomId, myId]);
 
   // 成員自動 claim 結算獎勵
   useEffect(() => {
@@ -139,62 +235,102 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
   // ── 大廳動作 ──
   async function create() {
     setBusy(true); setErr("");
-    const res = await createBoardRoom({ hostId: myId, hostName: profile?.name || "房主", mode: selMode, accountType: profile?.accountType, avatarId: profile?.avatarId });
+    joinedRef.current = true;
+    const res = await createBoardRoom({ hostId: myId, hostName: profile?.name || "房主", mode: selMode, tier: selTier, accountType: profile?.accountType, avatarId: profile?.avatarId });
     setBusy(false);
-    if (res.ok) { await setRoomMode(res.roomId, myId, selMode).catch(() => {}); setRoomId(res.roomId); }
-    else setErr(res.reason || "建立失敗");
+    if (res.ok) setRoomId(res.roomId);
+    else { joinedRef.current = false; setErr(res.reason || "建立失敗"); }
   }
   async function join(code) {
     if (!code) return;
     setBusy(true); setErr("");
+    joinedRef.current = true;
     const res = await joinBoardRoom(code, myId, profile?.name || "隊員", { accountType: profile?.accountType, avatarId: profile?.avatarId });
     setBusy(false);
-    if (res.ok) setRoomId(res.roomId); else setErr(res.reason || "加入失敗");
+    if (res.ok) setRoomId(res.roomId); else { joinedRef.current = false; setErr(res.reason || "加入失敗"); }
   }
   async function exitRoom() {
+    joinedRef.current = false;
     if (isHost) { await disbandBoardRoom(roomId, myId).catch(() => {}); }
     else { await leaveBoardRoom(roomId, myId).catch(() => {}); }
     setRoomId(null); setRoom(null);
   }
 
-  // ── 房主：擲骰 ──
+  // ── 房主：擲骰（只寫 pendingMove，動畫交給 Effect 同步處理）──
   const hostRoll = useCallback(async () => {
     if (!isHost || rolling || hostDice <= 0) return;
     setRolling(true); sfxCast();
     const res = await roomRollAndMove(roomId, myId);
     if (!res?.ok) { showToast(res?.reason || "無法擲骰"); setRolling(false); return; }
+    // 骰子動畫（快速跳數字）
     setDiceAnim(1);
     await new Promise(r => { const end = Date.now() + 700; const iv = setInterval(() => { if (Date.now() >= end) { clearInterval(iv); setDiceAnim(res.roll); sfxSuccess(); r(); } else setDiceAnim(1 + Math.floor(Math.random() * 6)); }, 80); });
     await new Promise(r => setTimeout(r, 500)); setDiceAnim(null);
-    let cur = res.from;
-    for (let s = 0; s < res.roll; s++) { cur = (cur + 1) % BOARD_SIZE; setDisplayPos(cur); sfxTap(); await new Promise(r => setTimeout(r, 220)); }
+    // 棋子動畫與事件處理統一由 pendingMove Effect 負責（雙方同步）
     setRolling(false);
-    if (res.lapped) showToast("🏁 繞完一圈！");
-    // 射箭格/事件格由房主處理
-    const meta = TILE_TYPES[res.tile];
-    if (meta?.shooting) { setShoot({ type: res.tile }); setArrows([]); }
-    else if (res.tile === "fate" || res.tile === "opp") { await roomDrawEvent(roomId, myId, drawBoardEvent(res.tile)); }
   }, [isHost, rolling, hostDice, roomId, myId]);
 
   const hostFinishShoot = useCallback(async () => {
     if (arrows.length < 6) return;
-    const ratio = arrows.reduce((s, v) => s + v, 0) / 60;
-    const t = shoot.type; setShoot(null);
-    await roomSettleShoot(roomId, myId, t, ratio);
-  }, [arrows, shoot, roomId, myId]);
+    // arrows 存標籤（"X","10","9"...），計算分數比值與採集進度
+    const labels = arrows;
+    const score = labels.reduce((s, l) => s + (l === "X" ? 10 : Number(l) || 0), 0);
+    const ratio = score / 60;
+    const t = shoot.type;
 
-  // 事件卡確認：成員 claim 資源；房主另套用共享棋效果（move/teleport/dice）
+    if (t === "monster") {
+      // 怪物格：隨機門檻 30~45，>=門檻即擊倒獲得 150% 獎勵，否則 80%
+      const threshold = 30 + Math.floor(Math.random() * 16); // 30~45
+      const passed = score >= threshold;
+      const band = passed ? (score >= 50 ? "S" : score >= 40 ? "A" : "B") : "C";
+      setShootResult({ type: "monster", score, ratio, threshold, passed, band, labels });
+    } else {
+      // 採集格：用 gathering 計分制計算進度（每箭 X=30, 10=25, 9=20…），最高 180%
+      const { progress } = calculateGatheringRound(labels);
+      const pp = Math.max(0, Math.min(180, progress));
+      const completion = pp >= 180 ? "大豐收" : pp >= 130 ? "豐收" : pp >= 100 ? "完成" : pp >= 50 ? "半成品" : "安慰獎";
+      setShootResult({ type: "mining", score, ratio, progressPct: pp, band: completion, labels });
+    }
+  }, [arrows, shoot]);
+
+  // 確認射擊結果 → 寫入 pendingSettle
+  const confirmShootResult = useCallback(async () => {
+    if (!shootResult || !shoot) return;
+    const { ratio, labels } = shootResult;
+    const t = shoot.type;
+    // 計算採集進度（mining 用）
+    const { progress } = t === "mining" ? calculateGatheringRound(labels) : { progress: 0 };
+    const opts = {};
+    if (t === "monster") opts.threshold = shootResult.threshold;
+    if (t === "mining") opts.gatheringProgress = progress;
+    setShootResult(null);
+    setShoot(null);
+    addRoundArrows(myId, 6).catch(() => {}); // 射箭格＝射出 6 箭，累積射手今日/終身箭數
+    await roomSettleShoot(roomId, myId, t, ratio, opts);
+  }, [shootResult, shoot, roomId, myId]);
+
+  // 事件卡確認：成員 claim 資源；房主另套用共享棋效果
+  // 卡片設為 waiting 狀態直到全員領取，防止房主跳過事件、隊員被拉走
   const confirmCard = useCallback(async () => {
-    const ev = card?.event; setCard(null);
+    const ev = card?.event;
     if (!ev) return;
+    // 設為 waiting 不馬上消失，讓隊員有時間確認
+    setCard(c => c && c.event ? { event: c.event, flipped: true, waiting: true } : null);
     await claimBoardEvent(roomId, myId, { villageBuildings, catId });
     if (isHost) {
-      const r = await applyEventEffect(myId, ev, { villageBuildings, catId }); // 只取 kind，不重複入帳（team claim 已處理資源）
+      const r = await applyEventEffect(myId, ev, { villageBuildings, catId });
       if (r.kind === "move") await roomApplyBoardEffect(roomId, myId, { pos: (((room.boardPos + r.steps) % BOARD_SIZE) + BOARD_SIZE) % BOARD_SIZE });
       else if (r.kind === "teleport") { for (let d = 1; d <= BOARD_SIZE; d++) { const idx = (room.boardPos + d) % BOARD_SIZE; if (BOARD_LAYOUT[idx] === r.tile) { await roomApplyBoardEffect(roomId, myId, { pos: idx }); break; } } }
       else if (r.kind === "dice") await roomApplyBoardEffect(roomId, myId, { diceDelta: r.delta });
     }
   }, [card, roomId, myId, isHost, room, catId]);
+
+  // 全員領取後自動關閉卡片
+  useEffect(() => {
+    if (card?.waiting && allPassed) {
+      setCard(null);
+    }
+  }, [card?.waiting, allPassed]);
 
   // ── 大廳畫面 ──
   if (!roomId || !room) {
@@ -294,17 +430,9 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
   }
 
   // ── 團隊棋盤 ──
-  const mode = BOARD_MODES.find(x => x.id === room.mode) || BOARD_MODES[0];
-  const memberCount = Object.values(room.members || {}).filter(Boolean).length;
+  const mode = room ? (BOARD_MODES.find(x => x.id === room.mode) || BOARD_MODES[0]) : BOARD_MODES[0];
   const pMult = partyMultOf(memberCount);
-  // 全員通過閘門：有待領取的步驟時，房主要等所有隊員都領完才能再擲骰
-  const activeMems = Object.entries(room.members || {}).filter(([, mm]) => mm);
-  const curSeq = room.seq || 0;
-  const passedStep = mid => (room.settleClaims?.[mid] || 0) >= curSeq || (room.eventClaims?.[mid] || 0) >= curSeq;
-  const hasPending = curSeq > 0 && ((room.pendingSettle?.seq === curSeq) || (room.pendingEvent?.seq === curSeq));
-  const claimedN = activeMems.filter(([id]) => passedStep(id)).length;
-  const allPassed = !hasPending || activeMems.every(([id]) => passedStep(id));
-  const canRoll = isHost && !rolling && hostDice > 0 && allPassed && !shoot && !card;
+  const canRoll = isHost && !rolling && hostDice > 0 && allPassed && !shoot && !shootResult && !card && !animating;
 
   return (
     <div className="fixed inset-0 z-[200] flex flex-col items-center overflow-y-auto"
@@ -315,7 +443,15 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
         <div className="rounded-xl bg-amber-500/20 border border-amber-400/40 px-2.5 py-1 text-amber-200 text-xs font-black">🎲 {hostDice}</div>
       </div>
       <div className="w-full max-w-lg px-3 flex items-center justify-center gap-2 mb-1">
-        <div className="rounded-xl bg-black/30 border border-amber-500/25 px-3 py-1 text-amber-100 text-xs font-black">{mode.icon} {mode.familyName} · T{room.tier || 1} · 加成×{pMult.toFixed(2)}</div>
+        <div className="rounded-xl bg-black/30 border border-amber-500/25 px-3 py-1 text-amber-100 text-xs font-black">
+          {mode.icon} {mode.familyName} · T{room.tier || 1}
+          {/* Bug 6 修正：有 pending 待結算時，顯示結算時的加成倍率 */}
+          {room.pendingSettle?.partyMult
+            ? ` · 加成×${room.pendingSettle.partyMult.toFixed(2)}`
+            : room.pendingEvent?.partyMult
+              ? ` · 加成×${room.pendingEvent.partyMult.toFixed(2)}`
+              : ` · 加成×${partyMultOf(memberCount).toFixed(2)}`}
+        </div>
       </div>
 
       <div className="w-full max-w-lg p-3">
@@ -370,29 +506,95 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
         </div>
       )}
 
-      {shoot && isHost && (
+      {shoot && isHost && !shootResult && (
         <div className="fixed inset-0 z-[215] bg-black/85 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-amber-500/40 rounded-3xl p-5 w-full max-w-sm">
             <div className="text-center text-amber-100 font-black mb-1">{TILE_TYPES[shoot.type].icon} {TILE_TYPES[shoot.type].label}格・房主射 6 箭</div>
             <div className="flex justify-center gap-1 my-3">{Array.from({length:6}).map((_,i)=>(<div key={i} className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black border ${arrows[i]!=null?"bg-emerald-600 text-white border-emerald-400":"bg-slate-800 text-slate-500 border-slate-700"}`}>{arrows[i]!=null?arrows[i]:"?"}</div>))}</div>
-            <div className="grid grid-cols-5 gap-1.5">{SCORE_PAD.map(([l,v])=>(<button key={l} disabled={arrows.length>=6} onClick={()=>{sfxTap();setArrows(a=>a.length<6?[...a,v]:a);}} className="py-2 rounded-lg bg-amber-500/20 text-amber-100 font-black text-xs border border-amber-400/30 disabled:opacity-40">{l}</button>))}</div>
+            <div className="grid grid-cols-5 gap-1.5">{SCORE_PAD.map(([l,v])=>(<button key={l} disabled={arrows.length>=6} onClick={()=>{sfxTap();setArrows(a=>a.length<6?[...a,l]:a);}} className="py-2 rounded-lg bg-amber-500/20 text-amber-100 font-black text-xs border border-amber-400/30 disabled:opacity-40">{l}</button>))}</div>
             <div className="flex gap-2 mt-4"><button onClick={()=>setArrows([])} className="flex-1 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold">清除</button><button onClick={hostFinishShoot} disabled={arrows.length<6} className="flex-[2] py-2 rounded-xl bg-amber-400 text-slate-900 font-black text-sm disabled:opacity-40">結算（{arrows.length}/6）</button></div>
           </div>
         </div>
       )}
 
+      {shootResult && (
+        <div className="fixed inset-0 z-[215] bg-black/85 flex items-center justify-center p-4" onClick={e => e.stopPropagation()}>
+          <div className="bg-slate-900 border-2 border-amber-400/50 rounded-3xl p-6 w-full max-w-sm text-center animate-[fx-pop-in_0.35s_cubic-bezier(.34,1.56,.64,1)]">
+            {shootResult.type === "monster" ? (
+              <>
+                <div className="text-5xl mb-2">{mode.icon}</div>
+                <div className="text-amber-200 font-black text-lg">
+                  {shootResult.passed ? "⚔️ 擊倒怪物！" : "💨 怪物逃走了…"}
+                </div>
+                <div className="flex justify-center gap-4 my-3 text-sm">
+                  <div className="text-slate-400">
+                    門檻<br/><span className="text-amber-300 font-black text-xl">{shootResult.threshold}</span>
+                  </div>
+                  <div className="text-slate-400">
+                    得分<br/><span className={`font-black text-xl ${shootResult.passed ? "text-emerald-400" : "text-rose-400"}`}>{shootResult.score}</span>
+                  </div>
+                  <div className="text-slate-400">
+                    獎勵倍率<br/><span className="text-amber-300 font-black text-xl">×{shootResult.passed ? 1.5 : 0.8}</span>
+                  </div>
+                </div>
+                <div className={`inline-block px-3 py-1 rounded-full text-xs font-black ${shootResult.passed ? "bg-emerald-500/20 text-emerald-300" : "bg-rose-500/20 text-rose-300"}`}>
+                  {shootResult.passed ? `✓ 擊倒成功！(${shootResult.band}級)` : "✗ 未達門檻"}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-5xl mb-2">⛏️</div>
+                <div className="text-amber-200 font-black text-lg">採集結果</div>
+                <div className="flex justify-center gap-4 my-3 text-sm">
+                  <div className="text-slate-400">
+                    進度<br/><span className="text-amber-300 font-black text-xl">{Math.round(shootResult.progressPct)}%</span>
+                  </div>
+                  <div className="text-slate-400">
+                    評級<br/><span className="text-amber-300 font-black text-lg">{shootResult.band}</span>
+                  </div>
+                </div>
+                <div className="mt-1 h-2 bg-slate-700 rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full transition-all duration-700 ${shootResult.progressPct >= 180 ? "bg-amber-400" : shootResult.progressPct >= 100 ? "bg-emerald-400" : "bg-blue-400"}`}
+                    style={{ width: `${Math.min(100, shootResult.progressPct)}%` }} />
+                </div>
+                <div className="text-slate-500 text-[10px] mt-1">最高 180%</div>
+              </>
+            )}
+            <button onClick={confirmShootResult}
+              className="mt-5 w-full py-3 rounded-2xl bg-amber-400 text-slate-900 font-black text-sm shadow-lg active:scale-95 transition-all hover:bg-amber-300">
+              ✓ 確認領取
+            </button>
+          </div>
+        </div>
+      )}
+
       {card && (
-        <div className="fixed inset-0 z-[215] bg-black/85 flex items-center justify-center p-4" onClick={confirmCard}>
-          <div className="[perspective:1000px]">
-            <div className="relative w-64 h-96 transition-transform duration-500" style={{ transformStyle:"preserve-3d", transform: card.flipped ? "rotateY(180deg)" : "rotateY(0deg)" }}>
-              <div className="absolute inset-0 rounded-3xl border-4 flex items-center justify-center [backface-visibility:hidden]" style={{ borderColor: card.event.deck==="fate"?"#f59e0b":"#38bdf8", backgroundColor: card.event.deck==="fate"?"#431407":"#0c4a6e", backgroundImage:`url(${ASSET}/card_${card.event.deck}_back.webp)`, backgroundSize:"cover", backgroundPosition:"center" }}><div className="text-3xl font-black" style={{ color: card.event.deck==="fate"?"#fcd34d":"#7dd3fc" }}>{card.event.deck==="fate"?"命運":"機會"}</div></div>
-              <div className="absolute inset-0 rounded-3xl border-4 flex flex-col items-center justify-center p-6 text-center [backface-visibility:hidden]" style={{ transform:"rotateY(180deg)", borderColor: card.event.deck==="fate"?"#f59e0b":"#38bdf8", backgroundColor: card.event.deck==="fate"?"#fde8cf":"#d4f0fe", backgroundImage:`url(${ASSET}/card_${card.event.deck}.webp)`, backgroundSize:"cover", backgroundPosition:"center" }}>
-                <div className="text-slate-900 font-black text-lg mb-2">{card.event.deck==="fate"?"命運":"機會"}</div>
-                <div className="text-slate-800 font-bold text-base leading-relaxed">{card.event.text}</div>
-                <div className="text-slate-700 text-xs mt-4 font-bold">（點擊繼續）</div>
+        <div className="fixed inset-0 z-[215] bg-black/85 flex items-center justify-center p-4" onClick={card.waiting ? undefined : confirmCard}>
+          {card.waiting ? (
+            <div className="rounded-3xl bg-slate-900/90 border-2 border-amber-400/50 p-8 w-full max-w-xs text-center">
+              <div className="text-amber-300 text-lg font-black mb-2">⏳ 等待全員確認</div>
+              <div className="text-amber-100/80 text-sm mb-3">其他隊員正在查看卡片…</div>
+              <div className="flex items-center justify-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-amber-400 animate-bounce" style={{ animationDelay:'0s' }} />
+                <div className="w-3 h-3 rounded-full bg-amber-400 animate-bounce" style={{ animationDelay:'0.15s' }} />
+                <div className="w-3 h-3 rounded-full bg-amber-400 animate-bounce" style={{ animationDelay:'0.3s' }} />
+              </div>
+              <div className="text-amber-200/60 text-xs mt-4">{claimedN}/{memberCount} 已確認</div>
+            </div>
+          ) : (
+            <div className="[perspective:1000px]">
+              <div className="relative w-64 h-96 transition-transform duration-500" style={{ transformStyle:"preserve-3d", transform: card.flipped ? "rotateY(180deg)" : "rotateY(0deg)" }}>
+                <div className="absolute inset-0 rounded-3xl border-4 flex items-center justify-center [backface-visibility:hidden]" style={{ borderColor: card.event.deck==="fate"?"#f59e0b":"#38bdf8", backgroundColor: card.event.deck==="fate"?"#431407":"#0c4a6e", backgroundImage:`url(${ASSET}/card_${card.event.deck}_back.webp)`, backgroundSize:"cover", backgroundPosition:"center" }}><div className="text-3xl font-black" style={{ color: card.event.deck==="fate"?"#fcd34d":"#7dd3fc" }}>{card.event.deck==="fate"?"命運":"機會"}</div></div>
+                <div className="absolute inset-0 rounded-3xl border-4 flex flex-col items-center justify-center p-6 text-center [backface-visibility:hidden]" style={{ transform:"rotateY(180deg)", borderColor: card.event.deck==="fate"?"#f59e0b":"#38bdf8", backgroundColor: card.event.deck==="fate"?"#fde8cf":"#d4f0fe", backgroundImage:`url(${ASSET}/card_${card.event.deck}.webp)`, backgroundSize:"cover", backgroundPosition:"center" }}>
+                  <div className="rounded-2xl px-4 py-3" style={{ background:"rgba(255,255,255,0.86)", boxShadow:"0 2px 10px rgba(0,0,0,0.15)" }}>
+                    <div className="text-slate-900 font-black text-lg mb-2">{card.event.deck==="fate"?"命運":"機會"}</div>
+                    <div className="text-slate-800 font-bold text-base leading-relaxed">{card.event.text}</div>
+                    <div className="text-slate-600 text-xs mt-3 font-bold">（點擊確認）</div>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       )}
     </div>
