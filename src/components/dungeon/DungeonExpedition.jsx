@@ -399,8 +399,10 @@ export default function DungeonExpedition({
 
   // 進度持久化：斷線/關閉瀏覽器後可在 DungeonLobby 偵測，選擇「回到房間續玩」或「結算」。
   // 完整保存目前地圖結構 (gridFloor, playerPos, visitedIds) 確保地圖絕不重置！
+  // 遠征已結束（領獎/放棄）後，禁止自動存檔 effect 再把進度寫回 → 否則「領完獎還能從第三層續玩」重複打王
+  const expeditionEndedRef = useRef(false);
   useEffect(() => {
-    if (!myId || phase === "intro" || phase === "consume" || phase === "entry_error") return;
+    if (!myId || expeditionEndedRef.current || phase === "intro" || phase === "consume" || phase === "entry_error" || phase === "result" || phase === "won") return;
     const mapState = {
       floorIndex,
       gridFloor,
@@ -947,9 +949,12 @@ export default function DungeonExpedition({
   const handleFinish = useCallback(async () => {
     const rewards = resultRewards;
     if (!rewards) return;
+    // 標記結束並清除所有續玩來源（雲端 + localStorage），避免領完獎還跳「從第X層繼續」重複打王
+    expeditionEndedRef.current = true;
     // 發放獎勵
     grantExpeditionRewards(myId, rewards).catch(() => {});
     clearActiveExpeditionProgress(myId).catch(() => {});
+    try { localStorage.removeItem(`active_expedition_${myId || "guest"}`); } catch {}
     // 儲存紀錄
     saveExpeditionRecord(myId, {
       family,

@@ -312,9 +312,9 @@ export default function CatVillageBoard({ profile, onClose }) {
       {/* 擲骰動畫 */}
       {diceAnim != null && (
         <div className="fixed inset-0 z-[140] flex items-center justify-center pointer-events-none">
-          <div className="w-28 h-28 rounded-3xl bg-white flex flex-col items-center justify-center shadow-2xl animate-bounce"
-            style={{ boxShadow: "0 0 44px rgba(251,191,36,.75)" }}>
-            <span className="text-6xl leading-none text-slate-900">{["⚀","⚁","⚂","⚃","⚄","⚅"][diceAnim - 1]}</span>
+          <div className="w-32 h-32 rounded-3xl bg-gradient-to-br from-amber-50 to-amber-200 border-4 border-amber-400 flex flex-col items-center justify-center shadow-2xl animate-bounce"
+            style={{ boxShadow: "0 0 52px rgba(251,146,60,.9)" }}>
+            <span className="text-7xl leading-none font-black" style={{ color: "#c2410c" }}>{diceAnim}</span>
           </div>
         </div>
       )}
