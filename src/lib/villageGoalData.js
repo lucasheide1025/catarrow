@@ -58,6 +58,14 @@ export const GOAL_TYPES = [
     contributionLabel: "個",
     color: "#facc15",
   },
+  {
+    id: "board_laps",
+    icon: "🎲",
+    name: "探索地圖繞圈",
+    desc: "全村在大富翁探索地圖累積繞圈數",
+    contributionLabel: "圈",
+    color: "#fb923c",
+  },
 ];
 
 export const GOAL_TYPE_MAP = Object.fromEntries(GOAL_TYPES.map(g => [g.id, g]));
@@ -108,6 +116,7 @@ export function getGoalTarget(villageLevel, goalType) {
     gathering_participants: [20, 45, 90, 160],
     gathering_material: [80, 180, 360, 720],
     gathering_resource: [60, 140, 280, 560],
+    board_laps: [30, 70, 150, 300],
   };
   const arr = targets[goalType];
   return arr ? arr[tier] : 5000;

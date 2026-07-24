@@ -155,6 +155,8 @@ export async function roomRollAndMove(roomId, hostId) {
       });
       result = { ok: true, roll, from, to, lapped, tile };
     });
+    // 繞圈 → 貢獻村目標「繞 N 圈」（組隊共享一圈算 1）
+    if (result.lapped) import("./villageGoalDb").then(m => m.contributeLapToGoal(hostId, 1)).catch(() => {});
     return result;
   } catch (e) { return { ok: false, reason: e?.message }; }
 }

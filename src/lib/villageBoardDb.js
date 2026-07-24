@@ -88,6 +88,8 @@ export async function rollAndMove(memberId) {
       "villageBoard.boardPos": to,
       ...(lapped ? { "villageBoard.lapCount": increment(1) } : {}),
     });
+    // 繞圈 → 貢獻村目標「繞 N 圈」
+    if (lapped) import("./villageGoalDb").then(m => m.contributeLapToGoal(memberId, 1)).catch(() => {});
     return { ok: true, roll, from, to, lapped, tile: BOARD_LAYOUT[to], diceLeft: (vb.dice || 0) - 1 };
   } catch (e) { return { ok: false, reason: e?.message }; }
 }

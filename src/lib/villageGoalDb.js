@@ -135,6 +135,20 @@ export async function contributeKillToGoal(memberId) {
   }
 }
 
+// 大富翁探索地圖繞圈貢獻（單人/組隊繞回起點時呼叫）
+export async function contributeLapToGoal(memberId, count = 1) {
+  const goal = _cachedActiveGoal;
+  if (!goal || goal.goalType !== "board_laps" || count <= 0) return;
+  try {
+    await updateDoc(doc(db, COLLECTION, goal.id), {
+      currentValue: increment(count),
+      [`participants.${memberId}.contributed`]: increment(count),
+    });
+  } catch (e) {
+    console.warn("[villageGoal] contributeLap failed:", e.message);
+  }
+}
+
 export async function contributeGatheringToGoal(memberId, {
   progressPct = 0,
   participants = 1,
