@@ -25,30 +25,27 @@ function MuseumTile({ item, qty, onClick }) {
   const grade = collectionGrade(qty);
   const owned = qty > 0;
   return (
-    <button type="button" onClick={onClick}
-      className="relative flex flex-col items-center gap-1 rounded-xl border p-2 transition-all active:scale-95"
+    <button type="button" onClick={onClick} title={owned ? item.name : "未發現"}
+      className="relative flex flex-col items-center gap-0.5 rounded-lg border p-1 transition-all active:scale-95"
       style={{
         background: owned ? "linear-gradient(180deg,#16233a,#0b1626)" : "#0b1220",
-        borderColor: owned ? `${grade.color}66` : "rgba(148,163,184,.12)",
-        boxShadow: owned ? `inset 0 2px ${grade.color}, 0 6px 14px rgba(0,0,0,.3)` : "inset 0 2px #334155",
+        borderColor: owned ? `${grade.color}77` : "rgba(148,163,184,.12)",
+        boxShadow: owned ? `inset 0 2px ${grade.color}, 0 4px 10px rgba(0,0,0,.3)` : "inset 0 2px #334155",
         opacity: owned ? 1 : 0.7,
       }}>
       {/* 展示座 */}
-      <div className="grid h-14 w-full place-items-center rounded-lg text-3xl"
+      <div className="grid h-10 w-full place-items-center rounded-md text-2xl"
         style={{
           background: owned ? "radial-gradient(circle at 50% 25%, rgba(255,255,255,.07), #0a1220)" : "#0a1220",
           filter: owned ? "none" : "grayscale(1) brightness(.55)",
         }}>
         {owned ? item.icon : "❔"}
       </div>
-      {/* 收集到的等級（品階）+ 數量 */}
-      <div className="flex w-full items-center justify-between gap-1">
-        <span className="rounded px-1 py-0.5 text-[8px] font-black"
-          style={{ color:grade.color, background:`${grade.color}1f` }}>{grade.label}</span>
-        {owned && <span className="text-[9px] font-black text-slate-300">×{qty}</span>}
+      {/* 收集到的等級（品階，用色）+ 數量 */}
+      <div className="flex w-full items-center justify-center gap-0.5 leading-none">
+        <span className="text-[8px] font-black" style={{ color:grade.color }}>{owned ? grade.label : "—"}</span>
+        {owned && <span className="text-[8px] font-bold text-slate-400">×{qty}</span>}
       </div>
-      <div className="w-full truncate text-center text-[9px] font-bold"
-        style={{ color: owned ? "#cbd5e1" : "#4b5563" }}>{owned ? item.name : "？？？"}</div>
     </button>
   );
 }
@@ -141,7 +138,7 @@ export default function DungeonDex({ guestProfile }) {
       </div>
 
       {mode === "exclusive" ? (
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-5 gap-1.5">
           {DUNGEON_MAPS.map(map => {
             const item = COLLECTIBLE_MAP[`${map.id}_trophy`];
             if (!item) return null;
@@ -176,7 +173,7 @@ export default function DungeonDex({ guestProfile }) {
                   <h3 className="text-sm font-black text-white">{family?.label}展示廳</h3>
                   <span className="ml-auto text-[10px] font-bold text-slate-500">{familyOwned}/{items.length}</span>
                 </div>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-5 gap-1.5">
                   {items.map(item => {
                     const qty = collectibles[item.id] || 0;
                     return <MuseumTile key={item.id} item={item} qty={qty} onClick={() => setSelected({ item, qty, context:`${family?.emoji} ${family?.label}` })} />;
