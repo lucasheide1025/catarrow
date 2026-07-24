@@ -11,6 +11,7 @@ import ExpeditionPanel from "./ExpeditionPanel";
 import GatheringPartyPanel from "./GatheringPartyPanel";
 import GatheringRun from "./GatheringRun";
 import CatVillageBoard from "./CatVillageBoard";
+import CatVillageBoardTeam from "./CatVillageBoardTeam";
 import BattleShootingProfile from "../shared/BattleShootingProfile";
 import { loadBattleShootingProfile } from "../../lib/battlePractice";
 
@@ -20,6 +21,7 @@ const CSS = `
 
 export default function CouncilHall({ profile, village, onBack }) {
   const [tab, setTab] = useState("expedition");
+  const [boardTeam, setBoardTeam] = useState(false);
   const [activeSite, setActiveSite] = useState(null);
   const [activeRunNonce, setActiveRunNonce] = useState(0);
   const [partySite, setPartySite] = useState(null);
@@ -241,7 +243,10 @@ export default function CouncilHall({ profile, village, onBack }) {
 
       {tab === "expedition" && <ExpeditionPanel profile={profile} />}
 
-      {tab === "collect" && <CatVillageBoard profile={profile} onClose={() => setTab("expedition")} />}
+      {tab === "collect" && (boardTeam
+        ? <CatVillageBoardTeam profile={profile} onClose={() => { setBoardTeam(false); setTab("expedition"); }} />
+        : <CatVillageBoard profile={profile} onClose={() => setTab("expedition")} onTeam={() => setBoardTeam(true)} />
+      )}
 
       {false && (
         <>

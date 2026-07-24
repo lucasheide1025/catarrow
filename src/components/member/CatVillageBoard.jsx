@@ -69,7 +69,7 @@ function TileIcon({ type, size = 30 }) {
 
 const SCORE_PAD = [["X", 10], ["10", 10], ["9", 9], ["8", 8], ["7", 7], ["6", 6], ["5", 5], ["3", 3], ["M", 0]];
 
-export default function CatVillageBoard({ profile, onClose }) {
+export default function CatVillageBoard({ profile, onClose, onTeam }) {
   const { role } = useAuth();
   const isAdmin = role === "admin";
   const myId = profile?.id;
@@ -234,6 +234,11 @@ export default function CatVillageBoard({ profile, onClose }) {
             className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-900 font-black text-base shadow-lg active:scale-95 disabled:opacity-40">
             🎲 進入 {m.familyName} T{selTier} 探索
           </button>
+          {onTeam && (
+            <button onClick={onTeam} className="w-full mt-2 py-2.5 rounded-2xl bg-black/30 border border-amber-400/30 text-amber-100 font-black text-sm active:scale-95">
+              👥 改玩組隊探索
+            </button>
+          )}
         </div>
       </div>
     );
