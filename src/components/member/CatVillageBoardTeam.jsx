@@ -274,15 +274,16 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     }
   }, [isHost, room?.pendingShoot, roomId, myId]);
 
-  // 房主骰子用完 + 全部結算完 → 進結算畫面（全員都看得到）。
-  // 用房間權威的 hostDiceLeft（=== 0 才算，未定義代表還沒擲過骰）——不用各自讀房主 dice 的 hostDice，
-  // 否則隊員讀不到房主文件時 hostDice 預設 0 會誤觸發結算。
+  // 房主骰子用完 + 當前這步全員都領完 → 進結算畫面（全員都看得到）。
+  // 用房間權威的 hostDiceLeft（=== 0 才算，未定義代表還沒擲過骰），避免隊員讀不到房主 dice 誤觸發。
+  // ⚠️ pendingSettle claim 後不會被清空（只記 settleClaims），所以不能用「沒有 pendingSettle」判斷，
+  //    要用 allPassed（全員已領取當前 seq）——否則最後一顆骰後永遠卡著不出結算。
   useEffect(() => {
     if (room?.status !== "active") return;
     const idle = room?.hostDiceLeft === 0 && !animating && !room?.pendingMove && !room?.pendingShoot
-      && !room?.pendingSettle && !room?.pendingEvent && !shoot && !shootResult && !card;
+      && allPassed && !shoot && !shootResult && !card;
     if (idle) setShowTeamSummary(true);
-  }, [room?.hostDiceLeft, room?.status, animating, room?.pendingMove, room?.pendingShoot, room?.pendingSettle, room?.pendingEvent, shoot, shootResult, card]);
+  }, [room?.hostDiceLeft, room?.status, animating, room?.pendingMove, room?.pendingShoot, allPassed, shoot, shootResult, card]);
 
   // ── 大廳動作 ──
   async function create() {
