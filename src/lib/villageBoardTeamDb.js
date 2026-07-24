@@ -13,6 +13,7 @@ import { applyBoardReward } from "./villageBoardDb";
 
 const R = "villageBoardRooms";
 const genCode = () => Math.random().toString(36).slice(2, 8).toUpperCase();
+const shuffleArr = arr => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
 // 人數加成：×(1 + 0.12×(人數−1))，上限 ≈ ×1.84（8 人）
 export function partyMultOf(count) {
@@ -204,11 +205,21 @@ export async function commitBoardMove(roomId, hostId, { eventCard } = {}) {
       if (isEventTile && eventCard) {
         // 命運/機會：房主已抽牌，寫入 pendingEvent 讓隊員一起看
         updates.pendingEvent = { seq: room.seq, event: eventCard, partyMult: pm.partyMult };
-      } else if (!isShooting && !isEventTile) {
+      } else if (isShooting) {
+        // 射箭格：隨機指派 1~2 位射手（不一定是房主），寫 pendingShoot 讓被指派者各自射。
+        // 兩人射時最後由 finalizeBoardShoot 取平均評級。
+        const mems = Object.keys(room.members || {}).filter(id => room.members[id] != null);
+        const nShoot = (mems.length >= 2 && Math.random() < 0.5) ? 2 : 1;
+        const shooters = shuffleArr(mems).slice(0, Math.min(nShoot, mems.length));
+        updates.pendingShoot = {
+          seq: room.seq, tileType: pm.tile, shooters, scores: {},
+          partyMult: pm.partyMult,
+          threshold: pm.tile === "monster" ? (30 + Math.floor(Math.random() * 16)) : 0,
+        };
+      } else {
         // 一般格子：直接設定結算
         updates.pendingSettle = { seq: room.seq, tileType: pm.tile, scoreRatio: 0, partyMult: pm.partyMult };
       }
-      // 射箭格：不設 pendingSettle，UI 會處理射擊介面
 
       tx.update(ref, updates);
     });
@@ -216,23 +227,53 @@ export async function commitBoardMove(roomId, hostId, { eventCard } = {}) {
   } catch (e) { return { ok: false, reason: e?.message }; }
 }
 
-// 房主：射箭格結算（房主代表射，帶 scoreRatio、threshold、gatheringProgress）
-export async function roomSettleShoot(roomId, hostId, tileType, scoreRatio, { threshold, gatheringProgress } = {}) {
+// 射手：交出自己這 6 箭的分數（score 0~60）與採集進度（mining 用）。只有被指派的射手能交。
+export async function submitBoardShootScore(roomId, memberId, { score = 0, progress = 0 } = {}) {
   try {
     await runTransaction(db, async tx => {
       const ref = doc(db, R, roomId);
       const s = await tx.get(ref);
-      if (!s.exists() || s.data().hostId !== hostId) throw new Error("只有房主可結算");
-      const room = s.data();
-      const count = activeMembers(room).length;
-      tx.update(ref, { pendingSettle: {
-        seq: (room.seq || 0) + 1, tileType, scoreRatio,
-        threshold: threshold ?? null,
-        gatheringProgress: gatheringProgress ?? null,
-        partyMult: partyMultOf(count),
-      }, seq: (room.seq || 0) + 1, updatedAt: serverTimestamp() });
+      if (!s.exists()) throw new Error("房間不存在");
+      const ps = s.data().pendingShoot;
+      if (!ps) throw new Error("目前不需射箭");
+      if (!ps.shooters?.includes(memberId)) throw new Error("你不是本回合的射手");
+      if (ps.scores?.[memberId] != null) throw new Error("已提交");
+      tx.update(ref, { [`pendingShoot.scores.${memberId}`]: { score, progress }, updatedAt: serverTimestamp() });
     });
     return { ok: true };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+// 房主：全部射手交完後結算（取平均分數 → pendingSettle，讓全員各自 claim）
+export async function finalizeBoardShoot(roomId, hostId) {
+  try {
+    let done = false;
+    await runTransaction(db, async tx => {
+      const ref = doc(db, R, roomId);
+      const s = await tx.get(ref);
+      if (!s.exists() || s.data().hostId !== hostId) throw new Error("只有房主可結算");
+      const ps = s.data().pendingShoot;
+      if (!ps) return;
+      const shooters = ps.shooters || [];
+      const submitted = Object.keys(ps.scores || {});
+      if (submitted.length < shooters.length) return; // 還有射手沒交
+      const vals = shooters.map(id => ps.scores[id] || { score: 0, progress: 0 });
+      const avgScore = vals.reduce((a, v) => a + (v.score || 0), 0) / (vals.length || 1);
+      const avgProgress = vals.reduce((a, v) => a + (v.progress || 0), 0) / (vals.length || 1);
+      tx.update(ref, {
+        pendingSettle: {
+          seq: ps.seq, tileType: ps.tileType,
+          scoreRatio: avgScore / 60,
+          threshold: ps.threshold || 0,
+          gatheringProgress: avgProgress || 0,
+          partyMult: ps.partyMult || 1,
+        },
+        pendingShoot: null,
+        updatedAt: serverTimestamp(),
+      });
+      done = true;
+    });
+    return { ok: true, done };
   } catch (e) { return { ok: false, reason: e?.message }; }
 }
 

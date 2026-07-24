@@ -7,9 +7,9 @@ import { db } from "../../lib/firebase";
 import { useAuth } from "../../hooks/useAuth";
 import {
   createBoardRoom, joinBoardRoom, subscribeBoardRoom, leaveBoardRoom, disbandBoardRoom,
-  findReconnectableBoardRoom, startBoardRoom, roomRollAndMove, roomSettleShoot,
+  findReconnectableBoardRoom, startBoardRoom, roomRollAndMove,
   roomApplyBoardEffect, claimBoardSettle, claimBoardEvent, partyMultOf, subscribeOpenBoardRooms,
-  commitBoardMove,
+  commitBoardMove, submitBoardShootScore, finalizeBoardShoot,
 } from "../../lib/villageBoardTeamDb";
 import { ensureDailyDice, applyEventEffect, DAILY_DICE, applyBoardReward } from "../../lib/villageBoardDb";
 import { BOARD_LAYOUT, BOARD_SIZE, TILE_TYPES, BOARD_MODES, getModeTierCap, rollTileReward } from "../../lib/boardData";
@@ -109,6 +109,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
   const [toast, setToast] = useState(null);
   const lastSettleRef = useRef(0);
   const lastEventRef = useRef(0);
+  const shootSeqRef = useRef(0);
 
   const showToast = t => { setToast(t); setTimeout(() => setToast(null), 2400); };
 
@@ -184,11 +185,9 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     const pm = room.pendingMove;
 
     if (TILE_TYPES[pm.tile]?.shooting) {
-      // 射箭格：先確認移動，再顯示射擊介面
-      commitBoardMove(roomId, myId).then(() => {
-        setShoot({ type: pm.tile });
-        setArrows([]);
-      }).catch(() => {});
+      // 射箭格：確認移動 → commitBoardMove 會隨機指派射手寫 pendingShoot，
+      // 由下方 pendingShoot Effect 對被指派者開射擊介面（不再固定房主射）。
+      commitBoardMove(roomId, myId).catch(() => {});
     } else if (pm.tile === "fate" || pm.tile === "opp") {
       // 命運/機會：抽牌後提交（pendingEvent 會讓雙方都看到卡片）
       const card = drawBoardEvent(pm.tile);
@@ -231,6 +230,34 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     setCard({ event: room.pendingEvent.event, flipped: false });
     setTimeout(() => setCard(c => c && { ...c, flipped: true }), 550);
   }, [room?.pendingEvent?.seq, myId]);
+
+  // 射箭格：被隨機指派的射手開射擊介面；交分後收起。非射手只會看到「射箭中」等待。
+  useEffect(() => {
+    const ps = room?.pendingShoot;
+    if (!ps || !myId) {
+      if (shootSeqRef.current) { shootSeqRef.current = 0; setShoot(null); setShootResult(null); }
+      return;
+    }
+    const iAmShooter = ps.shooters?.includes(myId);
+    const iSubmitted = ps.scores?.[myId] != null;
+    if (iAmShooter && !iSubmitted && shootSeqRef.current !== ps.seq) {
+      shootSeqRef.current = ps.seq;
+      setShoot({ type: ps.tileType, threshold: ps.threshold || 0, seq: ps.seq });
+      setArrows([]); setShootResult(null);
+    } else if (iSubmitted && shootSeqRef.current === ps.seq) {
+      shootSeqRef.current = 0;
+      setShoot(null); setShootResult(null);
+    }
+  }, [room?.pendingShoot, myId]);
+
+  // 房主：所有指派射手都交分後 → 結算平均分數
+  useEffect(() => {
+    if (!isHost || !room?.pendingShoot) return;
+    const ps = room.pendingShoot;
+    if (Object.keys(ps.scores || {}).length >= (ps.shooters?.length || 1)) {
+      finalizeBoardShoot(roomId, myId).catch(() => {});
+    }
+  }, [isHost, room?.pendingShoot, roomId, myId]);
 
   // ── 大廳動作 ──
   async function create() {
@@ -279,8 +306,8 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     const t = shoot.type;
 
     if (t === "monster") {
-      // 怪物格：隨機門檻 30~45，>=門檻即擊倒獲得 150% 獎勵，否則 80%
-      const threshold = 30 + Math.floor(Math.random() * 16); // 30~45
+      // 怪物格：門檻由房間統一指派（shoot.threshold），兩人射時最終以平均分判定
+      const threshold = shoot.threshold || 38;
       const passed = score >= threshold;
       const band = passed ? (score >= 50 ? "S" : score >= 40 ? "A" : "B") : "C";
       setShootResult({ type: "monster", score, ratio, threshold, passed, band, labels });
@@ -293,20 +320,18 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     }
   }, [arrows, shoot]);
 
-  // 確認射擊結果 → 寫入 pendingSettle
+  // 確認射擊結果 → 交出自己的分數（房主收齊所有射手後取平均結算）
   const confirmShootResult = useCallback(async () => {
     if (!shootResult || !shoot) return;
-    const { ratio, labels } = shootResult;
+    const { labels } = shootResult;
     const t = shoot.type;
-    // 計算採集進度（mining 用）
+    const score = labels.reduce((s, l) => s + (l === "X" ? 10 : Number(l) || 0), 0);
     const { progress } = t === "mining" ? calculateGatheringRound(labels) : { progress: 0 };
-    const opts = {};
-    if (t === "monster") opts.threshold = shootResult.threshold;
-    if (t === "mining") opts.gatheringProgress = progress;
+    shootSeqRef.current = 0;
     setShootResult(null);
     setShoot(null);
-    addRoundArrows(myId, 6).catch(() => {}); // 射箭格＝射出 6 箭，累積射手今日/終身箭數
-    await roomSettleShoot(roomId, myId, t, ratio, opts);
+    addRoundArrows(myId, 6).catch(() => {}); // 這 6 箭算實際射手的今日/終身箭數
+    await submitBoardShootScore(roomId, myId, { score, progress });
   }, [shootResult, shoot, roomId, myId]);
 
   // 事件卡確認：成員 claim 資源；房主另套用共享棋效果
@@ -432,7 +457,10 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
   // ── 團隊棋盤 ──
   const mode = room ? (BOARD_MODES.find(x => x.id === room.mode) || BOARD_MODES[0]) : BOARD_MODES[0];
   const pMult = partyMultOf(memberCount);
-  const canRoll = isHost && !rolling && hostDice > 0 && allPassed && !shoot && !shootResult && !card && !animating;
+  const shootWaiting = !!room?.pendingShoot && room.pendingShoot.seq === curSeq;
+  const shootNames = shootWaiting ? (room.pendingShoot.shooters || []).map(id => room.members?.[id]?.name || "隊員") : [];
+  const shootDone = shootWaiting ? Object.keys(room.pendingShoot.scores || {}).length : 0;
+  const canRoll = isHost && !rolling && hostDice > 0 && allPassed && !shoot && !shootResult && !card && !animating && !room?.pendingShoot;
 
   return (
     <div className="fixed inset-0 z-[200] flex flex-col items-center overflow-y-auto"
@@ -461,7 +489,9 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
               <div className="w-full h-full rounded-xl flex flex-col items-center justify-center text-center p-2" style={{ backgroundColor: mode.palette?.[1]||"#0f172a", backgroundImage:`linear-gradient(160deg, rgba(0,0,0,0.15), rgba(0,0,0,0.55)), url(${ASSET}/map_${mode.id}.webp)`, backgroundSize:"cover", backgroundPosition:"center" }}>
                 <div className="text-amber-100 font-black text-lg drop-shadow">{mode.name}</div>
                 <div className="text-amber-300/70 text-[11px] mt-1">已繞 {room.lapCount || 0} 圈</div>
-                {isHost ? (
+                {shootWaiting ? (
+                  <div className="mt-3 text-amber-200/85 text-xs font-black">🎯 {shootNames.join("、")} 射箭中…（{shootDone}/{room.pendingShoot.shooters.length}）</div>
+                ) : isHost ? (
                   <button onClick={hostRoll} disabled={!canRoll} className="mt-3 px-6 py-2.5 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-900 font-black text-sm shadow-lg disabled:opacity-40 active:scale-95">
                     {rolling ? "🎲 前進中…" : hostDice <= 0 ? "骰子用完了" : !allPassed ? `⏳ 等隊員領取 ${claimedN}/${memberCount}` : "🎲 房主擲骰"}
                   </button>
@@ -506,10 +536,10 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
         </div>
       )}
 
-      {shoot && isHost && !shootResult && (
+      {shoot && !shootResult && (
         <div className="fixed inset-0 z-[215] bg-black/85 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-amber-500/40 rounded-3xl p-5 w-full max-w-sm">
-            <div className="text-center text-amber-100 font-black mb-1">{TILE_TYPES[shoot.type].icon} {TILE_TYPES[shoot.type].label}格・房主射 6 箭</div>
+            <div className="text-center text-amber-100 font-black mb-1">{TILE_TYPES[shoot.type].icon} {TILE_TYPES[shoot.type].label}格・輪到你射 6 箭</div>
             <div className="flex justify-center gap-1 my-3">{Array.from({length:6}).map((_,i)=>(<div key={i} className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black border ${arrows[i]!=null?"bg-emerald-600 text-white border-emerald-400":"bg-slate-800 text-slate-500 border-slate-700"}`}>{arrows[i]!=null?arrows[i]:"?"}</div>))}</div>
             <div className="grid grid-cols-5 gap-1.5">{SCORE_PAD.map(([l,v])=>(<button key={l} disabled={arrows.length>=6} onClick={()=>{sfxTap();setArrows(a=>a.length<6?[...a,l]:a);}} className="py-2 rounded-lg bg-amber-500/20 text-amber-100 font-black text-xs border border-amber-400/30 disabled:opacity-40">{l}</button>))}</div>
             <div className="flex gap-2 mt-4"><button onClick={()=>setArrows([])} className="flex-1 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold">清除</button><button onClick={hostFinishShoot} disabled={arrows.length<6} className="flex-[2] py-2 rounded-xl bg-amber-400 text-slate-900 font-black text-sm disabled:opacity-40">結算（{arrows.length}/6）</button></div>
