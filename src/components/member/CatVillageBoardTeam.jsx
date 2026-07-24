@@ -9,11 +9,10 @@ import {
   createBoardRoom, joinBoardRoom, subscribeBoardRoom, leaveBoardRoom, disbandBoardRoom,
   findReconnectableBoardRoom, startBoardRoom, roomRollAndMove,
   roomApplyBoardEffect, claimBoardSettle, claimBoardEvent, partyMultOf, subscribeOpenBoardRooms,
-  commitBoardMove, submitBoardShootScore, finalizeBoardShoot, clearRoomPending,
+  submitBoardShootScore, finalizeBoardShoot, clearRoomPending,
 } from "../../lib/villageBoardTeamDb";
 import { ensureDailyDice, applyEventEffect, DAILY_DICE, applyBoardReward } from "../../lib/villageBoardDb";
 import { BOARD_LAYOUT, BOARD_SIZE, TILE_TYPES, BOARD_MODES, getModeTierCap, rollTileReward } from "../../lib/boardData";
-import { drawBoardEvent } from "../../lib/boardEvents";
 import { MATERIALS } from "../../lib/monsterMaterials";
 import { NORMAL_MATERIALS } from "../../lib/monsterEconomyCatalog";
 import { RESOURCE_NAMES } from "../../lib/villageData";
@@ -115,7 +114,8 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
   const lastSettleRef = useRef(0);
   const lastEventRef = useRef(0);
   const shootSeqRef = useRef(0);
-  const animDoneRef = useRef(0); // 已完整跑完動畫的 pendingMove.seq；房主 commit 要等它對上才觸發
+  const animatedSeqRef = useRef(-1);            // 已播完跟隨動畫的 lastMove.seq
+  const [animatedSeq, setAnimatedSeq] = useState(-1); // 同上（state，供 pending UI 閘門）
   const [pendingEventMsg, setPendingEventMsg] = useState(null); // 事件結果訊息，等全員確認後才跳
 
   const showToast = t => { setToast(t); setTimeout(() => setToast(null), 2400); };
@@ -165,74 +165,52 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     return unsub;
   }, [room?.hostId]);
 
-  // pendingMove → 所有客戶端同步動畫（房主執骰後雙方一起看棋子移動）。
-  // 依賴 pendingMove.seq（每次擲骰都變）→ 動畫才會重跑；不看 animating 以免殘留 true 卡死後續動畫。
+  // 初始化 animatedSeq（首次載入/重連：直接對齊當前 seq，不重播舊動畫、pending 立即可操作）
   useEffect(() => {
-    if (!room?.pendingMove) return;
-    const pm = room.pendingMove;
+    if (room && animatedSeqRef.current < 0) {
+      animatedSeqRef.current = room.seq || 0;
+      setAnimatedSeq(room.seq || 0);
+    }
+  }, [room]);
+
+  // 棋子跟隨動畫：依權威 lastMove 把棋子從 from 逐格走到 to（純視覺）。
+  // 狀態已由 roomRollAndMove 原子更新，動畫卡住也不影響進度；動畫追上後才放行該 seq 的事件 UI。
+  useEffect(() => {
+    const lm = room?.lastMove;
+    if (!lm || lm.seq <= animatedSeqRef.current) return;
     setAnimating(true);
-    setDisplayPos(pm.from);
-    let cur = pm.from;
-    let stepIv = null;
-    let landT = null;
-    // ① 起步前停頓：讓房主端的骰子數字先亮出來、隊員看清「準備移動」，避免骰子與棋子同時動
+    setDisplayPos(lm.from);
+    let cur = lm.from, stepIv = null, landT = null;
+    const finish = () => {
+      animatedSeqRef.current = lm.seq;
+      setAnimatedSeq(lm.seq);
+      setAnimating(false);
+      if (isHost && lm.lapped) { // 繞圈獎勵（房主自己領）
+        const lapMode = BOARD_MODES.find(x => x.id === lm.modeId) || BOARD_MODES[0];
+        const rw = rollTileReward("start", { mode: lapMode, tierCap: getModeTierCap(lm.modeId, villageBuildings), tier: lm.tier, partyMult: lm.partyMult || 1 });
+        applyBoardReward(myId, rw, { catId }).catch(() => {});
+        setReward({ items: describeReward(rw), band: rw.band });
+      }
+    };
     const startT = setTimeout(() => {
       stepIv = setInterval(() => {
         cur = (cur + 1) % BOARD_SIZE;
         setDisplayPos(cur);
         sfxTap();
-        if (cur === pm.to) {
-          clearInterval(stepIv); stepIv = null;
-          sfxSuccess();
-          // ② 落點停頓：讓「踩到格子上」看得清楚，才記錄動畫完成 + setAnimating(false) → 房主 commit → 觸發事件/結算
-          landT = setTimeout(() => { animDoneRef.current = pm.seq; setAnimating(false); }, 850);
-        }
-      }, 260);
-    }, 900);
+        if (cur === lm.to) { clearInterval(stepIv); stepIv = null; sfxSuccess(); landT = setTimeout(finish, 700); }
+      }, 240);
+    }, 700);
     return () => { clearTimeout(startT); if (stepIv) clearInterval(stepIv); if (landT) clearTimeout(landT); };
-  }, [room?.pendingMove?.seq]);
+  }, [room?.lastMove?.seq]); // eslint-disable-line
 
-  // boardPos 同步（頁面重整/動畫結束後確保棋子位置正確）
+  // boardPos 同步（重整/非動畫時對齊權威位置——desync 自我修復）
   useEffect(() => { if (room && !animating) setDisplayPos(room.boardPos || 0); }, [room?.boardPos, animating]);
-
-  // 動畫結束後房主確認移動 → 寫入 boardPos + pendingSettle/Event。
-  // 必須等這次 pendingMove 的動畫「真的跑完」（animDoneRef 對上 seq）才 commit，
-  // 否則骰子一擲、動畫還沒跑就 commit，會變成「沒動畫直接跳結果」。
-  useEffect(() => {
-    if (animating || !room?.pendingMove || !isHost) return;
-    if (animDoneRef.current !== room.pendingMove.seq) return;
-    const pm = room.pendingMove;
-
-    if (TILE_TYPES[pm.tile]?.shooting) {
-      // 射箭格：確認移動 → commitBoardMove 會隨機指派射手寫 pendingShoot，
-      // 由下方 pendingShoot Effect 對被指派者開射擊介面（不再固定房主射）。
-      commitBoardMove(roomId, myId).catch(() => {});
-    } else if (pm.tile === "fate" || pm.tile === "opp") {
-      // 命運/機會：抽牌後提交（pendingEvent 會讓雙方都看到卡片）
-      const card = drawBoardEvent(pm.tile);
-      commitBoardMove(roomId, myId, { eventCard: card }).catch(() => {});
-    } else {
-      // 一般格子：提交 pendingSettle → 雙方自動領取
-      commitBoardMove(roomId, myId).catch(() => {});
-    }
-
-    // 繞圈獎勵（房主自己領）
-    if (pm.lapped) {
-      const lapMode = BOARD_MODES.find(x => x.id === pm.modeId) || BOARD_MODES[0];
-      const rw = rollTileReward("start", {
-        mode: lapMode, tierCap: getModeTierCap(pm.modeId, villageBuildings),
-        tier: pm.tier, partyMult: pm.partyMult || 1,
-      });
-      applyBoardReward(myId, rw, { catId }).catch(() => {});
-      sfxSuccess();
-      setReward({ items: describeReward(rw), band: rw.band });
-    }
-  }, [animating, room?.pendingMove, isHost, roomId, myId]);
 
   // 成員自動 claim 結算獎勵
   useEffect(() => {
     if (!room?.pendingSettle || !myId) return;
     const seq = room.pendingSettle.seq;
+    if (seq > animatedSeq) return; // 等棋子動畫走到才結算（先移動、後結算）
     if ((room.settleClaims?.[myId] || 0) >= seq || lastSettleRef.current >= seq) return;
     lastSettleRef.current = seq;
     const isCatBond = room.pendingSettle.tileType === "catbond";
@@ -252,17 +230,18 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
         setReward({ items: describeReward(res.reward), band: res.reward.band });
       }
     });
-  }, [room?.pendingSettle?.seq, room?.settleClaims, myId, roomId, catId, profile]);
+  }, [room?.pendingSettle?.seq, room?.settleClaims, myId, roomId, catId, profile, animatedSeq]);
 
   // 命運/機會事件卡：顯示 + 成員 claim（房主另處理共享棋效果）
   useEffect(() => {
     if (!room?.pendingEvent || !myId) return;
     const seq = room.pendingEvent.seq;
+    if (seq > animatedSeq) return; // 等棋子動畫走到才翻牌
     if (lastEventRef.current >= seq) return;
     lastEventRef.current = seq;
     setCard({ event: room.pendingEvent.event, flipped: false });
     setTimeout(() => setCard(c => c && { ...c, flipped: true }), 550);
-  }, [room?.pendingEvent?.seq, myId]);
+  }, [room?.pendingEvent?.seq, myId, animatedSeq]);
 
   // 射箭格：被隨機指派的射手開射擊介面；交分後收起。非射手只會看到「射箭中」等待。
   useEffect(() => {
@@ -271,6 +250,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
       if (shootSeqRef.current) { shootSeqRef.current = 0; setShoot(null); setShootResult(null); }
       return;
     }
+    if (ps.seq > animatedSeq) return; // 等棋子動畫走到才開射擊介面
     const iAmShooter = ps.shooters?.includes(myId);
     const iSubmitted = ps.scores?.[myId] != null;
     if (iAmShooter && !iSubmitted && shootSeqRef.current !== ps.seq) {
@@ -281,7 +261,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
       shootSeqRef.current = 0;
       setShoot(null); setShootResult(null);
     }
-  }, [room?.pendingShoot, myId]);
+  }, [room?.pendingShoot, myId, animatedSeq]);
 
   // 房主：所有指派射手都交分後 → 結算平均分數
   useEffect(() => {

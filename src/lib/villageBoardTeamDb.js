@@ -9,6 +9,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { BOARD_LAYOUT, BOARD_SIZE, BOARD_MODE_MAP, getModeTierCap, rollTileReward, TILE_TYPES } from "./boardData";
+import { drawBoardEvent } from "./boardEvents";
 import { applyBoardReward } from "./villageBoardDb";
 
 const R = "villageBoardRooms";
@@ -149,7 +150,9 @@ export async function setRoomMode(roomId, hostId, mode) {
   } catch (e) { return { ok: false, reason: e?.message }; }
 }
 
-// ── 房主行動：擲骰 → 寫 pendingMove（所有客戶端一起看動畫後才結算）──
+// ── 房主行動：擲骰（一次原子完成，權威狀態機，不依賴動畫）──
+// 直接更新 boardPos + 設好本步的 pending（射箭/事件/結算），寫 lastMove 給前端做「跟隨動畫」。
+// 這樣房主本機動畫就算卡住/被 re-render 打斷，權威狀態仍正確，不會再「丟了骰系統判斷沒丟、隊員走了房主原地」。
 export async function roomRollAndMove(roomId, hostId) {
   try {
     let result = { ok: false };
@@ -160,91 +163,56 @@ export async function roomRollAndMove(roomId, hostId) {
       if (!rs.exists()) throw new Error("房間不存在");
       const room = rs.data();
       if (room.hostId !== hostId) throw new Error("只有房主可擲骰");
+
+      // 防呆：本步（curSeq）還有沒射完/沒領完的 pending → 擋（＝「確認大家都碰到再進下一階段」）
+      const curSeq = room.seq || 0;
+      const memberIds = Object.keys(room.members || {}).filter(m => room.members[m] != null);
+      if (room.pendingShoot?.seq === curSeq) throw new Error("還有射手沒射完");
+      if (room.pendingSettle?.seq === curSeq || room.pendingEvent?.seq === curSeq) {
+        const allClaimed = memberIds.every(mid =>
+          (room.settleClaims?.[mid] || 0) >= curSeq || (room.eventClaims?.[mid] || 0) >= curSeq);
+        if (!allClaimed) throw new Error("請等待所有隊員領取後再擲骰");
+      }
+
       const dice = hs.data()?.villageBoard?.dice || 0;
       if (dice <= 0) throw new Error("房主骰子用完了");
-
-      // ── 伺服器端防呆：檢查是否有未領取的 pending 事件/結算 ──
-      const curSeq = room.seq || 0;
-      const hasPendingSettle = room.pendingSettle?.seq === curSeq;
-      const hasPendingEvent = room.pendingEvent?.seq === curSeq;
-      if (hasPendingSettle || hasPendingEvent) {
-        const memberIds = Object.keys(room.members || {}).filter(m => room.members[m] != null);
-        const allClaimed = memberIds.every(mid =>
-          (room.settleClaims?.[mid] || 0) >= curSeq ||
-          (room.eventClaims?.[mid] || 0) >= curSeq
-        );
-        if (!allClaimed) throw new Error("請等待所有隊員領取獎勵後再擲骰");
-      }
 
       const roll = 1 + Math.floor(Math.random() * 6);
       const from = room.boardPos || 0;
       const to = (from + roll) % BOARD_SIZE;
       const lapped = from + roll >= BOARD_SIZE;
       const tile = BOARD_LAYOUT[to];
-      const count = activeMembers(room).length;
-      tx.update(hostRef, { "villageBoard.dice": increment(-1) });
-      // 只寫 pendingMove，不直接更新 boardPos / pendingSettle / pendingEvent
-      // 等所有客戶端動畫結束後，房主再呼叫 commitBoardMove 完成結算
-      // hostDiceLeft：把房主剩餘骰數寫進房間，讓所有客戶端都讀得到（不必各自讀房主文件），
-      // 結算畫面才不會因隊員讀不到房主 dice、預設 0 而誤觸發。
-      const nextSeq = (room.seq || 0) + 1;
-      tx.update(roomRef, {
-        // seq 放進 pendingMove 物件內：動畫 effect 依賴 pendingMove.seq，每次擲骰都變 → 動畫才會重跑
-        pendingMove: { seq: nextSeq, from, to, roll, lapped, tile, partyMult: partyMultOf(count), modeId: room.mode, tier: room.tier || 1 },
+      const pMult = partyMultOf(memberIds.length);
+      const nextSeq = curSeq + 1;
+
+      const upd = {
+        boardPos: to,
+        ...(lapped ? { lapCount: increment(1) } : {}),
         hostDiceLeft: dice - 1,
         seq: nextSeq,
+        // lastMove：前端據此把棋子從 from 逐格動畫到 to（純視覺，狀態已權威更新）
+        lastMove: { seq: nextSeq, from, to, roll, tile, lapped, partyMult: pMult, modeId: room.mode, tier: room.tier || 1 },
+        pendingMove: null, pendingSettle: null, pendingEvent: null, pendingShoot: null,
         updatedAt: serverTimestamp(),
-      });
+      };
+      if (TILE_TYPES[tile]?.shooting) {
+        // 射箭格：每位在場成員各自 50% 機率被抽中（房主也可能輪空），至少保底 1 人
+        let shooters = memberIds.filter(() => Math.random() < 0.5);
+        if (shooters.length === 0 && memberIds.length) shooters = [memberIds[Math.floor(Math.random() * memberIds.length)]];
+        upd.pendingShoot = { seq: nextSeq, tileType: tile, shooters, scores: {}, partyMult: pMult,
+          threshold: tile === "monster" ? (30 + Math.floor(Math.random() * 16)) : 0 };
+      } else if (tile === "fate" || tile === "opp") {
+        upd.pendingEvent = { seq: nextSeq, event: drawBoardEvent(tile), partyMult: pMult };
+      } else {
+        upd.pendingSettle = { seq: nextSeq, tileType: tile, scoreRatio: 0, partyMult: pMult };
+      }
+
+      tx.update(hostRef, { "villageBoard.dice": increment(-1) });
+      tx.update(roomRef, upd);
       result = { ok: true, roll, from, to, lapped, tile };
     });
     if (result.lapped) import("./villageGoalDb").then(m => m.contributeLapToGoal(hostId, 1)).catch(() => {});
     return result;
-  } catch (e) { return { ok: false, reason: e?.message }; }
-}
-
-// 動畫結束後房主確認移動 → 更新 boardPos + 設定 pendingSettle / pendingEvent
-export async function commitBoardMove(roomId, hostId, { eventCard } = {}) {
-  try {
-    await runTransaction(db, async tx => {
-      const ref = doc(db, R, roomId);
-      const s = await tx.get(ref);
-      if (!s.exists() || s.data().hostId !== hostId) throw new Error("只有房主可確認");
-      const room = s.data();
-      const pm = room.pendingMove;
-      if (!pm) throw new Error("無待確認的移動");
-
-      const isShooting = TILE_TYPES[pm.tile]?.shooting;
-      const isEventTile = pm.tile === "fate" || pm.tile === "opp";
-
-      const updates = {
-        boardPos: pm.to,
-        ...(pm.lapped ? { lapCount: increment(1) } : {}),
-        pendingMove: null,
-        updatedAt: serverTimestamp(),
-      };
-
-      if (isEventTile && eventCard) {
-        // 命運/機會：房主已抽牌，寫入 pendingEvent 讓隊員一起看
-        updates.pendingEvent = { seq: room.seq, event: eventCard, partyMult: pm.partyMult };
-      } else if (isShooting) {
-        // 射箭格：每位在場成員各自 50% 機率被抽中射箭（房主也可能輪空），至少保底 1 人。
-        // 多人射時最後由 finalizeBoardShoot 取平均評級。
-        const mems = Object.keys(room.members || {}).filter(id => room.members[id] != null);
-        let shooters = mems.filter(() => Math.random() < 0.5);
-        if (shooters.length === 0 && mems.length) shooters = [mems[Math.floor(Math.random() * mems.length)]];
-        updates.pendingShoot = {
-          seq: room.seq, tileType: pm.tile, shooters, scores: {},
-          partyMult: pm.partyMult,
-          threshold: pm.tile === "monster" ? (30 + Math.floor(Math.random() * 16)) : 0,
-        };
-      } else {
-        // 一般格子：直接設定結算
-        updates.pendingSettle = { seq: room.seq, tileType: pm.tile, scoreRatio: 0, partyMult: pm.partyMult };
-      }
-
-      tx.update(ref, updates);
-    });
-    return { ok: true };
   } catch (e) { return { ok: false, reason: e?.message }; }
 }
 
