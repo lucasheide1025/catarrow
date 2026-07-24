@@ -675,18 +675,31 @@ const adminNav = [
       <AdminCostControlBanner />
       {bossIntroEvent && <WorldBossIntro event={bossIntroEvent} onClose={() => setBossIntroEvent(null)} />}
 
-      {/* 👑 地下城首殺全系統公告 */}
+      {/* 👑 全系統橫幅公告：地下城首殺 / 村目標達成（依 kind 切樣式） */}
       {dungeonKillAlert && (
-        <div style={{ position:"fixed", top:0, left:0, right:0, zIndex:999, padding:"12px 16px", background:"linear-gradient(90deg,#78350f,#92400e,#78350f)", boxShadow:"0 4px 24px rgba(0,0,0,0.5)", display:"flex", alignItems:"center", gap:12, cursor:"pointer" }}
+        <div style={{ position:"fixed", top:0, left:0, right:0, zIndex:999, padding:"12px 16px", background: dungeonKillAlert.kind === "villageGoal" ? "linear-gradient(90deg,#14532d,#166534,#14532d)" : "linear-gradient(90deg,#78350f,#92400e,#78350f)", boxShadow:"0 4px 24px rgba(0,0,0,0.5)", display:"flex", alignItems:"center", gap:12, cursor:"pointer" }}
           onClick={() => { localStorage.setItem("dismissedBroadcastId", dungeonKillAlert.id); setDungeonKillAlert(null); }}>
-          <div style={{ fontSize:28, flexShrink:0 }}>👑</div>
+          <div style={{ fontSize:28, flexShrink:0 }}>{dungeonKillAlert.kind === "villageGoal" ? (dungeonKillAlert.emoji || "🏡") : "👑"}</div>
           <div style={{ flex:1, minWidth:0 }}>
-            <div style={{ fontWeight:900, fontSize:13, color:"#fbbf24", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
-              ⚡ 地下城首殺！{dungeonKillAlert.emoji} {dungeonKillAlert.dungeonName}（{dungeonKillAlert.difficultyLabel}）
-            </div>
-            <div style={{ fontSize:11, color:"rgba(255,255,255,0.7)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
-              {dungeonKillAlert.teamNames?.join("、") || dungeonKillAlert.memberName} 成為首殺英雄！
-            </div>
+            {dungeonKillAlert.kind === "villageGoal" ? (
+              <>
+                <div style={{ fontWeight:900, fontSize:13, color:"#86efac", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                  🎉 村目標達成！{dungeonKillAlert.goalName}
+                </div>
+                <div style={{ fontSize:11, color:"rgba(255,255,255,0.7)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                  全村合作完成任務，快去領取獎勵 🎁
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontWeight:900, fontSize:13, color:"#fbbf24", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                  ⚡ 地下城首殺！{dungeonKillAlert.emoji} {dungeonKillAlert.dungeonName}（{dungeonKillAlert.difficultyLabel}）
+                </div>
+                <div style={{ fontSize:11, color:"rgba(255,255,255,0.7)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                  {dungeonKillAlert.teamNames?.join("、") || dungeonKillAlert.memberName} 成為首殺英雄！
+                </div>
+              </>
+            )}
           </div>
           <div style={{ fontSize:16, color:"rgba(255,255,255,0.4)", flexShrink:0 }}>✕</div>
         </div>

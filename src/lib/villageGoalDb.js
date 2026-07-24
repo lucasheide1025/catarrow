@@ -239,6 +239,20 @@ export async function autoSpawnVillageGoal(villageLevel = 1) {
   }
 }
 
+// 全系統橫幅（沿用 dungeonBroadcasts，MemberApp/AdminApp 已訂閱 subscribeLatestBroadcast）
+// kind:"villageGoal" 讓橫幅切成綠色村目標樣式，避免玩家不知道村目標已達成。
+async function broadcastGoalComplete(goalType) {
+  const meta = GOAL_TYPE_MAP[goalType];
+  try {
+    await addDoc(collection(db, "dungeonBroadcasts"), {
+      kind: "villageGoal",
+      emoji: meta?.icon || "🏡",
+      goalName: meta?.name || "村目標",
+      createdAt: serverTimestamp(),
+    });
+  } catch (_) { /* 廣播失敗不影響完成流程 */ }
+}
+
 // ── 完成目標（只標記狀態+公告，獎勵改由各參與者自行請領 claimVillageGoalReward）──
 export async function completeGoal(goalId) {
   try {
@@ -261,6 +275,9 @@ export async function completeGoal(goalId) {
       content: `全村合作達成了「${meta?.name || "村目標"}」！所有貢獻者已獲得獎勵 🎁`,
       targetMemberId: null,
     }, "system").catch(() => {});
+
+    // 全頻橫幅公告（比站內信更顯眼）
+    await broadcastGoalComplete(goalType);
 
     return { ok: true };
   } catch (e) {
@@ -384,6 +401,9 @@ export async function adminForceCompleteGoal(goalId, rewardOverride) {
     };
     if (rewardOverride) updates.rewards = rewardOverride;
     await updateDoc(doc(db, COLLECTION, goalId), updates);
+
+    // 全頻橫幅公告（比站內信更顯眼）
+    await broadcastGoalComplete(goal.goalType);
 
     return { ok: true };
   } catch (e) {
