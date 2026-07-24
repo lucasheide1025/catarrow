@@ -194,7 +194,7 @@ export default function CatVillageBoard({ profile, onClose }) {
 
   return (
     <div className="fixed inset-0 z-[200] flex flex-col items-center overflow-y-auto"
-      style={{ backgroundColor: "#140a04", backgroundImage: "radial-gradient(circle at 50% 12%, #3a2410 0%, #1c0f06 55%, #120a04 100%)" }}>
+      style={{ backgroundColor: "#140a04", backgroundImage: `linear-gradient(rgba(18,10,4,0.72),rgba(12,7,3,0.9)), url(${ASSET}/board_bg.webp)`, backgroundSize: "cover", backgroundPosition: "center", backgroundAttachment: "fixed" }}>
       {/* 頂列 */}
       <div className="w-full max-w-lg flex items-center justify-between px-4 py-3">
         <button onClick={onClose} className="w-9 h-9 rounded-full bg-black/40 text-amber-200 font-black">←</button>
@@ -218,15 +218,17 @@ export default function CatVillageBoard({ profile, onClose }) {
         ))}
       </div>
 
-      {/* 8×8 棋盤 */}
+      {/* 8×8 棋盤（羊皮紙金框） */}
       <div className="w-full max-w-lg p-3">
-        <div className="grid aspect-square w-full rounded-2xl border-4 border-amber-700/60 bg-amber-950/40 p-1"
-          style={{ gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", gap: 3 }}>
+        <div className="w-full rounded-[26px] p-2.5"
+          style={{ background: "linear-gradient(145deg,#d4a017,#8a5a12)", boxShadow: "0 12px 34px rgba(0,0,0,.6), inset 0 0 0 3px rgba(253,230,138,.55), inset 0 0 0 6px rgba(120,53,15,.5)" }}>
+          <div className="grid aspect-square w-full rounded-2xl p-1.5"
+            style={{ gridTemplateColumns: "repeat(8,1fr)", gridTemplateRows: "repeat(8,1fr)", gap: 4, background: "linear-gradient(160deg,#2a1a0c,#1a0f06)", boxShadow: "inset 0 0 24px rgba(0,0,0,.7)" }}>
           {/* 中央地圖/資訊 */}
           <div style={{ gridColumn: "2 / 8", gridRow: "2 / 8" }}
-            className="rounded-xl overflow-hidden">
-            <div className="w-full h-full rounded-xl flex flex-col items-center justify-center text-center p-2"
-              style={{ background: `linear-gradient(135deg, ${mode.palette?.[0] || "#1e293b"}, ${mode.palette?.[1] || "#0f172a"})` }}>
+            className="rounded-xl overflow-hidden border border-amber-500/30">
+            <div className="w-full h-full rounded-xl flex flex-col items-center justify-center text-center p-2 relative"
+              style={{ backgroundColor: mode.palette?.[1] || "#0f172a", backgroundImage: `linear-gradient(160deg, rgba(0,0,0,0.15), rgba(0,0,0,0.55)), url(${ASSET}/map_${mode.id}.webp)`, backgroundSize: "cover", backgroundPosition: "center" }}>
               <div className="text-amber-100 font-black text-lg drop-shadow">{mode.name}</div>
               <div className="text-amber-200/80 text-xs mt-1">刷「{mode.familyName}」資源</div>
               <div className="text-amber-300/70 text-[11px] mt-2">已繞 {board.lapCount} 圈</div>
@@ -254,6 +256,7 @@ export default function CatVillageBoard({ profile, onClose }) {
               </div>
             );
           })}
+          </div>
         </div>
       </div>
 
