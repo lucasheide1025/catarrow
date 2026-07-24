@@ -128,6 +128,8 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
   const hasPending = curSeq > 0 && ((room?.pendingSettle?.seq === curSeq) || (room?.pendingEvent?.seq === curSeq));
   const claimedN = activeMems.filter(([id]) => passedStep(id)).length;
   const allPassed = !hasPending || activeMems.every(([id]) => passedStep(id));
+  // 還沒領取/OK 的人名單（讓大家知道是誰卡住）
+  const waitingNames = hasPending ? activeMems.filter(([id]) => !passedStep(id)).map(([id]) => room?.members?.[id]?.name || "隊員") : [];
 
   // 重連（僅在使用者尚未主動建立/加入房間時才自動重連）
   useEffect(() => {
@@ -555,12 +557,23 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
                 <div className="text-amber-100 font-black text-lg drop-shadow">{mode.name}</div>
                 <div className="text-amber-300/70 text-[11px] mt-1">已繞 {room.lapCount || 0} 圈</div>
                 {shootWaiting ? (
-                  <div className="mt-3 text-amber-200/85 text-xs font-black">🎯 {shootNames.join("、")} 射箭中…（{shootDone}/{room.pendingShoot.shooters.length}）</div>
+                  <>
+                    <div className="mt-3 text-amber-200/85 text-xs font-black">🎯 {shootNames.join("、")} 射箭中…（{shootDone}/{room.pendingShoot.shooters.length}）</div>
+                    <div className="mt-1 text-amber-100/50 text-[10px]">還沒射：{(room.pendingShoot.shooters || []).filter(id => room.pendingShoot.scores?.[id] == null).map(id => room.members?.[id]?.name || "隊員").join("、") || "—"}</div>
+                  </>
                 ) : isHost ? (
-                  <button onClick={hostRoll} disabled={!canRoll} className="mt-3 px-6 py-2.5 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-900 font-black text-sm shadow-lg disabled:opacity-40 active:scale-95">
-                    {rolling ? "🎲 前進中…" : hostDice <= 0 ? "骰子用完了" : !allPassed ? `⏳ 等隊員領取 ${claimedN}/${memberCount}` : "🎲 房主擲骰"}
-                  </button>
-                ) : <div className="mt-3 text-amber-200/70 text-xs">{hasPending && !passedStep(myId) ? "領取你的獎勵…" : "等待房主擲骰…"}</div>}
+                  <>
+                    <button onClick={hostRoll} disabled={!canRoll} className="mt-3 px-6 py-2.5 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-900 font-black text-sm shadow-lg disabled:opacity-40 active:scale-95">
+                      {rolling ? "🎲 前進中…" : hostDice <= 0 ? "骰子用完了" : !allPassed ? `⏳ 等隊員領取 ${claimedN}/${memberCount}` : "🎲 房主擲骰"}
+                    </button>
+                    {!allPassed && waitingNames.length > 0 && <div className="mt-1 text-amber-100/60 text-[10px]">還沒 OK：{waitingNames.join("、")}</div>}
+                  </>
+                ) : (
+                  <>
+                    <div className="mt-3 text-amber-200/70 text-xs">{hasPending && !passedStep(myId) ? "領取你的獎勵…" : "等待房主擲骰…"}</div>
+                    {!allPassed && waitingNames.length > 0 && <div className="mt-1 text-amber-100/60 text-[10px]">還沒 OK：{waitingNames.join("、")}</div>}
+                  </>
+                )}
               </div>
             </div>
             {BOARD_LAYOUT.map((type, i) => {
