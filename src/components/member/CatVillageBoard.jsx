@@ -14,6 +14,7 @@ import { MATERIALS } from "../../lib/monsterMaterials";
 import { NORMAL_MATERIALS } from "../../lib/monsterEconomyCatalog";
 import { RESOURCE_NAMES } from "../../lib/villageData";
 import { addRoundArrows } from "../../lib/db";
+import { getCatSpeech } from "../cat/catSpeeches";
 
 // 新怪材料（無 icon）＋舊材料（有 icon）；舊材料覆蓋同 id 以保留 icon
 const MAT_BY_ID = { ...Object.fromEntries(NORMAL_MATERIALS.map(m => [m.id, m])), ...Object.fromEntries(MATERIALS.map(m => [m.id, m])) };
@@ -91,6 +92,7 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
   const [eventCard, setEventCard] = useState(null);      // { event, flipped }
   const [diceAnim, setDiceAnim] = useState(null);        // 擲骰動畫顯示的數字
   const [rewardPopup, setRewardPopup] = useState(null);  // { items:[{icon,name,amount}], band }
+  const [catBondPop, setCatBondPop] = useState(null);    // 貓貓羈絆格：{ catId, name, speech, catXP, catBond }
   const [showSummary, setShowSummary] = useState(false); // 骰子用完的總結算
   const sessionRef = useRef({});                         // 本次 session 累計獎勵
   const busyRef = useRef(false);
@@ -130,10 +132,25 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
       return;
     }
     const res = await settleBoardTile(myId, tileType, { villageBuildings, catId });
-    if (res?.ok) { sfxSuccess(); showReward(res.reward); }
+    if (res?.ok) {
+      sfxSuccess();
+      // 貓貓羈絆格：讓裝備中的陪練貓出來說句話 + 顯示取得的經驗/羈絆
+      if (tileType === "catbond" && catId) {
+        sessionRef.current = mergeRewards(sessionRef.current, res.reward);
+        setCatBondPop({
+          catId,
+          name: profile?.equippedCat?.name || "貓貓",
+          speech: getCatSpeech(catId, "encourage"),
+          catXP: res.reward.catXP || 0,
+          catBond: res.reward.catBond || 0,
+        });
+      } else {
+        showReward(res.reward);
+      }
+    }
     busyRef.current = false;
     flushSummary();
-  }, [myId, villageBuildings, catId, showReward, flushSummary]);
+  }, [myId, villageBuildings, catId, showReward, flushSummary, profile]);
 
   // 骰 → 逐格動畫 → 落點結算
   const handleRoll = useCallback(async () => {
@@ -346,6 +363,24 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
               ))}
             </div>
             <button onClick={() => setRewardPopup(null)} className="w-full py-2.5 rounded-xl bg-amber-400 text-slate-900 font-black active:scale-95">收下！</button>
+          </div>
+        </div>
+      )}
+
+      {/* 貓貓羈絆格：陪練貓說句話 + 經驗/羈絆 */}
+      {catBondPop && (
+        <div className="fixed inset-0 z-[142] bg-black/75 flex items-center justify-center p-4" onClick={() => setCatBondPop(null)}>
+          <div className="bg-gradient-to-b from-fuchsia-950/90 to-slate-900 border-2 border-fuchsia-400/50 rounded-3xl p-5 w-full max-w-xs text-center animate-[fx-pop-in_0.35s_cubic-bezier(.34,1.56,.64,1)]" onClick={e => e.stopPropagation()}>
+            <img src={`/cats/portraits/${catBondPop.catId}.webp`} alt={catBondPop.name}
+              className="w-24 h-24 rounded-2xl object-cover mx-auto border-2 border-fuchsia-300/40 shadow-lg"
+              onError={e => { e.currentTarget.style.display = "none"; }} />
+            <div className="mt-2 text-fuchsia-200 font-black">{catBondPop.name}</div>
+            <div className="mt-2 mb-3 rounded-2xl bg-white/90 text-slate-800 font-bold text-sm px-3 py-2 leading-relaxed">「{catBondPop.speech}」</div>
+            <div className="flex justify-center gap-3 mb-4">
+              {catBondPop.catXP > 0 && <div className="rounded-xl bg-black/30 px-3 py-1.5 text-amber-200 text-sm font-black">✨ 經驗 +{catBondPop.catXP}</div>}
+              {catBondPop.catBond > 0 && <div className="rounded-xl bg-black/30 px-3 py-1.5 text-fuchsia-200 text-sm font-black">💖 羈絆 +{catBondPop.catBond}</div>}
+            </div>
+            <button onClick={() => setCatBondPop(null)} className="w-full py-2.5 rounded-xl bg-fuchsia-400 text-slate-900 font-black active:scale-95">摸摸貓！</button>
           </div>
         </div>
       )}

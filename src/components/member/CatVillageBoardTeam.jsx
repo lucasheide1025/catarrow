@@ -19,6 +19,7 @@ import { NORMAL_MATERIALS } from "../../lib/monsterEconomyCatalog";
 import { RESOURCE_NAMES } from "../../lib/villageData";
 import { calculateGatheringRound } from "../../lib/catVillageGathering";
 import { addRoundArrows } from "../../lib/db";
+import { getCatSpeech } from "../cat/catSpeeches";
 import { sfxTap, sfxSuccess, sfxCast } from "../../lib/sound";
 
 const ASSET = "/assets/board";
@@ -110,6 +111,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
   const [reward, setReward] = useState(null);
   const [toast, setToast] = useState(null);
   const [showTeamSummary, setShowTeamSummary] = useState(false);
+  const [catBondPop, setCatBondPop] = useState(null); // 貓貓羈絆格：{ catId, name, speech, catXP, catBond }
   const lastSettleRef = useRef(0);
   const lastEventRef = useRef(0);
   const shootSeqRef = useRef(0);
@@ -231,10 +233,24 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     const seq = room.pendingSettle.seq;
     if ((room.settleClaims?.[myId] || 0) >= seq || lastSettleRef.current >= seq) return;
     lastSettleRef.current = seq;
+    const isCatBond = room.pendingSettle.tileType === "catbond";
     claimBoardSettle(roomId, myId, { villageBuildings, catId }).then(res => {
-      if (res?.ok && res.reward) { sfxSuccess(); setReward({ items: describeReward(res.reward), band: res.reward.band }); }
+      if (!(res?.ok && res.reward)) return;
+      sfxSuccess();
+      // 貓貓羈絆格：讓裝備中的陪練貓出來說句話 + 顯示經驗/羈絆
+      if (isCatBond && catId) {
+        setCatBondPop({
+          catId,
+          name: profile?.equippedCat?.name || "貓貓",
+          speech: getCatSpeech(catId, "encourage"),
+          catXP: res.reward.catXP || 0,
+          catBond: res.reward.catBond || 0,
+        });
+      } else {
+        setReward({ items: describeReward(res.reward), band: res.reward.band });
+      }
     });
-  }, [room?.pendingSettle?.seq, room?.settleClaims, myId, roomId, catId]);
+  }, [room?.pendingSettle?.seq, room?.settleClaims, myId, roomId, catId, profile]);
 
   // 命運/機會事件卡：顯示 + 成員 claim（房主另處理共享棋效果）
   useEffect(() => {
@@ -572,6 +588,23 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
               {reward.items.map((it, i) => <div key={i} className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-2"><span className="text-sm font-bold text-slate-100">{it.icon} {it.name}</span><span className="text-amber-300 font-black">×{it.amount}</span></div>)}
             </div>
             <button onClick={() => setReward(null)} className="w-full py-2.5 rounded-xl bg-amber-400 text-slate-900 font-black">收下！</button>
+          </div>
+        </div>
+      )}
+
+      {catBondPop && (
+        <div className="fixed inset-0 z-[218] bg-black/75 flex items-center justify-center p-4" onClick={() => setCatBondPop(null)}>
+          <div className="bg-gradient-to-b from-fuchsia-950/90 to-slate-900 border-2 border-fuchsia-400/50 rounded-3xl p-5 w-full max-w-xs text-center animate-[fx-pop-in_0.35s_cubic-bezier(.34,1.56,.64,1)]" onClick={e => e.stopPropagation()}>
+            <img src={`/cats/portraits/${catBondPop.catId}.webp`} alt={catBondPop.name}
+              className="w-24 h-24 rounded-2xl object-cover mx-auto border-2 border-fuchsia-300/40 shadow-lg"
+              onError={e => { e.currentTarget.style.display = "none"; }} />
+            <div className="mt-2 text-fuchsia-200 font-black">{catBondPop.name}</div>
+            <div className="mt-2 mb-3 rounded-2xl bg-white/90 text-slate-800 font-bold text-sm px-3 py-2 leading-relaxed">「{catBondPop.speech}」</div>
+            <div className="flex justify-center gap-3 mb-4">
+              {catBondPop.catXP > 0 && <div className="rounded-xl bg-black/30 px-3 py-1.5 text-amber-200 text-sm font-black">✨ 經驗 +{catBondPop.catXP}</div>}
+              {catBondPop.catBond > 0 && <div className="rounded-xl bg-black/30 px-3 py-1.5 text-fuchsia-200 text-sm font-black">💖 羈絆 +{catBondPop.catBond}</div>}
+            </div>
+            <button onClick={() => setCatBondPop(null)} className="w-full py-2.5 rounded-xl bg-fuchsia-400 text-slate-900 font-black active:scale-95">摸摸貓！</button>
           </div>
         </div>
       )}
