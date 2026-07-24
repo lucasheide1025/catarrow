@@ -1668,7 +1668,8 @@ function ResourceRow({ resources, gachaCoins }) {
           </div>
 
           {/* 當前選擇階級的資源列表 */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
+          {/* key=activeTierTab → 切T頁籤時重新掛載grid，避免 View Transition 舊快照殘留重疊 */}
+          <div key={activeTierTab} className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 min-w-0">
             {TIERED_LIST.map(res => {
               const count = Math.floor(resources?.[`${res}_t${activeTierTab}`] || 0);
               const cfg = TIER_BG[activeTierTab];
