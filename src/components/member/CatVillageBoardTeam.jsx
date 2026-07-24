@@ -9,7 +9,7 @@ import {
   createBoardRoom, joinBoardRoom, subscribeBoardRoom, leaveBoardRoom, disbandBoardRoom,
   findReconnectableBoardRoom, startBoardRoom, roomRollAndMove,
   roomApplyBoardEffect, claimBoardSettle, claimBoardEvent, partyMultOf, subscribeOpenBoardRooms,
-  commitBoardMove, submitBoardShootScore, finalizeBoardShoot,
+  commitBoardMove, submitBoardShootScore, finalizeBoardShoot, clearRoomPending,
 } from "../../lib/villageBoardTeamDb";
 import { ensureDailyDice, applyEventEffect, DAILY_DICE, applyBoardReward } from "../../lib/villageBoardDb";
 import { BOARD_LAYOUT, BOARD_SIZE, TILE_TYPES, BOARD_MODES, getModeTierCap, rollTileReward } from "../../lib/boardData";
@@ -289,6 +289,15 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
       finalizeBoardShoot(roomId, myId).catch(() => {});
     }
   }, [isHost, room?.pendingShoot, roomId, myId]);
+
+  // 全員領完當前這步 → 房主清空 pendingEvent/pendingSettle，
+  // 否則殘留在房間文件：離開再回來（lastEventRef 重置）會重複看到同一張命運卡/結算。
+  useEffect(() => {
+    if (!isHost || !room) return;
+    const seq = room.seq || 0;
+    const hasPend = seq > 0 && ((room.pendingEvent?.seq === seq) || (room.pendingSettle?.seq === seq));
+    if (hasPend && allPassed) clearRoomPending(roomId, myId).catch(() => {});
+  }, [isHost, room, allPassed, roomId, myId]);
 
   // 房主骰子用完 + 當前這步全員都領完 → 進結算畫面（全員都看得到）。
   // 用房間權威的 hostDiceLeft（=== 0 才算，未定義代表還沒擲過骰），避免隊員讀不到房主 dice 誤觸發。

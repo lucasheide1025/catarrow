@@ -76,7 +76,23 @@ export async function startBoardRoom(roomId, hostId) {
 }
 
 export function subscribeBoardRoom(roomId, cb) {
-  return onSnapshot(doc(db, R, roomId), s => cb(s.exists() ? { id: s.id, ...s.data() } : null), () => cb(null));
+  // 文件存在 → 回資料；不存在（房間被解散）→ 回 null 讓前端退出。
+  // 但「暫時性連線錯誤」不要回 null（否則會把玩家踢回大廳＝跳掉）——錯誤時保持現況，等下次快照。
+  return onSnapshot(
+    doc(db, R, roomId),
+    s => cb(s.exists() ? { id: s.id, ...s.data() } : null),
+    err => { console.warn("[boardRoom] snapshot error (ignored):", err?.message); },
+  );
+}
+
+// 全員領完當前這步後，房主清空 pending（否則殘留在房間文件，離開再回來會重複看到同一張卡/結算）
+export async function clearRoomPending(roomId, hostId) {
+  try {
+    const s = await getDoc(doc(db, R, roomId));
+    if (!s.exists() || s.data().hostId !== hostId) return { ok: false };
+    await updateDoc(doc(db, R, roomId), { pendingEvent: null, pendingSettle: null, updatedAt: serverTimestamp() });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e?.message }; }
 }
 
 export async function leaveBoardRoom(roomId, memberId) {
@@ -211,11 +227,11 @@ export async function commitBoardMove(roomId, hostId, { eventCard } = {}) {
         // 命運/機會：房主已抽牌，寫入 pendingEvent 讓隊員一起看
         updates.pendingEvent = { seq: room.seq, event: eventCard, partyMult: pm.partyMult };
       } else if (isShooting) {
-        // 射箭格：隨機指派 1~2 位射手（不一定是房主），寫 pendingShoot 讓被指派者各自射。
-        // 兩人射時最後由 finalizeBoardShoot 取平均評級。
+        // 射箭格：每位在場成員各自 50% 機率被抽中射箭（房主也可能輪空），至少保底 1 人。
+        // 多人射時最後由 finalizeBoardShoot 取平均評級。
         const mems = Object.keys(room.members || {}).filter(id => room.members[id] != null);
-        const nShoot = (mems.length >= 2 && Math.random() < 0.5) ? 2 : 1;
-        const shooters = shuffleArr(mems).slice(0, Math.min(nShoot, mems.length));
+        let shooters = mems.filter(() => Math.random() < 0.5);
+        if (shooters.length === 0 && mems.length) shooters = [mems[Math.floor(Math.random() * mems.length)]];
         updates.pendingShoot = {
           seq: room.seq, tileType: pm.tile, shooters, scores: {},
           partyMult: pm.partyMult,
