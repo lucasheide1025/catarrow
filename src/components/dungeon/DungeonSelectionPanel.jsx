@@ -7,6 +7,7 @@ import { drawExpeditionBoss, TIER_LABEL } from "../../lib/monsterData";
 import { resolveDungeonBossEncounter } from "../../lib/dungeonBossEncounter";
 import { getExpeditionRewardPreview } from "../../lib/expeditionRewards";
 import DungeonRunSettings from "./DungeonRunSettings";
+import { getBattleMonsterSources } from "../../lib/battleAssets";
 import {
   DEFAULT_DUNGEON_ARROWS,
   DEFAULT_DUNGEON_TARGET,
@@ -21,6 +22,20 @@ const FAMILY_LABEL = {
   temple:    { emoji:"🏛️", label:"神廟系" },
   treasure:  { emoji:"📦", label:"寶箱族" },
 };
+
+// 守關 BOSS 立繪：依序試怪物戰鬥圖，全失敗才退回 emoji
+function BossImg({ boss }) {
+  const id = boss?.artKey || boss?.monsterId || boss?.id;
+  const sources = id ? getBattleMonsterSources(id) : [];
+  const [idx, setIdx] = useState(0);
+  if (idx >= sources.length) return <span className="text-4xl shrink-0">{boss?.icon || "👹"}</span>;
+  return (
+    <div className="w-16 h-16 rounded-xl overflow-hidden bg-black/30 border border-rose-500/30 flex items-center justify-center shrink-0">
+      <img src={sources[idx]} alt="" onError={() => setIdx(i => i + 1)} draggable={false}
+        className="w-full h-full object-cover" />
+    </div>
+  );
+}
 
 export default function DungeonSelectionPanel({
   dungeon,         // { id, family, difficulty, isHidden, savedId }
@@ -108,7 +123,7 @@ export default function DungeonSelectionPanel({
               style={{ background:"rgba(239,68,68,0.10)", border:"1px solid rgba(239,68,68,0.24)" }}>
               <div className="text-sm font-black text-rose-300">👑 守關 BOSS</div>
               <div className="flex items-center gap-3 mt-2">
-                <span className="text-4xl">{boss?.icon || "👹"}</span>
+                <BossImg boss={boss} />
                 <div>
                   <div className="text-lg font-black text-white">{boss?.name || "未知首領"}</div>
                   <div className="text-sm text-slate-300 mt-1">
