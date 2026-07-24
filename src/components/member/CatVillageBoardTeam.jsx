@@ -7,7 +7,7 @@ import { db } from "../../lib/firebase";
 import { useAuth } from "../../hooks/useAuth";
 import {
   createBoardRoom, joinBoardRoom, subscribeBoardRoom, leaveBoardRoom, disbandBoardRoom,
-  findReconnectableBoardRoom, setRoomMode, roomRollAndMove, roomSettleShoot, roomDrawEvent,
+  findReconnectableBoardRoom, setRoomMode, startBoardRoom, roomRollAndMove, roomSettleShoot, roomDrawEvent,
   roomApplyBoardEffect, claimBoardSettle, claimBoardEvent, partyMultOf,
 } from "../../lib/villageBoardTeamDb";
 import { ensureDailyDice, applyEventEffect, DAILY_DICE } from "../../lib/villageBoardDb";
@@ -228,10 +228,57 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     );
   }
 
+  // ── 等待室 ──
+  if (room.status === "waiting") {
+    const mems = Object.entries(room.members || {}).filter(([, mm]) => mm);
+    const wm = BOARD_MODES.find(x => x.id === room.mode) || BOARD_MODES[0];
+    return (
+      <div className="fixed inset-0 z-[200] overflow-y-auto" style={{ backgroundColor:"#140a04", backgroundImage:`linear-gradient(rgba(18,10,4,0.85),rgba(12,7,3,0.94)), url(${ASSET}/board_bg.webp)`, backgroundSize:"cover" }}>
+        <div className="w-full max-w-lg mx-auto p-4">
+          <div className="flex items-center justify-between mb-4">
+            <button onClick={exitRoom} className="w-9 h-9 rounded-full bg-black/40 text-amber-200 font-black">←</button>
+            <div className="text-amber-100 font-black">⏳ 組隊等待室</div>
+            <div className="rounded-xl bg-amber-500/20 border border-amber-400/40 px-2.5 py-1 text-amber-200 text-xs font-black">🎲 {hostDice}</div>
+          </div>
+          <div className="rounded-2xl bg-black/30 border border-amber-500/25 p-4 mb-4 text-center">
+            <div className="text-amber-200/60 text-xs">房號（給隊友輸入）</div>
+            <div className="text-3xl font-black text-amber-300 tracking-[0.3em] my-1">{room.code}</div>
+            <div className="text-amber-100/70 text-xs">{wm.icon}{wm.familyName}・T{room.tier || 1}</div>
+          </div>
+          <div className="text-amber-200/80 text-xs font-bold mb-2">隊員（{mems.length}/8）</div>
+          <div className="space-y-2 mb-6">
+            {mems.map(([id, mem]) => (
+              <div key={id} className="flex items-center gap-2 rounded-xl bg-slate-900/70 border border-white/10 px-3 py-2.5">
+                <span className="text-lg">🐱</span>
+                <span className="flex-1 text-white font-bold text-sm">{mem.name}{id === room.hostId ? " 👑" : ""}{id === myId ? "（你）" : ""}</span>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              </div>
+            ))}
+          </div>
+          {isHost ? (
+            <button onClick={() => startBoardRoom(roomId, myId)} className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-900 font-black text-base shadow-lg active:scale-95">
+              🎲 開始探索（{mems.length} 人）
+            </button>
+          ) : (
+            <div className="text-center text-amber-200/70 text-sm py-3 rounded-2xl bg-black/20">等待房主開始…</div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   // ── 團隊棋盤 ──
   const mode = BOARD_MODES.find(x => x.id === room.mode) || BOARD_MODES[0];
   const memberCount = Object.values(room.members || {}).filter(Boolean).length;
   const pMult = partyMultOf(memberCount);
+  // 全員通過閘門：有待領取的步驟時，房主要等所有隊員都領完才能再擲骰
+  const activeMems = Object.entries(room.members || {}).filter(([, mm]) => mm);
+  const curSeq = room.seq || 0;
+  const passedStep = mid => (room.settleClaims?.[mid] || 0) >= curSeq || (room.eventClaims?.[mid] || 0) >= curSeq;
+  const hasPending = curSeq > 0 && ((room.pendingSettle?.seq === curSeq) || (room.pendingEvent?.seq === curSeq));
+  const claimedN = activeMems.filter(([id]) => passedStep(id)).length;
+  const allPassed = !hasPending || activeMems.every(([id]) => passedStep(id));
+  const canRoll = isHost && !rolling && hostDice > 0 && allPassed && !shoot && !card;
 
   return (
     <div className="fixed inset-0 z-[200] flex flex-col items-center overflow-y-auto"
@@ -253,10 +300,10 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
                 <div className="text-amber-100 font-black text-lg drop-shadow">{mode.name}</div>
                 <div className="text-amber-300/70 text-[11px] mt-1">已繞 {room.lapCount || 0} 圈</div>
                 {isHost ? (
-                  <button onClick={hostRoll} disabled={rolling || hostDice <= 0} className="mt-3 px-6 py-2.5 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-900 font-black text-sm shadow-lg disabled:opacity-40 active:scale-95">
-                    {rolling ? "🎲 前進中…" : hostDice <= 0 ? "骰子用完了" : "🎲 房主擲骰"}
+                  <button onClick={hostRoll} disabled={!canRoll} className="mt-3 px-6 py-2.5 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-900 font-black text-sm shadow-lg disabled:opacity-40 active:scale-95">
+                    {rolling ? "🎲 前進中…" : hostDice <= 0 ? "骰子用完了" : !allPassed ? `⏳ 等隊員領取 ${claimedN}/${memberCount}` : "🎲 房主擲骰"}
                   </button>
-                ) : <div className="mt-3 text-amber-200/70 text-xs">等待房主擲骰…</div>}
+                ) : <div className="mt-3 text-amber-200/70 text-xs">{hasPending && !passedStep(myId) ? "領取你的獎勵…" : "等待房主擲骰…"}</div>}
               </div>
             </div>
             {BOARD_LAYOUT.map((type, i) => {

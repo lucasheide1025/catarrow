@@ -29,7 +29,7 @@ export async function createBoardRoom({ hostId, hostName, mode, accountType, ava
     const code = genCode();
     const ref = await addDoc(collection(db, R), {
       code, hostId, hostName: hostName || "房主",
-      status: "active", mode,
+      status: "waiting", mode,
       boardPos: 0, lapCount: 0,
       seq: 0, pendingSettle: null, pendingEvent: null,
       settleClaims: {}, eventClaims: {},
@@ -42,21 +42,35 @@ export async function createBoardRoom({ hostId, hostName, mode, accountType, ava
 
 export async function joinBoardRoom(code, memberId, memberName, { accountType, avatarId } = {}) {
   try {
-    const snap = await getDocs(query(collection(db, R), where("code", "==", code.toUpperCase()), where("status", "==", "active")));
-    if (snap.empty) return { ok: false, reason: "找不到房間或已結束" };
+    const snap = await getDocs(query(collection(db, R), where("code", "==", code.toUpperCase()), where("status", "==", "waiting")));
+    if (snap.empty) return { ok: false, reason: "找不到房間，或遊戲已開始" };
     const roomDoc = snap.docs[0];
     const roomRef = doc(db, R, roomDoc.id);
     await runTransaction(db, async tx => {
       const latest = await tx.get(roomRef);
       if (!latest.exists()) throw new Error("房間不存在");
       const data = latest.data();
-      if (data.status !== "active") throw new Error("房間已結束");
+      if (data.status !== "waiting") throw new Error("遊戲已開始，無法加入");
       const members = Object.fromEntries(activeMembers(data));
       if (members[memberId]) return;
       if (Object.keys(members).length >= 8) throw new Error("房間已滿（最多 8 人）");
       tx.update(roomRef, { [`members.${memberId}`]: { name: memberName || "隊員", accountType: accountType || "official", avatarId: avatarId || null, joinedAt: serverTimestamp() }, updatedAt: serverTimestamp() });
     });
     return { ok: true, roomId: roomDoc.id };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+// 房主開始遊戲：等待室 → 進行中
+export async function startBoardRoom(roomId, hostId) {
+  try {
+    await runTransaction(db, async tx => {
+      const s = await tx.get(doc(db, R, roomId));
+      if (!s.exists()) throw new Error("房間不存在");
+      if (s.data().hostId !== hostId) throw new Error("只有房主可開始");
+      if (s.data().status !== "waiting") throw new Error("遊戲已開始");
+      tx.update(doc(db, R, roomId), { status: "active", updatedAt: serverTimestamp() });
+    });
+    return { ok: true };
   } catch (e) { return { ok: false, reason: e?.message }; }
 }
 
@@ -81,7 +95,7 @@ export async function disbandBoardRoom(roomId, hostId) {
 }
 
 export function subscribeOpenBoardRooms(cb) {
-  return onSnapshot(query(collection(db, R), where("status", "==", "active")), snap => {
+  return onSnapshot(query(collection(db, R), where("status", "==", "waiting")), snap => {
     cb(snap.docs.map(d => {
       const data = d.data();
       return { id: d.id, code: data.code, hostName: data.hostName, mode: data.mode, memberCount: activeMembers(data).length, createdAt: data.createdAt };
@@ -93,7 +107,7 @@ export function subscribeOpenBoardRooms(cb) {
 export async function findReconnectableBoardRoom(memberId) {
   if (!memberId) return { ok: false, room: null };
   try {
-    const snap = await getDocs(query(collection(db, R), where("status", "==", "active")));
+    const snap = await getDocs(query(collection(db, R), where("status", "in", ["waiting", "active"])));
     const room = snap.docs.map(d => ({ id: d.id, ...d.data() })).find(r => r.members?.[memberId]);
     return { ok: true, room: room || null };
   } catch (e) { return { ok: false, reason: e?.message, room: null }; }
