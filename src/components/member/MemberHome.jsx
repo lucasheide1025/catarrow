@@ -786,8 +786,8 @@ export default function MemberHome({
               const dungeonKeys   = Object.keys(profile?.dungeonCollectibles || {});
               const dungeonOwned  = dungeonKeys.length;
               const dungeonTotal  = Object.keys(COLLECTIBLE_MAP).length;
-              const achOwned      = _ds.totalUnlocked;
-              const achTotal      = _ds.totalAll;
+              const achOwned      = profile?.dexTotalUnlocked ?? _ds.totalUnlocked;
+              const achTotal      = profile?.dexTotalAll ?? _ds.totalAll;
               const ownedCatCards = profile?.catCards || {};
               const catOwned      = Object.keys(ownedCatCards).filter(id => (ownedCatCards[id] || 0) > 0).length;
               const catTotal      = CAT_CARDS.length;

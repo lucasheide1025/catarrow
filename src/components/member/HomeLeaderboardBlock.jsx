@@ -11,7 +11,8 @@ import { SectionHeader } from "../shared/Widgets";
 const CANDIDATES = [
   "event", "arrows", "checkin", "adventurer",
   "fatcat", "score", "achieve",
-  "wbdmg", "partydmg", "laps", "max_cat", "dungeon_dex",
+  "wbdmg", "partydmg", "laps", "max_cat",
+  "dungeon_dex", "achieve_dex", "cat_cards",
   "dclear:all",
 ];
 const MEDALS = ["🥇", "🥈", "🥉", "4", "5"];

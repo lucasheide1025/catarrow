@@ -3,7 +3,6 @@
 import { FAMILIES, MONSTERS } from "./monsterData";
 import { calcBadgePoints, getCertLevel } from "./constants";
 import { catLevelFromXP } from "./catLevel";
-import { computeDexStats } from "./achievementDex";
 import { COLLECTIBLE_MAP } from "./dungeonCollectibles";
 
 // 怪物 id → 資料（族/階）
@@ -128,19 +127,13 @@ function rawMetric(boardId, member, data) {
     case "achieve": return calcBadgePoints(member, "achieve");
     case "dungeon_dex":
       return Object.values(member.dungeonCollectibles || {}).filter((n) => Number(n) > 0).length;
-    case "achieve_dex": {
-      const stats = computeDexStats({
-        member,
-        certRecords: (data.certRecords || []).filter((r) => r.memberId === id),
-        monsterDex: data.dexMap[id] || {},
-        cardData: data.cardMap[id] || {},
-        duelStats: data.duelMap[id] || {},
-        checkinCount: Number(member.dailyQuestCount) || 0,
-      });
-      return stats.totalUnlocked || 0;
-    }
+    case "achieve_dex":
+      // 反正規化：圖鑑頁用完整 context（含 cats/grants）算好寫回 member.dexTotalUnlocked。
+      // 未開過圖鑑頁的成員暫為 0，開一次即補上（自癒）。
+      return Number(member.dexTotalUnlocked) || 0;
     case "cat_cards":
-      return Object.keys((data.cardMap[id] || {}).cards || {}).length;
+      // 貓貓卡片存在 member.catCards（{cardId: 數量}），非怪物卡 cardCollections。
+      return Object.values(member.catCards || {}).filter((n) => Number(n) > 0).length;
     case "max_cat": {
       const xp = Math.max(Number(member.maxCatXP) || 0, Number(member.equippedCat?.catXP) || 0);
       return catLevelFromXP(xp);

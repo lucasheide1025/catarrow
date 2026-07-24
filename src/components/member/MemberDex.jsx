@@ -2,7 +2,7 @@
 // 數位圖鑑牆（學生端）— 像素風徽章版 + 成就提示 + 公告系統
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { getCertRecords, getCertification, subscribeDexGrants, getDexConfig, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection } from "../../lib/db";
+import { getCertRecords, getCertification, subscribeDexGrants, getDexConfig, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection, saveDexSummary } from "../../lib/db";
 import { getDuelStats } from "../../lib/duelDb";
 import { subscribeMyCats } from "../../lib/catDb";
 import {
@@ -107,6 +107,13 @@ export default function MemberDex({ onBack, onDexViewed }) {
   const stats = computeDexStats({ ...ctx, granted, physicalMax: config.physicalMax, pointMax: config.pointMax });
   // 快取給首頁/我的頁面使用，避免重複讀取
   if (profile?.id) { try { sessionStorage.setItem(`dex_stats_${profile.id}`, JSON.stringify({ totalUnlocked: stats.totalUnlocked, totalAll: stats.totalAll, gold: stats.gold, silver: stats.silver, bronze: stats.bronze })); } catch {} }
+
+  // 反正規化寫回 member（排行榜/首頁讀取用）：只在數值變動時寫，避免每次進圖鑑都寫
+  useEffect(() => {
+    if (!profile?.id) return;
+    if (profile.dexTotalUnlocked === stats.totalUnlocked && profile.dexTotalAll === stats.totalAll) return;
+    saveDexSummary(profile.id, stats.totalUnlocked, stats.totalAll);
+  }, [profile?.id, profile?.dexTotalUnlocked, profile?.dexTotalAll, stats.totalUnlocked, stats.totalAll]);
 
   // ── 進圖鑑＝去看了：把「當下沒看過」的 key 凍結成 NEW 快照，然後全部標記已看（清紅點）──
   // 提醒（toast/popup）由 App 層 MemberApp 負責，這裡只做「看過」清除與 NEW 高亮，兩者不重複。

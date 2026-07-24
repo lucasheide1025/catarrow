@@ -2,7 +2,7 @@
 // 資料/算分集中在 lib/leaderboardData.js；季賽快照在 lib/seasonDb.js。
 import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { getMembers, getAllCertRecords, getAllMonsterDex, getAllCardCollections } from "../../lib/db";
+import { getMembers, getAllCertRecords, getAllMonsterDex } from "../../lib/db";
 import { getAllDuelStats } from "../../lib/duelDb";
 import { Spinner } from "../shared/UI";
 import { certLevelStyle } from "../../lib/constants";
@@ -35,7 +35,6 @@ export default function MemberLeaderboard({ guestProfile }) {
   const [certRecords, setCertRecords] = useState([]);
   const [duelMap, setDuelMap] = useState({});
   const [dexMap, setDexMap] = useState({});
-  const [cardMap, setCardMap] = useState({});
   const [snapshot, setSnapshot] = useState({});
 
   const [tabId, setTabId] = useState(() => {
@@ -53,21 +52,20 @@ export default function MemberLeaderboard({ guestProfile }) {
 
   useEffect(() => {
     let alive = true;
-    Promise.all([getMembers(), getAllCertRecords(), getAllDuelStats(), getAllMonsterDex(), getAllCardCollections()])
-      .then(async ([ms, certs, duelList, dexList, cards]) => {
+    Promise.all([getMembers(), getAllCertRecords(), getAllDuelStats(), getAllMonsterDex()])
+      .then(async ([ms, certs, duelList, dexList]) => {
         if (!alive) return;
         setMembers(ms);
         setCertRecords(Array.isArray(certs) ? certs : []);
         const dm = {}; duelList.forEach((d) => { dm[d.memberId] = d; }); setDuelMap(dm);
         const dx = {}; dexList.forEach((d) => { dx[d.memberId] = d.monsters || {}; }); setDexMap(dx);
-        setCardMap(cards || {});
 
         // 季賽快照：訪客不觸發寫入
         if (!isGuest) {
           try {
             const data = {
               certMaps: buildCertMaps(certs, year), certRecords: certs,
-              duelMap: dm, dexMap: dx, cardMap: cards, year,
+              duelMap: dm, dexMap: dx, year,
             };
             const snap = await ensureSeasonSnapshot(computeSeasonMetrics(ms, data), seasonId);
             if (alive) setSnapshot(snap || {});
@@ -81,8 +79,8 @@ export default function MemberLeaderboard({ guestProfile }) {
 
   const data = useMemo(() => ({
     certMaps: buildCertMaps(certRecords, year), certRecords,
-    duelMap, dexMap, cardMap, year,
-  }), [certRecords, duelMap, dexMap, cardMap, year]);
+    duelMap, dexMap, year,
+  }), [certRecords, duelMap, dexMap, year]);
 
   const tab = LB_TAB_MAP[tabId];
   const boardId = tab?.kind === "family" ? `${tab.base}:${fam}` : tabId;

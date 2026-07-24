@@ -110,6 +110,7 @@ service cloud.firestore {
           "dungeonBossCardProgress", "expeditions", "starterCoinsGranted", "lastSessionSourceId",
           "teamSavedProgress", "villageBoard",
           "villageTotalLaps", "dungeonClears", "worldBossDmgTotal", "partyDmgTotal", "maxCatXP",
+          "dexTotalUnlocked", "dexTotalAll",
           "name", "phone"
         ])
       ) || (
@@ -126,6 +127,7 @@ service cloud.firestore {
           "dungeonBossCardProgress", "expeditions", "starterCoinsGranted", "lastSessionSourceId",
           "teamSavedProgress", "villageBoard",
           "villageTotalLaps", "dungeonClears", "worldBossDmgTotal", "partyDmgTotal", "maxCatXP",
+          "dexTotalUnlocked", "dexTotalAll",
           "name", "phone"
         ])
       );

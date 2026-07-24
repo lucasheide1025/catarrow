@@ -3303,6 +3303,12 @@ export async function addPartyDamage(memberId, dmg = 0) {
   try { await updateDoc(doc(db, "members", memberId), { partyDmgTotal: increment(d) }); }
   catch (e) { console.warn("addPartyDamage:", e?.message); }
 }
+// 成就圖鑑完成度反正規化（圖鑑頁用完整 context 算好寫回，供排行榜/首頁讀取）
+export async function saveDexSummary(memberId, totalUnlocked, totalAll) {
+  if (!memberId) return;
+  try { await updateDoc(doc(db, "members", memberId), { dexTotalUnlocked: Number(totalUnlocked) || 0, dexTotalAll: Number(totalAll) || 0 }); }
+  catch (e) { console.warn("saveDexSummary:", e?.message); }
+}
 
 // 供 partyDb 呼叫：更新怪物圖鑑（勝/敗記錄）
 export async function recordBattleDex(memberId, monsterId, result, dmgDealt) {
