@@ -430,6 +430,16 @@ export default function DungeonExpedition({
     setActiveExpeditionProgress(myId, payload).catch(() => {});
   }, [myId, family, difficultyTier, isHidden, floorsCleared, playerState?.hp, playerState?.maxHP, arrowsPerRound, targetFmt, expansionBossEncounter, floorIndex, gridFloor, playerPos, visitedIds, branchFloor, branchChoice, branchStep, phase]);
 
+  // 勝負已定（won/result）＝ run 結束：立即鎖住並清除續玩來源（雲端＋local）。
+  // 比「領獎時才清」更早，避免打完王領完獎仍跳「從第三層繼續」而重複打王
+  // （原本只在 handleFinish 清，跟進 boss 層的存檔＋快照傳播有 race，玩家回大廳仍讀到舊 activeExpedition）。
+  useEffect(() => {
+    if (!myId || (phase !== "won" && phase !== "result")) return;
+    expeditionEndedRef.current = true;
+    clearActiveExpeditionProgress(myId).catch(() => {});
+    try { localStorage.removeItem(`active_expedition_${myId || "guest"}`); } catch {}
+  }, [phase, myId]);
+
   const [runLoot, setRunLoot] = useState(() => emptyExpeditionLoot());
   const [runStats, setRunStats] = useState({});
   // 可變怪物佇列（每場戰鬥消耗一隻）
