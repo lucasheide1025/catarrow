@@ -2,6 +2,7 @@
 // 組隊遠征遊戲等待室 — 沉浸式 RPG 戰術大廳
 
 import { useState, useEffect, useRef } from "react";
+import { getBattleMonsterSources } from "../../lib/battleAssets";
 import {
   subscribeTeamExpeditionRoom,
   disbandTeamExpeditionRoom,
@@ -31,6 +32,15 @@ function ImgOrEmoji({ src, emoji, className }) {
   const [failed, setFailed] = useState(false);
   if (!src || failed) return <span>{emoji}</span>;
   return <img src={src} alt="" className={className} onError={() => setFailed(true)} draggable={false} />;
+}
+
+// 守關 BOSS 立繪：依序試怪物戰鬥圖（/monsters-battle 與 /monsters 都試），全失敗才退 emoji
+function BossImg({ boss, className }) {
+  const id = boss?.artKey || boss?.monsterId || boss?.id;
+  const sources = id ? getBattleMonsterSources(id) : [];
+  const [idx, setIdx] = useState(0);
+  if (idx >= sources.length) return <span className="text-3xl">{boss?.icon || "👹"}</span>;
+  return <img src={sources[idx]} alt="" className={className} onError={() => setIdx(i => i + 1)} draggable={false} />;
 }
 
 export default function DungeonTeamLobby({
@@ -234,11 +244,7 @@ export default function DungeonTeamLobby({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-3 border-t border-amber-500/20 relative z-10">
               <div className="flex items-center gap-3 bg-slate-950/60 p-3 rounded-2xl border border-rose-500/30">
                 <div className="w-14 h-14 rounded-xl overflow-hidden bg-black/30 border border-rose-500/30 flex items-center justify-center text-3xl shrink-0">
-                  <ImgOrEmoji
-                    src={`/monsters/${dungeonBoss.artKey || dungeonBoss.monsterId || dungeonBoss.id || ""}.webp`}
-                    emoji={dungeonBoss.icon || "👹"}
-                    className="w-full h-full object-cover"
-                  />
+                  <BossImg boss={dungeonBoss} className="w-full h-full object-cover" />
                 </div>
                 <div className="min-w-0">
                   <div className="text-[10px] font-black text-rose-300 uppercase">守關 BOSS</div>
@@ -286,82 +292,54 @@ export default function DungeonTeamLobby({
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
             {memberEntries.map(([id, m]) => {
               const isMe = id === myId;
               const isLeader = id === hostId;
               const mRole = m.role || "front";
+              const cos = m.battleCosmetics; // 世界王卡外觀：{ color, title, stars }
+              // 外框顏色：有世界王卡→用卡片色；否則房主金 / 自己紫 / 一般灰
+              const frameColor = cos?.color || (isLeader ? "#fbbf24" : isMe ? "#818cf8" : "#475569");
               return (
                 <div
                   key={id}
-                  className={`relative overflow-hidden rounded-2xl border p-4 transition-all duration-300 flex flex-col justify-between min-h-[120px] shadow-lg ${
-                    isLeader
-                      ? "border-amber-400/60 bg-gradient-to-b from-amber-950/40 via-slate-900/90 to-slate-950 shadow-amber-500/10"
-                      : isMe
-                      ? "border-indigo-400/60 bg-gradient-to-b from-indigo-950/40 via-slate-900/90 to-slate-950 shadow-indigo-500/10"
-                      : "border-slate-700/80 bg-slate-900/80 hover:border-slate-600"
-                  }`}
+                  className="relative overflow-hidden rounded-xl border p-2.5 flex flex-col gap-1.5 bg-slate-900/85 shadow"
+                  style={{ borderColor: `${frameColor}aa`, boxShadow: `0 0 0 1px ${frameColor}33, 0 4px 12px rgba(0,0,0,.4)` }}
                 >
-                  {/* 角標：房主 / 角色標籤 */}
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <span
-                      className={`text-[10px] px-2.5 py-0.5 rounded-full font-black flex items-center gap-1 ${
-                        mRole === "front"
-                          ? "bg-rose-500/20 border border-rose-500/40 text-rose-300"
-                          : "bg-sky-500/20 border border-sky-500/40 text-sky-300"
-                      }`}
-                    >
-                      {mRole === "front" ? "⚔️ 前衛" : "🏹 後衛"}
-                    </span>
-                    {isLeader && (
-                      <span className="text-[10px] px-2.5 py-0.5 rounded-full font-black bg-amber-500/20 border border-amber-400/40 text-amber-300 shadow">
-                        ⭐ 房主
-                      </span>
-                    )}
+                  {/* 名稱 + 等級 */}
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-sm font-black text-white truncate">{m.name || "冒險者"}{isMe ? " (你)" : ""}</span>
+                    <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md shrink-0"
+                      style={{ background:`${frameColor}22`, color:frameColor, border:`1px solid ${frameColor}55` }}>Lv.{m.level || 1}</span>
                   </div>
 
-                  {/* 玩家資訊 */}
-                  <div className="space-y-1">
-                    <div className="text-base font-black text-white truncate flex items-center gap-1.5">
-                      <span>{m.name || "冒險者"}</span>
-                      {isMe && (
-                        <span className="text-[10px] text-indigo-300 bg-indigo-500/20 px-1.5 py-0.5 rounded-md font-bold">
-                          (你)
-                        </span>
-                      )}
+                  {/* 世界王卡稱號（有裝才顯示，外框已用卡片色） */}
+                  {cos?.title && (
+                    <div className="text-[10px] font-black px-1.5 py-0.5 rounded-md truncate"
+                      style={{ background:`${cos.color}1f`, color:cos.color, border:`1px solid ${cos.color}55` }}>
+                      🏆 {cos.title}{cos.stars ? ` ${"★".repeat(Math.min(cos.stars, 5))}` : ""}
                     </div>
+                  )}
 
-                    {/* 屬性數值面板 */}
-                    <div className="grid grid-cols-2 gap-1.5 pt-1">
-                      <div className="bg-slate-950/60 border border-slate-800 rounded-xl px-2 py-1 text-center">
-                        <div className="text-[9px] text-slate-400 font-bold">HP</div>
-                        <div className="text-xs font-black text-emerald-400">
-                          {m.maxHP || "?"}
-                        </div>
-                      </div>
-                      <div className="bg-slate-950/60 border border-slate-800 rounded-xl px-2 py-1 text-center">
-                        <div className="text-[9px] text-slate-400 font-bold">ATK</div>
-                        <div className="text-xs font-black text-rose-400">
-                          {m.atk || "?"}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* 貓貓夥伴（如果有） */}
-                    {m.catName && (
-                      <div className="text-[10px] text-amber-200/90 bg-amber-500/10 border border-amber-400/20 px-2 py-1 rounded-lg truncate flex items-center gap-1 mt-1">
-                        <span>🐾 {m.catName}</span>
-                        {m.catAtk > 0 && <span className="text-amber-400 font-bold">+{m.catAtk}</span>}
-                      </div>
-                    )}
+                  {/* 前衛/後衛 + 房主 */}
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-black ${mRole === "front" ? "bg-rose-500/20 text-rose-300 border border-rose-500/40" : "bg-sky-500/20 text-sky-300 border border-sky-500/40"}`}>
+                      {mRole === "front" ? "⚔️前衛" : "🏹後衛"}
+                    </span>
+                    {isLeader && <span className="text-[9px] px-1.5 py-0.5 rounded-full font-black bg-amber-500/20 text-amber-300 border border-amber-400/40">⭐房主</span>}
                   </div>
 
-                  {/* 準備狀態 */}
-                  <div className="mt-3 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px]">
-                    <span className="text-slate-400">準備狀態</span>
-                    <span className="text-emerald-400 font-black flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block" /> Ready
-                    </span>
+                  {/* HP / ATK / DEF 一排 */}
+                  <div className="grid grid-cols-3 gap-1">
+                    <div className="rounded-lg bg-slate-950/60 border border-slate-800 px-1 py-0.5 text-center"><div className="text-[8px] text-slate-400 font-bold">HP</div><div className="text-[11px] font-black text-emerald-400 leading-tight">{m.maxHP || "?"}</div></div>
+                    <div className="rounded-lg bg-slate-950/60 border border-slate-800 px-1 py-0.5 text-center"><div className="text-[8px] text-slate-400 font-bold">ATK</div><div className="text-[11px] font-black text-rose-400 leading-tight">{m.atk || "?"}</div></div>
+                    <div className="rounded-lg bg-slate-950/60 border border-slate-800 px-1 py-0.5 text-center"><div className="text-[8px] text-slate-400 font-bold">DEF</div><div className="text-[11px] font-black text-sky-400 leading-tight">{m.def || "?"}</div></div>
+                  </div>
+
+                  {/* 貓 + Ready */}
+                  <div className="flex items-center justify-between gap-1 text-[9px]">
+                    {m.catName ? <span className="text-amber-200/90 truncate">🐾 {m.catName}</span> : <span className="text-slate-600">—</span>}
+                    <span className="text-emerald-400 font-black flex items-center gap-0.5 shrink-0"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" />Ready</span>
                   </div>
                 </div>
               );
