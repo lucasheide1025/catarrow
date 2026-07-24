@@ -10,6 +10,7 @@ import MemberApp   from "./pages/MemberApp";
 import GuestApp    from "./pages/GuestApp";
 import PublicBookingApp from "./pages/PublicBookingApp";
 import ZombieGame   from "./zombie/ZombieGame";
+import CatalogPreviewPage from "./features/catalog/CatalogPreviewPage";
 import { initGoalTracker } from "./lib/villageGoalDb";
 import { CostControlProvider } from "./hooks/useCostControl";
 import { resolveGuestEntry } from "./lib/guestEntryRoute";
@@ -30,6 +31,7 @@ function AppRoutes() {
   if (guestEntry) return <GuestApp accountType={guestEntry.accountType} sessionSourceId={guestEntry.sessionSourceId} />;
   if (searchParams.get("bk") === PUBLIC_BOOKING_TOKEN) return <PublicBookingApp />;
   if (searchParams.has("zombie")) return <ZombieGame />;
+  if (searchParams.has("catalog")) return <CatalogPreviewPage />;
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">
