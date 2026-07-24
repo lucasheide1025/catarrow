@@ -187,10 +187,13 @@
 ---
 
 ## 12. 實作進度（autonomous，2026-07-24 起）
-- [ ] Phase 1a-1：`boardData.js`（佈局/獎勵計算）
-- [ ] Phase 1a-2：`villageBoardDb.js`（狀態/每日骰/移動/結算/抽卡）+ firestore.rules 白名單
-- [ ] Phase 1a-3：`CatVillageBoard.jsx`（棋盤 UI/骰/踩格動畫）
-- [ ] Phase 1a-4：`CatVillageBoardEventCard.jsx`（抽卡翻牌）+ 6 箭射箭格整合
-- [ ] Phase 1a-5：接進 `CatVillage.jsx`（取代 VillageGoalBanner 入口）
+- [x] Phase 1a-1：`boardData.js`（佈局/獎勵計算）✅ commit 4d60885
+- [x] Phase 1a-2：`villageBoardDb.js` + firestore.rules 白名單 `villageBoard` ✅（⚠️ 規則需貼 Console）
+- [x] Phase 1a-3/4/5：`CatVillageBoard.jsx`（8×8 棋盤/骰/踩格動畫/6箭計分/命運機會翻牌/模式選擇）+ 接進 `CatVillage.jsx` 入口按鈕 ✅ commit 7d9a3dd
+- [~] 格子圖示：`gen-board-tiles.py` 生成中（12 tile_<type>.webp，去背可愛風）；UI 已 img+emoji fallback，生完換上即可
 - [ ] Phase 1b：組隊（房主骰/共享棋/斷線重連/存檔/人數加成）
-- [ ] Phase 1c：ComfyUI 卡框 + 格子圖示
+- [ ] Phase 1c 其餘美術：羊皮紙框 frame.webp、命運/機會卡框 card_*、中央地圖 map_<mode>
+
+### ⚠️ 上線前必做
+- **貼 `firestore.rules` 到 Firebase Console**（含 `villageBoard` 白名單）——否則棋盤所有寫入（骰/移動/獎勵）會被 permission-denied 靜默擋掉。
+- Phase 1a 是「新增入口」不動村目標；之後 Phase 1b/村目標整併再處理。
