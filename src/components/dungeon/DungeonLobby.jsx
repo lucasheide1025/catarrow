@@ -700,99 +700,85 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap, a
             {/* 分隔線 */}
             <div className="flex items-center gap-3">
               <div className="flex-1 h-px" style={{ background:"rgba(255,255,255,0.08)" }} />
-              <span className="text-[10px] font-bold" style={{ color:"var(--text-muted)" }}>或</span>
+              <span className="text-[10px] font-bold" style={{ color:"var(--text-muted)" }}>組隊遠征</span>
               <div className="flex-1 h-px" style={{ background:"rgba(255,255,255,0.08)" }} />
             </div>
-            {/* 加入地下城 */}
-            <button onClick={() => setShowJoinPanel(!showJoinPanel)}
-              className="w-full py-4 rounded-2xl font-black text-base border transition-all active:scale-95"
-              style={{
-                background:"rgba(99,102,241,0.08)",
-                borderColor:"rgba(99,102,241,0.25)",
-                color:"#a5b4fc",
-              }}>
-              🔍 加入地下城
-            </button>
-            {showJoinPanel && (
-              <div className="space-y-3">
-                {/* 邀請碼輸入 */}
-                <div className="rounded-2xl p-4 border"
-                  style={{ background:"rgba(255,255,255,0.04)", borderColor:"rgba(255,255,255,0.1)" }}>
-                  <div className="text-xs font-bold mb-2" style={{ color:"var(--text-secondary)" }}>
-                    🔑 輸入邀請碼
-                  </div>
-                  <div className="flex gap-2">
-                    <input
-                      value={joinCode}
-                      onChange={e => { setJoinCode(e.target.value.toUpperCase()); setJoinErr(""); }}
-                      aria-label="地下城邀請碼"
-                      name="dungeon-invite-code"
-                      autoComplete="off"
-                      spellCheck={false}
-                      placeholder="例如 ABC123…"
-                      maxLength={6}
-                      className="flex-1 px-3 py-2.5 rounded-xl text-sm font-bold text-white tracking-widest focus-visible:ring-2 focus-visible:ring-indigo-300"
-                      style={{
-                        background:"rgba(255,255,255,0.08)",
-                        border:"1px solid rgba(255,255,255,0.15)",
-                      }}
-                    />
-                    <button onClick={handleJoinByCode} disabled={joinLoading || joinCode.length < 4}
-                      className="px-5 py-2.5 rounded-xl font-black text-sm bg-gradient-to-r from-indigo-500 to-purple-500 text-white disabled:opacity-40 active:scale-95 transition-all">
-                      {joinLoading ? "加入中…" : "加入"}
-                    </button>
-                  </div>
-                  {joinErr && (
-                    <div className="mt-2 text-xs font-bold" style={{ color:"#f87171" }}>{joinErr}</div>
-                  )}
-                </div>
 
-                {/* 開放中的組隊房間 */}
-                {openTeamRooms.length > 0 && (
-                  <div>
-                    <div className="text-xs font-bold mb-2" style={{ color:"var(--text-secondary)" }}>
-                      🏠 開放中的房間
-                    </div>
-                    <div className="space-y-2">
-                      {openTeamRooms.filter(r => r.hostId !== myId).map(r => {
-                        const hostName = r.hostName || r.hostId;
-                        return (
-                          <div key={r.id} className="rounded-2xl px-4 py-3 flex items-center gap-3 border"
-                            style={{ background:"rgba(139,92,246,0.06)", borderColor:"rgba(139,92,246,0.15)" }}>
-                            <span className="text-xl">👥</span>
-                            <div className="flex-1 min-w-0">
-                              <div className="text-sm font-bold text-white">
+            {/* 組隊遠征戰術大廳（常駐） */}
+            <section className="rounded-3xl border border-amber-500/25 bg-gradient-to-br from-slate-900/80 to-amber-950/25 p-4 shadow-2xl backdrop-blur-md space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-amber-500/15 border border-amber-400/30 flex items-center justify-center text-2xl shrink-0">⚔️</div>
+                <div className="min-w-0">
+                  <div className="text-sm font-black text-amber-300">組隊遠征戰術大廳</div>
+                  <div className="text-[11px] leading-relaxed" style={{ color:"var(--text-muted)" }}>揪隊共享 HP 與技能，一起挑戰 3 層地下城與最終 Boss。上方選地城建立隊伍，或加入下方開放中的隊伍。</div>
+                </div>
+              </div>
+
+              {/* 開放中的隊伍（常駐顯示） */}
+              <div>
+                <div className="text-xs font-black mb-2" style={{ color:"var(--text-secondary)" }}>
+                  🏠 開放中的隊伍（{openTeamRooms.filter(r => r.hostId !== myId).length}）
+                </div>
+                {openTeamRooms.filter(r => r.hostId !== myId).length === 0 ? (
+                  <div className="rounded-2xl border border-dashed px-3 py-5 text-center text-xs"
+                    style={{ borderColor:"rgba(255,255,255,0.1)", color:"var(--text-muted)" }}>
+                    目前沒有開放的隊伍，選一個地下城建立房間揪人吧！
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {openTeamRooms.filter(r => r.hostId !== myId).map(r => {
+                      const hostName = r.hostName || r.hostId;
+                      const full = (r.memberCount || 0) >= 8;
+                      return (
+                        <div key={r.id} className="rounded-2xl px-3 py-3 flex items-center gap-3 border"
+                          style={{ background:"rgba(139,92,246,0.08)", borderColor:"rgba(139,92,246,0.2)" }}>
+                          <div className="w-11 h-11 rounded-xl bg-slate-950/60 border border-white/10 flex items-center justify-center text-xl shrink-0">👥</div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-black text-white truncate">{hostName.slice(0, 8)} 的隊伍</div>
+                            <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500/15 border border-amber-400/25 text-amber-300">
                                 遠征 Lv.{r.dungeonDifficulty}{r.dungeonIsHidden ? " 🎁" : ""}
-                              </div>
-                              <div className="text-[10px]" style={{ color:"var(--text-muted)" }}>
-                                👤 {r.memberCount}/4 · 房主：{hostName.slice(0, 6)}…
-                              </div>
+                              </span>
+                              <span className="text-[10px]" style={{ color:"var(--text-muted)" }}>👤 {r.memberCount}/8</span>
                             </div>
-                            <button onClick={async () => {
-                              setJoinLoading(true);
-                              const res = await joinTeamExpeditionRoom(
-                                r.code, myId, myName, buildMemberData()
-                              );
-                              if (res.ok) {
-                                setReconnectRoom(null);
-                                setTeamLobby({ roomId: res.roomId, dungeon: res.dungeon, hostId: r.hostId });
-                                setShowJoinPanel(false);
-                              } else {
-                                setJoinErr(res.reason);
-                              }
-                              setJoinLoading(false);
-                            }} disabled={joinLoading}
-                              className="px-4 py-2 rounded-xl font-bold text-xs bg-gradient-to-r from-amber-500 to-orange-500 text-white disabled:opacity-40">
-                              加入
-                            </button>
                           </div>
-                        );
-                      })}
-                    </div>
+                          <button onClick={async () => {
+                            setJoinLoading(true);
+                            const res = await joinTeamExpeditionRoom(r.code, myId, myName, buildMemberData());
+                            if (res.ok) { setReconnectRoom(null); setTeamLobby({ roomId: res.roomId, dungeon: res.dungeon, hostId: r.hostId }); }
+                            else setJoinErr(res.reason);
+                            setJoinLoading(false);
+                          }} disabled={joinLoading || full}
+                            className="px-4 py-2 rounded-xl font-black text-xs bg-gradient-to-r from-amber-500 to-orange-500 text-white disabled:opacity-40 active:scale-95">
+                            {full ? "已滿" : "加入"}
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
-            )}
+
+              {/* 邀請碼直接加入 */}
+              <div className="rounded-2xl p-3 border" style={{ background:"rgba(255,255,255,0.04)", borderColor:"rgba(255,255,255,0.1)" }}>
+                <div className="text-[11px] font-bold mb-2" style={{ color:"var(--text-secondary)" }}>🔑 有邀請碼？直接加入</div>
+                <div className="flex gap-2">
+                  <input
+                    value={joinCode}
+                    onChange={e => { setJoinCode(e.target.value.toUpperCase()); setJoinErr(""); }}
+                    aria-label="地下城邀請碼" name="dungeon-invite-code" autoComplete="off" spellCheck={false}
+                    placeholder="例如 ABC123…" maxLength={6}
+                    className="flex-1 px-3 py-2.5 rounded-xl text-sm font-bold text-white tracking-widest focus-visible:ring-2 focus-visible:ring-indigo-300"
+                    style={{ background:"rgba(255,255,255,0.08)", border:"1px solid rgba(255,255,255,0.15)" }}
+                  />
+                  <button onClick={handleJoinByCode} disabled={joinLoading || joinCode.length < 4}
+                    className="px-5 py-2.5 rounded-xl font-black text-sm bg-gradient-to-r from-indigo-500 to-purple-500 text-white disabled:opacity-40 active:scale-95 transition-all">
+                    {joinLoading ? "加入中…" : "加入"}
+                  </button>
+                </div>
+                {joinErr && <div className="mt-2 text-xs font-bold" style={{ color:"#f87171" }}>{joinErr}</div>}
+              </div>
+            </section>
           </div>
         ) : tab === "enter" && selectedDungeon ? (
           <DungeonSelectionPanel

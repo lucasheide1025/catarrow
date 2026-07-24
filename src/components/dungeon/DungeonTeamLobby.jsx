@@ -127,7 +127,7 @@ export default function DungeonTeamLobby({
     <div
       className="min-h-screen overflow-x-hidden flex flex-col text-white relative select-none font-sans"
       style={{
-        backgroundImage: `linear-gradient(180deg, rgba(7, 11, 22, 0.85) 0%, rgba(15, 23, 42, 0.95) 100%), url(/assets/dungeon/dungeon_team_lobby_bg.jpg)`,
+        backgroundImage: `linear-gradient(180deg, rgba(7, 11, 22, 0.55) 0%, rgba(10, 15, 28, 0.7) 45%, rgba(15, 23, 42, 0.9) 100%), url(/assets/dungeon/dungeon_team_lobby_bg.jpg)`,
         backgroundSize: "cover",
         backgroundPosition: "center",
       }}
