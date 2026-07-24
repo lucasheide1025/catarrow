@@ -2,7 +2,7 @@
 
 import {
   collection, doc, addDoc, updateDoc, onSnapshot, getDoc, getDocs,
-  serverTimestamp, increment, query, where, orderBy, limit, Timestamp,
+  serverTimestamp, increment, query, where, orderBy, limit, Timestamp, runTransaction,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { assertCostCapability, COST_CAPABILITIES } from "./costControl";
@@ -272,28 +272,30 @@ export async function completeGoal(goalId) {
 // 適用 status: completed（正式獎勵 goal.rewards）| expired（安慰獎 CONSOLATION_REWARD）
 export async function claimVillageGoalReward(goalId, memberId) {
   try {
-    const snap = await getDoc(doc(db, COLLECTION, goalId));
-    if (!snap.exists()) return { ok: false, reason: "找不到目標" };
-    const goal = snap.data();
-    if (goal.status !== "completed" && goal.status !== "expired") {
-      return { ok: false, reason: "目標尚未結束" };
-    }
-    const mine = goal.participants?.[memberId];
-    if (!mine || !(mine.contributed > 0)) return { ok: false, reason: "沒有貢獻紀錄" };
-    if (mine.claimed) return { ok: false, reason: "already_claimed" };
-
-    const reward = goal.status === "completed" ? (goal.rewards || {}) : CONSOLATION_REWARD;
-    if (reward.arrowdew > 0)   await addArrowdew(memberId, reward.arrowdew).catch(() => {});
-    if (reward.coins > 0)      await addCoins(memberId, reward.coins).catch(() => {});
-    if (reward.gachaToken > 0) await addGachaCoins(memberId, reward.gachaToken).catch(() => {});
-
-    await updateDoc(doc(db, COLLECTION, goalId), {
-      [`participants.${memberId}.claimed`]: true,
+    // 先用 transaction 原子鎖定 claimed=true（只有一個請求會成功），避免連點/併發重複領取。
+    let reward = null;
+    await runTransaction(db, async tx => {
+      const ref = doc(db, COLLECTION, goalId);
+      const snap = await tx.get(ref);
+      if (!snap.exists()) throw new Error("找不到目標");
+      const goal = snap.data();
+      if (goal.status !== "completed" && goal.status !== "expired") throw new Error("目標尚未結束");
+      const mine = goal.participants?.[memberId];
+      if (!mine || !(mine.contributed > 0)) throw new Error("沒有貢獻紀錄");
+      if (mine.claimed) throw new Error("already_claimed");
+      reward = goal.status === "completed" ? (goal.rewards || {}) : CONSOLATION_REWARD;
+      tx.update(ref, { [`participants.${memberId}.claimed`]: true });
     });
 
+    // claimed 已在交易內鎖定，才發獎（重複請求會在上面丟 already_claimed，不會走到這）
+    if (reward) {
+      if (reward.arrowdew > 0)   await addArrowdew(memberId, reward.arrowdew).catch(() => {});
+      if (reward.coins > 0)      await addCoins(memberId, reward.coins).catch(() => {});
+      if (reward.gachaToken > 0) await addGachaCoins(memberId, reward.gachaToken).catch(() => {});
+    }
     return { ok: true, reward };
   } catch (e) {
-    return { ok: false, reason: e.message };
+    return { ok: false, reason: e.message === "already_claimed" ? "already_claimed" : (e.message || "領取失敗") };
   }
 }
 
