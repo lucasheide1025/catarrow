@@ -42,6 +42,18 @@ export async function ensureDailyDice(memberId) {
   } catch (e) { return { ok: false, reason: e?.message }; }
 }
 
+// 測試/後台用：補滿骰子並清除當日發放記錄（可重複補、方便測試）
+export async function refillBoardDice(memberId, amount = DAILY_DICE) {
+  if (!memberId) return { ok: false };
+  try {
+    await updateDoc(doc(db, "members", memberId), {
+      "villageBoard.dice": amount,
+      "villageBoard.diceGrantedDate": "",
+    });
+    return { ok: true, dice: amount };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
 export async function setBoardMode(memberId, modeId) {
   if (!memberId || !BOARD_MODE_MAP[modeId]) return { ok: false, reason: "模式錯誤" };
   try {

@@ -4,11 +4,47 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   subscribeBoardState, ensureDailyDice, setBoardMode, rollAndMove,
-  settleBoardTile, applyEventEffect, setBoardPos, DAILY_DICE,
+  settleBoardTile, applyEventEffect, setBoardPos, refillBoardDice, DAILY_DICE,
 } from "../../lib/villageBoardDb";
+import { useAuth } from "../../hooks/useAuth";
 import { BOARD_LAYOUT, BOARD_SIZE, TILE_TYPES, BOARD_MODES } from "../../lib/boardData";
 import { drawBoardEvent } from "../../lib/boardEvents";
 import { sfxTap, sfxSuccess, sfxCast } from "../../lib/sound";
+import { MATERIALS } from "../../lib/monsterMaterials";
+import { RESOURCE_NAMES } from "../../lib/villageData";
+
+const MAT_BY_ID = Object.fromEntries(MATERIALS.map(m => [m.id, m]));
+const RES_ICON = { ore:"⛏️", melon:"🍈", fish:"🐟", meat:"🍖", driedfish:"🐠", can:"🥫", fur:"🧶", arrowdew:"💧" };
+
+// 把 reward descriptor 解析成 [{icon,name,amount}] 詳細清單
+function describeReward(rw) {
+  if (!rw) return [];
+  const out = [];
+  if (rw.coins) out.push({ icon: "🪙", name: "金幣", amount: rw.coins });
+  if (rw.arrowdew) out.push({ icon: "💧", name: "箭露", amount: rw.arrowdew });
+  if (rw.gachaToken) out.push({ icon: "🎰", name: "扭蛋幣", amount: rw.gachaToken });
+  Object.entries(rw.familyMaterials || {}).forEach(([id, n]) => {
+    const m = MAT_BY_ID[id];
+    out.push({ icon: m?.icon || "🧩", name: m?.name || id, amount: n });
+  });
+  Object.entries(rw.villageResources || {}).forEach(([k, n]) => {
+    out.push({ icon: RES_ICON[k] || "📦", name: RESOURCE_NAMES[k] || k, amount: n });
+  });
+  (rw.chests || []).forEach(() => out.push({ icon: "🎁", name: "寶箱", amount: 1 }));
+  (rw.potions || []).forEach(() => out.push({ icon: "🧪", name: "藥水", amount: 1 }));
+  if (rw.catXP) out.push({ icon: "🐱", name: "貓咪經驗", amount: rw.catXP });
+  if (rw.catBond) out.push({ icon: "💕", name: "羈絆", amount: rw.catBond });
+  return out;
+}
+// 累加多個 reward 成 session 總計（同名合併）
+function mergeRewards(base, rw) {
+  const acc = base || {};
+  describeReward(rw).forEach(({ icon, name, amount }) => {
+    const key = name;
+    acc[key] = acc[key] ? { ...acc[key], amount: acc[key].amount + amount } : { icon, name, amount };
+  });
+  return acc;
+}
 
 const ASSET = "/assets/board";
 
@@ -34,6 +70,8 @@ function TileIcon({ type, size = 30 }) {
 const SCORE_PAD = [["X", 10], ["10", 10], ["9", 9], ["8", 8], ["7", 7], ["6", 6], ["5", 5], ["3", 3], ["M", 0]];
 
 export default function CatVillageBoard({ profile, onClose }) {
+  const { role } = useAuth();
+  const isAdmin = role === "admin";
   const myId = profile?.id;
   const villageBuildings = profile?.village?.buildings || {};
   const catId = profile?.equippedCat?.catId || null;
@@ -45,7 +83,18 @@ export default function CatVillageBoard({ profile, onClose }) {
   const [shootTile, setShootTile] = useState(null);      // 6 箭格：{type}
   const [arrows, setArrows] = useState([]);
   const [eventCard, setEventCard] = useState(null);      // { event, flipped }
+  const [diceAnim, setDiceAnim] = useState(null);        // 擲骰動畫顯示的數字
+  const [rewardPopup, setRewardPopup] = useState(null);  // { items:[{icon,name,amount}], band }
+  const [showSummary, setShowSummary] = useState(false); // 骰子用完的總結算
+  const sessionRef = useRef({});                         // 本次 session 累計獎勵
   const busyRef = useRef(false);
+
+  // 顯示獎勵詳細 + 累加到 session
+  const showReward = useCallback((reward, band) => {
+    sessionRef.current = mergeRewards(sessionRef.current, reward);
+    const items = describeReward(reward);
+    if (items.length) setRewardPopup({ items, band });
+  }, []);
 
   useEffect(() => {
     if (!myId) return;
@@ -58,6 +107,11 @@ export default function CatVillageBoard({ profile, onClose }) {
 
   const showToast = (t) => { setToast(t); setTimeout(() => setToast(null), 2600); };
 
+  const pendingSummaryRef = useRef(false);
+  const flushSummary = useCallback(() => {
+    if (pendingSummaryRef.current) { pendingSummaryRef.current = false; setTimeout(() => setShowSummary(true), 700); }
+  }, []);
+
   const settle = useCallback(async (tileType) => {
     const meta = TILE_TYPES[tileType];
     if (meta?.shooting) { setShootTile({ type: tileType }); setArrows([]); return; }
@@ -68,9 +122,10 @@ export default function CatVillageBoard({ profile, onClose }) {
       return;
     }
     const res = await settleBoardTile(myId, tileType, { villageBuildings, catId });
-    if (res?.ok) { sfxSuccess(); showToast(rewardText(res.reward)); }
+    if (res?.ok) { sfxSuccess(); showReward(res.reward); }
     busyRef.current = false;
-  }, [myId, villageBuildings, catId]);
+    flushSummary();
+  }, [myId, villageBuildings, catId, showReward, flushSummary]);
 
   // 骰 → 逐格動畫 → 落點結算
   const handleRoll = useCallback(async () => {
@@ -78,6 +133,18 @@ export default function CatVillageBoard({ profile, onClose }) {
     busyRef.current = true; setRolling(true); sfxCast();
     const res = await rollAndMove(myId);
     if (!res?.ok) { showToast(res?.reason || "無法擲骰"); setRolling(false); busyRef.current = false; return; }
+    pendingSummaryRef.current = (res.diceLeft ?? 0) <= 0;
+    // 擲骰動畫：快速跳數字 ~0.8s 定格在 res.roll
+    setDiceAnim(1);
+    await new Promise(resolve => {
+      const end = Date.now() + 800;
+      const iv = setInterval(() => {
+        if (Date.now() >= end) { clearInterval(iv); setDiceAnim(res.roll); sfxSuccess(); resolve(); }
+        else setDiceAnim(1 + Math.floor(Math.random() * 6));
+      }, 80);
+    });
+    await new Promise(r => setTimeout(r, 550));
+    setDiceAnim(null);
     // 逐格前進動畫
     let cur = res.from;
     for (let s = 0; s < res.roll; s++) {
@@ -99,9 +166,10 @@ export default function CatVillageBoard({ profile, onClose }) {
     const type = shootTile.type;
     setShootTile(null);
     const res = await settleBoardTile(myId, type, { villageBuildings, catId, scoreRatio: ratio });
-    if (res?.ok) { sfxSuccess(); showToast(`${res.reward.band || ""} ${rewardText(res.reward)}`); }
+    if (res?.ok) { sfxSuccess(); showReward(res.reward, res.reward.band); }
     busyRef.current = false;
-  }, [arrows, shootTile, myId, villageBuildings, catId]);
+    flushSummary();
+  }, [arrows, shootTile, myId, villageBuildings, catId, showReward, flushSummary]);
 
   // 事件卡效果套用
   const applyEvent = useCallback(async () => {
@@ -118,19 +186,26 @@ export default function CatVillageBoard({ profile, onClose }) {
     else if (r.kind === "flavor") showToast("😸 " + (ev.text.length > 14 ? "會心一笑" : ev.text));
     else sfxSuccess();
     busyRef.current = false;
-  }, [eventCard, myId, villageBuildings, catId, board, settle]);
+    flushSummary();
+  }, [eventCard, myId, villageBuildings, catId, board, settle, flushSummary]);
 
   if (!board) return null;
   const mode = BOARD_MODES.find(m => m.id === board.mode) || BOARD_MODES[0];
 
   return (
-    <div className="fixed inset-0 z-[120] flex flex-col items-center overflow-y-auto"
-      style={{ background: "linear-gradient(180deg,#2a1a0e,#160c05)", backgroundImage: `url(${ASSET}/frame.webp)`, backgroundSize: "cover" }}>
+    <div className="fixed inset-0 z-[200] flex flex-col items-center overflow-y-auto"
+      style={{ backgroundColor: "#140a04", backgroundImage: "radial-gradient(circle at 50% 12%, #3a2410 0%, #1c0f06 55%, #120a04 100%)" }}>
       {/* 頂列 */}
       <div className="w-full max-w-lg flex items-center justify-between px-4 py-3">
         <button onClick={onClose} className="w-9 h-9 rounded-full bg-black/40 text-amber-200 font-black">←</button>
         <div className="text-amber-100 font-black text-sm">🎲 貓貓村探索地圖</div>
-        <div className="rounded-xl bg-amber-500/20 border border-amber-400/40 px-2.5 py-1 text-amber-200 text-xs font-black">🎲 {board.dice}/{DAILY_DICE}</div>
+        <div className="flex items-center gap-1.5">
+          {isAdmin && (
+            <button onClick={() => refillBoardDice(myId)} title="測試用：補滿骰子"
+              className="rounded-lg bg-emerald-600/70 border border-emerald-400/40 px-2 py-1 text-emerald-50 text-[10px] font-black">🔄補骰</button>
+          )}
+          <div className="rounded-xl bg-amber-500/20 border border-amber-400/40 px-2.5 py-1 text-amber-200 text-xs font-black">🎲 {board.dice}/{DAILY_DICE}</div>
+        </div>
       </div>
 
       {/* 模式選擇 */}
@@ -184,6 +259,57 @@ export default function CatVillageBoard({ profile, onClose }) {
 
       {/* Toast */}
       {toast && <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[130] rounded-2xl bg-black/85 border border-amber-400/40 px-4 py-2.5 text-amber-100 text-sm font-black shadow-xl max-w-[90vw] text-center">{toast}</div>}
+
+      {/* 擲骰動畫 */}
+      {diceAnim != null && (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center pointer-events-none">
+          <div className="w-28 h-28 rounded-3xl bg-white flex flex-col items-center justify-center shadow-2xl animate-bounce"
+            style={{ boxShadow: "0 0 44px rgba(251,191,36,.75)" }}>
+            <span className="text-6xl leading-none text-slate-900">{["⚀","⚁","⚂","⚃","⚄","⚅"][diceAnim - 1]}</span>
+          </div>
+        </div>
+      )}
+
+      {/* 詳細獎勵彈窗 */}
+      {rewardPopup && (
+        <div className="fixed inset-0 z-[140] bg-black/70 flex items-center justify-center p-4" onClick={() => setRewardPopup(null)}>
+          <div className="bg-slate-900 border-2 border-amber-400/50 rounded-3xl p-5 w-full max-w-xs animate-fade-in-up" onClick={e => e.stopPropagation()}>
+            <div className="text-center text-amber-200 font-black mb-2">🎁 獲得獎勵{rewardPopup.band ? `・${rewardPopup.band} 級` : ""}</div>
+            <div className="space-y-1.5 my-2 max-h-[45vh] overflow-y-auto">
+              {rewardPopup.items.map((it, i) => (
+                <div key={i} className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-2">
+                  <span className="text-sm font-bold text-slate-100">{it.icon} {it.name}</span>
+                  <span className="text-amber-300 font-black">×{it.amount}</span>
+                </div>
+              ))}
+            </div>
+            <button onClick={() => setRewardPopup(null)} className="w-full py-2.5 rounded-xl bg-amber-400 text-slate-900 font-black active:scale-95">收下！</button>
+          </div>
+        </div>
+      )}
+
+      {/* 骰子用完・總結算 */}
+      {showSummary && (
+        <div className="fixed inset-0 z-[145] bg-black/88 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border-2 border-amber-400/50 rounded-3xl p-6 w-full max-w-sm">
+            <div className="text-center text-4xl mb-1">🏆</div>
+            <div className="text-center text-amber-200 font-black text-lg">本次探索結算</div>
+            <div className="text-center text-slate-400 text-xs mb-3">骰子用完囉！這趟總共帶回：</div>
+            <div className="space-y-1.5 max-h-[48vh] overflow-y-auto">
+              {Object.values(sessionRef.current).length === 0
+                ? <div className="text-center text-slate-500 text-sm py-4">這趟沒有帶回資源</div>
+                : Object.values(sessionRef.current).map((it, i) => (
+                  <div key={i} className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-2">
+                    <span className="text-sm font-bold text-slate-100">{it.icon} {it.name}</span>
+                    <span className="text-amber-300 font-black">×{it.amount}</span>
+                  </div>
+                ))}
+            </div>
+            <button onClick={() => { setShowSummary(false); sessionRef.current = {}; onClose(); }}
+              className="w-full mt-4 py-3 rounded-xl bg-amber-400 text-slate-900 font-black active:scale-95">完成・離開</button>
+          </div>
+        </div>
+      )}
 
       {/* 6 箭計分 overlay */}
       {shootTile && (
