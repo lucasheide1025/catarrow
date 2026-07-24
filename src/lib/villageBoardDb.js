@@ -25,7 +25,8 @@ export function subscribeBoardState(memberId, cb) {
   }, () => cb({ ...DEFAULT_BOARD }));
 }
 
-// 每日補滿骰子（跨日才補；上限 DAILY_DICE、不疊加）
+// 每日重置（跨過午夜 12 點才重置）：骰子補滿至 15、棋子回起點、圈數歸零。
+// 當天內不重置 → boardPos/lapCount 保留，關掉再進來可從原位置續跑（記憶跑到哪）。
 export async function ensureDailyDice(memberId) {
   if (!memberId) return { ok: false };
   try {
@@ -37,8 +38,10 @@ export async function ensureDailyDice(memberId) {
     await updateDoc(ref, {
       "villageBoard.dice": DAILY_DICE,
       "villageBoard.diceGrantedDate": today,
+      "villageBoard.boardPos": 0,   // 每日回到起點
+      "villageBoard.lapCount": 0,   // 圈數歸零（村目標貢獻另存於 goal 文件，不受影響）
     });
-    return { ok: true, dice: DAILY_DICE, granted: true };
+    return { ok: true, dice: DAILY_DICE, granted: true, reset: true };
   } catch (e) { return { ok: false, reason: e?.message }; }
 }
 

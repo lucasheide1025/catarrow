@@ -8,7 +8,7 @@ import { useAuth } from "../../hooks/useAuth";
 import {
   createBoardRoom, joinBoardRoom, subscribeBoardRoom, leaveBoardRoom, disbandBoardRoom,
   findReconnectableBoardRoom, setRoomMode, startBoardRoom, roomRollAndMove, roomSettleShoot, roomDrawEvent,
-  roomApplyBoardEffect, claimBoardSettle, claimBoardEvent, partyMultOf,
+  roomApplyBoardEffect, claimBoardSettle, claimBoardEvent, partyMultOf, subscribeOpenBoardRooms,
 } from "../../lib/villageBoardTeamDb";
 import { ensureDailyDice, applyEventEffect, DAILY_DICE } from "../../lib/villageBoardDb";
 import { BOARD_LAYOUT, BOARD_SIZE, TILE_TYPES, BOARD_MODES, getModeTierCap } from "../../lib/boardData";
@@ -61,7 +61,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
   const [roomId, setRoomId] = useState(null);
   const [room, setRoom] = useState(null);
   const [hostDice, setHostDice] = useState(0);
-  const [joinCode, setJoinCode] = useState("");
+  const [openRooms, setOpenRooms] = useState([]);
   const [selMode, setSelMode] = useState(BOARD_MODES[0].id);
   const [selTier, setSelTier] = useState(1);
   const [busy, setBusy] = useState(false);
@@ -85,6 +85,12 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     ensureDailyDice(myId);
     findReconnectableBoardRoom(myId).then(r => { if (r.room) setRoomId(r.room.id); });
   }, [myId]);
+
+  // 大廳：訂閱可加入的等待中房間（跟其他模式一樣列出房間讓玩家選）
+  useEffect(() => {
+    if (roomId) { setOpenRooms([]); return; }
+    return subscribeOpenBoardRooms(setOpenRooms);
+  }, [roomId]);
 
   // 訂閱房間
   useEffect(() => {
@@ -138,10 +144,10 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     if (res.ok) { await setRoomMode(res.roomId, myId, selMode).catch(() => {}); setRoomId(res.roomId); }
     else setErr(res.reason || "建立失敗");
   }
-  async function join() {
-    if (!joinCode.trim()) return;
+  async function join(code) {
+    if (!code) return;
     setBusy(true); setErr("");
-    const res = await joinBoardRoom(joinCode.trim(), myId, profile?.name || "隊員", { accountType: profile?.accountType, avatarId: profile?.avatarId });
+    const res = await joinBoardRoom(code, myId, profile?.name || "隊員", { accountType: profile?.accountType, avatarId: profile?.avatarId });
     setBusy(false);
     if (res.ok) setRoomId(res.roomId); else setErr(res.reason || "加入失敗");
   }
@@ -218,12 +224,30 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
             <button disabled={busy || tiers.length===0} onClick={create} className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-900 font-black disabled:opacity-40">建立 {m.familyName} T{selTier} 房間</button>
           </div>
           <div className="rounded-2xl bg-black/30 border border-amber-500/25 p-4">
-            <div className="text-amber-200/80 text-xs font-bold mb-2">用房號加入</div>
-            <div className="flex gap-2">
-              <input value={joinCode} onChange={e => setJoinCode(e.target.value.toUpperCase())} placeholder="房號" maxLength={6}
-                className="flex-1 rounded-xl bg-black/40 border border-amber-500/25 px-3 py-2.5 text-amber-100 font-black tracking-widest text-center" />
-              <button disabled={busy} onClick={join} className="px-5 rounded-xl bg-amber-500/30 border border-amber-400/30 text-amber-100 font-black disabled:opacity-40">加入</button>
-            </div>
+            <div className="text-amber-200/80 text-xs font-bold mb-2">加入房間（{openRooms.length}）</div>
+            {openRooms.length === 0 ? (
+              <div className="text-center text-amber-100/50 text-xs py-6">目前沒有開放的房間，建立一個吧！</div>
+            ) : (
+              <div className="space-y-2">
+                {openRooms.map(r => {
+                  const rm = BOARD_MODES.find(x => x.id === r.mode) || BOARD_MODES[0];
+                  const full = (r.memberCount || 0) >= 8;
+                  return (
+                    <div key={r.id} className="flex items-center gap-2 rounded-xl bg-slate-900/70 border border-white/10 px-3 py-2.5">
+                      <span className="text-lg">{rm.icon}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-white font-bold text-sm truncate">{r.hostName} 的房間</div>
+                        <div className="text-amber-100/60 text-[11px]">{rm.familyName}・{r.memberCount || 1}/8 人</div>
+                      </div>
+                      <button disabled={busy || full} onClick={() => join(r.code)}
+                        className="px-4 py-1.5 rounded-lg bg-amber-500/30 border border-amber-400/30 text-amber-100 font-black text-xs disabled:opacity-40">
+                        {full ? "已滿" : "加入"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -243,8 +267,8 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
             <div className="rounded-xl bg-amber-500/20 border border-amber-400/40 px-2.5 py-1 text-amber-200 text-xs font-black">🎲 {hostDice}</div>
           </div>
           <div className="rounded-2xl bg-black/30 border border-amber-500/25 p-4 mb-4 text-center">
-            <div className="text-amber-200/60 text-xs">房號（給隊友輸入）</div>
-            <div className="text-3xl font-black text-amber-300 tracking-[0.3em] my-1">{room.code}</div>
+            <div className="text-amber-200/60 text-xs">隊友可在「加入房間」列表看到這間</div>
+            <div className="text-2xl font-black text-amber-300 tracking-[0.2em] my-1">{room.code}</div>
             <div className="text-amber-100/70 text-xs">{wm.icon}{wm.familyName}・T{room.tier || 1}</div>
           </div>
           <div className="text-amber-200/80 text-xs font-bold mb-2">隊員（{mems.length}/8）</div>
