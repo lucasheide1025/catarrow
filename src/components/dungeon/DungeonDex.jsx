@@ -1,4 +1,5 @@
-// src/components/dungeon/DungeonDex.jsx — 地下城收藏檔案庫
+// src/components/dungeon/DungeonDex.jsx — 地下城收藏檔案庫（博物館陳列式）
+// 陳列櫃格狀展示，框色＝收集品階（等級）；點一格才跳出細項。
 import { useState } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { FAMILY_COLLECTIBLES, COLLECTIBLE_MAP } from "../../lib/dungeonCollectibles";
@@ -19,37 +20,69 @@ function collectionGrade(qty) {
   };
 }
 
-function CollectibleCard({ item, qty, context }) {
+// 陳列櫃小格：框色＝品階；未收集顯示灰色 ❔。點擊 → 開細項。
+function MuseumTile({ item, qty, onClick }) {
   const grade = collectionGrade(qty);
-  const progress = grade.next
-    ? Math.max(0, Math.min(100, ((qty - grade.min) / (grade.next - grade.min)) * 100))
-    : 100;
+  const owned = qty > 0;
   return (
-    <article className="relative min-w-0 overflow-hidden rounded-xl border p-3"
+    <button type="button" onClick={onClick}
+      className="relative flex flex-col items-center gap-1 rounded-xl border p-2 transition-all active:scale-95"
       style={{
-        background: qty > 0 ? "#121c2d" : "#0b1220",
-        borderColor: qty > 0 ? `${grade.color}55` : "rgba(148,163,184,.12)",
-        boxShadow: qty > 0 ? `inset 0 3px ${grade.color}, 0 10px 20px rgba(0,0,0,.22)` : "inset 0 3px #334155",
-        opacity: qty > 0 ? 1 : .62,
+        background: owned ? "linear-gradient(180deg,#16233a,#0b1626)" : "#0b1220",
+        borderColor: owned ? `${grade.color}66` : "rgba(148,163,184,.12)",
+        boxShadow: owned ? `inset 0 2px ${grade.color}, 0 6px 14px rgba(0,0,0,.3)` : "inset 0 2px #334155",
+        opacity: owned ? 1 : 0.7,
       }}>
-      <div className="flex items-start justify-between gap-2">
-        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-slate-950 text-2xl"
-          style={{ filter:qty > 0 ? "none" : "grayscale(1)" }}>{item.icon}</div>
-        <div className="text-right">
-          <div className="text-[9px] font-black tracking-wide" style={{ color:grade.color }}>{grade.label}</div>
-          <div className="text-sm font-black text-white">×{qty}</div>
+      {/* 展示座 */}
+      <div className="grid h-14 w-full place-items-center rounded-lg text-3xl"
+        style={{
+          background: owned ? "radial-gradient(circle at 50% 25%, rgba(255,255,255,.07), #0a1220)" : "#0a1220",
+          filter: owned ? "none" : "grayscale(1) brightness(.55)",
+        }}>
+        {owned ? item.icon : "❔"}
+      </div>
+      {/* 收集到的等級（品階）+ 數量 */}
+      <div className="flex w-full items-center justify-between gap-1">
+        <span className="rounded px-1 py-0.5 text-[8px] font-black"
+          style={{ color:grade.color, background:`${grade.color}1f` }}>{grade.label}</span>
+        {owned && <span className="text-[9px] font-black text-slate-300">×{qty}</span>}
+      </div>
+      <div className="w-full truncate text-center text-[9px] font-bold"
+        style={{ color: owned ? "#cbd5e1" : "#4b5563" }}>{owned ? item.name : "？？？"}</div>
+    </button>
+  );
+}
+
+// 點開的細項彈窗
+function DetailModal({ entry, onClose }) {
+  const { item, qty, context } = entry;
+  const grade = collectionGrade(qty);
+  const owned = qty > 0;
+  const progress = grade.next ? Math.max(0, Math.min(100, ((qty - grade.min) / (grade.next - grade.min)) * 100)) : 100;
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4"
+      onClick={onClose} style={{ background:"rgba(0,0,0,.82)", backdropFilter:"blur(6px)" }}>
+      <div onClick={e => e.stopPropagation()}
+        className="w-full max-w-xs rounded-3xl border p-5 text-center shadow-2xl"
+        style={{ background:"linear-gradient(180deg,#16233a,#0b1220)", borderColor:`${grade.color}66`, boxShadow:`0 0 34px ${grade.color}33` }}>
+        <div className="mx-auto grid h-24 w-24 place-items-center rounded-2xl text-6xl"
+          style={{ background:"radial-gradient(circle at 50% 25%, rgba(255,255,255,.08), #0a1220)", filter: owned ? "none" : "grayscale(1) brightness(.6)" }}>
+          {owned ? item.icon : "❔"}
         </div>
+        <div className="mt-2 text-xs font-black tracking-wide" style={{ color:grade.color }}>{grade.label} 收藏</div>
+        <h3 className="mt-0.5 text-lg font-black text-white">{owned ? item.name : "尚未發現"}</h3>
+        {context && <div className="text-[11px] text-slate-500">{context}</div>}
+        <div className="mt-1 text-2xl font-black text-amber-300">×{qty}</div>
+        <p className="mt-2 text-xs leading-relaxed text-slate-400">{item.desc}</p>
+        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-950">
+          <div className="h-full rounded-full" style={{ width:`${progress}%`, background:grade.color }} />
+        </div>
+        <div className="mt-1 text-[10px] text-slate-500">
+          {grade.next ? `再收集 ${Math.max(0, grade.next - qty)} 個升到下一品階` : "已達神話收藏 ✨"}
+        </div>
+        <button onClick={onClose} className="mt-4 w-full rounded-xl bg-amber-400 py-2.5 text-sm font-black text-slate-900 active:scale-95">關閉</button>
       </div>
-      <h3 className="mt-2 truncate text-xs font-black" style={{ color:qty > 0 ? "#f8fafc" : "#64748b" }}>{item.name}</h3>
-      {context && <div className="mt-0.5 truncate text-[9px] text-slate-500">{context}</div>}
-      <p className="mt-1 line-clamp-2 min-h-[30px] text-[10px] leading-[15px] text-slate-400">{item.desc}</p>
-      <div className="mt-2 h-1 overflow-hidden rounded-full bg-slate-950">
-        <div className="h-full rounded-full" style={{ width:`${progress}%`, background:grade.color }} />
-      </div>
-      <div className="mt-1 text-[8px] text-slate-500">
-        {grade.next ? `再收集 ${Math.max(0, grade.next - qty)} 個升級` : "已達神話收藏"}
-      </div>
-    </article>
+    </div>
   );
 }
 
@@ -59,6 +92,7 @@ export default function DungeonDex({ guestProfile }) {
   const collectibles = profile?.dungeonCollectibles || {};
   const [selFamily, setSelFamily] = useState("all");
   const [mode, setMode] = useState("collection");
+  const [selected, setSelected] = useState(null); // { item, qty, context }
   const allItems = Object.values(COLLECTIBLE_MAP);
   const owned = allItems.filter(item => (collectibles[item.id] || 0) > 0).length;
   const totalCopies = Object.values(collectibles).reduce((sum, qty) => sum + (Number(qty) || 0), 0);
@@ -66,12 +100,13 @@ export default function DungeonDex({ guestProfile }) {
 
   return (
     <div className="pb-10">
+      {/* 館藏總覽 */}
       <section className="mb-4 rounded-2xl border border-amber-200/15 bg-[#101827] p-4 shadow-xl">
         <div className="flex items-end justify-between gap-4">
           <div>
-            <div className="text-[9px] font-black tracking-[.2em] text-amber-300">RELIC ARCHIVE</div>
-            <h2 className="mt-1 text-lg font-black text-white">地下城收藏檔案庫</h2>
-            <p className="mt-1 text-[10px] text-slate-400">重複取得會提升品階，收集 100 個成為神話收藏。</p>
+            <div className="text-[9px] font-black tracking-[.2em] text-amber-300">🏛️ RELIC MUSEUM</div>
+            <h2 className="mt-1 text-lg font-black text-white">地下城收藏博物館</h2>
+            <p className="mt-1 text-[10px] text-slate-400">點展示櫃看細項；框色＝收藏品階，重複取得可升階。</p>
           </div>
           <div className="shrink-0 text-right">
             <div className="text-xl font-black text-amber-300">{owned}/{allItems.length}</div>
@@ -81,10 +116,20 @@ export default function DungeonDex({ guestProfile }) {
         <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-950">
           <div className="h-full bg-amber-400" style={{ width:`${allItems.length ? owned / allItems.length * 100 : 0}%` }} />
         </div>
+        {/* 品階圖例 */}
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {COLLECTION_GRADES.slice().reverse().map(g => (
+            <span key={g.id} className="flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[8px] font-black"
+              style={{ color:g.color, background:`${g.color}1a`, border:`1px solid ${g.color}44` }}>
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background:g.color }} />{g.label}
+            </span>
+          ))}
+        </div>
       </section>
 
+      {/* 一般收藏 / 首通紀念章 */}
       <div className="mb-3 grid grid-cols-2 gap-2">
-        {[{id:"collection",label:"一般收藏"},{id:"exclusive",label:"首通紀念章"}].map(tab => (
+        {[{id:"collection",label:"🏺 一般收藏"},{id:"exclusive",label:"🏅 首通紀念章"}].map(tab => (
           <button key={tab.id} onClick={() => setMode(tab.id)}
             className="min-h-11 rounded-xl border px-3 text-xs font-black"
             style={mode === tab.id
@@ -96,10 +141,13 @@ export default function DungeonDex({ guestProfile }) {
       </div>
 
       {mode === "exclusive" ? (
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           {DUNGEON_MAPS.map(map => {
             const item = COLLECTIBLE_MAP[`${map.id}_trophy`];
-            return item ? <CollectibleCard key={item.id} item={item} qty={collectibles[item.id] || 0} context={`${map.emoji} ${map.name}`} /> : null;
+            if (!item) return null;
+            const qty = collectibles[item.id] || 0;
+            const context = `${map.emoji} ${map.name}`;
+            return <MuseumTile key={item.id} item={item} qty={qty} onClick={() => setSelected({ item, qty, context })} />;
           })}
         </div>
       ) : (
@@ -125,17 +173,22 @@ export default function DungeonDex({ guestProfile }) {
               <section key={familyId} className="mb-5">
                 <div className="mb-2 flex items-center gap-2 border-b border-white/10 pb-2">
                   <span className="text-lg">{family?.emoji}</span>
-                  <h3 className="text-sm font-black text-white">{family?.label}</h3>
+                  <h3 className="text-sm font-black text-white">{family?.label}展示廳</h3>
                   <span className="ml-auto text-[10px] font-bold text-slate-500">{familyOwned}/{items.length}</span>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {items.map(item => <CollectibleCard key={item.id} item={item} qty={collectibles[item.id] || 0} />)}
+                <div className="grid grid-cols-3 gap-2">
+                  {items.map(item => {
+                    const qty = collectibles[item.id] || 0;
+                    return <MuseumTile key={item.id} item={item} qty={qty} onClick={() => setSelected({ item, qty, context:`${family?.emoji} ${family?.label}` })} />;
+                  })}
                 </div>
               </section>
             );
           })}
         </>
       )}
+
+      {selected && <DetailModal entry={selected} onClose={() => setSelected(null)} />}
     </div>
   );
 }
