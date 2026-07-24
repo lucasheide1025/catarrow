@@ -6,6 +6,7 @@
 //   site.id 同時是「村建築 id」→ getBuildingStage(建築等級) 決定該模式可刷的素材階級上限（T1~T5）。
 import { GATHERING_SITES } from "./catVillageGathering";
 import { getBuildingStage } from "./villageData";
+import { getNormalMaterialPool } from "./monsterEconomyCatalog";
 
 // ── 6 模式（家族/資源/建築）──────────────────────────────
 export const BOARD_MODES = GATHERING_SITES.map(s => ({
@@ -164,12 +165,15 @@ function addFamilyMat(r, family, tier, count) {
   r.familyMaterials[id] = (r.familyMaterials[id] || 0) + count;
 }
 
-// 家族素材：每份獨立在 1~tierCap 抽階級（偏向高階，以房主選的 T 為主），emit family_m{tier}。
-// 直接用 family_m{t}，不走會偏向 common 的 drawMaterial，避免高階房間也一直掉最低階材料。
+// 家族素材：每份獨立在 1~tierCap 抽階級（偏向高階，以房主選的 T 為主），
+// 再從「新怪物該族該階的 3 種普通材料」隨機取一種（getNormalMaterialPool）。
+// 這樣才會掉到新怪的材料，而不是永遠只掉舊材料 family_m{t}。
 function addRandomFamilyMat(r, family, tierCap, count) {
   for (let i = 0; i < count; i++) {
     const t = rollTier(tierCap);
-    const id = `${family}_m${t}`;
+    const pool = getNormalMaterialPool({ family, exactTier: t });
+    const pick = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+    const id = pick ? pick.id : `${family}_m${t}`; // 找不到才退回舊材料
     r.familyMaterials[id] = (r.familyMaterials[id] || 0) + 1;
   }
 }

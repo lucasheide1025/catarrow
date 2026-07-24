@@ -15,13 +15,15 @@ import { ensureDailyDice, applyEventEffect, DAILY_DICE, applyBoardReward } from 
 import { BOARD_LAYOUT, BOARD_SIZE, TILE_TYPES, BOARD_MODES, getModeTierCap, rollTileReward } from "../../lib/boardData";
 import { drawBoardEvent } from "../../lib/boardEvents";
 import { MATERIALS } from "../../lib/monsterMaterials";
+import { NORMAL_MATERIALS } from "../../lib/monsterEconomyCatalog";
 import { RESOURCE_NAMES } from "../../lib/villageData";
 import { calculateGatheringRound } from "../../lib/catVillageGathering";
 import { addRoundArrows } from "../../lib/db";
 import { sfxTap, sfxSuccess, sfxCast } from "../../lib/sound";
 
 const ASSET = "/assets/board";
-const MAT_BY_ID = Object.fromEntries(MATERIALS.map(m => [m.id, m]));
+// 新怪材料（無 icon）＋舊材料（有 icon）；舊材料放後面覆蓋同 id，保留其 icon
+const MAT_BY_ID = { ...Object.fromEntries(NORMAL_MATERIALS.map(m => [m.id, m])), ...Object.fromEntries(MATERIALS.map(m => [m.id, m])) };
 const RES_ICON = { ore:"⛏️", melon:"🍈", fish:"🐟", meat:"🍖", driedfish:"🐠", can:"🥫", fur:"🧶", arrowdew:"💧" };
 const SCORE_PAD = [["X",10],["10",10],["9",9],["8",8],["7",7],["6",6],["5",5],["3",3],["M",0]];
 // 藥水品質

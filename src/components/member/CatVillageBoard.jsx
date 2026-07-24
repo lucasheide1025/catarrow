@@ -11,10 +11,12 @@ import { BOARD_LAYOUT, BOARD_SIZE, TILE_TYPES, BOARD_MODES, getModeTierCap } fro
 import { drawBoardEvent } from "../../lib/boardEvents";
 import { sfxTap, sfxSuccess, sfxCast } from "../../lib/sound";
 import { MATERIALS } from "../../lib/monsterMaterials";
+import { NORMAL_MATERIALS } from "../../lib/monsterEconomyCatalog";
 import { RESOURCE_NAMES } from "../../lib/villageData";
 import { addRoundArrows } from "../../lib/db";
 
-const MAT_BY_ID = Object.fromEntries(MATERIALS.map(m => [m.id, m]));
+// 新怪材料（無 icon）＋舊材料（有 icon）；舊材料覆蓋同 id 以保留 icon
+const MAT_BY_ID = { ...Object.fromEntries(NORMAL_MATERIALS.map(m => [m.id, m])), ...Object.fromEntries(MATERIALS.map(m => [m.id, m])) };
 const RES_ICON = { ore:"⛏️", melon:"🍈", fish:"🐟", meat:"🍖", driedfish:"🐠", can:"🥫", fur:"🧶", arrowdew:"💧" };
 
 // 把 reward descriptor 解析成 [{icon,name,amount}] 詳細清單
