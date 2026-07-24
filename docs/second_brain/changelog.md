@@ -3,6 +3,25 @@
 
 ---
 
+## 2026-07-25（排行榜全面改版 + 季賽系統）
+
+**背景**：舊排行榜（`MemberLeaderboard.jsx`）資料豐富但呈現陽春、無時間維度→定型後沒人看。作者要：重做視覺(RPG 深色風)、加季賽(用「季」)、照現有功能多加榜、一次到位。
+
+- **季賽（`src/lib/seasonDb.js`，新）**：日曆季 `2026-Q3`。**快照差值法**——每季首位開榜者用 `runTransaction` 建 `seasons/{id}` 存全員當下數值快照；本季榜 = 現值 − 快照(clamp≥0)。不需為每筆紀錄埋時間戳，任何累計欄位都能算「這季新增」。`seasonDaysLeft()` 季末倒數。
+- **資料層（`src/lib/leaderboardData.js`，新）**：集中 `LB_GROUPS`/`LB_TABS`/`rankBoard`/`computeSeasonMetrics`/`buildCertMaps`。UI 只畫。榜分五類：競技/戰鬥/徽章/收藏/貓貓村。
+- **UI 重寫 `MemberLeaderboard.jsx`**：深色 RPG、頒獎台(冠亞季軍高低台階)、**我的名次卡**(不管排第幾都置頂+距上一名差X)、分組 pill、族群子頁、總榜/本季切換、季末倒數條。
+- **新榜**：射箭總數(`totalArrowsAllTime` 已存)、族群獵殺×7族(monsterDex)、頭目+、突破地下城×7族+總(`dungeonClears.{family}`★)、世界王傷害(`worldBossDmgTotal`★)、組隊傷害(`partyDmgTotal`★)、卡片收藏、地下城圖鑑完成度、成就圖鑑完成度(`computeDexStats`)、最高等級貓貓(`maxCatXP`★)、探索繞圈(`villageTotalLaps`★)。
+- **埋點(★新指標，從上線起算，無法回推歷史)**：
+  - `villageTotalLaps`：`villageBoardDb.rollAndMove` 繞圈時 +1（單機）；`CatVillageBoardTeam` 跟隨動畫 `finish()` 每成員各自 +1（組隊共用棋子、房主不能代寫全員→各 client 在自己 seq 記一次）
+  - `dungeonClears.{family}`：`DungeonExpedition.showResult(won)` 唯一出口、`clearCountedRef` 防重複（**目前只計單人遠征，組隊 ExpeditionBattleRoom 尚未埋**）
+  - `worldBossDmgTotal`：`worldBossDb` strike 非訪客區塊 += combinedDmg
+  - `partyDmgTotal`：`PartyBattleRoom.handleClaim` 勝場 dex 記錄同一 once-guard 內 += myDmg
+  - `maxCatXP`：`catDb.addCatXP` 升 XP 後讀該貓新總 XP，> 現值才更新（全隊最高貓）
+- **兩套家族**：怪物擊殺/突破榜用 `FAMILIES`(monsterData，含 treasure 共 7)；地下城地圖 `FAMILY_META` 只 6 族(無寶箱)→突破榜資料驅動顯示，有破才亮。
+- **firestore.rules**：member 兩份白名單加 `villageTotalLaps/dungeonClears/worldBossDmgTotal/partyDmgTotal/maxCatXP`；新增 `seasons` collection(登入者可讀+create，admin 可改)。
+- **⚠️ 踩坑**：Bash 工具是 Git Bash 不是 PowerShell——`@'...'@` heredoc 會被當字面 `@`，commit 訊息開頭多 `@`；bash 要用 `<<'EOF'`。
+- **待辦**：①firestore.rules 需**手動貼 Console**(CLI 403)否則新欄位寫入+季快照全被拒 ②組隊遠征突破次數未埋 ③季快照在季中首次開榜才拍→會漏該季開榜前的量(首季上線自然、可接受)。
+
 ## 2026-07-23（怪物掉落改新族系/王素材箱 — 接線 FREEBUFF 設計）
 
 **背景**：FREEBUFF 設計的新素材箱（`itemData.js` commit 38cfbd0）只有定義+開箱邏輯，**沒接到掉落**。作者要：一般怪掉「該族該階族系箱」、小王掉小王箱、大王掉大王箱；舊箱保留不刪。
