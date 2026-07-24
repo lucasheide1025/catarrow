@@ -12,6 +12,7 @@ import GatheringPartyPanel from "./GatheringPartyPanel";
 import GatheringRun from "./GatheringRun";
 import CatVillageBoard from "./CatVillageBoard";
 import CatVillageBoardTeam from "./CatVillageBoardTeam";
+import { findReconnectableBoardRoom } from "../../lib/villageBoardTeamDb";
 import BattleShootingProfile from "../shared/BattleShootingProfile";
 import { loadBattleShootingProfile } from "../../lib/battlePractice";
 
@@ -22,6 +23,7 @@ const CSS = `
 export default function CouncilHall({ profile, village, onBack }) {
   const [tab, setTab] = useState("expedition");
   const [boardTeam, setBoardTeam] = useState(false);
+  const [boardChecking, setBoardChecking] = useState(false);
   const [activeSite, setActiveSite] = useState(null);
   const [activeRunNonce, setActiveRunNonce] = useState(0);
   const [partySite, setPartySite] = useState(null);
@@ -42,6 +44,18 @@ export default function CouncilHall({ profile, village, onBack }) {
       .catch(() => { if (!cancelled) setDailyLeft(5); });
     return () => { cancelled = true; };
   }, [profile?.id]);
+
+  // 進入探索分頁時偵測進行中的團隊房間 → 自動切團隊模式（重整後房主/隊員才回得去）。
+  // boardTeam 是本地 state，重整後會重置成 false，若不主動偵測，玩家會卡在單人畫面回不去房間。
+  useEffect(() => {
+    if (tab !== "collect" || boardTeam || !profile?.id) return;
+    let cancelled = false;
+    setBoardChecking(true);
+    findReconnectableBoardRoom(profile.id)
+      .then(r => { if (!cancelled && r.room) setBoardTeam(true); })
+      .finally(() => { if (!cancelled) setBoardChecking(false); });
+    return () => { cancelled = true; };
+  }, [tab, boardTeam, profile?.id]);
 
   useEffect(() => {
     if (!profile?.id || activeSite) return;
@@ -243,9 +257,11 @@ export default function CouncilHall({ profile, village, onBack }) {
 
       {tab === "expedition" && <ExpeditionPanel profile={profile} />}
 
-      {tab === "collect" && (boardTeam
-        ? <CatVillageBoardTeam profile={profile} onClose={() => { setBoardTeam(false); setTab("expedition"); }} />
-        : <CatVillageBoard profile={profile} onClose={() => setTab("expedition")} onTeam={() => setBoardTeam(true)} />
+      {tab === "collect" && (boardChecking
+        ? <div style={{ padding: "48px 0", textAlign: "center", color: "rgba(255,255,255,0.6)", fontWeight: 700 }}>🔄 重新連線中…</div>
+        : boardTeam
+          ? <CatVillageBoardTeam profile={profile} onClose={() => { setBoardTeam(false); setTab("expedition"); }} />
+          : <CatVillageBoard profile={profile} onClose={() => setTab("expedition")} onTeam={() => setBoardTeam(true)} />
       )}
 
       {false && (
