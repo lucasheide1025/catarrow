@@ -3,6 +3,7 @@ import { settleExpedition } from "./settleExpedition";
 import { deriveGuildCombat } from "./guildStats";
 import { evaluateJunk, GUILD_JUNK, JUNK_BY_ID } from "../data/guildJunkCatalog";
 import { EXPANSION_MATERIALS } from "../../lib/monsterExpansionCatalog";
+import { LOOT_BY_DANGER } from "../data/guildLootTable";
 import { GRADES, GUILD_EQUIP_ARCHETYPES } from "../data/guildEquipCatalog";
 
 const FIXED = { rand: () => 0.1 };
@@ -71,9 +72,9 @@ describe("settleExpedition — 凱旋結算", () => {
 
   test("雜貨**不再自動換成錢**：只回傳撈到什麼，錢等賣出才算", () => {
     const r = settleExpedition(wonState(3), FIXED);
-    // 基礎報酬 = 委託酬金，不含雜貨價值
-    expect(r.coins).toBe(180);
-    expect(r.catCoins).toBe(18);
+    // 基礎報酬 = 委託酬金（LOOT_BY_DANGER），不含雜貨價值
+    expect(r.coins).toBe(LOOT_BY_DANGER[3].coinBase);
+    expect(r.catCoins).toBe(LOOT_BY_DANGER[3].catCoinBase);
     for (const j of r.junk) {
       expect(JUNK_BY_ID[j.id]).toBeTruthy();
       expect(j.rarity).toBeTruthy();

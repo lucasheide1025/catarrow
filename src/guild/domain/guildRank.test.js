@@ -2,7 +2,7 @@
 import { GUILD_RANKS, repToRank, nextRankInfo, rankUnlocks, canAcceptDanger, repNeededForDanger } from "./guildRank";
 import { purchaseFromShop } from "./guildShopPurchase";
 import { emptyGuildProfile, GUILD_STASH_LIMIT } from "./guildRewards";
-import { shopItemById, shopItemsForTier } from "../data/guildShop";
+import { shopItemById, shopItemsForTier, GUILD_SHOP_ITEMS, validateGuildShop } from "../data/guildShop";
 
 describe("階級（聲望 → 解鎖，零戰力加成）", () => {
   test("階級表 rep 門檻遞增，且沒有任何數值加成欄位", () => {
@@ -61,17 +61,41 @@ describe("公會商店購買", () => {
   const rich = rep => ({ ...emptyGuildProfile(), catCoins: 1000, rep });
 
   test("買裝備：扣 CAT幣、進倉庫", () => {
-    const { ok, profile, spent } = purchaseFromShop(rich(0), "eq_wood_bow_rare", { uidFn: () => "u1", now: 1 });
+    const { ok, profile, spent } = purchaseFromShop(rich(0), "eq_wood_bow_common", { uidFn: () => "u1", now: 1 });
     expect(ok).toBe(true);
-    expect(spent).toBe(shopItemById("eq_wood_bow_rare").costCat);
+    expect(spent).toBe(shopItemById("eq_wood_bow_common").costCat);
     expect(profile.catCoins).toBe(1000 - spent);
-    expect(profile.stash).toEqual([{ uid: "u1", archetypeId: "wood_bow", grade: "rare", at: 1 }]);
+    expect(profile.stash).toEqual([{ uid: "u1", archetypeId: "wood_bow", grade: "common", at: 1 }]);
+  });
+
+  test("商店買不到高階裝備（elite 以上只能靠打）", () => {
+    expect(validateGuildShop().ok).toBe(true);
+    for (const item of GUILD_SHOP_ITEMS.filter(i => i.kind === "equip")) {
+      expect(["common", "rare"]).toContain(item.grade);
+    }
+    expect(shopItemById("eq_long_bow_fierce")).toBeNull();   // 舊的高階商品已移除
+  });
+
+  test("材料是商店主力：每族每階都有單買與 5 入包（5 入更便宜）", () => {
+    const mats = GUILD_SHOP_ITEMS.filter(i => i.kind === "material");
+    expect(mats.length).toBeGreaterThanOrEqual(36);          // 6 族 × 3 階 × (單買+5入)
+    const single = shopItemById("mat_ghost_m1");
+    const bundle = shopItemById("mat_ghost_m1_x5");
+    expect(bundle.qty).toBe(5);
+    expect(bundle.costCat).toBeLessThan(single.costCat * 5);  // 有折扣
+  });
+
+  test("買 5 入包會拿到 5 個材料", () => {
+    const { ok, materials } = purchaseFromShop(rich(0), "mat_ghost_m1_x5");
+    expect(ok).toBe(true);
+    expect(materials).toHaveLength(5);
+    expect(materials.every(m => m.id === "ghost_m1")).toBe(true);
   });
 
   test("買材料：扣 CAT幣、回傳要寫進主線背包的材料", () => {
     const { ok, profile, materials } = purchaseFromShop(rich(0), "mat_ghost_m1");
     expect(ok).toBe(true);
-    expect(profile.catCoins).toBe(990);
+    expect(profile.catCoins).toBe(1000 - shopItemById("mat_ghost_m1").costCat);
     expect(materials).toHaveLength(1);
     expect(materials[0].id).toBe("ghost_m1");
     expect(materials[0].name).toBeTruthy();
@@ -79,21 +103,21 @@ describe("公會商店購買", () => {
 
   test("階級不足 → 買不到高層級貨，存檔不動", () => {
     const before = rich(0);
-    const res = purchaseFromShop(before, "eq_long_bow_fierce");
+    const res = purchaseFromShop(before, "eq_ranger_quiver_rare");   // 特製貨架（需白金）
     expect(res.ok).toBe(false);
     expect(res.reason).toMatch(/階級不足/);
     expect(res.profile.catCoins).toBe(1000);
   });
 
   test("CAT幣不足 → 擋下", () => {
-    const res = purchaseFromShop({ ...emptyGuildProfile(), catCoins: 5, rep: 0 }, "eq_wood_bow_rare");
+    const res = purchaseFromShop({ ...emptyGuildProfile(), catCoins: 1, rep: 0 }, "eq_wood_bow_common");
     expect(res.ok).toBe(false);
     expect(res.reason).toMatch(/CAT幣不足/);
   });
 
   test("倉庫滿 → 擋下買裝備（不會扣錢又沒東西）", () => {
     const full = { ...rich(0), stash: Array.from({ length: GUILD_STASH_LIMIT }, (_, i) => ({ uid: `s${i}`, archetypeId: "wood_bow", grade: "common" })) };
-    const res = purchaseFromShop(full, "eq_wood_bow_rare");
+    const res = purchaseFromShop(full, "eq_wood_bow_common");
     expect(res.ok).toBe(false);
     expect(res.profile.catCoins).toBe(1000);
   });

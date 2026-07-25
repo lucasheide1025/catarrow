@@ -66,6 +66,9 @@ const CardCollection     = lazy(() => import("../components/member/CardCollectio
 const EquipmentPage      = lazy(() => import("../components/member/EquipmentPage"));
 const CoinShop           = lazy(() => import("../components/member/CoinShop"));
 const AdventurerGuild    = lazy(() => import("../components/member/AdventurerGuild"));
+// 冒險者公會遠征（2026-07-25 正式對玩家開放）。教練(admin)仍走舊 AdventurerGuild，
+// 因為後台懸賞任務流程（handleGuildNavigate/questCtx）還接在舊元件上。
+const GuildExpedition    = lazy(() => import("../guild/GuildTestApp"));
 const CatVillage         = lazy(() => import("../components/member/CatVillage"));
 const CatCollection      = lazy(() => import("../components/cat/CatCollection"));
 const CatStoryBook       = lazy(() => import("../components/cat/CatStoryBook"));
@@ -849,13 +852,8 @@ export default function MemberApp() {
           questCtx={questCtx?.completed ? null : questCtx}
           onQuestCtxClear={()=>setQuestCtx(null)}
         /> : (
-          /* 冒險者公會改建中：射手看更新畫面，教練(admin)可直接進去測試 */
-          <div style={{ minHeight:"100dvh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:16, padding:24, textAlign:"center", background:"linear-gradient(180deg,#0b1220,#1a1207)" }}>
-            <div style={{ fontSize:56 }}>🏛️🔧</div>
-            <div style={{ fontSize:22, fontWeight:900, color:"#fbbf24" }}>冒險者公會改建中</div>
-            <div style={{ fontSize:14, color:"#cbd5e1", lineHeight:1.7, maxWidth:320 }}>公會正在進行大改版，即將以全新面貌重新開張，敬請期待！</div>
-            <button onClick={()=>setPage("adventure-hub")} style={{ marginTop:8, padding:"10px 24px", borderRadius:12, fontWeight:900, color:"#fff", background:"linear-gradient(135deg,#f59e0b,#b45309)", border:"none", cursor:"pointer" }}>返回冒險</button>
-          </div>
+          /* 冒險者公會遠征：2026-07-25 正式開放給射手（原本是「改建中」擋著）*/
+          <GuildExpedition onBack={()=>setPage("adventure-hub")} />
         ))}
         {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom} onBack={()=>setPage("adventure-hub")} />}
         {page==="party-quest" && partyRoomId && (

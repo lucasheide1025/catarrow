@@ -9,11 +9,13 @@ export { GUILD_JUNK, JUNK_RARITY, JUNK_BY_ID, junkPoolFor, drawJunk, evaluateJun
 // 危險度 1~6（＝怪物階級 T1~T6）→ 掉落率/量設定。
 // 遞增但不暴衝：高階的價值主要來自「材料階級更高」而不是數字翻倍。
 // matChance 命中後每隻怪掉 2~3 個擴充材料（見 settleExpedition.MAT_PER_MONSTER）。
+// 2026-07-25 調高報酬（作者：報酬率太低）——公會商店的定位是「**自由採購缺的素材，補打怪賺不夠的洞**」，
+// 所以 CAT幣（商店貨幣）給得大方；雜貨也給更多件，讓玩家有東西可囤可賣。
 export const LOOT_BY_DANGER = Object.freeze({
-  1: { junkChance: 0.50, junkMax: 2, matChance: 0.60, equipChance: 0.10, catCoinBase: 5,   coinBase: 60 },
-  2: { junkChance: 0.60, junkMax: 3, matChance: 0.65, equipChance: 0.15, catCoinBase: 10,  coinBase: 110 },
-  3: { junkChance: 0.70, junkMax: 3, matChance: 0.70, equipChance: 0.22, catCoinBase: 18,  coinBase: 180 },
-  4: { junkChance: 0.80, junkMax: 4, matChance: 0.75, equipChance: 0.30, catCoinBase: 28,  coinBase: 280 },
-  5: { junkChance: 0.90, junkMax: 4, matChance: 0.80, equipChance: 0.40, catCoinBase: 42,  coinBase: 420 },
-  6: { junkChance: 1.00, junkMax: 5, matChance: 0.88, equipChance: 0.52, catCoinBase: 60,  coinBase: 600 },
+  1: { junkChance: 0.70, junkMax: 3, matChance: 0.70, equipChance: 0.10, catCoinBase: 14,  coinBase: 90 },
+  2: { junkChance: 0.80, junkMax: 3, matChance: 0.75, equipChance: 0.15, catCoinBase: 28,  coinBase: 170 },
+  3: { junkChance: 0.90, junkMax: 4, matChance: 0.80, equipChance: 0.22, catCoinBase: 50,  coinBase: 280 },
+  4: { junkChance: 0.95, junkMax: 5, matChance: 0.85, equipChance: 0.30, catCoinBase: 82,  coinBase: 440 },
+  5: { junkChance: 1.00, junkMax: 6, matChance: 0.90, equipChance: 0.40, catCoinBase: 125, coinBase: 660 },
+  6: { junkChance: 1.00, junkMax: 7, matChance: 0.95, equipChance: 0.52, catCoinBase: 190, coinBase: 980 },
 });

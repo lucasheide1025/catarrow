@@ -35,7 +35,7 @@ function newRun(contract) {
   return { exp: rollExpedition({ id: contract.id, danger: contract.danger, family: contract.family }), key: Date.now() };
 }
 
-export default function GuildTestApp() {
+export default function GuildTestApp({ onBack }) {
   const { profile, loading } = useAuth();
   const memberId = profile?.id || null;
   const member = profile || MOCK_MEMBER;
@@ -165,7 +165,7 @@ export default function GuildTestApp() {
       <>
         <GuildBoard profile={gp} contracts={dailyContracts} doneIds={doneIds}
           onOpen={setSheet} onOpenStash={() => setPhase("stash")} onOpenShop={() => setPhase("shop")}
-          onOpenVault={() => setPhase("vault")} />
+          onOpenVault={() => setPhase("vault")} onBack={onBack} />
         {sheet && (
           <GuildContractSheet contract={sheet} profile={gp} done={doneIds.includes(sheet.id)}
             onAccept={acceptContract} onClose={() => setSheet(null)} />
@@ -184,7 +184,12 @@ export default function GuildTestApp() {
         {loot && won && (
           <div style={{ width: "100%", maxWidth: 340, background: "rgba(0,0,0,.35)", border: "1px solid rgba(251,191,36,.3)", borderRadius: 12, padding: 12, fontSize: 13, textAlign: "left", display: "flex", flexDirection: "column", gap: 6 }}>
             <div style={{ color: "#fbbf24", fontWeight: 900 }}>💰 {loot.coins} 金幣　🐾 {loot.catCoins} CAT幣</div>
-            {loot.materials.length > 0 && <div style={{ color: "#a7f3d0" }}>📦 材料：{loot.materials.map(m => `${m.familyTier}×${m.qty}`).join("、")}</div>}
+            {loot.materials.length > 0 && (
+              <div style={{ color: "#a7f3d0" }}>
+                📦 材料：{loot.materials.map(m => `${m.name}×${m.qty}`).join("、")}
+                {/* 材料改掉擴充材料後，形狀是 {id,name,qty}——不是舊的 familyTier（顯示 undefined 的原因） */}
+              </div>
+            )}
             {loot.junk.length > 0 && (
               <div style={{ color: "#93c5fd", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                 🧺 入庫雜貨：
@@ -269,7 +274,7 @@ export default function GuildTestApp() {
     return (
       <GuildBoard profile={gp} contracts={dailyContracts} doneIds={doneIds}
         onOpen={setSheet} onOpenStash={() => setPhase("stash")} onOpenShop={() => setPhase("shop")}
-        onOpenVault={() => setPhase("vault")} />
+        onOpenVault={() => setPhase("vault")} onBack={onBack} />
     );
   }
 
