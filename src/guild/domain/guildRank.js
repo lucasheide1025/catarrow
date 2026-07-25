@@ -9,12 +9,13 @@
 
 // rep 門檻遞增；maxDanger = 可接的危險度上限；shopTier = 商店可買層級
 export const GUILD_RANKS = Object.freeze([
+  // maxDanger 一階一階開：6 個階級剛好對應 6 個危險度（T1~T6），升階的意義最直接。
   { id: "apprentice", name: "見習冒險者", icon: "🔰", color: "#9ca3af", rep: 0,    maxDanger: 1, shopTier: 1 },
   { id: "bronze",     name: "銅牌冒險者", icon: "🥉", color: "#d97706", rep: 100,  maxDanger: 2, shopTier: 1 },
-  { id: "silver",     name: "銀牌冒險者", icon: "🥈", color: "#cbd5e1", rep: 300,  maxDanger: 2, shopTier: 2 },
-  { id: "gold",       name: "金牌冒險者", icon: "🥇", color: "#fbbf24", rep: 700,  maxDanger: 3, shopTier: 2 },
-  { id: "platinum",   name: "白金冒險者", icon: "💠", color: "#67e8f9", rep: 1500, maxDanger: 3, shopTier: 3 },
-  { id: "legend",     name: "傳說冒險者", icon: "👑", color: "#f0abfc", rep: 3000, maxDanger: 3, shopTier: 3 },
+  { id: "silver",     name: "銀牌冒險者", icon: "🥈", color: "#cbd5e1", rep: 300,  maxDanger: 3, shopTier: 2 },
+  { id: "gold",       name: "金牌冒險者", icon: "🥇", color: "#fbbf24", rep: 700,  maxDanger: 4, shopTier: 2 },
+  { id: "platinum",   name: "白金冒險者", icon: "💠", color: "#67e8f9", rep: 1500, maxDanger: 5, shopTier: 3 },
+  { id: "legend",     name: "傳說冒險者", icon: "👑", color: "#f0abfc", rep: 3000, maxDanger: 6, shopTier: 3 },
 ]);
 
 // 目前階級（rep 由小到大找最後一個達標的）

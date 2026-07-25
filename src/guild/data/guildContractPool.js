@@ -51,14 +51,18 @@ export const CONTRACT_STORIES = Object.freeze({
   ],
 });
 
-// 危險度語氣（貼在委託單上，讓玩家一眼知道輕重）
+// 危險度語氣（1~6 對應怪物階級 T1~T6），貼在委託單上讓玩家一眼知道輕重
 export const DANGER_TONE = Object.freeze({
   1: { tag: "例行委託", hint: "公會新手也接得起來。" },
   2: { tag: "警戒委託", hint: "已經有人受傷，別大意。" },
-  3: { tag: "緊急委託", hint: "上一隊沒能回來。" },
+  3: { tag: "危險委託", hint: "上一隊帶著傷回來。" },
+  4: { tag: "極危委託", hint: "公會不建議單獨前往。" },
+  5: { tag: "討伐委託", hint: "有東西在後面壓陣。" },
+  6: { tag: "傳說委託", hint: "上一隊沒能回來。" },
 });
 
-export const CONTRACTS_PER_DAY = 5;
+// 每個危險度出 3 張 → 6 × 3 = 18 張／天（作者拍板 2026-07-25）
+export const CONTRACTS_PER_DANGER = 3;
 
 // 公會長貓的台詞：依階級變化（讓升階被「人」看見，不只是數字變大）。
 // stuck = 今天全部委託都結案了；rookie = 還沒接過任何一張。

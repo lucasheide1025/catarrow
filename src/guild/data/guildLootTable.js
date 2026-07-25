@@ -12,11 +12,15 @@ export const GUILD_JUNK = Object.freeze([
   { id: "mysterious_relic", name: "神秘遺物", icon: "🏺", baseValue: 200 },
 ]);
 
-// 危險度 → 掉落率/量設定
+// 危險度 1~6（＝怪物階級 T1~T6）→ 掉落率/量設定。
+// 遞增但不暴衝：高階的價值主要來自「材料階級更高」而不是數字翻倍。
 export const LOOT_BY_DANGER = Object.freeze({
-  1: { junkChance: 0.5, junkMax: 2, matChance: 0.6, equipChance: 0.10, catCoinBase: 5,  coinBase: 60 },
-  2: { junkChance: 0.7, junkMax: 3, matChance: 0.7, equipChance: 0.18, catCoinBase: 12, coinBase: 120 },
-  3: { junkChance: 0.9, junkMax: 4, matChance: 0.8, equipChance: 0.30, catCoinBase: 25, coinBase: 220 },
+  1: { junkChance: 0.50, junkMax: 2, matChance: 0.60, equipChance: 0.10, catCoinBase: 5,   coinBase: 60 },
+  2: { junkChance: 0.60, junkMax: 3, matChance: 0.65, equipChance: 0.15, catCoinBase: 10,  coinBase: 110 },
+  3: { junkChance: 0.70, junkMax: 3, matChance: 0.70, equipChance: 0.22, catCoinBase: 18,  coinBase: 180 },
+  4: { junkChance: 0.80, junkMax: 4, matChance: 0.75, equipChance: 0.30, catCoinBase: 28,  coinBase: 280 },
+  5: { junkChance: 0.90, junkMax: 4, matChance: 0.80, equipChance: 0.40, catCoinBase: 42,  coinBase: 420 },
+  6: { junkChance: 1.00, junkMax: 5, matChance: 0.88, equipChance: 0.52, catCoinBase: 60,  coinBase: 600 },
 });
 
 // 雜貨評估：baseValue → 金幣(70%) + CAT幣(30%/10)。LUK 提升價值倍率。

@@ -1,5 +1,6 @@
 // src/guild/domain/rollExpedition.test.js
-import { rollExpedition, DANGER_META, MAX_TARGETS } from "./rollExpedition";
+import { rollExpedition, DANGER_META, MAX_TARGETS, MAX_DANGER, GUILD_TIER_SCALE } from "./rollExpedition";
+import { EXPANSION_MONSTER_BY_ID } from "../../lib/monsterExpansionCatalog";
 
 // 固定亂數（deterministic），讓測試可重現
 function seededRand(seed) {
@@ -11,10 +12,14 @@ function seededRand(seed) {
 }
 
 describe("rollExpedition — 委託遠征生成", () => {
-  test("波數依危險度（一般3/危險4/極危5）", () => {
-    expect(rollExpedition({ danger: 1 }, { rand: seededRand(1) }).totalWaves).toBe(3);
-    expect(rollExpedition({ danger: 2 }, { rand: seededRand(1) }).totalWaves).toBe(4);
-    expect(rollExpedition({ danger: 3 }, { rand: seededRand(1) }).totalWaves).toBe(5);
+  test("波數依危險度（1~6，波數只增不減）", () => {
+    let prev = 0;
+    for (let d = 1; d <= MAX_DANGER; d++) {
+      const w = rollExpedition({ danger: d }, { rand: seededRand(1) }).totalWaves;
+      expect(w).toBe(DANGER_META[d].waves);
+      expect(w).toBeGreaterThanOrEqual(prev);
+      prev = w;
+    }
   });
 
   test("每波怪數不超過畫面上限 4，且至少 1 隻", () => {
@@ -40,10 +45,29 @@ describe("rollExpedition — 委託遠征生成", () => {
     expect(fams.every(f => f === "ghost")).toBe(true);
   });
 
-  test("怪物 tier 落在危險度允許範圍", () => {
-    const exp = rollExpedition({ danger: 1 }, { rand: seededRand(3) });
-    const allowed = DANGER_META[1].tiers;
-    const tiers = exp.waves.flatMap(w => w.monsters.map(m => m.tier));
-    expect(tiers.every(t => allowed.includes(t))).toBe(true);
+  test("危險度 n 只出 Tn 的怪（1~6 一對一）", () => {
+    for (let d = 1; d <= MAX_DANGER; d++) {
+      const exp = rollExpedition({ danger: d }, { rand: seededRand(3 + d) });
+      const tiers = exp.waves.flatMap(w => w.monsters.map(m => m.tier));
+      expect(tiers.every(t => t === DANGER_META[d].tier)).toBe(true);
+      expect(exp.waves.flatMap(w => w.monsters).every(m => m.tierIndex === d)).toBe(true);
+    }
+  });
+
+  test("怪物來自擴充圖鑑，且 HP 吃公會縮放（不是原始數值）", () => {
+    const exp = rollExpedition({ danger: 4 }, { rand: seededRand(11) });
+    for (const m of exp.waves.flatMap(w => w.monsters)) {
+      const raw = EXPANSION_MONSTER_BY_ID[m.monsterId];
+      expect(raw).toBeTruthy();                       // 是新怪不是舊怪
+      expect(m.maxHp).toBe(Math.max(1, Math.round(raw.hp * GUILD_TIER_SCALE[4].hp)));
+      expect(m.artKey).toBeTruthy();                  // 有立繪 key 可畫圖
+    }
+  });
+
+  test("寶箱族不會出現在委託裡", () => {
+    for (let d = 1; d <= MAX_DANGER; d++) {
+      const exp = rollExpedition({ danger: d }, { rand: seededRand(50 + d) });
+      expect(exp.waves.flatMap(w => w.monsters).some(m => m.family === "treasure")).toBe(false);
+    }
   });
 });

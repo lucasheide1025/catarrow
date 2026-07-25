@@ -33,18 +33,19 @@ describe("階級（聲望 → 解鎖，零戰力加成）", () => {
     expect(max.progressPct).toBe(100);
   });
 
-  test("危險度 gate：見習只能接 1，金牌才能接 3", () => {
-    expect(canAcceptDanger(0, 1)).toBe(true);
-    expect(canAcceptDanger(0, 2)).toBe(false);
-    expect(canAcceptDanger(100, 2)).toBe(true);
-    expect(canAcceptDanger(100, 3)).toBe(false);
-    expect(canAcceptDanger(700, 3)).toBe(true);
+  test("危險度 gate：6 階一階開一個危險度（T1~T6）", () => {
+    const cases = [[0, 1], [100, 2], [300, 3], [700, 4], [1500, 5], [3000, 6]];
+    for (const [rep, maxD] of cases) {
+      expect(canAcceptDanger(rep, maxD)).toBe(true);              // 剛好開到這階
+      if (maxD < 6) expect(canAcceptDanger(rep, maxD + 1)).toBe(false);  // 更上一階要更高聲望
+    }
   });
 
   test("鎖住時算得出還差多少聲望；已解鎖回 null", () => {
     expect(repNeededForDanger(0, 2)).toBe(100);
-    expect(repNeededForDanger(650, 3)).toBe(50);
-    expect(repNeededForDanger(700, 3)).toBeNull();
+    expect(repNeededForDanger(250, 3)).toBe(50);      // 銀牌 300 才能接 T3
+    expect(repNeededForDanger(300, 3)).toBeNull();
+    expect(repNeededForDanger(0, 6)).toBe(3000);      // T6 要傳說
   });
 
   test("商店層級跟著階級走", () => {

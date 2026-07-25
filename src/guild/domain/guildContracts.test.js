@@ -3,17 +3,25 @@ import {
   rollDailyContracts, contractRewardPreview, contractMonsterPreview, todayKey,
   contractsStateFor, isContractDone, markContractDone,
 } from "./guildContracts";
-import { expeditionMonsterPool } from "./rollExpedition";
+import { expeditionMonsterPool, MAX_DANGER, DANGER_META, GUILD_TIER_SCALE, rollExpedition } from "./rollExpedition";
+import { EXPANSION_MONSTER_BY_ID } from "../../lib/monsterExpansionCatalog";
 import { emptyGuildProfile, normalizeGuildProfile } from "./guildRewards";
-import { CONTRACTS_PER_DAY } from "../data/guildContractPool";
+import { CONTRACTS_PER_DANGER } from "../data/guildContractPool";
 import { canAcceptDanger } from "./guildRank";
 
 const DAY = "2026-07-25";
 
 describe("每日委託板", () => {
-  test("固定張數，欄位齊全（委託人/故事/族群/波數）", () => {
+  test("每個危險度各 3 張、共 6 個危險度（18 張）", () => {
     const list = rollDailyContracts({ dateKey: DAY, memberId: "m1" });
-    expect(list).toHaveLength(CONTRACTS_PER_DAY);
+    expect(list).toHaveLength(MAX_DANGER * CONTRACTS_PER_DANGER);
+    for (let d = 1; d <= MAX_DANGER; d++) {
+      expect(list.filter(c => c.danger === d)).toHaveLength(CONTRACTS_PER_DANGER);
+    }
+  });
+
+  test("欄位齊全（委託人/故事/族群/波數）", () => {
+    const list = rollDailyContracts({ dateKey: DAY, memberId: "m1" });
     for (const c of list) {
       expect(c.id).toContain(DAY);
       expect(c.client.name).toBeTruthy();
@@ -21,7 +29,8 @@ describe("每日委託板", () => {
       expect(c.story).toBeTruthy();
       expect(c.familyLabel).toBeTruthy();
       expect(c.waves).toBeGreaterThan(0);
-      expect([1, 2, 3]).toContain(c.danger);
+      expect(c.danger).toBeGreaterThanOrEqual(1);
+      expect(c.danger).toBeLessThanOrEqual(MAX_DANGER);
     }
   });
 
@@ -39,14 +48,12 @@ describe("每日委託板", () => {
     expect(tomorrow).not.toEqual(mine);
   });
 
-  test("危險度分佈固定：低階玩家永遠有事做，也永遠看得到接不了的那張", () => {
+  test("低階玩家永遠有三張能接，也永遠看得到接不了的（目標感）", () => {
     const list = rollDailyContracts({ dateKey: DAY, memberId: "m1" });
-    const dangers = list.map(c => c.danger);
-    expect(dangers.filter(d => d === 1).length).toBeGreaterThanOrEqual(1);
-    expect(dangers.some(d => d === 3)).toBe(true);
-    // 見習（rep 0）至少接得到一張、也至少有一張接不到
-    expect(list.some(c => canAcceptDanger(0, c.danger))).toBe(true);
-    expect(list.some(c => !canAcceptDanger(0, c.danger))).toBe(true);
+    expect(list.filter(c => canAcceptDanger(0, c.danger))).toHaveLength(CONTRACTS_PER_DANGER);
+    expect(list.filter(c => !canAcceptDanger(0, c.danger)).length).toBeGreaterThan(0);
+    // 頂階（傳說）接得到全部
+    expect(list.every(c => canAcceptDanger(3000, c.danger))).toBe(true);
   });
 
   test("多元種族：例行單族、緊急必混族，且族群不重複", () => {
@@ -57,17 +64,52 @@ describe("每日委託板", () => {
       expect(c.families[0]).toBe(c.family);                        // 主族排第一（決定故事/底圖）
       expect(c.familyTags).toHaveLength(c.families.length);
       if (c.danger === 1) expect(c.families).toHaveLength(1);
-      if (c.danger === 3) expect(c.families.length).toBeGreaterThanOrEqual(2);
+      if (c.danger >= 4) expect(c.families.length).toBeGreaterThanOrEqual(2);
     }
   });
 
-  test("標註怪物階級 T 幾（危險度越高階級越高）", () => {
+  test("危險度 n ＝ 怪物階級 Tn（1~6 一對一）", () => {
     const list = rollDailyContracts({ dateKey: DAY, memberId: "m1" });
-    const low = list.find(c => c.danger === 1);
-    const high = list.find(c => c.danger === 3);
-    expect(low.tiers.map(t => t.tierNo)).toEqual([1, 2]);          // 普通/稀有
-    expect(Math.max(...high.tiers.map(t => t.tierNo))).toBeGreaterThan(Math.max(...low.tiers.map(t => t.tierNo)));
-    for (const t of high.tiers) expect(t.label).toBeTruthy();
+    for (const c of list) {
+      expect(c.tiers).toHaveLength(1);
+      expect(c.tiers[0].tierNo).toBe(c.danger);
+      expect(c.tiers[0].label).toBeTruthy();
+    }
+  });
+
+  test("危險度 3+ 才有首領壓陣（5+ 是大首領）", () => {
+    const list = rollDailyContracts({ dateKey: DAY, memberId: "m1" });
+    expect(list.find(c => c.danger === 1).leader).toBeNull();
+    expect(list.find(c => c.danger === 3).leader).toBe("miniBoss");
+    expect(list.find(c => c.danger === 6).leader).toBe("boss");
+  });
+
+  test("怪物來源是擴充圖鑑 252 隻（不是舊的 36 隻）", () => {
+    const list = rollDailyContracts({ dateKey: DAY, memberId: "m1" });
+    for (const c of list) {
+      const preview = contractMonsterPreview(c);
+      expect(preview.length).toBeGreaterThan(0);
+      for (const m of preview) expect(EXPANSION_MONSTER_BY_ID[m.id]).toBeTruthy();
+    }
+  });
+
+  test("實際遠征：怪物吃公會縮放、最後一波有首領", () => {
+    const list = rollDailyContracts({ dateKey: DAY, memberId: "m1" });
+    const c = list.find(x => x.danger === 6);
+    const exp = rollExpedition(c, { rand: () => 0.3 });
+    expect(exp.totalWaves).toBe(DANGER_META[6].waves);
+    const all = exp.waves.flatMap(w => w.monsters);
+    for (const m of all) {
+      const raw = EXPANSION_MONSTER_BY_ID[m.monsterId];
+      expect(raw).toBeTruthy();
+      expect(m.maxHp).toBe(Math.max(1, Math.round(raw.hp * GUILD_TIER_SCALE[6].hp)));  // 縮放過、不是原始 HP
+      expect(m.maxHp).toBeLessThan(raw.hp);
+      expect(c.families).toContain(m.family);
+    }
+    // 最後一波必有一隻 boss encounter
+    expect(exp.waves[exp.waves.length - 1].monsters.some(m => m.encounter === "boss")).toBe(true);
+    // 前面幾波只有雜兵
+    expect(exp.waves.slice(0, -1).flatMap(w => w.monsters).every(m => m.encounter === "normal")).toBe(true);
   });
 
   test("怪物預覽＝實際抽怪同一份池（預覽不騙人），且只出現該委託的族群與階級", () => {

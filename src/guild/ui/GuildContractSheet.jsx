@@ -13,6 +13,8 @@ export default function GuildContractSheet({ contract: c, profile, done, onAccep
   const need = repNeededForDanger(profile.rep, c.danger);
   const rw = contractRewardPreview(c);
   const pool = contractMonsterPreview(c);
+  // 最後一波的壓陣首領（危險度 3+ 才有）——跟雜兵分開列，玩家才知道最後會遇到什麼
+  const leaders = c.leader ? contractMonsterPreview(c, { encounter: c.leader }) : [];
   const tiers = c.tiers || [];
 
   return (
@@ -34,6 +36,9 @@ export default function GuildContractSheet({ contract: c, profile, done, onAccep
         <div style={{ display: "flex", gap: 5, marginTop: 7, flexWrap: "wrap" }}>
           <span style={{ ...chip, color: "#fff", background: c.danger >= 3 ? "#b91c1c" : c.danger === 2 ? "#b45309" : "#3f6212" }}>{c.skulls} {c.tag}</span>
           <span style={{ ...chip, background: "rgba(59,42,20,.14)", color: "#3d2c16" }}>⚔️ {c.waves} 波・每波 {c.waveSize?.[0]}~{c.waveSize?.[1]} 隻</span>
+          {c.leader && <span style={{ ...chip, background: c.leader === "boss" ? "#7f1d1d" : "#92400e", color: "#fde68a" }}>
+            {c.leader === "boss" ? "☠️ 最後一波首領壓陣" : "⚔️ 最後一波小首領"}
+          </span>}
         </div>
 
         <div style={{ fontSize: 12.5, color: "#4a3a24", lineHeight: 1.8, marginTop: 10 }}>{c.story}</div>
@@ -61,7 +66,7 @@ export default function GuildContractSheet({ contract: c, profile, done, onAccep
         {/* 可能遭遇（跟實際抽怪同一份池，預覽不騙人）*/}
         <div style={{ marginTop: 12 }}>
           <div style={{ fontSize: 12, fontWeight: 900, color: "#3d2c16", marginBottom: 6 }}>
-            👁️ 可能遭遇 <span style={{ fontWeight: 700, color: "#6b5636" }}>（{pool.length} 種，實際陣容出發時隨機）</span>
+            👁️ 可能遭遇的雜兵 <span style={{ fontWeight: 700, color: "#6b5636" }}>（{pool.length} 種，實際陣容出發時隨機）</span>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(96px,1fr))", gap: 6 }}>
             {pool.map(m => (
@@ -74,6 +79,25 @@ export default function GuildContractSheet({ contract: c, profile, done, onAccep
             ))}
           </div>
         </div>
+
+        {/* 壓陣首領 */}
+        {leaders.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 900, color: "#7f1d1d", marginBottom: 6 }}>
+              {c.leader === "boss" ? "☠️ 可能的首領" : "⚔️ 可能的小首領"}
+              <span style={{ fontWeight: 700, color: "#6b5636" }}>（最後一波固定出現 1 隻）</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(96px,1fr))", gap: 6 }}>
+              {leaders.map(m => (
+                <div key={m.id} style={{ background: "rgba(127,29,29,.12)", border: "1px solid rgba(127,29,29,.3)", borderRadius: 8, padding: 6, textAlign: "center" }}>
+                  <MonsterArt monsterId={m.id} icon={m.icon} size={40} style={{ margin: "0 auto" }} />
+                  <div style={{ fontSize: 10, fontWeight: 800, color: "#241809", marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.name}</div>
+                  <div style={{ fontSize: 8.5, color: "#6b5636" }}>❤️{m.hp} ⚔️{m.atk} 🛡️{m.def}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* 報酬 */}
         <div style={{ marginTop: 12, borderTop: "1px solid rgba(59,42,20,.2)", paddingTop: 10 }}>

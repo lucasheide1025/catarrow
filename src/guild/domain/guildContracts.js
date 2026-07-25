@@ -7,8 +7,8 @@
 // ─────────────────────────────────────────────────────────────
 import { FAMILIES, TIER_LABEL, TIER_ORDER } from "../../lib/monsterData";
 import { LOOT_BY_DANGER } from "../data/guildLootTable";
-import { DANGER_META, expeditionMonsterPool } from "./rollExpedition";
-import { CONTRACT_CLIENTS, CONTRACT_STORIES, DANGER_TONE, CONTRACTS_PER_DAY } from "../data/guildContractPool";
+import { DANGER_META, MAX_DANGER, expeditionMonsterPool } from "./rollExpedition";
+import { CONTRACT_CLIENTS, CONTRACT_STORIES, DANGER_TONE, CONTRACTS_PER_DANGER } from "../data/guildContractPool";
 import { normalizeGuildProfile } from "./guildRewards";
 
 const FAMILY_IDS = Object.keys(CONTRACT_STORIES); // 六族（不含寶箱族）
@@ -40,19 +40,20 @@ export function todayKey(d = new Date()) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
-// 危險度分佈：一天固定 2 張例行、2 張警戒、1 張緊急 —— 讓低階玩家永遠有事做，
-// 也永遠看得到自己還接不了的那張（目標感，和商店鎖住的貨架同一個手法）。
-const DANGER_SLOTS = [1, 1, 2, 2, 3];
+// 委託分佈：**每個危險度各 3 張**（1~6 共 18 張／天，作者拍板 2026-07-25）。
+// 低階玩家永遠有三張能接，高階的也永遠看得到（鎖著的照樣顯示＝目標感，同商店貨架手法）。
+const DANGER_SLOTS = Array.from({ length: MAX_DANGER }, (_, i) => i + 1)
+  .flatMap(d => Array.from({ length: CONTRACTS_PER_DANGER }, () => d));
 
-// 多元種族：危險度越高，混進來的族越多（例行單族／警戒 1~2 族／緊急 2~3 族）。
+// 多元種族：危險度越高，混進來的族越多。
 // 混族是玩法差異不是難度差異——同 tier 的怪，只是陣容更雜、預覽更有看頭。
-const FAMILY_COUNT = { 1: [1, 1], 2: [1, 2], 3: [2, 3] };
+const FAMILY_COUNT = { 1: [1, 1], 2: [1, 2], 3: [1, 2], 4: [2, 3], 5: [2, 3], 6: [2, 4] };
 
 export function rollDailyContracts({ dateKey = todayKey(), memberId = "guest" } = {}) {
   const rand = makeRand(hashSeed(`${dateKey}|${memberId}`));
   const pick = arr => arr[Math.floor(rand() * arr.length)];
   const out = [];
-  for (let i = 0; i < CONTRACTS_PER_DAY; i++) {
+  for (let i = 0; i < DANGER_SLOTS.length; i++) {
     const danger = DANGER_SLOTS[i] || 1;
     const family = pick(FAMILY_IDS);                       // 主族：決定故事與戰場底圖
     const [fMin, fMax] = FAMILY_COUNT[danger] || [1, 1];
@@ -73,13 +74,14 @@ export function rollDailyContracts({ dateKey = todayKey(), memberId = "guest" } 
       familyIcon: FAMILIES[family]?.icon || "❓",
       // 多元種族的顯示用（主族排第一）
       familyTags: families.map(f => ({ id: f, label: FAMILIES[f]?.label || f, icon: FAMILIES[f]?.icon || "❓", color: FAMILIES[f]?.color })),
-      // 這張委託會出現的怪物階級（T幾）——玩家最在意的資訊
-      tiers: DANGER_META[danger].tiers.map(t => ({
-        key: t,
-        tierNo: TIER_ORDER.indexOf(t) + 1,
-        label: TIER_LABEL[t]?.label || t,
-        color: TIER_LABEL[t]?.color || "#94a3b8",
-      })),
+      // 這張委託會出現的怪物階級（T幾）——玩家最在意的資訊。危險度 1~6 ＝ T1~T6，單一階。
+      tiers: [{
+        key: DANGER_META[danger].tier,
+        tierNo: DANGER_META[danger].tierNo,
+        label: TIER_LABEL[DANGER_META[danger].tier]?.label || DANGER_META[danger].tier,
+        color: TIER_LABEL[DANGER_META[danger].tier]?.color || "#94a3b8",
+      }],
+      leader: DANGER_META[danger].leader,   // miniBoss/boss：最後一波的壓陣首領
       waveSize: DANGER_META[danger].waveSize,
       client,
       title: story.title,
@@ -95,8 +97,8 @@ export function rollDailyContracts({ dateKey = todayKey(), memberId = "guest" } 
 
 // 委託詳情用「可能遭遇的怪物」清單：跟實際抽怪走同一份規則（`expeditionMonsterPool`），
 // 預覽才不會騙人。回傳按階級排序、標好 T 幾，UI 直接畫。
-export function contractMonsterPreview(contract) {
-  return expeditionMonsterPool(contract)
+export function contractMonsterPreview(contract, opts = {}) {
+  return expeditionMonsterPool(contract, opts)
     .map(m => ({
       id: m.id, name: m.name, icon: m.icon, family: m.family,
       familyLabel: FAMILIES[m.family]?.label || m.family,
