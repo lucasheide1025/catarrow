@@ -18,7 +18,21 @@ export const DANGER_META = Object.freeze({
 
 export const MAX_TARGETS = 4; // 畫面最多同時 4 個目標
 
-// contract: { id?, danger:1|2|3, family? }；opts.rand 可注入（測試用）
+// 委託可能遭遇的怪物池（畫面預覽與實際抽怪共用同一份規則，預覽才不會騙人）。
+// contract.families = 多元種族（一張委託可以混族）；沒給就退回單一 family；都沒給＝不限族。
+export function expeditionMonsterPool(contract = {}) {
+  const danger = DANGER_META[contract.danger] ? contract.danger : 1;
+  const meta = DANGER_META[danger];
+  const wanted = contract.families?.length ? contract.families : (contract.family ? [contract.family] : null);
+  const base = MONSTERS.filter(m => meta.tiers.includes(m.tier) && m.family !== "treasure");
+  if (wanted) {
+    const famPool = base.filter(m => wanted.includes(m.family));
+    if (famPool.length) return famPool;
+  }
+  return base.length ? base : MONSTERS.filter(m => m.tier === "common");
+}
+
+// contract: { id?, danger:1|2|3, family?, families? }；opts.rand 可注入（測試用）
 export function rollExpedition(contract = {}, opts = {}) {
   const rand = opts.rand || Math.random;
   const danger = DANGER_META[contract.danger] ? contract.danger : 1;
@@ -26,13 +40,7 @@ export function rollExpedition(contract = {}, opts = {}) {
   const ri = (min, max) => Math.floor(rand() * (max - min + 1)) + min;
   const pick = arr => arr[Math.floor(rand() * arr.length)];
 
-  // 怪物池：符合危險 tier（排除寶箱族）；委託指定 family 則優先該族，不足再放寬
-  let pool = MONSTERS.filter(m => meta.tiers.includes(m.tier) && m.family !== "treasure");
-  if (contract.family) {
-    const famPool = pool.filter(m => m.family === contract.family);
-    if (famPool.length) pool = famPool;
-  }
-  if (!pool.length) pool = MONSTERS.filter(m => m.tier === "common");
+  const pool = expeditionMonsterPool({ ...contract, danger });
 
   let inst = 0;
   const waves = [];
@@ -54,7 +62,8 @@ export function rollExpedition(contract = {}, opts = {}) {
   return {
     contractId: contract.id || null,
     danger,
-    family: contract.family || null,
+    family: contract.family || contract.families?.[0] || null,  // 戰場底圖用主族
+    families: contract.families?.length ? [...contract.families] : (contract.family ? [contract.family] : []),
     totalWaves: meta.waves,
     waves,
   };

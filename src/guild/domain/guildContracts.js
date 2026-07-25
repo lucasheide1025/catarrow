@@ -5,9 +5,9 @@
 // 但每個人的委託不同才有「這是我的委託板」的感覺。
 // 純函數；沒有 Firestore、沒有 Date.now()（日期字串由呼叫端給，測試才好固定）。
 // ─────────────────────────────────────────────────────────────
-import { FAMILIES } from "../../lib/monsterData";
+import { FAMILIES, TIER_LABEL, TIER_ORDER } from "../../lib/monsterData";
 import { LOOT_BY_DANGER } from "../data/guildLootTable";
-import { DANGER_META } from "./rollExpedition";
+import { DANGER_META, expeditionMonsterPool } from "./rollExpedition";
 import { CONTRACT_CLIENTS, CONTRACT_STORIES, DANGER_TONE, CONTRACTS_PER_DAY } from "../data/guildContractPool";
 import { normalizeGuildProfile } from "./guildRewards";
 
@@ -44,21 +44,43 @@ export function todayKey(d = new Date()) {
 // 也永遠看得到自己還接不了的那張（目標感，和商店鎖住的貨架同一個手法）。
 const DANGER_SLOTS = [1, 1, 2, 2, 3];
 
+// 多元種族：危險度越高，混進來的族越多（例行單族／警戒 1~2 族／緊急 2~3 族）。
+// 混族是玩法差異不是難度差異——同 tier 的怪，只是陣容更雜、預覽更有看頭。
+const FAMILY_COUNT = { 1: [1, 1], 2: [1, 2], 3: [2, 3] };
+
 export function rollDailyContracts({ dateKey = todayKey(), memberId = "guest" } = {}) {
   const rand = makeRand(hashSeed(`${dateKey}|${memberId}`));
   const pick = arr => arr[Math.floor(rand() * arr.length)];
   const out = [];
   for (let i = 0; i < CONTRACTS_PER_DAY; i++) {
     const danger = DANGER_SLOTS[i] || 1;
-    const family = pick(FAMILY_IDS);
+    const family = pick(FAMILY_IDS);                       // 主族：決定故事與戰場底圖
+    const [fMin, fMax] = FAMILY_COUNT[danger] || [1, 1];
+    const famCount = fMin + Math.floor(rand() * (fMax - fMin + 1));
+    const families = [family];
+    while (families.length < famCount) {                   // 補混族（不重複）
+      const extra = pick(FAMILY_IDS);
+      if (!families.includes(extra)) families.push(extra);
+    }
     const story = pick(CONTRACT_STORIES[family]);
     const client = pick(CONTRACT_CLIENTS);
     out.push({
       id: `${dateKey}-${i}`,
       danger,
       family,
+      families,
       familyLabel: FAMILIES[family]?.label || family,
       familyIcon: FAMILIES[family]?.icon || "❓",
+      // 多元種族的顯示用（主族排第一）
+      familyTags: families.map(f => ({ id: f, label: FAMILIES[f]?.label || f, icon: FAMILIES[f]?.icon || "❓", color: FAMILIES[f]?.color })),
+      // 這張委託會出現的怪物階級（T幾）——玩家最在意的資訊
+      tiers: DANGER_META[danger].tiers.map(t => ({
+        key: t,
+        tierNo: TIER_ORDER.indexOf(t) + 1,
+        label: TIER_LABEL[t]?.label || t,
+        color: TIER_LABEL[t]?.color || "#94a3b8",
+      })),
+      waveSize: DANGER_META[danger].waveSize,
       client,
       title: story.title,
       story: story.story,
@@ -71,6 +93,22 @@ export function rollDailyContracts({ dateKey = todayKey(), memberId = "guest" } 
   return out;
 }
 
+// 委託詳情用「可能遭遇的怪物」清單：跟實際抽怪走同一份規則（`expeditionMonsterPool`），
+// 預覽才不會騙人。回傳按階級排序、標好 T 幾，UI 直接畫。
+export function contractMonsterPreview(contract) {
+  return expeditionMonsterPool(contract)
+    .map(m => ({
+      id: m.id, name: m.name, icon: m.icon, family: m.family,
+      familyLabel: FAMILIES[m.family]?.label || m.family,
+      tier: m.tier,
+      tierNo: TIER_ORDER.indexOf(m.tier) + 1,
+      tierLabel: TIER_LABEL[m.tier]?.label || m.tier,
+      tierColor: TIER_LABEL[m.tier]?.color || "#94a3b8",
+      hp: m.hp, atk: m.atk, def: m.def,
+    }))
+    .sort((a, b) => a.tierNo - b.tierNo || a.family.localeCompare(b.family));
+}
+
 // 委託單上的獎勵預覽（只講級距，不透露實際 roll——保留開箱感）
 export function contractRewardPreview(contract) {
   const cfg = LOOT_BY_DANGER[contract?.danger] || LOOT_BY_DANGER[1];
@@ -78,7 +116,10 @@ export function contractRewardPreview(contract) {
     coins: cfg.coinBase,
     catCoins: cfg.catCoinBase,
     equipChancePct: Math.round(cfg.equipChance * 100),
-    materialLabel: `${contract?.familyLabel || "族系"}材料`,
+    // 多元種族時要講清楚材料會混（玩家會拿來湊自己缺的族）
+    materialLabel: (contract?.families?.length || 1) > 1
+      ? `${contract.familyLabel}等 ${contract.families.length} 族材料`
+      : `${contract?.familyLabel || "族系"}材料`,
     junkMax: cfg.junkMax,
   };
 }

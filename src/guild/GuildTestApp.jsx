@@ -17,6 +17,7 @@ import { loadGuildProfile, saveGuildProfile, grantExpeditionRewards, buyGuildSho
 import GuildBattle from "./ui/GuildBattle";
 import { fieldBg, bgLayer, rankBadge, junkArt, ArtOrEmoji } from "./ui/GuildArt";
 import GuildBoard from "./ui/GuildBoard";
+import GuildContractSheet from "./ui/GuildContractSheet";
 import GuildLoadout from "./ui/GuildLoadout";
 import GuildStash from "./ui/GuildStash";
 import GuildShop from "./ui/GuildShop";
@@ -48,6 +49,7 @@ export default function GuildTestApp() {
   const [supplies, setSupplies] = useState({ food: 6, water: 6 });
   const [catRoster, setCatRoster] = useState(MOCK_CATS);
   const [rankUp, setRankUp] = useState(null);    // 這趟升階了 → 顯示橫幅
+  const [sheet, setSheet] = useState(null);      // 正在看詳情的委託（點小卡才開）
   const grantedRef = useRef(null);               // 一趟只請領一次
 
   // Web Audio 需要使用者手勢才能出聲；進公會就先解鎖，第一個音效才不會被吃掉
@@ -108,6 +110,7 @@ export default function GuildTestApp() {
     setResult(null); setLoot(null); setGrantMsg(""); setContract(null); setRun(null); setRankUp(null); setPhase("board");
   };
   const acceptContract = c => {
+    setSheet(null);
     setContract(c); setRun(newRun(c)); setResult(null); setLoot(null); setGrantMsg(""); setPhase("loadout");
   };
 
@@ -148,8 +151,14 @@ export default function GuildTestApp() {
 
   if (phase === "board" && !result) {
     return (
-      <GuildBoard profile={gp} contracts={dailyContracts} doneIds={doneIds}
-        onAccept={acceptContract} onOpenStash={() => setPhase("stash")} onOpenShop={() => setPhase("shop")} />
+      <>
+        <GuildBoard profile={gp} contracts={dailyContracts} doneIds={doneIds}
+          onOpen={setSheet} onOpenStash={() => setPhase("stash")} onOpenShop={() => setPhase("shop")} />
+        {sheet && (
+          <GuildContractSheet contract={sheet} profile={gp} done={doneIds.includes(sheet.id)}
+            onAccept={acceptContract} onClose={() => setSheet(null)} />
+        )}
+      </>
     );
   }
 
@@ -247,7 +256,7 @@ export default function GuildTestApp() {
   if (!run || !contract) {
     return (
       <GuildBoard profile={gp} contracts={dailyContracts} doneIds={doneIds}
-        onAccept={acceptContract} onOpenStash={() => setPhase("stash")} onOpenShop={() => setPhase("shop")} />
+        onOpen={setSheet} onOpenStash={() => setPhase("stash")} onOpenShop={() => setPhase("shop")} />
     );
   }
 
