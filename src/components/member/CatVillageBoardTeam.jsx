@@ -9,7 +9,7 @@ import {
   createBoardRoom, joinBoardRoom, subscribeBoardRoom, leaveBoardRoom, disbandBoardRoom,
   findReconnectableBoardRoom, startBoardRoom, roomRollAndMove,
   roomApplyBoardEffect, claimBoardSettle, claimBoardEvent, partyMultOf, subscribeOpenBoardRooms,
-  submitBoardShootScore, finalizeBoardShoot, clearRoomPending,
+  submitBoardShootScore, finalizeBoardShoot, clearRoomPending, kickBoardMember, forceAdvanceRoom,
 } from "../../lib/villageBoardTeamDb";
 import { ensureDailyDice, applyEventEffect, DAILY_DICE, applyBoardReward } from "../../lib/villageBoardDb";
 import { BOARD_LAYOUT, BOARD_SIZE, TILE_TYPES, BOARD_MODES, getModeTierCap, rollTileReward } from "../../lib/boardData";
@@ -123,6 +123,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
   const [animatedSeq, setAnimatedSeq] = useState(-1); // 同上（state，供 pending UI 閘門）
   const [pendingEventMsg, setPendingEventMsg] = useState(null); // 事件結果訊息，等全員確認後才跳
   const [confirmExit, setConfirmExit] = useState(false); // 返回鍵確認（房主按下去＝解散全房，不能手滑）
+  const [stuckLong, setStuckLong] = useState(false);     // 卡同一步超過 15 秒 → 才給房主解卡工具（避免動不動就踢人）
 
   const showToast = t => { setToast(t); setTimeout(() => setToast(null), 2400); };
 
@@ -133,7 +134,9 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
   const passedStep = mid => (room?.settleClaims?.[mid] || 0) >= curSeq || (room?.eventClaims?.[mid] || 0) >= curSeq;
   const hasPending = curSeq > 0 && ((room?.pendingSettle?.seq === curSeq) || (room?.pendingEvent?.seq === curSeq));
   const claimedN = activeMems.filter(([id]) => passedStep(id)).length;
-  const allPassed = !hasPending || activeMems.every(([id]) => passedStep(id));
+  // forcedSeq＝房主按過「強制推進」：這一步不再等任何人（斷線的人就是沒領到）
+  const forced = (room?.forcedSeq || 0) >= curSeq && curSeq > 0;
+  const allPassed = !hasPending || forced || activeMems.every(([id]) => passedStep(id));
   // 還沒領取/OK 的人名單（讓大家知道是誰卡住）
   const waitingNames = hasPending ? activeMems.filter(([id]) => !passedStep(id)).map(([id]) => room?.members?.[id]?.name || "隊員") : [];
 
@@ -211,6 +214,25 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     }, 700);
     return () => { clearTimeout(startT); if (stepIv) clearInterval(stepIv); if (landT) clearTimeout(landT); };
   }, [room?.lastMove?.seq]); // eslint-disable-line
+
+  // 被房主移出房間 → 立刻退回大廳（不然會一直看著一個自己已不在其中的房間）
+  useEffect(() => {
+    if (!room || !myId || room.status !== "active") return;
+    if (room.members && !room.members[myId]) {
+      showToast("你已被移出房間");
+      joinedRef.current = false;
+      setRoomId(null); setRoom(null);
+    }
+  }, [room?.members, myId, room?.status]); // eslint-disable-line
+
+  // 卡在同一步超過 15 秒 → 房主才看得到「移除隊員／強制推進」，避免網路慢就被踢
+  useEffect(() => {
+    const blocked = (!!room?.pendingShoot) || (hasPending && !allPassed);
+    if (!blocked) { setStuckLong(false); return; }
+    setStuckLong(false);
+    const t = setTimeout(() => setStuckLong(true), 15000);
+    return () => clearTimeout(t);
+  }, [room?.pendingShoot, hasPending, allPassed, curSeq]);
 
   // 動畫閘門的保險絲：claim/翻牌都要等 animatedSeq 追上 room.seq，
   // 但手機切到背景時 setInterval/setTimeout 會被瀏覽器節流甚至凍結 → 動畫走不完 →
@@ -547,7 +569,9 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
         <div className="text-amber-100/70 text-xs leading-relaxed mb-4">
           {isHost
             ? `你是房主，離開會直接解散房間，${Math.max(0, memberCount - 1)} 位隊友會一起被踢出，這局的進度不會保留。`
-            : "離開後這局就不算你的了。若房間還在，可以從大廳重新加入。"}
+            : room.status === "waiting"
+              ? "離開等待室後，可以再從大廳加入這間房。"
+              : <>⚠️ 遊戲已經開始，離開後<span className="text-red-300 font-black">無法再回到這一局</span>（重連只找得回還在名單內的房間）。</>}
         </div>
         <div className="flex gap-2">
           <button onClick={() => setConfirmExit(false)} className="flex-1 py-2.5 rounded-2xl bg-amber-400 text-slate-900 font-black text-sm active:scale-95">繼續遊戲</button>
@@ -606,6 +630,11 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
   const shootNames = shootWaiting ? (room.pendingShoot.shooters || []).map(id => room.members?.[id]?.name || "隊員") : [];
   const shootDone = shootWaiting ? Object.keys(room.pendingShoot.scores || {}).length : 0;
   const canRoll = isHost && !rolling && hostDice > 0 && allPassed && !shoot && !shootResult && !card && !animating && !room?.pendingShoot;
+  // 誰卡住了：射箭中＝還沒交分的射手；等領取＝還沒 claim 的隊員（房主自己不列，他不能踢自己）
+  const blockingList = (shootWaiting
+    ? (room.pendingShoot.shooters || []).filter(id => room.pendingShoot.scores?.[id] == null)
+    : hasPending && !allPassed ? activeMems.filter(([id]) => !passedStep(id)).map(([id]) => id) : []
+  ).filter(id => id !== myId).map(id => ({ id, name: room.members?.[id]?.name || "隊員" }));
 
   return (
     <div className="fixed inset-0 z-[200] flex flex-col items-center overflow-y-auto"
@@ -631,6 +660,30 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
               : ` · 加成×${partyMultOf(memberCount).toFixed(2)}`}
         </div>
       </div>
+
+      {/* 房主解卡工具：卡同一步 15 秒以上才出現（隊員關 App／斷線時，全隊會永遠互等）*/}
+      {isHost && stuckLong && (
+        <div className="w-full max-w-lg px-3 mb-1">
+          <div className="rounded-2xl bg-black/40 border border-red-400/25 px-3 py-2">
+            <div className="text-red-200/90 text-[11px] font-black mb-1.5">
+              ⏳ 卡住超過 15 秒{blockingList.length > 0 ? `：等 ${blockingList.map(m => m.name).join("、")}` : ""}
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {blockingList.map(m => (
+                <button key={m.id} onClick={() => kickBoardMember(roomId, myId, m.id).then(r => showToast(r.ok ? `已移除 ${m.name}` : r.reason || "移除失敗"))}
+                  className="rounded-xl bg-black/50 border border-red-400/40 px-2.5 py-1 text-red-300 text-[11px] font-black active:scale-95">
+                  移除 {m.name}
+                </button>
+              ))}
+              <button onClick={() => forceAdvanceRoom(roomId, myId).then(r => showToast(r.ok ? "已強制推進（沒完成的人這步就沒領到）" : r.reason || "推進失敗"))}
+                className="rounded-xl bg-amber-500/80 text-slate-900 px-2.5 py-1 text-[11px] font-black active:scale-95">
+                ⏭ 強制推進
+              </button>
+            </div>
+            <div className="text-amber-100/45 text-[10px] mt-1.5">移除＝把人請出這一局（遊戲中無法再加入，要等下一局）；強制推進＝不等了，他這步沒領到就沒領到，人還在房裡，下一步能繼續玩。</div>
+          </div>
+        </div>
+      )}
 
       <div className="w-full max-w-lg p-3">
         <div className="w-full rounded-[26px] p-2.5" style={{ background:"linear-gradient(145deg,#d4a017,#8a5a12)", boxShadow:"0 12px 34px rgba(0,0,0,.6), inset 0 0 0 3px rgba(253,230,138,.55), inset 0 0 0 6px rgba(120,53,15,.5)" }}>

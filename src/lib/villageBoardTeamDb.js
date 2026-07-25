@@ -96,6 +96,70 @@ export async function clearRoomPending(roomId, hostId) {
   } catch (e) { return { ok: false, reason: e?.message }; }
 }
 
+// ── 房主的兩個解卡工具（隊員斷線/關 App 時全隊會永遠互等）────────────
+// ⚠️ 共同前提：`allPassed` 要成立才推得動，而斷線的人不會再寫任何 claim。
+
+// ① 移除隊員：等同幫他按「離開」。若他正好是本回合被指派的射手，也要從 shooters
+//    移掉，否則 finalizeBoardShoot 永遠收不齊，換成踢人也解不了卡。
+export async function kickBoardMember(roomId, hostId, memberId) {
+  if (!memberId || memberId === hostId) return { ok: false, reason: "不能移除房主" };
+  try {
+    await runTransaction(db, async tx => {
+      const ref = doc(db, R, roomId);
+      const s = await tx.get(ref);
+      if (!s.exists() || s.data().hostId !== hostId) throw new Error("只有房主可移除隊員");
+      const room = s.data();
+      const upd = { [`members.${memberId}`]: deleteField(), updatedAt: serverTimestamp() };
+      const ps = room.pendingShoot;
+      if (ps?.shooters?.includes(memberId)) {
+        const shooters = ps.shooters.filter(id => id !== memberId);
+        const scores = { ...(ps.scores || {}) };
+        delete scores[memberId];
+        upd.pendingShoot = { ...ps, shooters, scores };
+      }
+      tx.update(ref, upd);
+    });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+// ② 強制推進：不等沒完成的人。哪一段卡住就推哪一段——
+//    卡在射箭 → 用「已交的分數」直接結算（沒交的不計）；卡在領取 → 記 forcedSeq，
+//    讓所有客戶端把這一步視為已通過。沒領到的人就是沒領到（作者拍板）。
+export async function forceAdvanceRoom(roomId, hostId) {
+  try {
+    let kind = "none";
+    await runTransaction(db, async tx => {
+      const ref = doc(db, R, roomId);
+      const s = await tx.get(ref);
+      if (!s.exists() || s.data().hostId !== hostId) throw new Error("只有房主可強制推進");
+      const room = s.data();
+      const ps = room.pendingShoot;
+      if (ps) {
+        const submitted = Object.values(ps.scores || {});
+        const avgScore = submitted.reduce((a, v) => a + (v.score || 0), 0) / (submitted.length || 1);
+        const avgProgress = submitted.reduce((a, v) => a + (v.progress || 0), 0) / (submitted.length || 1);
+        tx.update(ref, {
+          pendingSettle: {
+            seq: ps.seq, tileType: ps.tileType,
+            scoreRatio: submitted.length ? avgScore / 60 : 0,
+            threshold: ps.threshold || 0,
+            gatheringProgress: submitted.length ? avgProgress : 0,
+            partyMult: ps.partyMult || 1,
+          },
+          pendingShoot: null,
+          updatedAt: serverTimestamp(),
+        });
+        kind = "shoot";
+      } else {
+        tx.update(ref, { forcedSeq: room.seq || 0, updatedAt: serverTimestamp() });
+        kind = "claims";
+      }
+    });
+    return { ok: true, kind };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
 export async function leaveBoardRoom(roomId, memberId) {
   try { await updateDoc(doc(db, R, roomId), { [`members.${memberId}`]: deleteField() }); return { ok: true }; }
   catch (e) { return { ok: false, reason: e?.message }; }
