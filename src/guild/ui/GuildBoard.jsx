@@ -5,6 +5,7 @@
 // 所有圖都有 emoji fallback（見 GuildArt），圖沒生好也不會破版。
 import { rankUnlocks, canAcceptDanger, repNeededForDanger, nextRankInfo } from "../domain/guildRank";
 import { MASTER_LINES } from "../data/guildContractPool";
+import { currentTitle } from "../domain/guildTitles";
 import { sfxOpen } from "../../lib/sound";
 import { hallBg, paperBg, masterArt, rankBadge, bgLayer, ArtOrEmoji } from "./GuildArt";
 
@@ -23,7 +24,7 @@ const paperStyle = {
 };
 const dangerColor = d => (d >= 5 ? "#7f1d1d" : d >= 3 ? "#b45309" : "#3f6212");
 
-export default function GuildBoard({ profile, contracts, doneIds = [], onOpen, onOpenStash, onOpenShop, onOpenVault, onBack, onLegacy }) {
+export default function GuildBoard({ profile, contracts, doneIds = [], onOpen, onOpenStash, onOpenShop, onOpenVault, onOpenLicense, onBack, onLegacy }) {
   const rankInfo = nextRankInfo(profile.rep);
   const rank = rankInfo.current;
   const { maxDanger } = rankUnlocks(profile.rep);
@@ -32,6 +33,7 @@ export default function GuildBoard({ profile, contracts, doneIds = [], onOpen, o
   const allDone = openable.length > 0 && openable.every(c => doneIds.includes(c.id));
   const lines = MASTER_LINES[rank.id] || MASTER_LINES.apprentice;
   const junkCount = Object.values(profile.junkStock || {}).reduce((s, n) => s + n, 0);
+  const worn = currentTitle(profile);   // 配戴中的稱號（純名譽）
 
   return (
     <div style={{ minHeight: "100dvh", ...bgLayer(hallBg(), { overlay: "rgba(10,7,3,.62)" }), backgroundAttachment: "fixed", color: "#f1e7d5", padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -54,11 +56,15 @@ export default function GuildBoard({ profile, contracts, doneIds = [], onOpen, o
         </div>
       )}
 
-      {/* 冒險者證：階級徽章 + 聲望進度 */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, background: "rgba(12,8,4,.72)", border: `1px solid ${rank.color}55`, borderRadius: 14, padding: 10 }}>
+      {/* 冒險者證：階級徽章 + 稱號 + 聲望進度（點整張進冒險者證）*/}
+      <div onClick={() => { sfxOpen(); onOpenLicense?.(); }}
+        style={{ display: "flex", alignItems: "center", gap: 10, background: "rgba(12,8,4,.72)", border: `1px solid ${rank.color}55`, borderRadius: 14, padding: 10, cursor: onOpenLicense ? "pointer" : "default" }}>
         <ArtOrEmoji sources={[rankBadge(rank.id)]} emoji={rank.icon} size={44} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 900, color: rank.color }}>{rank.name}</div>
+          <div style={{ fontSize: 14, fontWeight: 900, color: rank.color }}>
+            {rank.name}
+            {worn && <span style={{ color: "#fcd34d", fontSize: 12 }}>・{worn.icon}{worn.name}</span>}
+          </div>
           <div style={{ height: 5, background: "rgba(255,255,255,.1)", borderRadius: 3, overflow: "hidden", margin: "4px 0 3px" }}>
             <div style={{ height: "100%", width: `${rankInfo.progressPct}%`, background: "linear-gradient(90deg,#fbbf24,#f59e0b)" }} />
           </div>
@@ -66,11 +72,14 @@ export default function GuildBoard({ profile, contracts, doneIds = [], onOpen, o
             🏅 {profile.rep}{rankInfo.next ? ` ／ 距 ${rankInfo.next.name} ${rankInfo.need}` : "（頂階）"}　🐾 {profile.catCoins}　可接 T1~T{maxDanger}
           </div>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }} onClick={e => e.stopPropagation()}>
           <button type="button" onClick={() => { sfxOpen(); onOpenStash(); }} style={{ ...iconBtn, background: "rgba(51,65,85,.85)" }}>🎒 倉庫</button>
           <button type="button" onClick={() => { sfxOpen(); onOpenShop(); }} style={{ ...iconBtn, background: "rgba(76,29,149,.85)" }}>🏪 商店</button>
           <button type="button" onClick={() => { sfxOpen(); onOpenVault?.(); }} style={{ ...iconBtn, background: "rgba(120,53,15,.85)" }}>
             🧺 雜貨{junkCount > 0 ? `（${junkCount}）` : ""}
+          </button>
+          <button type="button" onClick={() => { sfxOpen(); onOpenLicense?.(); }} style={{ ...iconBtn, background: "rgba(30,58,95,.85)" }}>
+            🎫 冒險者證
           </button>
         </div>
       </div>

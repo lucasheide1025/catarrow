@@ -23,6 +23,7 @@ import GuildLoadout from "./ui/GuildLoadout";
 import GuildStash from "./ui/GuildStash";
 import GuildShop from "./ui/GuildShop";
 import GuildVault from "./ui/GuildVault";
+import GuildLicense from "./ui/GuildLicense";
 
 const MOCK_MEMBER = { archerXP: 8000 };
 // 離線試玩（未登入直接開 ?guild）才用的假貓；登入後一律用 members/{id}/cats 的真貓
@@ -47,7 +48,7 @@ export default function GuildTestApp({ onBack, onLegacy }) {
   const [result, setResult] = useState(null);
   const [loot, setLoot] = useState(null);        // 只 roll 一次：顯示與入帳同一份
   const [grantMsg, setGrantMsg] = useState("");
-  const [phase, setPhase] = useState("board");   // board | loadout | battle | stash | shop | vault
+  const [phase, setPhase] = useState("board");   // board | loadout | battle | stash | shop | vault | license
   const [supplies, setSupplies] = useState({ food: 6, water: 6 });
   const [catRoster, setCatRoster] = useState(MOCK_CATS);
   const [rankUp, setRankUp] = useState(null);    // 這趟升階了 → 顯示橫幅
@@ -167,12 +168,19 @@ export default function GuildTestApp({ onBack, onLegacy }) {
     return <GuildVault member={member} profile={gp} onSell={sellJunk} onClose={closePanel} />;
   }
 
+  if (phase === "license") {
+    return (
+      <GuildLicense profile={gp} memberName={profile?.nickname || profile?.name}
+        onChange={changeProfile} onClose={closePanel} />
+    );
+  }
+
   if (phase === "board" && !result) {
     return (
       <>
         <GuildBoard profile={gp} contracts={dailyContracts} doneIds={doneIds}
           onOpen={setSheet} onOpenStash={() => setPhase("stash")} onOpenShop={() => setPhase("shop")}
-          onOpenVault={() => setPhase("vault")} onBack={onBack} onLegacy={onLegacy} />
+          onOpenVault={() => setPhase("vault")} onOpenLicense={() => setPhase("license")} onBack={onBack} onLegacy={onLegacy} />
         {sheet && (
           <GuildContractSheet contract={sheet} profile={gp} done={doneIds.includes(sheet.id)}
             onAccept={acceptContract} onClose={() => setSheet(null)} />
@@ -282,7 +290,7 @@ export default function GuildTestApp({ onBack, onLegacy }) {
     return (
       <GuildBoard profile={gp} contracts={dailyContracts} doneIds={doneIds}
         onOpen={setSheet} onOpenStash={() => setPhase("stash")} onOpenShop={() => setPhase("shop")}
-        onOpenVault={() => setPhase("vault")} onBack={onBack} onLegacy={onLegacy} />
+        onOpenVault={() => setPhase("vault")} onOpenLicense={() => setPhase("license")} onBack={onBack} onLegacy={onLegacy} />
     );
   }
 

@@ -32,6 +32,9 @@ export function emptyGuildProfile() {
     partyCats: null,      // 出戰貓（catId 陣列）。null = 還沒設定過→自動帶最強的；[] = 刻意不帶貓
     arrowsPerRound: 3,     // 一回合射幾箭（3 或 6，備包可改；6 箭補給消耗加倍）
     shards: 0,             // 公會裝碎片：分解重複裝備取得，用來強化主力裝（見 guildEnhance）
+    title: null,           // 配戴中的稱號 id（純名譽，零戰力加成，見 guildTitles）
+    salvagedCount: 0,      // 累計分解過幾件裝備（稱號用；分解本身不留紀錄就算不出來）
+    catEarned: 0,          // 累計賺到的 CAT幣（稱號用；現有的 catCoins 會被花掉，算不出「總共賺多少」）
     junkStock: {},         // 雜貨倉庫 { [junkId]: qty }——**不自動賣**，玩家自己決定何時賣
     contracts: null,      // 今日委託完成紀錄 { dateKey, done:[contractId] }；跨日自動換板（見 guildContracts）
     junkSeen: {},
@@ -63,6 +66,9 @@ export function normalizeGuildProfile(raw) {
       .filter(i => i && GUILD_EQUIP_ARCHETYPES[i.archetypeId])
       .map(i => ({ uid: i.uid, at: i.at || 0, ...normItem(i) })),
     shards: Math.max(0, Math.floor(Number(raw.shards) || 0)),
+    title: typeof raw.title === "string" ? raw.title : null,
+    salvagedCount: Math.max(0, Math.floor(Number(raw.salvagedCount) || 0)),
+    catEarned: Math.max(0, Math.floor(Number(raw.catEarned) || 0)),
     partyCats: Array.isArray(raw.partyCats) ? raw.partyCats.filter(id => typeof id === "string") : null,
     arrowsPerRound: Number(raw.arrowsPerRound) === 6 ? 6 : 3,
     contracts: raw.contracts?.dateKey
@@ -146,7 +152,12 @@ export function applyLootToProfile(profile, loot, opts = {}) {
 
   const repGained = danger * REP_PER_DANGER;
   return {
-    profile: { ...p, catCoins: p.catCoins + (loot.catCoins || 0), rep: p.rep + repGained, junkSeen, junkStock, stash, expeditions },
+    profile: {
+      ...p,
+      catCoins: p.catCoins + (loot.catCoins || 0),
+      catEarned: p.catEarned + (loot.catCoins || 0),   // 累計賺取（稱號用，花掉也不會減）
+      rep: p.rep + repGained, junkSeen, junkStock, stash, expeditions,
+    },
     repGained,
     coinsGained: loot.coins || 0,
     stashFull,
@@ -174,7 +185,7 @@ export function sellJunkFromStock(profile, sell = {}, valuationMult = 1) {
     sold.push({ id, name: JUNK_BY_ID[id].name, qty: n });
   }
   return {
-    profile: { ...p, junkStock: stock, catCoins: p.catCoins + catCoins },   // 金幣走主線 members.coins，由 db 層寫
+    profile: { ...p, junkStock: stock, catCoins: p.catCoins + catCoins, catEarned: p.catEarned + catCoins },   // 金幣走主線 members.coins，由 db 層寫
     coins, catCoins, sold,
   };
 }

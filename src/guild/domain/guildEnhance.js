@@ -92,7 +92,12 @@ export function salvageEquip(profile, uid) {
   const gained = salvageValue(item);
   return {
     ok: true,
-    profile: { ...p, stash: p.stash.filter(i => i.uid !== uid), shards: p.shards + gained },
+    profile: {
+      ...p,
+      stash: p.stash.filter(i => i.uid !== uid),
+      shards: p.shards + gained,
+      salvagedCount: p.salvagedCount + 1,   // 稱號「裝備狂人」要用
+    },
     gained,
   };
 }
