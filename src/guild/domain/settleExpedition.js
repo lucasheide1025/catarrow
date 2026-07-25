@@ -18,13 +18,29 @@ import { junkPoolFor, drawJunk } from "../data/guildJunkCatalog";
 import { GUILD_EQUIP_ARCHETYPES, GRADES, AFFIX_IDS } from "../data/guildEquipCatalog";
 import { EXPANSION_MATERIALS } from "../../lib/monsterExpansionCatalog";
 import { deriveGuildCombat } from "./guildStats";
+import { shootingRatio } from "./expeditionFlow";
 
 const TIER_INDEX = { common: 1, rare: 2, elite: 3, fierce: 4, boss: 5, mythic: 6 };
 
 // 每隻怪的擴充材料掉落量（作者要求 2~3 倍量）
 const MAT_PER_MONSTER = [2, 3];
 
-const EMPTY = { won: false, materials: [], legacyMaterials: [], junk: [], equipDrops: [], coins: 0, catCoins: 0 };
+const EMPTY = { won: false, materials: [], legacyMaterials: [], junk: [], equipDrops: [], coins: 0, catCoins: 0, accuracy: null };
+
+// ── 射擊表現 → 掉落加成（這是射箭遊戲：射得準就該掉得好）──
+// ratio = 整趟命中率（總得分/總滿分）。全 M ≈ 0.7 倍、平均 8 分 ≈ 1.0 倍、全 X = 1.35 倍。
+// 另外高命中會**多一次裝備判定**，讓「射得好」的回饋看得見。
+export const ACCURACY_BANDS = Object.freeze([
+  { min: 0.90, band: "S", label: "神射", dropMult: 1.35, extraRoll: true },
+  { min: 0.78, band: "A", label: "優異", dropMult: 1.20, extraRoll: true },
+  { min: 0.62, band: "B", label: "穩健", dropMult: 1.05, extraRoll: false },
+  { min: 0.45, band: "C", label: "普通", dropMult: 0.92, extraRoll: false },
+  { min: 0.00, band: "D", label: "生疏", dropMult: 0.75, extraRoll: false },
+]);
+
+export function accuracyBand(ratio) {
+  return ACCURACY_BANDS.find(b => ratio >= b.min) || ACCURACY_BANDS[ACCURACY_BANDS.length - 1];
+}
 
 // 該怪對應的擴充材料池：同族、同階、同 kind（雜兵 normal／小王 miniBoss／大王 boss）
 function materialPoolFor(monster) {
@@ -42,7 +58,9 @@ export function settleExpedition(state, opts = {}) {
   const d = state.derived || deriveGuildCombat(state.guildStats);
   const danger = state.expedition?.danger || 1;
   const cfg = LOOT_BY_DANGER[danger] || LOOT_BY_DANGER[1];
-  const lukDrop = 1 + (d.dropBonusPct || 0);
+  const ratio = shootingRatio(state);
+  const acc = accuracyBand(ratio);
+  const lukDrop = (1 + (d.dropBonusPct || 0)) * acc.dropMult;   // LUK × 射擊表現
 
   // 擊敗的怪（勝利＝全滅所有波）
   const defeated = (state.expedition?.waves || []).flatMap(w => w.monsters || []);
@@ -83,9 +101,12 @@ export function settleExpedition(state, opts = {}) {
   const coins = cfg.coinBase;
   const catCoins = cfg.catCoinBase;
 
-  // ④ 公會專屬裝備掉落（品級由危險度加權）
+  // ④ 公會專屬裝備掉落（品級由危險度加權）。
+  //    判定次數：基礎 1 次 ＋ 高命中(A/S) 1 次 ＋ 有首領的委託(danger≥3) 1 次
+  //    → 一趟最多 3 次，「射得準」與「敢接難的」都看得到回報。
   const equipDrops = [];
-  if (rand() < Math.min(0.95, cfg.equipChance * lukDrop)) {
+  const rollEquip = () => {
+    if (rand() >= Math.min(0.98, cfg.equipChance * lukDrop)) return;
     const archIds = Object.keys(GUILD_EQUIP_ARCHETYPES);
     const archetypeId = archIds[Math.floor(rand() * archIds.length)];
     const gi = Math.min(GRADES.length - 1, Math.floor(rand() * (danger + 1)));
@@ -98,7 +119,13 @@ export function settleExpedition(state, opts = {}) {
       else break;
     }
     equipDrops.push({ archetypeId, grade: GRADES[gi], affixes });
-  }
+  };
+  rollEquip();
+  if (acc.extraRoll) rollEquip();                                          // 射得好，多一次
+  if (defeated.some(m => m.encounter && m.encounter !== "normal")) rollEquip(); // 首領委託，多一次
 
-  return { won: true, materials, legacyMaterials, junk, equipDrops, coins, catCoins };
+  return {
+    won: true, materials, legacyMaterials, junk, equipDrops, coins, catCoins,
+    accuracy: { ratio, band: acc.band, label: acc.label, dropMult: acc.dropMult, extraRoll: acc.extraRoll },
+  };
 }

@@ -199,6 +199,13 @@ export default function GuildTestApp({ onBack, onLegacy }) {
         {loot && won && (
           <div style={{ width: "100%", maxWidth: 340, background: "rgba(0,0,0,.35)", border: "1px solid rgba(251,191,36,.3)", borderRadius: 12, padding: 12, fontSize: 13, textAlign: "left", display: "flex", flexDirection: "column", gap: 6 }}>
             <div style={{ color: "#fbbf24", fontWeight: 900 }}>💰 {loot.coins} 金幣　🐾 {loot.catCoins} CAT幣</div>
+            {loot.accuracy && (
+              <div style={{ color: loot.accuracy.dropMult >= 1.2 ? "#6ee7b7" : loot.accuracy.dropMult >= 1 ? "#93c5fd" : "#fca5a5" }}>
+                🎯 射擊評價 <b>{loot.accuracy.band}・{loot.accuracy.label}</b>
+                （命中 {Math.round(loot.accuracy.ratio * 100)}%　掉寶 ×{loot.accuracy.dropMult.toFixed(2)}
+                {loot.accuracy.extraRoll ? "　＋額外掉落判定" : ""}）
+              </div>
+            )}
             {loot.materials.length > 0 && (
               <div style={{ color: "#a7f3d0" }}>
                 📦 材料：{loot.materials.map(m => `${m.name}×${m.qty}`).join("、")}

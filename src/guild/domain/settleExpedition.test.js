@@ -1,5 +1,6 @@
 // src/guild/domain/settleExpedition.test.js
-import { settleExpedition } from "./settleExpedition";
+import { settleExpedition, accuracyBand, ACCURACY_BANDS } from "./settleExpedition";
+import { createExpeditionState, processRound, shootingRatio } from "./expeditionFlow";
 import { deriveGuildCombat } from "./guildStats";
 import { evaluateJunk, GUILD_JUNK, JUNK_BY_ID } from "../data/guildJunkCatalog";
 import { EXPANSION_MATERIALS } from "../../lib/monsterExpansionCatalog";
@@ -103,5 +104,53 @@ describe("settleExpedition — 凱旋結算", () => {
     const low = evaluateJunk(GUILD_JUNK[5], 1);
     const high = evaluateJunk(GUILD_JUNK[5], 1.5);
     expect(high.coins).toBeGreaterThan(low.coins);
+  });
+});
+
+describe("射擊表現 → 掉落（這是射箭遊戲，射得準要有回報）", () => {
+  const monster = { instanceId: "m1", monsterId: "x", name: "怪", icon: "👻", family: "ghost", tier: "common", tierIndex: 1, encounter: "normal", maxHp: 99999, hp: 99999, atk: 1, def: 0, distance: 6 };
+  const stats = { hp: 900, atk: 40, agi: 0, def: 0, vit: 0, luk: 0 };
+  const exp = { danger: 1, families: ["ghost"], totalWaves: 1, waves: [{ monsters: [monster] }] };
+
+  const shootAll = score => {
+    let st = createExpeditionState(exp, stats, { food: 20, water: 20 }, [], { arrowsPerRound: 3 });
+    st = processRound(st, [0, 1, 2].map(() => ({ targetInstanceId: "m1", score })), { rand: () => 0.99 });
+    return st;
+  };
+
+  test("命中率算得出來（全 X = 100%、全 M = 0%）", () => {
+    expect(shootingRatio(shootAll(11))).toBe(1);
+    expect(shootingRatio(shootAll(0))).toBe(0);
+    expect(shootingRatio(createExpeditionState(exp, stats, { food: 9, water: 9 }, []))).toBe(0);  // 還沒射
+  });
+
+  test("評價分帶：神射掉寶倍率 > 生疏", () => {
+    expect(accuracyBand(1).band).toBe("S");
+    expect(accuracyBand(0).band).toBe("D");
+    expect(accuracyBand(1).dropMult).toBeGreaterThan(accuracyBand(0).dropMult);
+    // 分帶門檻要遞減排列，find 才會拿到正確的那一段
+    for (let i = 1; i < ACCURACY_BANDS.length; i++) {
+      expect(ACCURACY_BANDS[i].min).toBeLessThan(ACCURACY_BANDS[i - 1].min);
+    }
+  });
+
+  test("神射比生疏更容易掉裝，而且多一次判定", () => {
+    const won = st => ({ ...st, status: "won", expedition: exp });
+    const good = settleExpedition(won(shootAll(11)), { rand: () => 0.3 });
+    const bad = settleExpedition(won(shootAll(0)), { rand: () => 0.3 });
+    expect(good.accuracy.band).toBe("S");
+    expect(bad.accuracy.band).toBe("D");
+    expect(good.accuracy.extraRoll).toBe(true);
+    expect(bad.accuracy.extraRoll).toBe(false);
+    expect(good.equipDrops.length).toBeGreaterThanOrEqual(bad.equipDrops.length);
+  });
+
+  test("首領委託多一次裝備判定", () => {
+    const bossExp = { danger: 5, families: ["ghost"], totalWaves: 1,
+      waves: [{ monsters: [{ ...monster, tier: "boss", tierIndex: 5, encounter: "boss" }] }] };
+    let st = createExpeditionState(bossExp, stats, { food: 20, water: 20 }, [], { arrowsPerRound: 3 });
+    st = processRound(st, [{ targetInstanceId: "m1", score: 11 }], { rand: () => 0.99 });
+    const r = settleExpedition({ ...st, status: "won", expedition: bossExp }, { rand: () => 0.1 });
+    expect(r.equipDrops.length).toBeGreaterThanOrEqual(2);   // 基礎 + 神射 + 首領
   });
 });

@@ -23,6 +23,7 @@ function arrowDamage(score, atk, def, crit) {
 // 一回合可射幾箭：3 或 6（跟主線地下城/組隊的 ARROWS_OPTIONS 同規格）。
 // ⚠️ 平衡：6 箭清場快一倍，若補給照舊消耗就變成「一律選 6」。所以**補給消耗隨箭數等比放大**
 //   （6 箭 = 2 倍消耗），變成真正的取捨：快速清場 vs 撐得久。
+export const MAX_ARROW_SCORE = 11;   // X = 11 分（跟主線 score.js 同規格）
 export const GUILD_ARROWS_OPTIONS = Object.freeze([3, 6]);
 export const DEFAULT_GUILD_ARROWS = 3;
 const BASE_ARROWS = 3;
@@ -36,6 +37,8 @@ export function createExpeditionState(expedition, guildStats, supplies = { food:
   const derived = deriveGuildCombat(guildStats);
   return {
     arrowsPerRound: normalizeArrowsPerRound(opts.arrowsPerRound),
+    // 整趟的射擊表現：命中越準，結算掉落越好（這是射箭遊戲，射得準就該有回報）
+    shotStats: { count: 0, score: 0 },
     expedition,
     guildStats,
     derived,
@@ -60,8 +63,14 @@ export function processRound(state, shots = [], opts = {}) {
     ...state,
     monsters: state.monsters.map(m => ({ ...m })),
     supplies: { ...state.supplies },
+    shotStats: { ...(state.shotStats || { count: 0, score: 0 }) },
     log: [],
   };
+  // 累計射擊表現（含射空的：對著已死目標的箭也是射出去的箭）
+  for (const shot of shots) {
+    s.shotStats.count += 1;
+    s.shotStats.score += Math.max(0, Math.min(MAX_ARROW_SCORE, Number(shot?.score) || 0));
+  }
   const d = s.derived;
 
   // 1. 玩家射箭
@@ -133,6 +142,13 @@ export function processRound(state, shots = [], opts = {}) {
     s.lostReason = starving ? "補給耗盡＋力竭，強迫撤退" : "陣亡";
   }
   return s;
+}
+
+// 整趟命中率（0~1）：總得分 ÷ 總滿分。沒射過箭 → 0（跳過回合不會白賺加成）
+export function shootingRatio(state) {
+  const st = state?.shotStats || { count: 0, score: 0 };
+  if (!st.count) return 0;
+  return Math.max(0, Math.min(1, st.score / (st.count * MAX_ARROW_SCORE)));
 }
 
 // 目前可鎖定的存活目標（畫面用，≤4 由 rollExpedition 保證）
