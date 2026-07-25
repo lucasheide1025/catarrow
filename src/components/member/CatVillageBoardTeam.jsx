@@ -122,6 +122,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
   const animatedSeqRef = useRef(-1);            // 已播完跟隨動畫的 lastMove.seq
   const [animatedSeq, setAnimatedSeq] = useState(-1); // 同上（state，供 pending UI 閘門）
   const [pendingEventMsg, setPendingEventMsg] = useState(null); // 事件結果訊息，等全員確認後才跳
+  const [confirmExit, setConfirmExit] = useState(false); // 返回鍵確認（房主按下去＝解散全房，不能手滑）
 
   const showToast = t => { setToast(t); setTimeout(() => setToast(null), 2400); };
 
@@ -369,6 +370,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     if (res.ok) setRoomId(res.roomId); else { joinedRef.current = false; setErr(res.reason || "加入失敗"); }
   }
   async function exitRoom() {
+    setConfirmExit(false);
     joinedRef.current = false;
     if (isHost) { await disbandBoardRoom(roomId, myId).catch(() => {}); }
     else { await leaveBoardRoom(roomId, myId).catch(() => {}); }
@@ -536,6 +538,27 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     );
   }
 
+  // 返回確認彈窗（等待室與遊戲中共用）。房主與隊員的後果完全不同，文案要講清楚。
+  const exitDialog = confirmExit ? (
+    <div className="fixed inset-0 z-[240] flex items-center justify-center p-6" style={{ background: "rgba(0,0,0,.72)" }}>
+      <div className="w-full max-w-xs rounded-3xl border border-amber-500/30 p-5 text-center" style={{ background: "linear-gradient(160deg,#2a1a0c,#150c05)" }}>
+        <div className="text-4xl mb-2">{isHost ? "⚠️" : "🚪"}</div>
+        <div className="text-amber-200 font-black text-base mb-1">{isHost ? "解散整間房間？" : "確定要離開？"}</div>
+        <div className="text-amber-100/70 text-xs leading-relaxed mb-4">
+          {isHost
+            ? `你是房主，離開會直接解散房間，${Math.max(0, memberCount - 1)} 位隊友會一起被踢出，這局的進度不會保留。`
+            : "離開後這局就不算你的了。若房間還在，可以從大廳重新加入。"}
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => setConfirmExit(false)} className="flex-1 py-2.5 rounded-2xl bg-amber-400 text-slate-900 font-black text-sm active:scale-95">繼續遊戲</button>
+          <button onClick={exitRoom} className="flex-1 py-2.5 rounded-2xl bg-black/40 border border-red-400/40 text-red-300 font-black text-sm active:scale-95">
+            {isHost ? "解散" : "離開"}
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   // ── 等待室 ──
   if (room.status === "waiting") {
     const mems = Object.entries(room.members || {}).filter(([, mm]) => mm);
@@ -544,7 +567,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
       <div className="fixed inset-0 z-[200] overflow-y-auto" style={{ backgroundColor:"#140a04", backgroundImage:`linear-gradient(rgba(18,10,4,0.85),rgba(12,7,3,0.94)), url(${ASSET}/board_bg.webp)`, backgroundSize:"cover" }}>
         <div className="w-full max-w-lg mx-auto p-4">
           <div className="flex items-center justify-between mb-4">
-            <button onClick={exitRoom} className="w-9 h-9 rounded-full bg-black/40 text-amber-200 font-black">←</button>
+            <button onClick={() => setConfirmExit(true)} className="w-9 h-9 rounded-full bg-black/40 text-amber-200 font-black">←</button>
             <div className="text-amber-100 font-black">⏳ 組隊等待室</div>
             <div className="rounded-xl bg-amber-500/20 border border-amber-400/40 px-2.5 py-1 text-amber-200 text-xs font-black">🎲 {hostDice}</div>
           </div>
@@ -571,6 +594,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
             <div className="text-center text-amber-200/70 text-sm py-3 rounded-2xl bg-black/20">等待房主開始…</div>
           )}
         </div>
+        {exitDialog}
       </div>
     );
   }
@@ -587,7 +611,8 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     <div className="fixed inset-0 z-[200] flex flex-col items-center overflow-y-auto"
       style={{ backgroundColor:"#140a04", backgroundImage:`linear-gradient(rgba(18,10,4,0.72),rgba(12,7,3,0.9)), url(${ASSET}/board_bg.webp)`, backgroundSize:"cover", backgroundPosition:"center" }}>
       <div className="w-full max-w-lg flex items-center justify-between px-4 py-3">
-        <button onClick={exitRoom} className="w-9 h-9 rounded-full bg-black/40 text-amber-200 font-black">←</button>
+        {/* 返回一律先確認：房主＝解散全房、隊員＝退出這局，兩者都不能手滑 */}
+        <button onClick={() => setConfirmExit(true)} className="w-9 h-9 rounded-full bg-black/40 text-amber-200 font-black">←</button>
         <div className="text-amber-100 font-black text-sm">👥 房號 {room.code}・{memberCount}人</div>
         <div className="flex items-center gap-1.5">
           {/* 卡住時不用重整頁面的逃生門（重整會做的事，這顆按鈕都做） */}
@@ -794,6 +819,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
           )}
         </div>
       )}
+      {exitDialog}
     </div>
   );
 }
