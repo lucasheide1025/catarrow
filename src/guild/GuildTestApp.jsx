@@ -35,7 +35,7 @@ function newRun(contract) {
   return { exp: rollExpedition({ id: contract.id, danger: contract.danger, family: contract.family }), key: Date.now() };
 }
 
-export default function GuildTestApp({ onBack }) {
+export default function GuildTestApp({ onBack, onLegacy }) {
   const { profile, loading } = useAuth();
   const memberId = profile?.id || null;
   const member = profile || MOCK_MEMBER;
@@ -165,7 +165,7 @@ export default function GuildTestApp({ onBack }) {
       <>
         <GuildBoard profile={gp} contracts={dailyContracts} doneIds={doneIds}
           onOpen={setSheet} onOpenStash={() => setPhase("stash")} onOpenShop={() => setPhase("shop")}
-          onOpenVault={() => setPhase("vault")} onBack={onBack} />
+          onOpenVault={() => setPhase("vault")} onBack={onBack} onLegacy={onLegacy} />
         {sheet && (
           <GuildContractSheet contract={sheet} profile={gp} done={doneIds.includes(sheet.id)}
             onAccept={acceptContract} onClose={() => setSheet(null)} />
@@ -274,7 +274,7 @@ export default function GuildTestApp({ onBack }) {
     return (
       <GuildBoard profile={gp} contracts={dailyContracts} doneIds={doneIds}
         onOpen={setSheet} onOpenStash={() => setPhase("stash")} onOpenShop={() => setPhase("shop")}
-        onOpenVault={() => setPhase("vault")} onBack={onBack} />
+        onOpenVault={() => setPhase("vault")} onBack={onBack} onLegacy={onLegacy} />
     );
   }
 

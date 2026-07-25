@@ -23,7 +23,7 @@ const paperStyle = {
 };
 const dangerColor = d => (d >= 5 ? "#7f1d1d" : d >= 3 ? "#b45309" : "#3f6212");
 
-export default function GuildBoard({ profile, contracts, doneIds = [], onOpen, onOpenStash, onOpenShop, onOpenVault, onBack }) {
+export default function GuildBoard({ profile, contracts, doneIds = [], onOpen, onOpenStash, onOpenShop, onOpenVault, onBack, onLegacy }) {
   const rankInfo = nextRankInfo(profile.rep);
   const rank = rankInfo.current;
   const { maxDanger } = rankUnlocks(profile.rep);
@@ -36,11 +36,22 @@ export default function GuildBoard({ profile, contracts, doneIds = [], onOpen, o
   return (
     <div style={{ minHeight: "100dvh", ...bgLayer(hallBg(), { overlay: "rgba(10,7,3,.62)" }), backgroundAttachment: "fixed", color: "#f1e7d5", padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
 
-      {onBack && (
-        <button type="button" onClick={() => { sfxOpen(); onBack(); }}
-          style={{ alignSelf: "flex-start", padding: "6px 12px", borderRadius: 9, border: "1px solid rgba(251,191,36,.25)", background: "rgba(12,8,4,.72)", color: "#fde68a", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
-          ← 返回冒險
-        </button>
+      {(onBack || onLegacy) && (
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {onBack && (
+            <button type="button" onClick={() => { sfxOpen(); onBack(); }}
+              style={{ padding: "6px 12px", borderRadius: 9, border: "1px solid rgba(251,191,36,.25)", background: "rgba(12,8,4,.72)", color: "#fde68a", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
+              ← 返回冒險
+            </button>
+          )}
+          {/* 教練專用：舊公會的懸賞任務後台還在運作，留一顆切換鍵 */}
+          {onLegacy && (
+            <button type="button" onClick={() => { sfxOpen(); onLegacy(); }}
+              style={{ marginLeft: "auto", padding: "6px 12px", borderRadius: 9, border: "1px solid rgba(148,163,184,.3)", background: "rgba(30,41,59,.8)", color: "#cbd5e1", fontSize: 11, fontWeight: 800, cursor: "pointer" }}>
+              🗂️ 舊公會（懸賞）
+            </button>
+          )}
+        </div>
       )}
 
       {/* 冒險者證：階級徽章 + 聲望進度 */}

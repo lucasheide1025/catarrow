@@ -201,6 +201,7 @@ export default function MemberApp() {
   const [certRecords,   setCertRecords]   = useState([]);   // 年度檢定紀錄（成就偵測用）
   const [dexUnlockToast, setDexUnlockToast] = useState(null); // App 層成就解鎖提示
   const [dexSeenTick,   setDexSeenTick]   = useState(0);    // 圖鑑看過後 bump，重算紅點
+  const [guildLegacy, setGuildLegacy] = useState(false); // 教練切回舊公會（懸賞後台）
   const [questCtx,     setQuestCtx]      = useState(null); // 公會任務導航上下文
   const [fromGuild,    setFromGuild]     = useState(false); // 是否從公會進入打怪
   const [specialAlert, setSpecialAlert]  = useState(null);  // 緊急任務浮動通知
@@ -846,14 +847,20 @@ export default function MemberApp() {
         {page==="cats"        && <CatCollection onBack={()=>setPage("inventory-hub")} onOpenBook={()=>setPage("catbook")} onOpenForge={()=>{ setGachaInitTab("forge"); setPage("gacha"); }}/>}
         {page==="catbook"     && <CatStoryBook  onBack={()=>setPage("cats")}/>}
         {page==="story"       && <StoryBook     onBack={()=>setPage("inventory-hub")}/>}
-        {page==="guild"       && (role === "admin" ? <AdventurerGuild
-          onBack={()=>{ setQuestCtx(null); setPage("adventure-hub"); }}
+        {/* 冒險者公會（2026-07-25 全新遠征上線）：
+            所有人（含教練）預設進新公會；教練另有一顆按鈕切回舊公會，
+            因為後台懸賞任務流程（handleGuildNavigate/questCtx）還接在舊元件上。
+            questCtx 有值時（從懸賞任務跳回來）強制走舊公會，不然任務結算會斷。*/}
+        {page==="guild"       && ((role === "admin" && (guildLegacy || questCtx)) ? <AdventurerGuild
+          onBack={()=>{ setQuestCtx(null); setGuildLegacy(false); setPage("adventure-hub"); }}
           onNavigate={handleGuildNavigate}
           questCtx={questCtx?.completed ? null : questCtx}
           onQuestCtxClear={()=>setQuestCtx(null)}
         /> : (
-          /* 冒險者公會遠征：2026-07-25 正式開放給射手（原本是「改建中」擋著）*/
-          <GuildExpedition onBack={()=>setPage("adventure-hub")} />
+          <GuildExpedition
+            onBack={()=>setPage("adventure-hub")}
+            onLegacy={role === "admin" ? () => setGuildLegacy(true) : undefined}
+          />
         ))}
         {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom} onBack={()=>setPage("adventure-hub")} />}
         {page==="party-quest" && partyRoomId && (
