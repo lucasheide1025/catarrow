@@ -16,6 +16,7 @@ import { db } from "../../lib/firebase";
 import { addMaterials } from "../../lib/db";
 import { normalizeGuildProfile, applyLootToProfile, expandLootMaterials } from "../domain/guildRewards";
 import { purchaseFromShop } from "../domain/guildShopPurchase";
+import { markContractDone } from "../domain/guildContracts";
 
 const C_GUILD = "guildProfiles";
 
@@ -28,6 +29,7 @@ const toDoc = p => ({
   equipped: p.equipped,
   stash: p.stash,
   partyCats: p.partyCats,
+  contracts: p.contracts,
   junkSeen: p.junkSeen,
   expeditions: p.expeditions,
   updatedAt: serverTimestamp(),
@@ -86,6 +88,8 @@ export async function buyGuildShopItem(memberId, profile, itemId) {
 export async function grantExpeditionRewards(memberId, loot, opts = {}) {
   const current = opts.profile !== undefined ? opts.profile : await loadGuildProfile(memberId);
   const applied = applyLootToProfile(current, loot, { danger: opts.danger || 1 });
+  // 委託結案：勝敗都鎖同一張（企劃拍板——失敗也算接過了，當天不能重刷）
+  if (opts.contractId) applied.profile = markContractDone(applied.profile, opts.contractId, opts.dateKey);
   const materials = loot?.won ? expandLootMaterials(loot.materials) : [];
 
   // 未登入（?guild 直接開）→ 只回傳算好的結果，讓畫面照樣試玩，不打 Firestore

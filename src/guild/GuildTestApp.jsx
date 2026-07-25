@@ -2,7 +2,7 @@
 // 冒險者公會「戰鬥雛形」測試殼。入口：網址帶 ?guild（隱藏測試用）。
 // 已登入 → 讀真存檔（guildProfiles/{memberId}），結算真的發獎（CAT幣/聲望/公會裝/材料/金幣）。
 // 未登入（直接開 ?guild）→ 離線試玩：假 member + 起手裝，一切照跑但不寫 Firestore。
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { rollExpedition } from "./domain/rollExpedition";
 import { calcGuildExpeditionStats, STAT_META } from "./domain/guildStats";
@@ -10,10 +10,11 @@ import { settleExpedition } from "./domain/settleExpedition";
 import { normalizeGuildProfile } from "./domain/guildRewards";
 import { buildCatRoster, pickPartyCats, togglePartyCat } from "./domain/guildCats";
 import { subscribeMyCats } from "../lib/catDb";
-import { nextRankInfo, canAcceptDanger, repNeededForDanger } from "./domain/guildRank";
+import { nextRankInfo } from "./domain/guildRank";
+import { rollDailyContracts, contractsStateFor, todayKey } from "./domain/guildContracts";
 import { loadGuildProfile, saveGuildProfile, grantExpeditionRewards, buyGuildShopItem } from "./db/guildDb";
-import { DANGER_META } from "./domain/rollExpedition";
 import GuildBattle from "./ui/GuildBattle";
+import GuildBoard from "./ui/GuildBoard";
 import GuildLoadout from "./ui/GuildLoadout";
 import GuildStash from "./ui/GuildStash";
 import GuildShop from "./ui/GuildShop";
@@ -25,8 +26,9 @@ const MOCK_CATS = [
   { id: "cat_b", name: "橘子（測試）", icon: "🐈", typeLabel: "全能型", level: 8, atk: 22, def: 4 },
 ];
 
-function newRun(danger) {
-  return { exp: rollExpedition({ danger, family: "ghost" }), key: Date.now() };
+// 一趟遠征 = 一張委託（委託決定族群與危險度）
+function newRun(contract) {
+  return { exp: rollExpedition({ id: contract.id, danger: contract.danger, family: contract.family }), key: Date.now() };
 }
 
 export default function GuildTestApp() {
@@ -35,15 +37,19 @@ export default function GuildTestApp() {
   const member = profile || MOCK_MEMBER;
 
   const [gp, setGp] = useState(null);            // 公會存檔（null = 載入中）
-  const [danger, setDanger] = useState(1);
-  const [run, setRun] = useState(() => newRun(1));
+  const [contract, setContract] = useState(null); // 目前接下的委託
+  const [run, setRun] = useState(null);
   const [result, setResult] = useState(null);
   const [loot, setLoot] = useState(null);        // 只 roll 一次：顯示與入帳同一份
   const [grantMsg, setGrantMsg] = useState("");
-  const [phase, setPhase] = useState("loadout"); // loadout | battle | stash | shop
+  const [phase, setPhase] = useState("board");   // board | loadout | battle | stash | shop
   const [supplies, setSupplies] = useState({ food: 6, water: 6 });
   const [catRoster, setCatRoster] = useState(MOCK_CATS);
   const grantedRef = useRef(null);               // 一趟只請領一次
+
+  // 每日委託：同一天同一個人固定同一批（重整不會換，見 guildContracts）
+  const dateKey = todayKey();
+  const dailyContracts = useMemo(() => rollDailyContracts({ dateKey, memberId: memberId || "guest" }), [dateKey, memberId]);
 
   // 載入存檔（auth 還在解析時先不載，免得用離線存檔覆蓋真存檔）
   useEffect(() => {
@@ -64,19 +70,28 @@ export default function GuildTestApp() {
 
   // 結算入帳：settleExpedition 有隨機性，只能 roll 這一次
   useEffect(() => {
-    if (!result || !gp || grantedRef.current === run.key) return;
+    if (!result || !gp || !run || grantedRef.current === run.key) return;
     grantedRef.current = run.key;
     const rolled = result.status === "won" ? settleExpedition(result) : { won: false, materials: [], junk: [], equipDrops: [], coins: 0, catCoins: 0 };
     setLoot(rolled);
-    grantExpeditionRewards(memberId, rolled, { danger, profile: gp }).then(res => {
+    grantExpeditionRewards(memberId, rolled, {
+      danger: contract?.danger || 1, profile: gp,
+      contractId: contract?.id, dateKey,   // 勝敗都把這張委託結案（當天不能重刷）
+    }).then(res => {
       setGp(res.profile);
       if (res.offline) setGrantMsg("（未登入：離線試玩，未存檔）");
       else if (!res.ok) setGrantMsg(`⚠️ 入帳失敗：${res.reason || "請確認 Firestore 規則已貼上"}`);
       else if (rolled.won) setGrantMsg(`✅ 已入帳　聲望 +${res.repGained}${res.stashFull ? "　⚠️倉庫已滿，裝備沒收進去" : ""}`);
     });
-  }, [result, gp, run.key, memberId, danger]);
+  }, [result, gp, run, memberId, contract, dateKey]); // eslint-disable-line
 
-  const restart = d => { setResult(null); setLoot(null); setGrantMsg(""); setDanger(d); setRun(newRun(d)); setPhase("loadout"); };
+  // 回委託板（一趟結束或中途放棄）
+  const backToBoard = () => {
+    setResult(null); setLoot(null); setGrantMsg(""); setContract(null); setRun(null); setPhase("board");
+  };
+  const acceptContract = c => {
+    setContract(c); setRun(newRun(c)); setResult(null); setLoot(null); setGrantMsg(""); setPhase("loadout");
+  };
 
   const changeProfile = next => {
     const p = normalizeGuildProfile(next);
@@ -102,32 +117,22 @@ export default function GuildTestApp() {
   const partyCatIds = partyCats.map(c => c.id);
   const toggleCat = catId => changeProfile({ ...gp, partyCats: togglePartyCat(partyCatIds, catId) });
 
-  // 危險度按鈕（階級不足就鎖住，並顯示還差多少聲望——鎖著也要看得到目標）
-  const DangerButtons = ({ small }) => (
-    <>
-      {[1, 2, 3].map(d => {
-        const locked = !canAcceptDanger(gp.rep, d);
-        const need = repNeededForDanger(gp.rep, d);
-        return (
-          <button key={d} type="button" disabled={locked} onClick={() => restart(d)}
-            title={locked ? `還差 ${need} 聲望` : ""}
-            style={{ padding: small ? "6px 10px" : "10px 16px", borderRadius: 10, fontWeight: 900, fontSize: small ? 11 : 14, color: "#fff", border: "none",
-              background: locked ? "#475569" : d === danger ? "linear-gradient(135deg,#f59e0b,#b45309)" : "#334155",
-              cursor: locked ? "not-allowed" : "pointer" }}>
-            {locked ? "🔒" : DANGER_META[d].skulls} {DANGER_META[d].label}
-            {locked && <span style={{ fontSize: 10, opacity: .8 }}>（差{need}聲望）</span>}
-          </button>
-        );
-      })}
-    </>
-  );
+  const doneIds = contractsStateFor(gp, dateKey).done;
+  const closePanel = () => setPhase(contract ? "loadout" : "board");
 
   if (phase === "stash") {
-    return <GuildStash member={member} profile={gp} onChange={changeProfile} onClose={() => setPhase("loadout")} />;
+    return <GuildStash member={member} profile={gp} onChange={changeProfile} onClose={closePanel} />;
   }
 
   if (phase === "shop") {
-    return <GuildShop profile={gp} onBuy={buy} onClose={() => setPhase("loadout")} />;
+    return <GuildShop profile={gp} onBuy={buy} onClose={closePanel} />;
+  }
+
+  if (phase === "board" && !result) {
+    return (
+      <GuildBoard profile={gp} contracts={dailyContracts} doneIds={doneIds}
+        onAccept={acceptContract} onOpenStash={() => setPhase("stash")} onOpenShop={() => setPhase("shop")} />
+    );
   }
 
   if (result) {
@@ -160,12 +165,12 @@ export default function GuildTestApp() {
         </div>
         <div style={{ fontSize: 12, color: "#94a3b8" }}>🐾 CAT幣 {gp.catCoins}</div>
 
-        <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap", justifyContent: "center" }}>
-          <DangerButtons />
-        </div>
+        <button onClick={backToBoard} style={{ marginTop: 4, padding: "11px 22px", borderRadius: 10, fontWeight: 900, fontSize: 14, color: "#fff", border: "none", background: "linear-gradient(135deg,#f59e0b,#b45309)", cursor: "pointer" }}>
+          📜 回委託板
+        </button>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
-          <button onClick={() => { setResult(null); setPhase("stash"); }} style={{ padding: "8px 14px", borderRadius: 10, fontWeight: 900, fontSize: 12, color: "#fff", border: "none", background: "#334155", cursor: "pointer" }}>🎒 倉庫</button>
-          <button onClick={() => { setResult(null); setPhase("shop"); }} style={{ padding: "8px 14px", borderRadius: 10, fontWeight: 900, fontSize: 12, color: "#fff", border: "none", background: "#4c1d95", cursor: "pointer" }}>🏪 商店</button>
+          <button onClick={() => { setResult(null); setContract(null); setRun(null); setPhase("stash"); }} style={{ padding: "8px 14px", borderRadius: 10, fontWeight: 900, fontSize: 12, color: "#fff", border: "none", background: "#334155", cursor: "pointer" }}>🎒 倉庫</button>
+          <button onClick={() => { setResult(null); setContract(null); setRun(null); setPhase("shop"); }} style={{ padding: "8px 14px", borderRadius: 10, fontWeight: 900, fontSize: 12, color: "#fff", border: "none", background: "#4c1d95", cursor: "pointer" }}>🏪 商店</button>
         </div>
       </div>
     );
@@ -181,10 +186,13 @@ export default function GuildTestApp() {
             <button type="button" onClick={() => setPhase("shop")} style={{ padding: "4px 10px", borderRadius: 7, border: "none", background: "#4c1d95", color: "#fff", fontSize: 11, fontWeight: 800, cursor: "pointer" }}>🏪 商店</button>
           </span>
         </div>
-        {/* 委託危險度：階級 gate 就在這裡發生作用 */}
-        <div style={{ padding: "8px 12px", background: "#0f172a", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 800 }}>委託危險度</span>
-          <DangerButtons small />
+        {/* 接下的委託：出發前隨時可以放棄回委託板（還沒出發就不算結案）*/}
+        <div style={{ padding: "8px 12px", background: "#0f172a", display: "flex", gap: 8, alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ fontSize: 11, color: "#e2e8f0", fontWeight: 800, minWidth: 0 }}>
+            📜 {contract?.title}
+            <span style={{ color: "#94a3b8", fontWeight: 700 }}>　{contract?.skulls} {contract?.familyIcon}{contract?.familyLabel}・{contract?.waves} 波</span>
+          </span>
+          <button type="button" onClick={backToBoard} style={{ padding: "4px 10px", borderRadius: 7, border: "none", background: "#334155", color: "#cbd5e1", fontSize: 11, fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>放棄</button>
         </div>
         <GuildLoadout member={member} guildEquip={gp.equipped} catRoster={catRoster} partyCatIds={partyCatIds} onToggleCat={toggleCat}
           onDepart={sup => { setSupplies(sup); setPhase("battle"); }} />
@@ -192,11 +200,19 @@ export default function GuildTestApp() {
     );
   }
 
+  // 保險：沒有委託/沒 roll 到遠征就不該在戰鬥畫面（例如放棄後的殘留狀態）
+  if (!run || !contract) {
+    return (
+      <GuildBoard profile={gp} contracts={dailyContracts} doneIds={doneIds}
+        onAccept={acceptContract} onOpenStash={() => setPhase("stash")} onOpenShop={() => setPhase("shop")} />
+    );
+  }
+
   const stats = calcGuildExpeditionStats(member, gp.equipped);
   return (
     <div>
       <div style={{ padding: "6px 12px", background: "#1a1207", color: "#fcd34d", fontSize: 11, fontWeight: 800, display: "flex", justifyContent: "space-between" }}>
-        <span>🏛️ 公會遠征雛形（測試）· 危險度 {danger}</span>
+        <span>📜 {contract?.title || "遠征中"}　{contract?.skulls}</span>
         <span style={{ color: "#94a3b8" }}>
           {Object.keys(STAT_META).map(k => `${STAT_META[k].short} ${stats[k]}`).join(" · ")}
         </span>

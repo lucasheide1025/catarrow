@@ -649,7 +649,8 @@ team_boost     ATK ×1.5  (單人特強，原有)
 - **隔離鐵律（最重要）**：只帶入 **射手等級**（`archerLevel.js`）＋怪物**資料**（`monsterData`/`monsterMaterials`）。**不帶**怪物卡、主線裝備、`calcArcherStats`。公會六維與公會裝**永不進主線**（主線平衡零風險，改動前 `grep -rn "guild/" src` 佐證只有 App.jsx 路由）。
 - **六維**（`domain/guildStats.js`）：HP 生命／ATK 箭傷／AGI 額外箭+閃避／DEF 減傷／VIT 省補給+負重／LUK 掉寶+爆擊+雜貨價值。＝基底 + 射手等級(hp/atk/def) + 公會裝(六維)。
 - **裝備**（`data/guildEquipCatalog.js`）：5 槽（弓/箭/護具/箭袋/藥水袋）× 多基礎裝 × 6 品級（common→mythic，`GRADE_MULT` 放大六維）。每件有 `weight`，**與補給搶背包容量**＝出發前「帶裝變強 vs 帶糧撐久」的核心抉擇。
-- **一趟遠征**：備包（`GuildLoadout`）→ `rollExpedition` 依危險度 1~3 抽 3~5 波怪 → 2.5D 戰鬥（`GuildBattle`：選目標射真實箭、貓貓自動助攻、怪距離倒數歸零就攻擊、每回合吃補給）→ `settleExpedition` 凱旋結算。
+- **委託板**（`domain/guildContracts.js` + `data/guildContractPool.js`，公會的主入口）：每日 5 張委託單（委託人 NPC ＋故事＋族群＋☠️星等＋獎勵預覽）。**seed = 日期＋memberId** → 同一天同一人固定同一批（**重整不能刷新委託**），但每個人的板不同。危險度分佈固定 `[1,1,2,2,3]`：低階玩家永遠有事做，也永遠看得到自己還接不了的那張。接過的**勝敗都結案**、當天不能重刷（存 `guildProfiles.contracts = {dateKey, done[]}`，跨日自動換板）。文案要加就往 `guildContractPool` 那張表加，不用改邏輯。
+- **一趟遠征**：委託板接委託 → 備包（`GuildLoadout`）→ `rollExpedition` 依委託的族群/危險度抽 3~5 波怪 → 2.5D 戰鬥（`GuildBattle`：選目標射真實箭、貓貓自動助攻、怪距離倒數歸零就攻擊、每回合吃補給）→ `settleExpedition` 凱旋結算。
 - **存檔／經濟**（P1.5）：`guildProfiles/{memberId}`（CAT幣/聲望/裝備/倉庫/雜貨圖鑑/場次），規則見 quick-ref。**公會獨佔**＝CAT幣、聲望、公會裝；**回饋主線**＝金幣寫 `members.coins`、材料寫 `materialInventory`（`ghost_t3`→`ghost_m3` 同族同階）。聲望 ＝ 危險度×10（`REP_PER_DANGER`），倉庫上限 60。
 - **階級**（`domain/guildRank.js`，P2）：見習0／銅牌100／銀牌300／金牌700／白金1500／傳說3000（聲望）。**階級零戰力加成**（舊 `RANKS.mult` 已廢除），只解鎖 ①可接危險度上限（見習☠️1／銅銀☠️2／金牌以上☠️3）②商店貨架層級。理由：進度感來自「能去更深的地方」，公會強度永遠不外溢主線。測試有斷言階級表不得出現 `mult`/`atk`/`hp`。
 - **公會商店**（`data/guildShop.js`，CAT幣唯一去處）：①主線材料六族 t1~t3（10/25/60，高階不賣）②公會裝 3 個貨架層級（35~380）。調價只改這張表；購買驗證在 `domain/guildShopPurchase.js` 純函數。

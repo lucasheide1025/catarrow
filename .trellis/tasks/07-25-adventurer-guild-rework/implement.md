@@ -12,10 +12,10 @@
 - [x] `src/guild/domain/`：`rollExpedition`（隨機怪陣容 by client/danger）、`expeditionFlow`（逐 wave 狀態機）、`guildStats`（**六維 HP/ATK/AGI/DEF/VIT/LUK** = 射手等級+貓+公會裝）、`settleExpedition`。
 - [x] **公會自己的 2.5D 鳥瞰戰鬥**（`src/guild/ui/`）：等距戰場、距離倒數、手動選目標(≤4)、貓貓上場；重用 `damage.js`/`score.js` 與殭屍 `processRound`，**不嵌 MonsterBattle**。
 - [ ] 背包/補給：重用 `backpackEngine`；推進途中**多重事件**各自消耗食/水；食或水歸零→減益升級→耗盡**強迫撤退**；出發前備包畫面（裝備+補給 vs 負重，VIT 影響）。
-- [ ] 失敗處理（陣亡/補給耗盡撤退 → 委託失敗，當天鎖同一張）。
-- [ ] 委託板（大廳）→ 接委託 → 出發 → 逐 wave 2.5D 戰鬥 → 凱旋回報。
+- [x] 失敗處理（陣亡/補給耗盡撤退 → 委託失敗，**勝敗都把該委託當天結案**，見 guildContracts）。
+- [x] 委託板 → 接委託 → 出發 → 逐 wave 2.5D 戰鬥 → 凱旋回報（`GuildBoard` 2026-07-25 完成；大廳底圖/公會長貓仍待美術）。
 - **驗證**：接委託→連打 N 場 2.5D 戰鬥→補給消耗→全勝結算/失敗有後果；主線完全不受影響；`CI=true` build 過。
-- ⚠️ 未做：委託板/大廳留到 P4（P1 用 `?guild` 測試殼直接選危險度出發）。
+- ✅ 委託板已於 2026-07-25 補上，`?guild` 的預設入口已改成委託板（不再是三顆危險度按鈕）。
 
 ## P1.5：持久化（獎勵真的入帳）✅ 2026-07-25
 - [x] 新集合 `guildProfiles/{memberId}`（CAT幣/聲望/equipped/stash/junkSeen/expeditions）——選獨立集合而非 members 欄位，理由：不動 members 兩份 hasOnly 白名單、隔離更乾淨。
@@ -49,7 +49,7 @@
 
 ## P4：大廳 / NPC / 故事 / 美術
 - [ ] `scripts/gen-guild-*.py`（ComfyUI）：大廳底圖、公會長貓、委託單、階級徽章×6、冒險者證、公會裝圖示、戰利品。逐張 QA。
-- [ ] 公會畫面重構成大廳；公會長貓 NPC 依階級對話；委託單呈現故事+☠️星等+隨機陣容預覽。
+- [x] 委託單呈現故事+☠️星等+獎勵預覽（`GuildBoard`，2026-07-25）；**大廳底圖與公會長貓 NPC 未做**（需美術）。
 - [ ] 「出發→回報」小儀式。
 - **驗證**：味道到位；教練射手模式不白屏；訪客不崩。
 

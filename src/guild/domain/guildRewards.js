@@ -29,6 +29,7 @@ export function emptyGuildProfile() {
     equipped: { ...STARTER_EQUIPPED },
     stash: [],
     partyCats: null,      // 出戰貓（catId 陣列）。null = 還沒設定過→自動帶最強的；[] = 刻意不帶貓
+    contracts: null,      // 今日委託完成紀錄 { dateKey, done:[contractId] }；跨日自動換板（見 guildContracts）
     junkSeen: {},
     expeditions: { total: 0, won: 0, byDanger: { 1: 0, 2: 0, 3: 0 } },
   };
@@ -49,6 +50,9 @@ export function normalizeGuildProfile(raw) {
     equipped: Object.keys(eq).length ? eq : base.equipped,
     stash: (Array.isArray(raw.stash) ? raw.stash : []).filter(i => i && GUILD_EQUIP_ARCHETYPES[i.archetypeId]),
     partyCats: Array.isArray(raw.partyCats) ? raw.partyCats.filter(id => typeof id === "string") : null,
+    contracts: raw.contracts?.dateKey
+      ? { dateKey: raw.contracts.dateKey, done: Array.isArray(raw.contracts.done) ? raw.contracts.done.filter(x => typeof x === "string") : [] }
+      : null,
     junkSeen: raw.junkSeen && typeof raw.junkSeen === "object" ? { ...raw.junkSeen } : {},
     expeditions: {
       total: Number(raw.expeditions?.total) || 0,
