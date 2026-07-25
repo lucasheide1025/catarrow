@@ -1,7 +1,7 @@
 // src/guild/ui/GuildLicense.jsx
 // 冒險者證：階級 × 稱號 × 戰績 × 雜貨圖鑑收集度，一頁看完「我在公會做到了什麼」。
 // 稱號可以切換（只有已解鎖的能選），純名譽零戰力加成。
-// 「複製戰績」把摘要複製到剪貼簿——分享不做圖片產生器（太重），純文字最好貼。
+// 分享＝產生一張精美 PNG（GuildLicenseCard + html2canvas），作者要求要能直接貼圖分享。
 import { useState } from "react";
 import { nextRankInfo } from "../domain/guildRank";
 import { evaluateTitles, setGuildTitle, currentTitle, buildTitleStats } from "../domain/guildTitles";
@@ -9,11 +9,13 @@ import { TITLE_CATEGORIES } from "../data/guildTitles";
 import { GUILD_JUNK, JUNK_RARITY } from "../data/guildJunkCatalog";
 import { sfxClose, sfxTap, sfxLevelUp, sfxError } from "../../lib/sound";
 import { hallBg, bgLayer, rankBadge, junkArt, ArtOrEmoji } from "./GuildArt";
+import GuildLicenseCard from "./GuildLicenseCard";
 
 const card = { background: "rgba(12,8,4,.75)", borderRadius: 14, padding: 12, border: "1px solid rgba(251,191,36,.18)" };
 
 export default function GuildLicense({ profile, memberName, onChange, onClose }) {
   const [tab, setTab] = useState("titles");   // titles | dex
+  const [showCard, setShowCard] = useState(false);   // 分享圖（html2canvas 產 PNG）
   const [msg, setMsg] = useState("");
   const rankInfo = nextRankInfo(profile.rep);
   const rank = rankInfo.current;
@@ -24,24 +26,11 @@ export default function GuildLicense({ profile, memberName, onChange, onClose })
 
   const wear = id => {
     const next = setGuildTitle(profile, id);
-    if (next === profile) { sfxError(); setMsg("⚠️ 這個稱號還沒解鎖"); return; }
+    // ⚠️ setGuildTitle 回傳的是「正規化後的副本」，不能用 next === profile 判斷失敗
+    if (next.title !== (id ?? null)) { sfxError(); setMsg("⚠️ 這個稱號還沒解鎖"); return; }
     sfxLevelUp();
     setMsg(id ? "✅ 已配戴稱號" : "已取下稱號");
     onChange(next);
-  };
-
-  const copySummary = () => {
-    const lines = [
-      `【冒險者證】${memberName || "冒險者"}`,
-      `${rank.icon} ${rank.name}${worn ? `・${worn.icon}${worn.name}` : ""}`,
-      `🏅 聲望 ${profile.rep}　🚩 遠征 ${stats.won}/${stats.total} 勝`,
-      `☠️×3+ ${stats.hardWon} 趟　☠️×6 ${stats.mythicWon} 趟`,
-      `🧺 雜貨圖鑑 ${stats.junkSeen}/${stats.junkTotal}　⚒️ 最高強化 +${stats.maxPlus}`,
-      `🎖️ 稱號 ${unlockedCount}/${titles.length}`,
-    ].join("\n");
-    navigator.clipboard?.writeText(lines)
-      .then(() => { sfxTap(); setMsg("📋 已複製戰績，可以貼給隊友炫耀了"); })
-      .catch(() => setMsg("⚠️ 這個瀏覽器不允許複製"));
   };
 
   return (
@@ -86,9 +75,10 @@ export default function GuildLicense({ profile, memberName, onChange, onClose })
           ))}
         </div>
 
-        <button type="button" onClick={copySummary}
-          style={{ marginTop: 10, width: "100%", padding: "8px 0", borderRadius: 9, border: "1px solid rgba(251,191,36,.3)", background: "rgba(120,53,15,.6)", color: "#fde68a", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
-          📋 複製戰績分享
+        <button type="button" onClick={() => { sfxTap(); setShowCard(true); }}
+          style={{ marginTop: 10, width: "100%", padding: "10px 0", borderRadius: 10, border: "none", fontWeight: 900, fontSize: 13, color: "#0b1220",
+            background: "linear-gradient(135deg,#fcd34d,#f59e0b)", cursor: "pointer" }}>
+          🖼️ 產生分享圖片
         </button>
       </div>
 
@@ -180,6 +170,10 @@ export default function GuildLicense({ profile, memberName, onChange, onClose })
       )}
 
       <div style={{ height: 8 }} />
+
+      {showCard && (
+        <GuildLicenseCard profile={profile} memberName={memberName} onClose={() => setShowCard(false)} />
+      )}
     </div>
   );
 }
