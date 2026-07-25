@@ -113,6 +113,11 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
   const [catBondPop, setCatBondPop] = useState(null); // 貓貓羈絆格：{ catId, name, speech, catXP, catBond }
   const lastSettleRef = useRef(0);
   const lastEventRef = useRef(0);
+  // 寫入失敗的重試觸發器：claim/交分失敗時 +1，讓對應 effect 重跑。
+  // ⚠️ 不能只靠 ref 解鎖——大家都在等的時候不會再有新快照，effect 就再也不會被叫起來。
+  const [retryNonce, setRetryNonce] = useState(0);
+  const bumpRetry = useCallback(() => setTimeout(() => setRetryNonce(n => n + 1), 1500), []);
+  const [submittingScore, setSubmittingScore] = useState(false);
   const shootSeqRef = useRef(0);
   const animatedSeqRef = useRef(-1);            // 已播完跟隨動畫的 lastMove.seq
   const [animatedSeq, setAnimatedSeq] = useState(-1); // 同上（state，供 pending UI 閘門）
@@ -206,6 +211,21 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     return () => { clearTimeout(startT); if (stepIv) clearInterval(stepIv); if (landT) clearTimeout(landT); };
   }, [room?.lastMove?.seq]); // eslint-disable-line
 
+  // 動畫閘門的保險絲：claim/翻牌都要等 animatedSeq 追上 room.seq，
+  // 但手機切到背景時 setInterval/setTimeout 會被瀏覽器節流甚至凍結 → 動畫走不完 →
+  // 這個人永遠不 claim → 全隊卡住等他。超時就直接對齊（跳過動畫，狀態本來就是權威的）。
+  useEffect(() => {
+    if (!room) return;
+    const seq = room.seq || 0;
+    if (animatedSeq >= seq) return;
+    const t = setTimeout(() => {
+      animatedSeqRef.current = seq;
+      setAnimatedSeq(seq);
+      setAnimating(false);
+    }, 9000); // 正常動畫最長約 3 秒（走 6 格），9 秒還沒完就是被凍結了
+    return () => clearTimeout(t);
+  }, [room?.seq, animatedSeq]); // eslint-disable-line
+
   // boardPos 同步（重整/非動畫時對齊權威位置——desync 自我修復）
   useEffect(() => { if (room && !animating) setDisplayPos(room.boardPos || 0); }, [room?.boardPos, animating]);
 
@@ -218,6 +238,13 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     lastSettleRef.current = seq;
     const isCatBond = room.pendingSettle.tileType === "catbond";
     claimBoardSettle(roomId, myId, { villageBuildings, catId }).then(res => {
+      // 寫入失敗（8 人同時寫同一份房間文件會撞、離線也會失敗）→ 解鎖並排重試。
+      // 不重試的話 settleClaims 少我一筆，房主的 allPassed 永遠不成立 → 全隊卡死等我。
+      if (!res?.ok && res?.reason !== "已領取") {
+        lastSettleRef.current = seq - 1;
+        bumpRetry();
+        return;
+      }
       if (!(res?.ok && res.reward)) return;
       sfxSuccess();
       // 貓貓羈絆格：讓裝備中的陪練貓出來說句話 + 顯示經驗/羈絆
@@ -233,7 +260,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
         setReward({ items: describeReward(res.reward), band: res.reward.band });
       }
     });
-  }, [room?.pendingSettle?.seq, room?.settleClaims, myId, roomId, catId, profile, animatedSeq]);
+  }, [room?.pendingSettle?.seq, room?.settleClaims, myId, roomId, catId, profile, animatedSeq, retryNonce]); // eslint-disable-line
 
   // 命運/機會事件卡：顯示 + 成員 claim（房主另處理共享棋效果）
   useEffect(() => {
@@ -266,13 +293,22 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     }
   }, [room?.pendingShoot, myId, animatedSeq]);
 
-  // 房主：所有指派射手都交分後 → 結算平均分數
+  // 房主：所有指派射手都交分後 → 結算平均分數。
+  // ⚠️ 失敗要自己重試：這步只由快照驅動，若 finalize 撞交易失敗，之後不會再有新快照來叫醒它，
+  //    全隊就永遠停在「射箭中」。所以失敗就每 2.5 秒重試到成功（元件卸載/狀態變了就停）。
   useEffect(() => {
     if (!isHost || !room?.pendingShoot) return;
     const ps = room.pendingShoot;
-    if (Object.keys(ps.scores || {}).length >= (ps.shooters?.length || 1)) {
-      finalizeBoardShoot(roomId, myId).catch(() => {});
-    }
+    if (Object.keys(ps.scores || {}).length < (ps.shooters?.length || 1)) return;
+    let stopped = false;
+    let timer = null;
+    const attempt = () => {
+      finalizeBoardShoot(roomId, myId)
+        .then(r => { if (!stopped && !r?.done) timer = setTimeout(attempt, 2500); })
+        .catch(() => { if (!stopped) timer = setTimeout(attempt, 2500); });
+    };
+    attempt();
+    return () => { stopped = true; if (timer) clearTimeout(timer); };
   }, [isHost, room?.pendingShoot, roomId, myId]);
 
   // 全員領完當前這步 → 房主清空 pendingEvent/pendingSettle，
@@ -281,8 +317,8 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     if (!isHost || !room) return;
     const seq = room.seq || 0;
     const hasPend = seq > 0 && ((room.pendingEvent?.seq === seq) || (room.pendingSettle?.seq === seq));
-    if (hasPend && allPassed) clearRoomPending(roomId, myId).catch(() => {});
-  }, [isHost, room, allPassed, roomId, myId]);
+    if (hasPend && allPassed) clearRoomPending(roomId, myId).catch(() => bumpRetry());
+  }, [isHost, room, allPassed, roomId, myId, retryNonce]); // eslint-disable-line
 
   // 房主骰子用完 + 當前這步全員都領完 → 進結算畫面（全員都看得到）。
   // 用房間權威的 hostDiceLeft（=== 0 才算，未定義代表還沒擲過骰），避免隊員讀不到房主 dice 誤觸發。
@@ -358,17 +394,26 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
 
   // 確認射擊結果 → 交出自己的分數（房主收齊所有射手後取平均結算）
   const confirmShootResult = useCallback(async () => {
-    if (!shootResult || !shoot) return;
+    if (!shootResult || !shoot || submittingScore) return;
     const { labels } = shootResult;
     const t = shoot.type;
     const score = labels.reduce((s, l) => s + (l === "X" ? 10 : Number(l) || 0), 0);
     const { progress } = t === "mining" ? calculateGatheringRound(labels) : { progress: 0 };
+
+    // ⚠️ 必須「確認寫進去了」才收 UI。之前是先收 UI 再送、而且不看回傳值——
+    //    交分失敗（多人同時寫房間文件會撞）時射手以為交了，房主永遠收不齊，全隊卡在「射箭中 1/2」。
+    setSubmittingScore(true);
+    const res = await submitBoardShootScore(roomId, myId, { score, progress });
+    setSubmittingScore(false);
+    if (!res?.ok && res?.reason !== "已提交") {
+      showToast(`送出失敗：${res?.reason || "請再按一次確認"}`);
+      return; // 保留結果畫面，讓射手直接再按一次
+    }
     shootSeqRef.current = 0;
     setShootResult(null);
     setShoot(null);
     addRoundArrows(myId, 6).catch(() => {}); // 這 6 箭算實際射手的今日/終身箭數
-    await submitBoardShootScore(roomId, myId, { score, progress });
-  }, [shootResult, shoot, roomId, myId]);
+  }, [shootResult, shoot, roomId, myId, submittingScore]); // eslint-disable-line
 
   // 事件卡確認：成員 claim 資源；房主另套用共享棋效果
   // 卡片設為 waiting 狀態直到全員領取，防止房主跳過事件、隊員被拉走
@@ -378,6 +423,12 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     // 設為 waiting 不馬上消失，讓隊員有時間確認
     setCard(c => c && c.event ? { event: c.event, flipped: true, waiting: true } : null);
     const res = await claimBoardEvent(roomId, myId, { villageBuildings, catId });
+    // 失敗 → 把卡片退回可按狀態，否則 eventClaims 少我一筆，卡片永遠停在 waiting、全隊等我
+    if (!res?.ok && res?.reason !== "已領取") {
+      setCard(c => c && { ...c, waiting: false });
+      showToast(`領取失敗：${res?.reason || "請再按一次"}`);
+      return;
+    }
     // 先算好「拿到/失去什麼」的訊息，但不立刻跳——等全員都確認後（allPassed）才顯示（見下方 effect）
     if (res?.ok) {
       const label = r => ({ coins:"金幣", arrowdew:"箭露", gachaToken:"扭蛋幣", catXP:"貓咪經驗", material:"家族素材", ...RESOURCE_NAMES }[r] || r);
@@ -682,9 +733,9 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
                 <div className="text-slate-500 text-[10px] mt-1">最高 180%</div>
               </>
             )}
-            <button onClick={confirmShootResult}
-              className="mt-5 w-full py-3 rounded-2xl bg-amber-400 text-slate-900 font-black text-sm shadow-lg active:scale-95 transition-all hover:bg-amber-300">
-              ✓ 確認領取
+            <button onClick={confirmShootResult} disabled={submittingScore}
+              className={`mt-5 w-full py-3 rounded-2xl font-black text-sm shadow-lg active:scale-95 transition-all ${submittingScore ? "bg-slate-600 text-slate-300" : "bg-amber-400 text-slate-900 hover:bg-amber-300"}`}>
+              {submittingScore ? "送出中…" : "✓ 確認領取"}
             </button>
           </div>
         </div>
