@@ -331,6 +331,26 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     if (idle) setShowTeamSummary(true);
   }, [room?.hostDiceLeft, room?.status, animating, room?.pendingMove, room?.pendingShoot, allPassed, shoot, shootResult, card]);
 
+  // 🔄 卡住了？重新同步：不用重整頁面就能做到「重整」會做的事。
+  // 卡住的往往是**自己這台的本地閘門**（動畫沒走完、claim 鎖住、卡片停在 waiting），
+  // 房間文件本身是權威且正確的——所以這裡只重置本地狀態並重試自己的寫入。
+  const resync = useCallback(() => {
+    const seq = room?.seq || 0;
+    animatedSeqRef.current = seq;
+    setAnimatedSeq(seq);
+    setAnimating(false);
+    setRolling(false);
+    setCard(c => (c?.waiting ? null : c));
+    // 解開 claim 鎖 → retryNonce 讓 claim effect 重跑。
+    // 已經領過的會被 settleClaims/eventClaims 擋掉，不會重複領；只有真的沒寫進去的才補上。
+    const iClaimed = (room?.settleClaims?.[myId] || 0) >= seq || (room?.eventClaims?.[myId] || 0) >= seq;
+    if (!iClaimed) { lastSettleRef.current = 0; lastEventRef.current = 0; }
+    setRetryNonce(n => n + 1);
+    // ⚠️ 只有「全員都領完」才清 pending，否則會把還沒領的隊員的獎勵直接抹掉
+    if (isHost && allPassed) clearRoomPending(roomId, myId).catch(() => {});
+    showToast("已重新同步");
+  }, [room, myId, isHost, allPassed, roomId]); // eslint-disable-line
+
   // ── 大廳動作 ──
   async function create() {
     setBusy(true); setErr("");
@@ -569,7 +589,11 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
       <div className="w-full max-w-lg flex items-center justify-between px-4 py-3">
         <button onClick={exitRoom} className="w-9 h-9 rounded-full bg-black/40 text-amber-200 font-black">←</button>
         <div className="text-amber-100 font-black text-sm">👥 房號 {room.code}・{memberCount}人</div>
-        <div className="rounded-xl bg-amber-500/20 border border-amber-400/40 px-2.5 py-1 text-amber-200 text-xs font-black">🎲 {room?.hostDiceLeft ?? hostDice}</div>
+        <div className="flex items-center gap-1.5">
+          {/* 卡住時不用重整頁面的逃生門（重整會做的事，這顆按鈕都做） */}
+          <button onClick={resync} title="卡住了？重新同步" className="rounded-xl bg-black/40 border border-amber-400/30 px-2 py-1 text-amber-200/80 text-xs font-black active:scale-95">🔄</button>
+          <div className="rounded-xl bg-amber-500/20 border border-amber-400/40 px-2.5 py-1 text-amber-200 text-xs font-black">🎲 {room?.hostDiceLeft ?? hostDice}</div>
+        </div>
       </div>
       <div className="w-full max-w-lg px-3 flex items-center justify-center gap-2 mb-1">
         <div className="rounded-xl bg-black/30 border border-amber-500/25 px-3 py-1 text-amber-100 text-xs font-black">
