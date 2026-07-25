@@ -20,10 +20,22 @@ function arrowDamage(score, atk, def, crit) {
   return crit ? Math.round(base * 1.5) : base;
 }
 
+// 一回合可射幾箭：3 或 6（跟主線地下城/組隊的 ARROWS_OPTIONS 同規格）。
+// ⚠️ 平衡：6 箭清場快一倍，若補給照舊消耗就變成「一律選 6」。所以**補給消耗隨箭數等比放大**
+//   （6 箭 = 2 倍消耗），變成真正的取捨：快速清場 vs 撐得久。
+export const GUILD_ARROWS_OPTIONS = Object.freeze([3, 6]);
+export const DEFAULT_GUILD_ARROWS = 3;
+const BASE_ARROWS = 3;
+
+export function normalizeArrowsPerRound(n) {
+  return GUILD_ARROWS_OPTIONS.includes(Number(n)) ? Number(n) : DEFAULT_GUILD_ARROWS;
+}
+
 // cats: [{ id, name, icon?, atk, def }]（由 calcCatCombatStats 映射；每回合自動攻擊）
-export function createExpeditionState(expedition, guildStats, supplies = { food: 6, water: 6 }, cats = []) {
+export function createExpeditionState(expedition, guildStats, supplies = { food: 6, water: 6 }, cats = [], opts = {}) {
   const derived = deriveGuildCombat(guildStats);
   return {
+    arrowsPerRound: normalizeArrowsPerRound(opts.arrowsPerRound),
     expedition,
     guildStats,
     derived,
@@ -101,8 +113,9 @@ export function processRound(state, shots = [], opts = {}) {
     }
   }
 
-  // 4. 消耗補給（VIT 減緩）
-  const rate = 1 - d.supplySavePct;
+  // 4. 消耗補給（VIT 減緩；箭數越多消耗越快——見 GUILD_ARROWS_OPTIONS 的平衡說明）
+  const arrowScale = normalizeArrowsPerRound(s.arrowsPerRound) / BASE_ARROWS;
+  const rate = (1 - d.supplySavePct) * arrowScale;
   s.supplies.food = Math.max(0, Math.round((s.supplies.food - rate) * 100) / 100);
   s.supplies.water = Math.max(0, Math.round((s.supplies.water - rate) * 100) / 100);
   const starving = s.supplies.food <= 0 || s.supplies.water <= 0;

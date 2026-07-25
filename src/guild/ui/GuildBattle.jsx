@@ -18,7 +18,6 @@ import {
 } from "../../lib/sound";
 import { MonsterArt, CatArt, fieldBg, bgLayer } from "./GuildArt";
 
-const ARROWS_PER_ROUND = 3;
 const SCORE_BUTTONS = [
   { label: "X", score: 11, color: "#fbbf24" },
   { label: "10", score: 10, color: "#ef4444" },
@@ -75,8 +74,9 @@ function posOf(index, len, distance) {
 }
 const PLAYER_POS = { topPct: 88, leftPct: 50 };
 
-export default function GuildBattle({ expedition, guildStats, supplies, cats = [], onEnd }) {
-  const [state, setState] = useState(() => createExpeditionState(expedition, guildStats, supplies, cats));
+export default function GuildBattle({ expedition, guildStats, supplies, cats = [], arrowsPerRound = 3, onEnd, onArrowsShot }) {
+  const [state, setState] = useState(() => createExpeditionState(expedition, guildStats, supplies, cats, { arrowsPerRound }));
+  const ARROWS_PER_ROUND = state.arrowsPerRound || arrowsPerRound;
   const [target, setTarget] = useState(null);
   const [shots, setShots] = useState([]);
   const [flash, setFlash] = useState(null);        // 回合摘要橫幅
@@ -125,6 +125,8 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
   const fireRound = () => {
     if (animating || state.status !== "fighting") return;
     const next = processRound(state, shots, {});
+    // 射出去的箭要計進今日/終身箭數（公會遠征也是真的在射箭）
+    if (shots.length) onArrowsShot?.(shots.length);
     setShots([]);
     setTarget(null);
     setAnimating(true);

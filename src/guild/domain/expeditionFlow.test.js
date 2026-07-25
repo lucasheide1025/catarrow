@@ -1,5 +1,5 @@
 // src/guild/domain/expeditionFlow.test.js
-import { createExpeditionState, processRound } from "./expeditionFlow";
+import { createExpeditionState, processRound, normalizeArrowsPerRound, GUILD_ARROWS_OPTIONS, DEFAULT_GUILD_ARROWS } from "./expeditionFlow";
 
 const NO_LUCK = { rand: () => 0.99 }; // 不爆擊、不閃避（機率都很小）
 
@@ -57,5 +57,44 @@ describe("expeditionFlow — 戰鬥核心狀態機", () => {
     s = processRound(s, [], NO_LUCK);
     expect(s.status).toBe("lost");
     expect(s.lostReason).toBe("陣亡");
+  });
+});
+
+describe("每回合箭數 3/6（作者要求提供選擇）", () => {
+  const stats = { hp: 500, atk: 60, agi: 0, def: 0, vit: 0, luk: 0 };
+  const exp = {
+    danger: 1, totalWaves: 1,
+    waves: [{ monsters: [
+      { instanceId: "m1", monsterId: "x", name: "怪", icon: "👻", family: "ghost", tier: "common", tierIndex: 1, encounter: "normal", maxHp: 9999, hp: 9999, atk: 5, def: 0, distance: 5 },
+    ] }],
+  };
+
+  test("只接受 3 或 6，其他一律回預設", () => {
+    expect(GUILD_ARROWS_OPTIONS).toEqual([3, 6]);
+    expect(normalizeArrowsPerRound(6)).toBe(6);
+    expect(normalizeArrowsPerRound(3)).toBe(3);
+    expect(normalizeArrowsPerRound(99)).toBe(DEFAULT_GUILD_ARROWS);
+    expect(normalizeArrowsPerRound(undefined)).toBe(DEFAULT_GUILD_ARROWS);
+  });
+
+  test("設定會存進戰鬥狀態", () => {
+    expect(createExpeditionState(exp, stats, { food: 9, water: 9 }, [], { arrowsPerRound: 6 }).arrowsPerRound).toBe(6);
+    expect(createExpeditionState(exp, stats, { food: 9, water: 9 }, []).arrowsPerRound).toBe(DEFAULT_GUILD_ARROWS);
+  });
+
+  test("6 箭的補給消耗是 3 箭的兩倍（不然一律選 6 就沒得選了）", () => {
+    const s3 = processRound(createExpeditionState(exp, stats, { food: 9, water: 9 }, [], { arrowsPerRound: 3 }), []);
+    const s6 = processRound(createExpeditionState(exp, stats, { food: 9, water: 9 }, [], { arrowsPerRound: 6 }), []);
+    const used3 = 9 - s3.supplies.food;
+    const used6 = 9 - s6.supplies.food;
+    expect(used6).toBeCloseTo(used3 * 2, 5);
+  });
+
+  test("6 箭模式一回合能射 6 箭、傷害照算", () => {
+    const st = createExpeditionState(exp, stats, { food: 9, water: 9 }, [], { arrowsPerRound: 6 });
+    const shots = Array.from({ length: 6 }, () => ({ targetInstanceId: "m1", score: 10 }));
+    const next = processRound(st, shots, { rand: () => 0.9 });
+    expect(next.log.filter(l => l.type === "arrow")).toHaveLength(6);
+    expect(next.monsters[0].hp).toBeLessThan(9999);
   });
 });

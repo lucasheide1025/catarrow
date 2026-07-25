@@ -10,6 +10,7 @@ import { settleExpedition } from "./domain/settleExpedition";
 import { normalizeGuildProfile } from "./domain/guildRewards";
 import { buildCatRoster, pickPartyCats, togglePartyCat } from "./domain/guildCats";
 import { subscribeMyCats } from "../lib/catDb";
+import { addRoundArrows } from "../lib/db";
 import { nextRankInfo, repToRank } from "./domain/guildRank";
 import { unlockAudio, sfxLevelUp, sfxCoinDrop, sfxOpenChest } from "../lib/sound";
 import { rollDailyContracts, contractsStateFor, todayKey } from "./domain/guildContracts";
@@ -125,6 +126,12 @@ export default function GuildTestApp({ onBack, onLegacy }) {
     const res = await sellGuildJunk(memberId, gp, sellMap, valuationMult);
     if (res.ok) setGp(res.profile);
     return res;
+  };
+
+  // 公會遠征射出的箭 → 記進今日／終身箭數（跟主線同一條 addRoundArrows 路徑，含離線佇列）
+  const recordArrows = n => {
+    if (!memberId || !n) return;
+    addRoundArrows(memberId, n, { accountType: profile?.accountType || "official" });
   };
 
   const buy = async itemId => {
@@ -264,6 +271,7 @@ export default function GuildTestApp({ onBack, onLegacy }) {
           <button type="button" onClick={backToBoard} style={{ padding: "4px 10px", borderRadius: 7, border: "none", background: "#334155", color: "#cbd5e1", fontSize: 11, fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>放棄</button>
         </div>
         <GuildLoadout member={member} guildEquip={gp.equipped} catRoster={catRoster} partyCatIds={partyCatIds} onToggleCat={toggleCat}
+          arrowsPerRound={gp.arrowsPerRound} onChangeArrows={n => changeProfile({ ...gp, arrowsPerRound: n })}
           onDepart={sup => { setSupplies(sup); setPhase("battle"); }} />
       </div>
     );
@@ -282,12 +290,13 @@ export default function GuildTestApp({ onBack, onLegacy }) {
   return (
     <div>
       <div style={{ padding: "6px 12px", background: "#1a1207", color: "#fcd34d", fontSize: 11, fontWeight: 800, display: "flex", justifyContent: "space-between" }}>
-        <span>📜 {contract?.title || "遠征中"}　{contract?.skulls}</span>
+        <span>📜 {contract?.title || "遠征中"}　{contract?.skulls}　🏹{gp.arrowsPerRound}箭/回合</span>
         <span style={{ color: "#94a3b8" }}>
           {Object.keys(STAT_META).map(k => `${STAT_META[k].short} ${stats[k]}`).join(" · ")}
         </span>
       </div>
-      <GuildBattle key={run.key} expedition={run.exp} guildStats={stats} supplies={supplies} cats={partyCats} onEnd={setResult} />
+      <GuildBattle key={run.key} expedition={run.exp} guildStats={stats} supplies={supplies} cats={partyCats}
+        arrowsPerRound={gp.arrowsPerRound} onArrowsShot={recordArrows} onEnd={setResult} />
     </div>
   );
 }

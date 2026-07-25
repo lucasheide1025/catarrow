@@ -5,6 +5,15 @@
 
 ---
 
+## 2026-07-25（公會遠征：箭數計入紀錄 ＋ 每回合 3/6 箭可選）
+
+作者回報：「冒險任務沒有紀錄箭數，然後要提供 3/6 箭選擇」。
+
+- **箭數計入**：`GuildBattle` 發動回合時把 `shots.length` 回報給 `GuildTestApp`，走**主線同一條** `addRoundArrows(memberId, n, { accountType })`（含離線佇列與 `totalArrowsAllTime`／今日箭數）。公會遠征是真的在射箭，本來就該算進去。訪客/兒童由該函式自行判斷走本機。
+- **每回合箭數 3/6**（`GUILD_ARROWS_OPTIONS`，跟主線地下城 `ARROWS_OPTIONS` 同規格）：備包新增選擇（顯示「補給省一半」／「清場快一倍・補給加倍」），存 `guildProfiles.arrowsPerRound`，戰鬥頂列顯示 `🏹n箭/回合`。
+- **⚠️ 平衡處理（重要）**：6 箭清場快一倍，如果補給照舊消耗就變成「一律選 6」、選擇形同虛設。所以**補給消耗隨箭數等比放大**（`arrowScale = arrowsPerRound / 3`）→ 變成真正的取捨：**快速清場 vs 撐得久**，跟既有的「裝備 vs 補給」負重張力同一條軸。測試斷言 6 箭的消耗剛好是 3 箭的兩倍。
+- 97 測試全過（新增 4）。
+
 ## 2026-07-25（公會全面換新：舊 AdventurerGuild 下架）
 
 作者拍板「全面換成新公會介面」→ `MemberApp` 與 `AdminApp` 的 `page==="guild"` **一律**渲染新的

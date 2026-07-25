@@ -25,7 +25,7 @@ function Stepper({ label, icon, value, set, min = 0, max = 20 }) {
 }
 const btn = { width: 30, height: 30, borderRadius: 8, border: "none", background: "#334155", color: "#fff", fontWeight: 900, fontSize: 16, cursor: "pointer" };
 
-export default function GuildLoadout({ member, guildEquip, onDepart, catRoster = [], partyCatIds = [], onToggleCat }) {
+export default function GuildLoadout({ member, guildEquip, onDepart, catRoster = [], partyCatIds = [], onToggleCat, arrowsPerRound = 3, onChangeArrows }) {
   const stats = calcGuildExpeditionStats(member, guildEquip);
   const derived = deriveGuildCombat(stats);
   const capacity = Math.round((BASE_CAPACITY + derived.carryBonus) * 10) / 10;
@@ -100,6 +100,30 @@ export default function GuildLoadout({ member, guildEquip, onDepart, catRoster =
           {party.length === 0 && <div style={{ fontSize: 10, color: "#f87171", marginTop: 6 }}>沒帶貓也能出發，但少了每回合助攻會吃力很多。</div>}
         </div>
       )}
+
+      {/* 每回合箭數（3/6）：跟主線地下城同規格。6 箭清場快，但補給消耗加倍＝真的取捨 */}
+      <div style={{ background: "rgba(0,0,0,.3)", borderRadius: 12, padding: 12 }}>
+        <div style={{ fontSize: 12, fontWeight: 900, color: "#c7d2fe", marginBottom: 8 }}>
+          每回合箭數
+          <span style={{ color: "#64748b", fontWeight: 700, marginLeft: 6 }}>（射出的箭都會記進今日／終身箭數）</span>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          {[3, 6].map(n => {
+            const on = arrowsPerRound === n;
+            return (
+              <button key={n} type="button" onClick={() => { sfxSwitch(); onChangeArrows?.(n); }}
+                style={{ flex: 1, padding: "9px 0", borderRadius: 10, fontSize: 13, fontWeight: 900, cursor: "pointer",
+                  color: on ? "#0b1220" : "#e2e8f0", border: `1px solid ${on ? "#fbbf24" : "rgba(255,255,255,.12)"}`,
+                  background: on ? "linear-gradient(135deg,#fcd34d,#f59e0b)" : "rgba(255,255,255,.04)" }}>
+                {n} 箭
+                <div style={{ fontSize: 9, fontWeight: 700, opacity: .85 }}>
+                  {n === 3 ? "補給省一半" : "清場快一倍・補給加倍"}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       {/* 補給 + 容量 */}
       <div style={{ background: "rgba(0,0,0,.3)", borderRadius: 12, padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>

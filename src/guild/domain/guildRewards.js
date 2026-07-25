@@ -30,6 +30,7 @@ export function emptyGuildProfile() {
     equipped: { ...STARTER_EQUIPPED },
     stash: [],
     partyCats: null,      // 出戰貓（catId 陣列）。null = 還沒設定過→自動帶最強的；[] = 刻意不帶貓
+    arrowsPerRound: 3,     // 一回合射幾箭（3 或 6，備包可改；6 箭補給消耗加倍）
     junkStock: {},         // 雜貨倉庫 { [junkId]: qty }——**不自動賣**，玩家自己決定何時賣
     contracts: null,      // 今日委託完成紀錄 { dateKey, done:[contractId] }；跨日自動換板（見 guildContracts）
     junkSeen: {},
@@ -52,6 +53,7 @@ export function normalizeGuildProfile(raw) {
     equipped: Object.keys(eq).length ? eq : base.equipped,
     stash: (Array.isArray(raw.stash) ? raw.stash : []).filter(i => i && GUILD_EQUIP_ARCHETYPES[i.archetypeId]),
     partyCats: Array.isArray(raw.partyCats) ? raw.partyCats.filter(id => typeof id === "string") : null,
+    arrowsPerRound: Number(raw.arrowsPerRound) === 6 ? 6 : 3,
     contracts: raw.contracts?.dateKey
       ? { dateKey: raw.contracts.dateKey, done: Array.isArray(raw.contracts.done) ? raw.contracts.done.filter(x => typeof x === "string") : [] }
       : null,
