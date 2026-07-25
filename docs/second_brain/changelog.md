@@ -5,6 +5,26 @@
 
 ---
 
+## 2026-07-25（冒險者公會重生 P1：獨立 2.5D 遠征遊戲雛形）
+
+**背景**：舊冒險者公會「雞肋」→ 企劃成一款**貓村×打怪融合的獨立 2.5D ARPG 遠征遊戲**（完整企劃在 `.trellis/tasks/07-25-adventurer-guild-rework/` prd/design/implement）。前台舊入口已鎖「改建中」（射手鎖/教練可測），新雛形走隱藏入口 **`?guild`**。
+
+**架構定位**：獨立模組 `src/guild/`（比照 zombie DDD），**只帶入射手等級+貓貓**，不帶怪物卡/主線裝備 → 天生與主線隔離、主線平衡零風險。
+
+**P1 已完成（本 session，全 commit、測試護、隔離）**：
+- `data/guildEquipCatalog.js`：ARPG 裝備（5槽×多基礎裝×6品級×六維參數），`guildLootTable.js` 雜貨/掉落。
+- `domain/`：`guildStats`(六維 HP/ATK/AGI/DEF/VIT/LUK + 衍生值)、`rollExpedition`(委託→隨機怪波，沿用打怪數值)、`expeditionFlow`(戰鬥狀態機：射箭/貓貓助攻/怪距離倒數攻擊/補給消耗/勝敗)、`settleExpedition`(材料/雜貨→金幣+CAT幣/裝備掉落)。**21 測試全過。**
+- `ui/`：`GuildBattle`(2.5D 鳥瞰、emoji 佔位、選目標射真實箭)、`GuildLoadout`(備包：裝備 vs 補給的負重抉擇)。
+- `?guild` 測試入口（App.jsx，比照 ?zombie）。
+
+**完整迴圈可玩**：備包 → 出發 → 2.5D 戰鬥(貓貓參戰/補給消耗) → 凱旋結算。
+
+**六維影響**：ATK傷害/AGI額外箭+閃避/DEF減傷/VIT省補給+負重/LUK掉寶+爆擊+雜貨價值。
+
+**下次接（不同性質，適合新 session）**：①持久化(CAT幣/材料/公會裝/聲望存 Firestore+規則+獎勵真發背包) ②階級/聲望(P2) ③大廳+委託板+公會長貓(P4) ④ComfyUI 2.5D 美術(P4)。**目前美術是 emoji 佔位。**
+
+**踩坑**：GuildBattle 未用的 import(STAT_META/derived) 會被 CI 當 error 擋——公會這種新元件記得清乾淨再 build。
+
 ## 2026-07-25（卡片天賦透明化：裝備總效果面板 — 純顯示零平衡）
 
 **背景**：玩家反映怪物卡天賦「裝上去跟顯示有落差、不知道怎麼搭」。根因＝三個隱形機制沒攤開：①`TALENT_CAPS` 隱形上限 ②名字不同卻共用同一 key＋上限（蓄勁/淬毒/蠻力→damagePct）③UI 只顯示單卡、戰鬥吃彙總砍上限後的值。決策：第一段只做「純顯示」，不動任何數值/公式/上限。
