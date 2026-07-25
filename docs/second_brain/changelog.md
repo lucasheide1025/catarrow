@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-07-25（公會美術實裝＋大廳排版——emoji 佔位全數換成 ComfyUI 立繪）
+
+**新腳本 `scripts/gen-guild-art.py`**（沿用 `gen-dungeon-covers`/`gen-rune-tiles` 管線，畫風與地下城封面同語言）：
+`hall_bg`（公會大廳 2:1）、`field_<族>`×6（2.5D 鳥瞰戰場地面，下緣壓暗留給 UI）、`contract_paper`（羊皮紙材質）、`guild_master`（公會長貓去背立繪）、`rank_<階級>`×6（徽章）、`junk_<id>`×6（雜貨）。全部輸出 `public/assets/guild/`。
+- **刻意不生**：怪物與貓貓直接沿用主線 `/monsters-battle/{id}.webp`、`/cats/portraits/{catId}.webp`——省時間，也讓公會看起來就是同一個世界。
+
+**新 `ui/GuildArt.jsx`**：路徑常數 ＋ `ArtOrEmoji`／`MonsterArt`／`CatArt`／`bgLayer`。**鐵律：每張圖都有 emoji fallback**，圖沒生好/載入失敗畫面照樣可玩（排版才能先上、美術後補）。
+
+**排版**：
+- **委託板 → 真的像公會大廳**：`hall_bg` 固定底圖、階級徽章＋聲望條的冒險者證、**公會長貓依階級講話**（`MASTER_LINES`，全清當日還有另一句），委託單改成羊皮紙卡＋📌圖釘、深色標籤，危險度用色塊。
+- **戰鬥畫面**：族群 `field_<族>` 當戰場地面＋上下漸層分層；怪物 emoji → 真怪物立繪（62px，選中發光）；貓 → 真貓頭像（金框）；死亡殘影也用立繪。
+- 備包／倉庫／商店都鋪大廳底圖（不同暗度）；倉庫與商店標上階級徽章；結算頁用該委託族群的戰場底圖（勝綠敗紅），雜貨顯示真圖示，升階橫幅配徽章。
+
+**踩坑（重要，之後生圖必看）**：**全域 STYLE 字串裡的 `warm lantern lighting` 會污染所有 prompt**——羊皮紙生出燈籠＋亂碼文字、雜貨齒輪旁邊長一盞燈。解法是**分層 STYLE**：場景用原本的、**紙張材質 `style=""`（完全不吃）**、**去背物件用中性的 `STYLE_CUTOUT`（soft studio rim light）**，並把 `lantern/candle/pedestal/base` 全塞進負面詞。階級徽章的燈籠紋樣保留（當公會徽記反而好看且六階一致）。
+
 ## 2026-07-25（公會動畫＋音效實裝——把「瞬間結算」演成有過程的戰鬥）
 
 **問題**：`processRound` 是純函數、**一瞬間就算完整個回合**，玩家只看到數字忽然變了，完全沒有打擊感。

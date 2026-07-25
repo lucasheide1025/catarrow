@@ -5,6 +5,7 @@ import { calcGuildExpeditionStats, STAT_META } from "../domain/guildStats";
 import { equipFromStash, unequipSlot, GUILD_STASH_LIMIT } from "../domain/guildRewards";
 import { nextRankInfo } from "../domain/guildRank";
 import { sfxSwitch, sfxClose } from "../../lib/sound";
+import { hallBg, bgLayer, rankBadge, ArtOrEmoji } from "./GuildArt";
 import { GUILD_SLOTS, SLOT_META, GRADE_META, GUILD_EQUIP_ARCHETYPES, equipDisplayName, resolveEquipStats, resolveEquipWeight } from "../data/guildEquipCatalog";
 
 const card = { background: "rgba(0,0,0,.3)", borderRadius: 12, padding: 12 };
@@ -35,7 +36,7 @@ export default function GuildStash({ member, profile, onChange, onClose }) {
   const rank = rankInfo.current;
 
   return (
-    <div style={{ minHeight: "100dvh", background: "linear-gradient(180deg,#0b1220,#1a1207)", color: "#e2e8f0", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+    <div style={{ minHeight: "100dvh", ...bgLayer(hallBg(), { overlay: "rgba(8,6,3,.76)" }), backgroundAttachment: "fixed", color: "#e2e8f0", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ fontSize: 18, fontWeight: 900, color: "#fbbf24" }}>🎒 公會倉庫</div>
         <button type="button" onClick={() => { sfxClose(); onClose(); }} style={{ padding: "7px 14px", borderRadius: 9, border: "none", background: "#334155", color: "#fff", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>返回</button>
@@ -44,7 +45,10 @@ export default function GuildStash({ member, profile, onChange, onClose }) {
       {/* 冒險者證：階級 + 聲望進度（階級只給解鎖，不給任何戰力） */}
       <div style={{ ...card, border: `1px solid ${rank.color}55` }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
-          <span style={{ fontSize: 16, fontWeight: 900, color: rank.color }}>{rank.icon} {rank.name}</span>
+          <span style={{ fontSize: 16, fontWeight: 900, color: rank.color, display: "flex", alignItems: "center", gap: 7 }}>
+            <ArtOrEmoji sources={[rankBadge(rank.id)]} emoji={rank.icon} size={34} />
+            {rank.name}
+          </span>
           <span style={{ fontSize: 11, color: "#94a3b8" }}>可接 ☠️×{rank.maxDanger}　{rank.shopTier} 級貨架</span>
         </div>
         <div style={{ height: 6, background: "rgba(255,255,255,.08)", borderRadius: 3, overflow: "hidden" }}>

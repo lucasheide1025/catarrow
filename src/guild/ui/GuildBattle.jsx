@@ -16,6 +16,7 @@ import {
   sfxTap, sfxArrowShoot, sfxArrowHit, sfxCritBoom, sfxMonsterDead, sfxCounter,
   sfxOrganHit, sfxSoftFail, sfxRoundEnd, sfxVictoryFanfare, sfxDefeat, vibrate,
 } from "../../lib/sound";
+import { MonsterArt, CatArt, fieldBg, bgLayer } from "./GuildArt";
 
 const ARROWS_PER_ROUND = 3;
 const SCORE_BUTTONS = [
@@ -131,7 +132,7 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
 
     // 動畫要用「開打前」的位置，所以先把當下畫面的座標記下來
     const posMap = {};
-    targets.forEach((m, i) => { posMap[m.instanceId] = { ...posOf(i, targets.length, m.distance), icon: m.icon }; });
+    targets.forEach((m, i) => { posMap[m.instanceId] = { ...posOf(i, targets.length, m.distance), icon: m.icon, monsterId: m.monsterId }; });
     const posOrCenter = id => posMap[id] || { topPct: 40, leftPct: 50, scale: 1, icon: "❓" };
 
     let t = 0;
@@ -159,7 +160,7 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
         addFloater(p, `${lg.crit ? "💥" : ""}-${lg.dmg}`, lg.crit ? "#fbbf24" : "#fca5a5");
         if (lg.killed) {
           const gid = uid();
-          setDying(d => [...d, { id: gid, pos: p, icon: p.icon }]);
+          setDying(d => [...d, { id: gid, pos: p, icon: p.icon, monsterId: p.monsterId }]);
           later(() => setDying(d => d.filter(x => x.id !== gid)), T.poof);
           sfxMonsterDead();
         }
@@ -181,7 +182,7 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
         addFloater(p, `🐾-${lg.dmg}`, "#fcd34d");
         if (lg.killed) {
           const gid = uid();
-          setDying(d => [...d, { id: gid, pos: p, icon: p.icon }]);
+          setDying(d => [...d, { id: gid, pos: p, icon: p.icon, monsterId: p.monsterId }]);
           later(() => setDying(d => d.filter(x => x.id !== gid)), T.poof);
           sfxMonsterDead();
         }
@@ -249,8 +250,10 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
       </div>
 
       {/* 2.5D 戰場 */}
-      <div style={{ position: "relative", flex: 1, minHeight: 340, overflow: "hidden",
-        backgroundImage: "repeating-linear-gradient(60deg,rgba(255,255,255,.03) 0 2px,transparent 2px 40px),repeating-linear-gradient(-60deg,rgba(255,255,255,.03) 0 2px,transparent 2px 40px)" }}>
+      <div style={{ position: "relative", flex: 1, minHeight: 360, overflow: "hidden",
+        ...bgLayer(fieldBg(state.expedition?.family || state.monsters?.[0]?.family), { overlay: "rgba(6,10,6,.42)" }) }}>
+        {/* 下緣壓暗，讓玩家/貓/UI 跟地面分層 */}
+        <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg,rgba(0,0,0,.15) 0%,transparent 35%,rgba(0,0,0,.65) 100%)", pointerEvents: "none" }} />
 
         {/* 玩家受擊紅閃 */}
         {hurt && <div style={{ position: "absolute", inset: 0, background: "radial-gradient(circle,transparent 30%,#ef4444 130%)", animation: "gb-hurt .52s ease-out", pointerEvents: "none", zIndex: 90 }} />}
@@ -267,8 +270,9 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
                 transition: "top .5s ease-out, left .5s ease-out, transform .5s ease-out",
                 animation: shaking ? "gb-shake .3s ease-in-out" : "none",
                 background: "none", border: "none", cursor: canAct ? "pointer" : "default", textAlign: "center", zIndex: Math.round(p.topPct) }}>
-              <div style={{ fontSize: 40, filter: isSel ? "drop-shadow(0 0 6px #f59e0b)" : "none" }}>{m.icon}</div>
-              <div style={{ fontSize: 9, fontWeight: 800, color: "#fca5a5", whiteSpace: "nowrap" }}>{m.name}</div>
+              <MonsterArt monsterId={m.monsterId} icon={m.icon} size={62}
+                style={{ filter: isSel ? "drop-shadow(0 0 8px #f59e0b)" : "drop-shadow(0 3px 6px rgba(0,0,0,.6))" }} />
+              <div style={{ fontSize: 9, fontWeight: 800, color: "#fecaca", whiteSpace: "nowrap", textShadow: "0 1px 3px #000" }}>{m.name}</div>
               <div style={{ width: 54, margin: "1px auto" }}><Bar cur={visualHp(m)} max={m.maxHp} /></div>
               <div style={{ fontSize: 9, fontWeight: 900, color: m.distance <= 1 ? "#ef4444" : "#fcd34d" }}>
                 {m.distance <= 0 ? "⚔️攻擊!" : `距離 ${m.distance}`}
@@ -281,8 +285,8 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
         {/* 死亡殘影 */}
         {dying.map(d => (
           <div key={d.id} style={{ position: "absolute", top: `${d.pos.topPct}%`, left: `${d.pos.leftPct}%`, "--s": d.pos.scale,
-            transform: `translate(-50%,-50%) scale(${d.pos.scale})`, fontSize: 40, animation: "gb-poof .82s ease-out forwards", pointerEvents: "none", zIndex: 80 }}>
-            {d.icon}
+            transform: `translate(-50%,-50%) scale(${d.pos.scale})`, animation: "gb-poof .82s ease-out forwards", pointerEvents: "none", zIndex: 80 }}>
+            <MonsterArt monsterId={d.monsterId} icon={d.icon} size={62} />
           </div>
         ))}
 
@@ -308,7 +312,7 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
           <div style={{ fontSize: 46, animation: bowPull ? "gb-bowpull .32s ease-out" : "none" }}>🏹</div>
           {(state.cats || []).map(c => (
             <div key={c.id} style={{ textAlign: "center", animation: pouncing.includes(c.id) ? "gb-pounce .52s ease-out" : "none" }}>
-              <div style={{ fontSize: 30 }}>{c.icon || "🐱"}</div>
+              <CatArt catId={c.id} icon={c.icon} size={42} style={{ border: "2px solid rgba(251,191,36,.55)", boxShadow: "0 3px 8px rgba(0,0,0,.6)" }} />
               <div style={{ fontSize: 9, fontWeight: 800, color: "#fcd34d", whiteSpace: "nowrap" }}>{c.name}</div>
               <div style={{ fontSize: 9, color: "#94a3b8" }}>⚔️{c.atk}</div>
             </div>

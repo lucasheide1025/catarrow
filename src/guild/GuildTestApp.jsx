@@ -15,6 +15,7 @@ import { unlockAudio, sfxLevelUp, sfxCoinDrop, sfxOpenChest } from "../lib/sound
 import { rollDailyContracts, contractsStateFor, todayKey } from "./domain/guildContracts";
 import { loadGuildProfile, saveGuildProfile, grantExpeditionRewards, buyGuildShopItem } from "./db/guildDb";
 import GuildBattle from "./ui/GuildBattle";
+import { fieldBg, bgLayer, rankBadge, junkArt, ArtOrEmoji } from "./ui/GuildArt";
 import GuildBoard from "./ui/GuildBoard";
 import GuildLoadout from "./ui/GuildLoadout";
 import GuildStash from "./ui/GuildStash";
@@ -155,7 +156,7 @@ export default function GuildTestApp() {
   if (result) {
     const won = result.status === "won";
     return (
-      <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, padding: 24, textAlign: "center", background: "linear-gradient(180deg,#0a1a0a,#05100a)", color: "#e2e8f0" }}>
+      <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, padding: 24, textAlign: "center", ...bgLayer(fieldBg(contract?.family), { overlay: won ? "rgba(6,14,8,.74)" : "rgba(18,6,6,.8)" }), color: "#e2e8f0" }}>
         <div style={{ fontSize: 56 }}>{won ? "🎉" : "💀"}</div>
         <div style={{ fontSize: 22, fontWeight: 900, color: won ? "#fbbf24" : "#f87171" }}>{won ? "凱旋歸來！" : "遠征失敗"}</div>
         <div style={{ fontSize: 13, color: "#94a3b8" }}>{won ? "討伐完成，戰利品如下" : result.lostReason}</div>
@@ -163,7 +164,17 @@ export default function GuildTestApp() {
           <div style={{ width: "100%", maxWidth: 340, background: "rgba(0,0,0,.35)", border: "1px solid rgba(251,191,36,.3)", borderRadius: 12, padding: 12, fontSize: 13, textAlign: "left", display: "flex", flexDirection: "column", gap: 6 }}>
             <div style={{ color: "#fbbf24", fontWeight: 900 }}>💰 {loot.coins} 金幣　🐾 {loot.catCoins} CAT幣</div>
             {loot.materials.length > 0 && <div style={{ color: "#a7f3d0" }}>📦 材料：{loot.materials.map(m => `${m.familyTier}×${m.qty}`).join("、")}</div>}
-            {loot.junk.length > 0 && <div style={{ color: "#93c5fd" }}>🎒 雜貨：{loot.junk.map(j => `${j.icon}${j.name}`).join("、")}</div>}
+            {loot.junk.length > 0 && (
+              <div style={{ color: "#93c5fd", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                🎒 雜貨：
+                {loot.junk.map((j, i) => (
+                  <span key={`${j.id}-${i}`} style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                    <ArtOrEmoji sources={[junkArt(j.id)]} emoji={j.icon} size={22} />
+                    <span style={{ fontSize: 11 }}>{j.name}</span>
+                  </span>
+                ))}
+              </div>
+            )}
             {loot.equipDrops.length > 0 && <div style={{ color: "#f0abfc", fontWeight: 800 }}>⭐ 裝備掉落：{loot.equipDrops.map(e => `${e.grade} ${e.archetypeId}`).join("、")}</div>}
             {loot.materials.length === 0 && loot.junk.length === 0 && loot.equipDrops.length === 0 && <div style={{ color: "#64748b" }}>（這趟只拿到基礎報酬）</div>}
           </div>
@@ -176,7 +187,10 @@ export default function GuildTestApp() {
             <style>{"@keyframes gt-rankup{0%{opacity:0;transform:scale(.7)}40%{opacity:1;transform:scale(1.08)}100%{opacity:1;transform:scale(1)}}"}</style>
             <div style={{ animation: "gt-rankup .7s ease-out", background: "rgba(0,0,0,.45)", border: `1px solid ${rankUp.color}`, borderRadius: 14, padding: "10px 18px" }}>
               <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 800 }}>🎖️ 階級提升！</div>
-              <div style={{ fontSize: 18, fontWeight: 900, color: rankUp.color }}>{rankUp.icon} {rankUp.name}</div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                <ArtOrEmoji sources={[rankBadge(rankUp.id)]} emoji={rankUp.icon} size={40} />
+                <div style={{ fontSize: 18, fontWeight: 900, color: rankUp.color }}>{rankUp.name}</div>
+              </div>
               <div style={{ fontSize: 10, color: "#cbd5e1", marginTop: 2 }}>可接 ☠️×{rankUp.maxDanger} 委託・{rankUp.shopTier} 級貨架解鎖</div>
             </div>
           </>

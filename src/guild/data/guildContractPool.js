@@ -59,3 +59,14 @@ export const DANGER_TONE = Object.freeze({
 });
 
 export const CONTRACTS_PER_DAY = 5;
+
+// 公會長貓的台詞：依階級變化（讓升階被「人」看見，不只是數字變大）。
+// stuck = 今天全部委託都結案了；rookie = 還沒接過任何一張。
+export const MASTER_LINES = Object.freeze({
+  apprentice: { greet: "新面孔啊。先從門口那幾張例行委託開始，別急著逞英雄。", done: "第一天就跑完全部？孩子，明天再來。" },
+  bronze:     { greet: "銅牌了。街坊開始記得你的名字了。", done: "今天的委託都清了，回去把裝備擦一擦。" },
+  silver:     { greet: "銀牌。危險委託也敢接，我看人是不會錯的。", done: "全清了。喝碗湯再走吧。" },
+  gold:       { greet: "金牌冒險者。極危委託開放給你了——但別忘了帶足補給。", done: "整面板子被你掃空了，公會今天很安靜。" },
+  platinum:   { greet: "白金。公會的傳說貨架，為你這種人準備的。", done: "又是全清。年輕人，慢一點也沒關係。" },
+  legend:     { greet: "傳說冒險者。我這把老骨頭，能替你發委託是榮幸。", done: "板子空了。整座城今晚睡得安穩。" },
+});

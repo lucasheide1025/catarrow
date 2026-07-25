@@ -6,6 +6,7 @@ import { calcGuildExpeditionStats, deriveGuildCombat, STAT_META } from "../domai
 import { GUILD_SLOTS, SLOT_META, resolveEquipWeight, equipDisplayName, GRADE_META } from "../data/guildEquipCatalog";
 import { MAX_PARTY_CATS } from "../domain/guildCats";
 import { sfxTap, sfxSwitch, sfxCast } from "../../lib/sound";
+import { hallBg, bgLayer, CatArt } from "./GuildArt";
 
 const BASE_CAPACITY = 20;
 const SUPPLY_WEIGHT = 1;
@@ -42,7 +43,7 @@ export default function GuildLoadout({ member, guildEquip, onDepart, catRoster =
   const pct = Math.min(100, (used / capacity) * 100);
 
   return (
-    <div style={{ minHeight: "100dvh", background: "linear-gradient(180deg,#0b1220,#1a1207)", color: "#e2e8f0", padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+    <div style={{ minHeight: "100dvh", ...bgLayer(hallBg(), { overlay: "rgba(8,6,3,.74)" }), backgroundAttachment: "fixed", color: "#e2e8f0", padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
       <div style={{ fontSize: 18, fontWeight: 900, color: "#fbbf24" }}>🎒 出發前備包</div>
 
       {/* 六維 */}
@@ -87,7 +88,10 @@ export default function GuildLoadout({ member, guildEquip, onDepart, catRoster =
                   style={{ padding: "6px 9px", borderRadius: 9, fontSize: 11, fontWeight: 800, cursor: blocked ? "not-allowed" : "pointer",
                     color: on ? "#0b1220" : blocked ? "#64748b" : "#e2e8f0", border: `1px solid ${on ? "#fbbf24" : "rgba(255,255,255,.1)"}`,
                     background: on ? "linear-gradient(135deg,#fcd34d,#f59e0b)" : "rgba(255,255,255,.04)", textAlign: "left" }}>
-                  {cat.icon} {cat.name} <span style={{ opacity: .8 }}>Lv{cat.level}</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                    <CatArt catId={cat.id} icon={cat.icon} size={26} />
+                    <span>{cat.name} <span style={{ opacity: .8 }}>Lv{cat.level}</span></span>
+                  </span>
                   <div style={{ fontSize: 10, fontWeight: 700, opacity: .85 }}>{cat.typeLabel}　⚔️{cat.atk} 🛡️{cat.def}</div>
                 </button>
               );
