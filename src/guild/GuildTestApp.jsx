@@ -92,7 +92,14 @@ export default function GuildTestApp({ onBack, onLegacy }) {
       setGp(res.profile);
       if (res.offline) setGrantMsg("（未登入：離線試玩，未存檔）");
       else if (!res.ok) setGrantMsg(`⚠️ 入帳失敗：${res.reason || "請確認 Firestore 規則已貼上"}`);
-      else if (rolled.won) setGrantMsg(`✅ 已入帳　聲望 +${res.repGained}${res.stashFull ? "　⚠️倉庫已滿，裝備沒收進去" : ""}`);
+      else if (rolled.won) {
+        // 自動分解／倉庫溢出都會轉成碎片（不會白掉），這裡要講清楚玩家拿到什麼
+        const bits = [`✅ 已入帳　聲望 +${res.repGained}`];
+        if (res.autoSalvaged) bits.push(`⚙️ 自動分解 ${res.autoSalvaged} 件`);
+        if (res.overflowSalvaged) bits.push(`📦 倉庫滿，${res.overflowSalvaged} 件轉碎片`);
+        if (res.shardsGained) bits.push(`🔧 +${res.shardsGained}`);
+        setGrantMsg(bits.join("　"));
+      }
 
       // 戰利品音效：金幣 → 裝備開箱 → 升階（依序錯開，才聽得出層次）
       if (rolled.won) {

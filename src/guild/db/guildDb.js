@@ -37,6 +37,7 @@ const toDoc = p => ({
   contracts: p.contracts,
   junkSeen: p.junkSeen,
   junkStock: p.junkStock,
+  autoSalvage: p.autoSalvage,
   expeditions: p.expeditions,
   updatedAt: serverTimestamp(),
 });

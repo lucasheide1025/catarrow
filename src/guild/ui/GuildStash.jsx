@@ -3,12 +3,12 @@
 // 純 UI：所有變換走 domain/guildRewards 的純函數，改完把新存檔丟給 onChange 存。
 import { useState } from "react";
 import { calcGuildExpeditionStats, STAT_META } from "../domain/guildStats";
-import { equipFromStash, unequipSlot, GUILD_STASH_LIMIT } from "../domain/guildRewards";
+import { equipFromStash, unequipSlot, GUILD_STASH_LIMIT, DEFAULT_AUTO_SALVAGE, shouldAutoSalvage } from "../domain/guildRewards";
 import { enhanceEquip, salvageEquip, salvageMany, enhanceInfo, salvageValue } from "../domain/guildEnhance";
 import { nextRankInfo } from "../domain/guildRank";
 import { sfxSwitch, sfxClose, sfxLevelUp, sfxError, sfxOpenChest } from "../../lib/sound";
 import { hallBg, bgLayer, rankBadge, ArtOrEmoji } from "./GuildArt";
-import { GUILD_SLOTS, SLOT_META, GRADE_META, GUILD_EQUIP_ARCHETYPES, equipDisplayName, resolveEquipStats, resolveEquipWeight, affixTags } from "../data/guildEquipCatalog";
+import { GUILD_SLOTS, SLOT_META, GRADE_META, GRADES, GUILD_EQUIP_ARCHETYPES, equipDisplayName, resolveEquipStats, resolveEquipWeight, affixTags } from "../data/guildEquipCatalog";
 
 const card = { background: "rgba(0,0,0,.3)", borderRadius: 12, padding: 12 };
 const title = { fontSize: 12, fontWeight: 900, color: "#c7d2fe", marginBottom: 8 };
@@ -49,6 +49,9 @@ function AffixTags({ item }) {
 
 export default function GuildStash({ member, profile, onChange, onClose }) {
   const [msg, setMsg] = useState("");
+  const [sortBy, setSortBy] = useState("new");     // new | grade | plus | slot
+  const [filterSlot, setFilterSlot] = useState("all");
+  const [showFilterCfg, setShowFilterCfg] = useState(false);
   const stats = calcGuildExpeditionStats(member, profile.equipped);
   const rankInfo = nextRankInfo(profile.rep);
   const rank = rankInfo.current;
@@ -71,6 +74,24 @@ export default function GuildStash({ member, profile, onChange, onClose }) {
   const junkUids = profile.stash
     .filter(i => ["common", "rare"].includes(i.grade) && !(i.plus > 0))
     .map(i => i.uid);
+  const filterCfg = { ...DEFAULT_AUTO_SALVAGE, ...(profile.autoSalvage || {}) };
+  const setFilter = patch => {
+    sfxSwitch();
+    onChange({ ...profile, autoSalvage: { ...filterCfg, ...patch } });
+  };
+
+  // 倉庫排序／篩選（掉落變多之後，沒有這個根本找不到東西）
+  const gradeRank = g => GRADES.indexOf(g);
+  const shownStash = profile.stash
+    .filter(i => filterSlot === "all" || GUILD_EQUIP_ARCHETYPES[i.archetypeId]?.slot === filterSlot)
+    .slice()
+    .sort((a, b) => {
+      if (sortBy === "grade") return gradeRank(b.grade) - gradeRank(a.grade) || (b.affixes?.length || 0) - (a.affixes?.length || 0);
+      if (sortBy === "plus") return (b.plus || 0) - (a.plus || 0) || gradeRank(b.grade) - gradeRank(a.grade);
+      if (sortBy === "slot") return String(GUILD_EQUIP_ARCHETYPES[a.archetypeId]?.slot).localeCompare(String(GUILD_EQUIP_ARCHETYPES[b.archetypeId]?.slot));
+      return (b.at || 0) - (a.at || 0);   // new
+    });
+
   const doSalvageJunk = () => {
     const res = salvageMany(profile, junkUids);
     if (!res.ok) { sfxError(); setMsg("⚠️ 沒有可清的低階裝"); return; }
@@ -166,8 +187,71 @@ export default function GuildStash({ member, profile, onChange, onClose }) {
             </button>
           )}
         </div>
+        {/* 排序 / 槽位篩選 / 撿取過濾器 */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
+          {[["new", "最新"], ["grade", "品級"], ["plus", "強化"], ["slot", "槽位"]].map(([k, label]) => (
+            <button key={k} type="button" onClick={() => { sfxSwitch(); setSortBy(k); }}
+              style={{ padding: "3px 8px", borderRadius: 7, fontSize: 10, fontWeight: 800, cursor: "pointer",
+                border: `1px solid ${sortBy === k ? "#fbbf24" : "rgba(255,255,255,.12)"}`,
+                background: sortBy === k ? "rgba(251,191,36,.2)" : "rgba(0,0,0,.3)", color: "#e2e8f0" }}>
+              {label}
+            </button>
+          ))}
+          <span style={{ width: 1, background: "rgba(255,255,255,.15)", margin: "0 2px" }} />
+          {[["all", "全部"], ...GUILD_SLOTS.map(sl => [sl, SLOT_META[sl].icon])].map(([k, label]) => (
+            <button key={k} type="button" onClick={() => { sfxSwitch(); setFilterSlot(k); }}
+              style={{ padding: "3px 8px", borderRadius: 7, fontSize: 10, fontWeight: 800, cursor: "pointer",
+                border: `1px solid ${filterSlot === k ? "#fbbf24" : "rgba(255,255,255,.12)"}`,
+                background: filterSlot === k ? "rgba(251,191,36,.2)" : "rgba(0,0,0,.3)", color: "#e2e8f0" }}>
+              {label}
+            </button>
+          ))}
+          <button type="button" onClick={() => { sfxSwitch(); setShowFilterCfg(v => !v); }}
+            style={{ marginLeft: "auto", padding: "3px 8px", borderRadius: 7, fontSize: 10, fontWeight: 800, cursor: "pointer",
+              border: `1px solid ${filterCfg.enabled ? "#38bdf8" : "rgba(255,255,255,.12)"}`,
+              background: filterCfg.enabled ? "rgba(56,189,248,.18)" : "rgba(0,0,0,.3)", color: filterCfg.enabled ? "#7dd3fc" : "#94a3b8" }}>
+            ⚙️ 自動分解{filterCfg.enabled ? "：開" : "：關"}
+          </button>
+        </div>
+
+        {showFilterCfg && (
+          <div style={{ background: "rgba(56,189,248,.08)", border: "1px solid rgba(56,189,248,.25)", borderRadius: 10, padding: 10, marginBottom: 8 }}>
+            <div style={{ fontSize: 11, color: "#7dd3fc", fontWeight: 900, marginBottom: 6 }}>⚙️ 撿取過濾器（掉落當下自動分解）</div>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, marginBottom: 7, cursor: "pointer" }}>
+              <input type="checkbox" checked={filterCfg.enabled}
+                onChange={e => setFilter({ enabled: e.target.checked })} />
+              啟用（省得倉庫被垃圾塞爆）
+            </label>
+            <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 4 }}>自動分解「這個品級以下」的掉落：</div>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 7 }}>
+              {GRADES.slice(0, 4).map(g => (
+                <button key={g} type="button" onClick={() => setFilter({ maxGrade: g })}
+                  style={{ padding: "3px 8px", borderRadius: 7, fontSize: 10, fontWeight: 800, cursor: "pointer",
+                    border: `1px solid ${filterCfg.maxGrade === g ? GRADE_META[g].color : "rgba(255,255,255,.12)"}`,
+                    background: filterCfg.maxGrade === g ? "rgba(255,255,255,.08)" : "rgba(0,0,0,.3)", color: GRADE_META[g].color }}>
+                  {GRADE_META[g].label}以下
+                </button>
+              ))}
+            </div>
+            <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 4 }}>但這些一定保留：</div>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+              {[[1, "有 1 條以上詞綴"], [2, "有 2 條詞綴"]].map(([n, label]) => (
+                <button key={n} type="button" onClick={() => setFilter({ keepAffixes: n })}
+                  style={{ padding: "3px 8px", borderRadius: 7, fontSize: 10, fontWeight: 800, cursor: "pointer",
+                    border: `1px solid ${filterCfg.keepAffixes === n ? "#fbbf24" : "rgba(255,255,255,.12)"}`,
+                    background: filterCfg.keepAffixes === n ? "rgba(251,191,36,.2)" : "rgba(0,0,0,.3)", color: "#e2e8f0" }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div style={{ fontSize: 9.5, color: "#64748b", marginTop: 7, lineHeight: 1.6 }}>
+              已強化（+1 以上）的裝備**永遠不會**被自動分解。倉庫滿了也不會白掉——多出來的一樣變碎片。
+            </div>
+          </div>
+        )}
+
         {profile.stash.length === 0 && <div style={{ fontSize: 12, color: "#64748b" }}>還沒有戰利品，去遠征打怪掉裝吧。</div>}
-        {profile.stash.map(it => {
+        {shownStash.map(it => {
           const arch = GUILD_EQUIP_ARCHETYPES[it.archetypeId];
           return (
             <div key={it.uid} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "5px 0", borderBottom: "1px solid rgba(255,255,255,.05)" }}>

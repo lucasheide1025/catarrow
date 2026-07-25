@@ -10,10 +10,28 @@
 //    公會只獨佔 CAT幣 / 聲望 / 公會裝，維持「戰力隔離、經濟回饋主線」。
 // ─────────────────────────────────────────────────────────────
 import { MATERIALS } from "../../lib/monsterMaterials";
-import { GUILD_SLOTS, GUILD_EQUIP_ARCHETYPES, AFFIX_IDS } from "../data/guildEquipCatalog";
+import { GUILD_SLOTS, GUILD_EQUIP_ARCHETYPES, AFFIX_IDS, GRADES, GRADE_META, salvageValue } from "../data/guildEquipCatalog";
 import { JUNK_BY_ID, evaluateJunk } from "../data/guildJunkCatalog";
 
-export const GUILD_STASH_LIMIT = 60;          // 倉庫上限（滿了就不再收，避免存檔無限膨脹）
+// 倉庫上限。2026-07-26 從 60 提到 120：掉落率調高後一天可進 10+ 件，60 太快就爆。
+// **滿了不再白掉**——多的直接自動分解成碎片（見 applyLootToProfile）。
+export const GUILD_STASH_LIMIT = 120;
+
+// 撿取過濾器（ARPG 標配）：掉落當下就自動分解掉不想要的，倉庫才不會被垃圾塞爆。
+// 規則刻意只有兩條，設定畫面一眼看懂：
+//   ① 品級 <= maxGrade 的自動分解
+//   ② 但「詞綴數 >= keepAffixes」或「已強化」的一律保留（怕誤拆好東西）
+export const DEFAULT_AUTO_SALVAGE = Object.freeze({ enabled: false, maxGrade: "common", keepAffixes: 2 });
+
+export function shouldAutoSalvage(item, rule) {
+  const r = { ...DEFAULT_AUTO_SALVAGE, ...(rule || {}) };
+  if (!r.enabled) return false;
+  if ((Number(item?.plus) || 0) > 0) return false;                        // 強化過的絕不自動拆
+  if ((item?.affixes?.length || 0) >= r.keepAffixes) return false;        // 詞綴夠多就留著
+  const tier = GRADE_META[item?.grade]?.tier || 1;
+  const maxTier = GRADE_META[r.maxGrade]?.tier || 1;
+  return tier <= maxTier;
+}
 export const REP_PER_DANGER = 10;             // 完成一趟遠征的聲望 = 危險度 × 此值
 
 // 新玩家起手裝（最低品級，不裸奔；六維幾乎等於沒有，不影響平衡）
@@ -36,6 +54,7 @@ export function emptyGuildProfile() {
     salvagedCount: 0,      // 累計分解過幾件裝備（稱號用；分解本身不留紀錄就算不出來）
     catEarned: 0,          // 累計賺到的 CAT幣（稱號用；現有的 catCoins 會被花掉，算不出「總共賺多少」）
     junkStock: {},         // 雜貨倉庫 { [junkId]: qty }——**不自動賣**，玩家自己決定何時賣
+    autoSalvage: { ...DEFAULT_AUTO_SALVAGE },  // 撿取過濾器（掉落當下自動分解）
     contracts: null,      // 今日委託完成紀錄 { dateKey, done:[contractId] }；跨日自動換板（見 guildContracts）
     junkSeen: {},
     expeditions: { total: 0, won: 0, byDanger: { 1: 0, 2: 0, 3: 0 } },
@@ -66,6 +85,11 @@ export function normalizeGuildProfile(raw) {
       .filter(i => i && GUILD_EQUIP_ARCHETYPES[i.archetypeId])
       .map(i => ({ uid: i.uid, at: i.at || 0, ...normItem(i) })),
     shards: Math.max(0, Math.floor(Number(raw.shards) || 0)),
+    autoSalvage: {
+      enabled: !!raw.autoSalvage?.enabled,
+      maxGrade: GRADES.includes(raw.autoSalvage?.maxGrade) ? raw.autoSalvage.maxGrade : DEFAULT_AUTO_SALVAGE.maxGrade,
+      keepAffixes: Math.max(0, Math.min(2, Math.floor(Number(raw.autoSalvage?.keepAffixes ?? DEFAULT_AUTO_SALVAGE.keepAffixes)))),
+    },
     title: typeof raw.title === "string" ? raw.title : null,
     salvagedCount: Math.max(0, Math.floor(Number(raw.salvagedCount) || 0)),
     catEarned: Math.max(0, Math.floor(Number(raw.catEarned) || 0)),
@@ -144,10 +168,26 @@ export function applyLootToProfile(profile, loot, opts = {}) {
   const uidFn = opts.uidFn || (() => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`);
   const stash = [...p.stash];
   let stashFull = false;
+  let autoSalvaged = 0;      // 被撿取過濾器自動分解的件數
+  let overflowSalvaged = 0;  // 倉庫滿而自動分解的件數
+  let shardsGained = 0;
   for (const d of loot.equipDrops || []) {
-    if (stash.length >= GUILD_STASH_LIMIT) { stashFull = true; break; }
-    stash.push({ uid: uidFn(), archetypeId: d.archetypeId, grade: d.grade,
-      plus: 0, affixes: Array.isArray(d.affixes) ? d.affixes : [], at: opts.now || Date.now() });
+    const item = { uid: uidFn(), archetypeId: d.archetypeId, grade: d.grade,
+      plus: 0, affixes: Array.isArray(d.affixes) ? d.affixes : [], at: opts.now || Date.now() };
+    // ① 撿取過濾器：不想要的當場化成碎片
+    if (shouldAutoSalvage(item, p.autoSalvage)) {
+      shardsGained += salvageValue(item);
+      autoSalvaged += 1;
+      continue;
+    }
+    // ② 倉庫滿：**不再白掉**，一樣轉成碎片（玩家至少拿得到東西）
+    if (stash.length >= GUILD_STASH_LIMIT) {
+      shardsGained += salvageValue(item);
+      overflowSalvaged += 1;
+      stashFull = true;
+      continue;
+    }
+    stash.push(item);
   }
 
   const repGained = danger * REP_PER_DANGER;
@@ -157,10 +197,15 @@ export function applyLootToProfile(profile, loot, opts = {}) {
       catCoins: p.catCoins + (loot.catCoins || 0),
       catEarned: p.catEarned + (loot.catCoins || 0),   // 累計賺取（稱號用，花掉也不會減）
       rep: p.rep + repGained, junkSeen, junkStock, stash, expeditions,
+      shards: p.shards + shardsGained,
+      salvagedCount: p.salvagedCount + autoSalvaged + overflowSalvaged,
     },
     repGained,
     coinsGained: loot.coins || 0,
     stashFull,
+    autoSalvaged,
+    overflowSalvaged,
+    shardsGained,
   };
 }
 

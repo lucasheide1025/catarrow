@@ -4,7 +4,8 @@ import {
   applyLootToProfile, equipFromStash, unequipSlot, GUILD_STASH_LIMIT, REP_PER_DANGER,
 } from "./guildRewards";
 import { sellJunkFromStock, junkStockView, allJunkSellMap } from "./guildRewards";
-import { GUILD_EQUIP_ARCHETYPES, GUILD_SLOTS } from "../data/guildEquipCatalog";
+import { GUILD_EQUIP_ARCHETYPES, GUILD_SLOTS, salvageValue } from "../data/guildEquipCatalog";
+import { shouldAutoSalvage, DEFAULT_AUTO_SALVAGE } from "./guildRewards";
 import { JUNK_BY_ID, evaluateJunk } from "../data/guildJunkCatalog";
 
 let seq = 0;
@@ -182,5 +183,55 @@ describe("換裝", () => {
   test("卸下空槽 → 不產生幽靈裝備", () => {
     const p = unequipSlot(emptyGuildProfile(), "quiver");
     expect(p.stash).toHaveLength(0);
+  });
+});
+
+describe("撿取過濾器 / 倉庫溢出（掉落調高之後的必要配套）", () => {
+  const drop = (grade, affixes = []) => ({ archetypeId: "iron_bow", grade, affixes });
+  const lootOf = (...drops) => ({ won: true, coins: 0, catCoins: 0, materials: [], legacyMaterials: [], junk: [], equipDrops: drops });
+  const rule = extra => ({ ...DEFAULT_AUTO_SALVAGE, enabled: true, ...extra });
+
+  test("預設關閉（不會突然幫玩家拆東西）", () => {
+    expect(DEFAULT_AUTO_SALVAGE.enabled).toBe(false);
+    expect(shouldAutoSalvage({ grade: "common", affixes: [] }, DEFAULT_AUTO_SALVAGE)).toBe(false);
+  });
+
+  test("開啟後：低品級自動拆、高品級保留", () => {
+    const r = rule({ maxGrade: "rare" });
+    expect(shouldAutoSalvage({ grade: "common", affixes: [] }, r)).toBe(true);
+    expect(shouldAutoSalvage({ grade: "rare", affixes: [] }, r)).toBe(true);
+    expect(shouldAutoSalvage({ grade: "elite", affixes: [] }, r)).toBe(false);
+  });
+
+  test("詞綴夠多、或已強化過的一律保留（怕誤拆好東西）", () => {
+    const r = rule({ maxGrade: "rare", keepAffixes: 2 });
+    expect(shouldAutoSalvage({ grade: "common", affixes: ["sharp", "lucky"] }, r)).toBe(false);
+    expect(shouldAutoSalvage({ grade: "common", affixes: ["sharp"], plus: 1 }, r)).toBe(false);
+  });
+
+  test("入庫時自動分解 → 換成碎片而不是進倉庫", () => {
+    const p0 = { ...emptyGuildProfile(), autoSalvage: rule({ maxGrade: "common" }) };
+    const res = applyLootToProfile(p0, lootOf(drop("common"), drop("elite")), { danger: 1, uidFn });
+    expect(res.autoSalvaged).toBe(1);
+    expect(res.profile.stash).toHaveLength(1);              // 只留 elite
+    expect(res.profile.stash[0].grade).toBe("elite");
+    expect(res.profile.shards).toBe(salvageValue({ grade: "common", plus: 0 }));
+    expect(res.profile.salvagedCount).toBe(1);
+  });
+
+  test("倉庫滿：不再白掉，多的一樣轉碎片", () => {
+    const full = {
+      ...emptyGuildProfile(),
+      stash: Array.from({ length: GUILD_STASH_LIMIT }, (_, i) => ({ uid: `s${i}`, archetypeId: "wood_bow", grade: "common", plus: 0, affixes: [] })),
+    };
+    const res = applyLootToProfile(full, lootOf(drop("boss", ["sharp"])), { danger: 6, uidFn });
+    expect(res.stashFull).toBe(true);
+    expect(res.overflowSalvaged).toBe(1);
+    expect(res.shardsGained).toBeGreaterThan(0);
+    expect(res.profile.stash).toHaveLength(GUILD_STASH_LIMIT);
+  });
+
+  test("倉庫上限提高到 120（掉落調高後 60 太快爆）", () => {
+    expect(GUILD_STASH_LIMIT).toBe(120);
   });
 });

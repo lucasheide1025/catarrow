@@ -156,3 +156,36 @@ export function equipDisplayName(archetypeId, grade, item = {}) {
 export function affixTags(item = {}) {
   return (item.affixes || []).map(id => GUILD_AFFIXES[id]).filter(Boolean);
 }
+
+// ── 強化／分解的「純計價」（放資料層，讓 guildRewards 與 guildEnhance 都能用而不互相 import）──
+// ⚠️ 這些只算數字，不碰存檔；牽涉存檔的操作在 domain/guildEnhance.js。
+const SALVAGE_BY_TIER = { 1: 2, 2: 5, 3: 12, 4: 25, 5: 45, 6: 80 };
+
+export function enhanceCost(grade, currentPlus) {
+  const tier = GRADE_META[grade]?.tier || 1;
+  const next = Math.max(0, Math.floor(Number(currentPlus) || 0)) + 1;
+  return {
+    shards: Math.round(tier * 3 * next * (1 + (next - 1) * 0.25)),
+    catCoins: Math.round(tier * 6 * next),
+    next,
+  };
+}
+
+export function enhanceTotalCost(grade, plus) {
+  let shards = 0;
+  let catCoins = 0;
+  for (let i = 0; i < Math.max(0, Math.floor(Number(plus) || 0)); i++) {
+    const c = enhanceCost(grade, i);
+    shards += c.shards;
+    catCoins += c.catCoins;
+  }
+  return { shards, catCoins };
+}
+
+// 分解回收：品級越高越多，已投入的強化退回 8 成
+export function salvageValue(item) {
+  const tier = GRADE_META[item?.grade]?.tier || 1;
+  const base = SALVAGE_BY_TIER[tier] || 2;
+  const invested = enhanceTotalCost(item?.grade, item?.plus).shards;
+  return base + Math.floor(invested * 0.8);
+}
