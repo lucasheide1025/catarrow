@@ -3,7 +3,7 @@
 > 這份文件是給「任何 AI 模型」（Claude / GPT / Gemini / …）的接手指南。
 > 目標：讀完這份，你就能用跟前任 AI 一致的思路做功能設計、UI/UX、程式編寫與除錯。
 > quick-ref.md 記的是「事實」（函式/路徑/坑），這份記的是「**方法**」（怎麼想、怎麼做）。
-> 最後更新：2026-07-09
+> 最後更新：2026-07-25（校正 DB 模組清單；其餘章節待稽核後補正，見 `_audit/gap-map.md`）
 
 ---
 
@@ -11,7 +11,7 @@
 
 - **專案**：貓小隊射箭場積分系統（catarrow）——射箭道館管理 Web App ＋ 大量遊戲化系統（打怪/地下城/貓村/卡片/世界王/組隊/決鬥/訪客兒童模式）。
 - **技術棧**：React 18（CRA / react-scripts）、React Router v6、Firebase Auth + Firestore、Tailwind（CDN 版，注意偽類限制）。**純前端，沒有後端伺服器、沒有 Cloud Functions。**
-- **部署**：push 到 GitHub `main` → Vercel 自動部署。沒有 staging，main 就是 production。
+- **部署**：主 App（`catarrow`）push 到 GitHub `main` → Vercel 自動部署，正式網址 `https://student.catgroup.com.tw/`。行銷官網（`website/`，`catarrow-archery` 專案）**要手動 `vercel deploy`**，正式網址 `https://archery.catgroup.com.tw/`。沒有 staging，main 就是 production。
 - **使用者**：道館教練（admin）＋ 學生（member）＋ 訪客/兒童（guest/kid），幾乎全是**手機瀏覽器**使用。
 - **老闆**：非工程師，用繁體中文溝通，重視「教學式說明」與「精簡回答」。
 
@@ -48,13 +48,24 @@
 8. **多人併發寫同一文件要用 transaction**（範本：`trySetDungeonFirstClear`）；「先查後寫」在組隊場景必產生重複寫入。
 9. **`deleteField()` 只能出現在 `updateDoc` 的 payload**。同一個 patch 物件若要拿去 `addDoc`（稽核 log）或 return，先做一份 sanitized 副本（sentinel 換成 null）。
 10. **數值耦合檢查**：改任何「戰力相關」數值前，先確認它會不會被 `calcArcherPower()` 讀到——archerStats 同時是戰鬥力**也是**怪物配對難度輸入，拉高數值可能跨過 `getTierPoolByPower` 門檻（100/180/280/400）反而配到更強的怪。這是一個通用教訓：**改 A 之前先問「還有誰在讀 A」。**
+11. **成本控制會「靜默擋掉」非核心寫入**（`src/lib/costControl.js`，2026-07-25 補記）。這是防 Firestore 帳單爆表的機制，但它是「寫入沒反應」的**新嫌疑犯**：
+    - 5 級：`normal`→`warning`→`protect`→`restricted`→`emergency`（月上限預設 300 TWD，門檻 50/80/90/95%）。
+    - 讀到遠端政策前**預設 `protect`（fail-closed）**——所以 migration/大量後台寫入在啟動初期本來就會被擋，不是 bug。
+    - 各能力被封鎖的級別看 `BLOCKED_FROM`：如 `backgroundSync`/`shootingHistorySync`/`gameAnalysisWrites`/`nonessentialListeners` 到 `restricted` 就停、`gameCloudProgress` 到 `emergency` 才停。
+    - 寫入前若有 `assertCostCapability(cap)` 擋下，症狀跟「hasOnly 白名單漏欄位」很像（都是靜默失敗），除錯時要**兩個都查**。hook：`src/hooks/useCostControl.js`。
 
 ---
 
 ## 3. 🛠️ 程式編寫慣例
 
 ### 檔案放哪裡
-- Firestore 讀寫 → **全部**集中在 `src/lib/db.js`（子系統大的另立 `xxxDb.js`：`duelDb`/`dungeonDb`/`partyDb`/`expeditionDb`/`worldBossDb`/`guestAuth`）。collection 名稱一律走頂部 `C` 常數物件，不硬編字串。
+- Firestore 讀寫 → 核心在 `src/lib/db.js`，但**子系統早已大量拆成獨立 `xxxDb.js` 模組**（找不到函式時先想「它是不是搬去專屬 Db 檔了」）。collection 名稱一律走各檔頂部的 `C` 常數物件，不硬編字串。
+  現存 DB 模組（2026-07-25 實查，共 20 個 + `db.js` 本體 + `guestAuth.js`）：
+  - **戰鬥/地下城/遠征**：`dungeonDb` `partyDb` `duelDb` `expeditionDb` `expeditionTeamDb` `worldBossDb` `dungeonBossRewardDb` `monsterRewardDb`
+  - **貓村/大富翁/採集**：`villageBoardDb` `villageBoardTeamDb` `villageGoalDb` `catDb` `gatheringPartyDb` `materialConversionDb`
+  - **裝備**：`equipSpecializationDb` `guestEquipmentDb`
+  - **其他**：`bookingDb`（線上約課）`storyDb`（貓咪故事）`seasonDb`（季賽）`campSessionsDb`（夏令營）
+  - **訪客登入**：`guestAuth.js`（非 `*Db` 命名，但屬資料層）
 - 純邏輯/資料表 → `src/lib/*.js`（monsterData、lootTable、archerLevel…），**不含 UI、不 import 元件**。
 - 頁面容器 → `src/pages/`（AdminApp / MemberApp / GuestApp / LoginPage）。
 - 元件 → `src/components/<域>/`（admin / member / party / duel / dungeon / worldboss / cat / shared）。
@@ -126,7 +137,7 @@ CI=true 會把 ESLint warning 當 error——**每次改完必跑，過了才算
 | 症狀 | 先查什麼 |
 |------|----------|
 | permission-denied | 規則貼進 Console 了嗎？新欄位在 hasOnly 白名單嗎？是不是在幫別人寫入？ |
-| 寫入「沒反應」也不報錯 | hasOnly 白名單漏欄位（Firestore 靜默擋）；或 client-triggered 跨帳號寫入 |
+| 寫入「沒反應」也不報錯 | ①hasOnly 白名單漏欄位（Firestore 靜默擋）②client-triggered 跨帳號寫入 ③成本控制 `assertCostCapability` 擋下（`costControl.js`，超支或啟動期 fail-closed） |
 | 教練切射手模式白屏 | 循環 import（常數放在 UI 元件裡 re-export） |
 | minified 報 `n is not defined` | 源碼某函式外多了孤立字元 |
 | 狀態明明設了卻不重渲染 | 用了 `useRef` 該用 `useState`（快照比 `.then()` 早到的 race） |
@@ -160,7 +171,9 @@ CI=true 會把 ESLint warning 當 error——**每次改完必跑，過了才算
 
 | 要找 | 位置 |
 |------|------|
-| 身份分流/路由 | `src/App.jsx`（`?guest=1`/`?kid=<id>` → GuestApp；admin → AdminApp；member → MemberApp） |
+| 身份分流/路由 | `src/App.jsx`（`?guest=1`/`?kid=<id>` → GuestApp；`?zombie` → 殭屍模式🚧；`?catalog` → 商品型錄🚧；admin → AdminApp；member → MemberApp）。🚧=測試中隱藏網址，勿加玩家入口 |
+| 殭屍生存模式 | `src/zombie/`（獨立 DDD 模組，自帶 `db/zombieDb.js`，見 game-systems.md）🚧**測試中，勿建玩家入口** |
+| 射箭商品型錄 | `src/features/catalog/`（電商瀏覽頁，非遊戲；含淘寶爬蟲 `api/taobaoRealScraper.js`）🚧**測試中，勿建玩家入口** |
 | 登入邏輯 | `src/hooks/useAuth.js` |
 | 所有 Firestore 函式 | `src/lib/db.js`（+ 各 `xxxDb.js`） |
 | 共用常數 | `src/lib/constants.js` |

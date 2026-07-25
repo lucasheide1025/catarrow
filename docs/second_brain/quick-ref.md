@@ -10,7 +10,7 @@
 
 | 規則 | 原因 |
 |------|------|
-| 官網要手動 `vercel deploy`，push 不會上線 | `catarrow-archery` 專案沒接 GitHub 自動部署；改 `website/` 後要複製到暫存夾跑 `npx vercel deploy --prod`（CLI 已登入 broudes-1864）。主 App `catarrow` 才是 push 自動部署，兩者不同專案別搞混 |
+| 官網要手動 `vercel deploy`，push 不會上線 | `catarrow-archery` 專案沒接 GitHub 自動部署；改 `website/` 後要複製到暫存夾跑 `npx vercel deploy --prod`（CLI 已登入 broudes-1864）。主 App `catarrow` 才是 push 自動部署，兩者不同專案別搞混。**正式網址（2026-07-25）：對外官網 `https://archery.catgroup.com.tw/`；學生 App `https://student.catgroup.com.tw/`** |
 | 訪客/兒童新方向：多人玩法要開 | 規格見 `guest-kid-ui-redesign-spec.md`；組隊、T1-T2 探索地下城、低階活動世界王都要支援團康，不要沿用「訪客只能單人」舊假設 |
 | 訪客/兒童差異在規則，不在質感 | UI 要共用正式打怪/組隊/地下城/世界王；難度鎖 T1-T2，獎勵低風險 |
 | 訪客/兒童主視覺已改成活動式深色介面 | `GuestApp.jsx` scoped CSS 重做登入頁、頂部狀態列、首頁 hero、活動入口 grid、底部導覽與角色頁；正式戰鬥元件入口不重刻 |
@@ -162,6 +162,8 @@ lastCheckinDate // "YYYY-MM-DD"，submitCheckin 當下 + approveCheckin 補寫�
 members / competitions / results / messages / learnLogs
 practiceLogs / achievements / certRecords / badgeLogs
 auditLogs / externalComps / registrations / billingRecords
+campSessions / shootingSessions / gamePerformances
+arrowCountEvents / memberPerformanceSync / arrowRoundOperations
 
 // 獨立常數
 checkins          C_CHECKIN       // 今日報到（docId = memberId_YYYY-MM-DD）
@@ -171,16 +173,35 @@ guildQuestSubs    C_GUILD_SUBS
 guildBountyTemplates "guildBountyTemplates"  // 一般懸賞任務範本池（2026-07-04）
 guildBountyRewards   "guildBountyRewards"    // 一般懸賞難度獎勵表，單一文件 config（2026-07-04）
 questConfig       C_QUEST_CONFIG
-monsterSessions   C_MONSTER
-monsterLogs       C_MONSTER_LOG
-cardCollections   C_CARD_COLL     // { cards:{[monsterId]:{}}, equipped:[monsterId,...] }
-monthlyCards      C_MONTHLY_CARD
-monthlyCardLogs   C_MONTHLY_LOG
+monsterSessions   C_MONSTER_SESSION
+monsterLogs       C_MONSTER_LOGS
+cardCollections   C_CARDS         // { cards:{[monsterId]:{}}, equipped:[monsterId,...] }
+monthlyCardRequests C_MONTHLY      // ⚠️ 集合名是 monthlyCardRequests，不是 monthlyCards
+monthlyCardLogs   C_MONTHLY_LOGS
 cardMarket        C_CARD_MARKET   // ★ 規則移到正確 block（2026-07-02 修）
 villageGoals      "villageGoals"  // 村目標（由 villageGoalDb.js 管理，2026-07-02 補規則）
 dungeonRooms      "dungeonRooms"  // 地下城房間（含 memberRunes 欄位）
 dungeonFirstClears"dungeonFirstClears"
 systemBroadcasts  "systemBroadcasts"
+
+// 背包/經濟/戰鬥（2026-07-25 補齊，實查 db.js）
+notifications     C_NOTIF
+materialInventory C_MATERIALS
+chestInventory    C_CHESTS
+potionInventory   C_POTIONS
+fragmentInventory C_FRAGS
+dexGrants         C_DEX_GRANT
+monsterConfig     C_MONSTER_CONFIG
+monsterDex        C_MONSTER_DEX
+craftStats        C_CRAFT_STATS
+chestStats        C_CHEST_STATS
+potionDex         C_POTION_DEX
+equipItems        C_EQUIP_ITEMS
+councilSessions   C_COUNCIL_SESSION
+coachChallenges   C_COACH_CHALLENGES
+certifications    CERT_CERTIFICATIONS
+// ⚠️ questConfig 的實際集合名是 "dailyQuestConfig"（常數 C_QUEST_CONFIG）
+// 完整權威清單見 _audit/src-inventory.md 第 2.2 節
 ```
 
 ### 關鍵 members 欄位
@@ -218,7 +239,7 @@ checkinId(memberId, date)                // 產生 docId
 
 ### 練習紀錄
 ```js
-subscribeTodayPracticeLogs(memberId, todayStr, cb)  // ← 用這個（只讀今日）
+// ⚠️【已廢除，函式已不存在於 db.js】subscribeTodayPracticeLogs(memberId, todayStr, cb)
 subscribePracticeLogs(memberId, cb, maxCount=300)   // 全部歷史，2026-07-10 加 limit() 防無界讀取，慎用
 // WorldBossLobby/PartyLobby 只需要「我的」子集，改傳 maxCount=60 再前端 filter source；
 // MemberPractice.jsx（完整歷史頁）不傳，走預設 300 當防禦性天花板
@@ -1161,7 +1182,7 @@ src/pages/         MemberApp.jsx / AdminApp.jsx
 src/components/member/
   MemberHome.jsx        首頁（等級卡+公會等級+收藏格+月卡+廣播分類）
   MemberPractice.jsx    自主練習（classEndedRef 里程碑保護）
-  DailyQuest.jsx        報到狀態+下課按鈕（subscribeTodayPracticeLogs）
+  DailyQuest.jsx        報到狀態+下課按鈕（⚠️ subscribeTodayPracticeLogs 已廢除）
   MonsterBattle.jsx     打怪（cardColl: useState+useRef 雙軌）
   CardCollection.jsx    怪物卡片（條列式，inline 升星提示）
   MemberDex.jsx         成就圖鑑（個人通知，不再全頻廣播）

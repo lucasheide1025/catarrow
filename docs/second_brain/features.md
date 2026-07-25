@@ -1,5 +1,16 @@
 # 📋 features — 功能清單
-> 最後更新：2026-07-14
+> 最後更新：2026-07-25（稽核補記：補上先前漏列的功能，見下方 🔍 章節）
+
+## 🔍 2026-07-25 稽核補記（先前功能清單漏列，實查原始碼確認）
+
+> 這批是「code 早已存在、但 features.md 從未列入」的功能。詳細規格見 `game-systems.md` 對應章節。
+
+- **🎲 貓貓村大富翁（villageBoard）**：28 格環形棋盤、每日 15 顆骰子、12 種格子；`mining/monster/chest` 格要**實際射箭**，完成度分帶（S/A/…）決定獎勵倍率。難度上限受村莊建築等級控制。單人 `villageBoardDb.js` + 組隊 `villageBoardTeamDb.js`。UI：`CatVillageBoard.jsx` / `CatVillageBoardTeam.jsx`。
+- **📅 線上約課（booking）✅ 已正式開放**（2026-07-25 作者確認，訪客與學生皆可正常使用，不再是 beta 試辦）：`PublicBookingApp.jsx` 註冊 + 教練後台 `AdminBooking.jsx`（行事曆/開放名單/收費報表三分頁）。程式仍保留 `bookingBetaAccess` 旗標機制（`bookingDb.js`/`bookingSchedule.js`），詳見 quick-ref「約課」章節。
+- **🛡️ 裝備專精（equipSpecialization）✅ 早已上線**（2026-07-25 作者確認，玩家可實際使用）：9 條專精軌、解鎖 10000 金、三部位（武器/防具/飾品）各自效果、機率升級含連續失敗保底。引擎 `equipmentSpecializationEngine.js`、UI `EquipSpecializationPanel.jsx`。
+- **🧟 殭屍生存模式（zombie）🚧測試中**：獨立 DDD 模組 `src/zombie/`，地圖探索→遭遇→戰鬥→撤離循環，含感染狀態機。**只有 `?zombie` 隱藏網址，禁止建玩家入口。**
+- **🛍️ 射箭商品型錄（catalog）🚧測試中**：`src/features/catalog/`，電商瀏覽頁（**非遊戲**），含篩選/比較/翻頁書/淘寶爬蟲。**只有 `?catalog` 隱藏網址，禁止建玩家入口。**
+- **📉 讀寫成本控制（基礎設施，非玩法）**：`costControl.js` 5 級管制，超支或啟動期會**靜默擋掉**非核心 Firestore 寫入。除錯「寫入沒反應」時要列入嫌疑，詳見 `ai-guide.md` 鐵律 #11。
 
 ## 🎓 學生分級與系統鎖定（2026-07-04）
 
@@ -20,7 +31,7 @@
 
 **冒險者公會一般懸賞任務自動化（2026-07-04 新增）**：4 個全新獨立難度（1~4，獨立於六階雙週懸賞與三階每日靶紙任務），教練後台管理任務範本池（`guildBountyTemplates`）+ 難度獎勵表（`guildBountyRewards`），每日全員同一批自動刷新（每難度固定抽 1 個範本，日期當 seed），沿用既有 `publishGuildQuest`/`submitGuildQuestCompletion` 發佈與結算路徑；結算時依難度額外發放固定寶箱（wood/iron/gold/epic）
 
-**官網（2026-07-04 新增，2026-07-10 視覺互動改版）**：`website/` 靜態 SEO 單頁官網（與 App 完全獨立、無建置流程、單一 `index.html`），暖紙＋炭墨＋品牌橘編輯風；JSON-LD（LocalBusiness+FAQ）、OG、sitemap/robots；預約 CTA 連 SimplyBook `#book`；⚠ 網域 placeholder `catarchery.tw` 待部署後替換、地址 12/14 號待確認
+**官網（2026-07-04 新增，2026-07-10 視覺互動改版）**：`website/` 靜態 SEO 單頁官網（與 App 完全獨立、無建置流程、單一 `index.html`），暖紙＋炭墨＋品牌橘編輯風；JSON-LD（LocalBusiness+FAQ）、OG、sitemap/robots；預約 CTA 連 SimplyBook `#book`；✅ **已上線於 `https://archery.catgroup.com.tw/`（2026-07-25 作者確認，舊 placeholder `catarchery.tw` 作廢）**；學生 App 在 `https://student.catgroup.com.tw/`（不同 Vercel 專案）；地址 12/14 號待確認
 - **2026-07-10 視覺互動改版**（Trellis task `07-10-website-visual-interactive-refresh`，只動 `website/`，不連 Firestore／App）：全站沿用既有 `.rv` IntersectionObserver（同一實例、依 class 分流行為，不新增 observer），所有新效果皆有對應 `prefers-reduced-motion` 降級
   - `#training`（R2 核心）：手機 mockup 從單張靜態圖改為可切換的 3 畫面預覽（`.phone-shots` + 分頁圓點 `.pdot` + 觸控滑動），目前 3 張暫用同一張 `assets/015.png` 佔位（切換機制已完成，之後補拍打怪戰鬥／勳章圖鑑截圖只需換 `src`）；`.badges` 加 scroll-triggered 依序解鎖動畫（stagger 110ms/個）
   - `#group`（R2 核心）：新增第 5 張模式卡「地下城遠征 Dungeon Expedition」（對應 App 實際的組隊三層迷霧地下城遠征系統），5 張卡 hover 各有專屬圖示動態（攻擊震動／交錯閃現／靶紙 ping／箭矢推移／寶石微光）

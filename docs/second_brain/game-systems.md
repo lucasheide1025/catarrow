@@ -1,5 +1,5 @@
 # 🎮 game-systems — 遊戲化規格
-> 最後更新：2026-07-10（訪客/兒童地下城比照正式系統）
+> 最後更新：2026-07-25（補記大富翁/裝備專精/殭屍三系統，實查原始碼；成本控制歸 ai-guide 鐵律）
 
 🔗 **在 Obsidian 中開啟**：`obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Fgame-systems`
 
@@ -96,6 +96,13 @@ rewardMult = 1.0 + extraMembers * 0.2   (金幣/XP/掉落 每多一人 +20%)
 地下城：  通過每層 × 15
 世界首領：每回合 × 2.0，上限 300
 ```
+
+## 🔎 其他公式/系統速查（2026-07-25 補指標，函式細節見原始碼）
+
+> 這兩個系統的「功能面」已記在 `features.md`，這裡只補 game-systems 找得到的函式入口。
+
+- **地下城發掘 `src/lib/dungeonExcavation.js`**：儲存槽 `MAX_SAVED_DUNGEONS=6`。核心函式 `computeExcavationPatch(memberId, arrowCount)`（箭數推進發掘進度）、`getTierProbabilities(dailyArrows)`（當日箭數→T1~T6 機率表）、`addExcavationByCheckin`（報到+進度）、`assignDigCat`/`revealCatExcavation`（貓咪挖掘，`CAT_DIG_SPECIALTIES`）、`upgrade/downgradeExcavationDifficulty`、`save/abandon/completeExcavation`。三大來源總覽見 `features.md`。
+- **射手表現診斷 `src/lib/archerDiagnosis.js`**：`buildArcherDiagnosis({ arrows, sessions })` → 從箭矢/場次資料產生表現診斷。搭配本機快取的射手表現資料使用（見 quick-ref 射手表現章節）。
 
 ## 🏗️ 戰鬥系統架構（2026-07-01 Phase 1-8）
 
@@ -570,3 +577,47 @@ team_boost     ATK ×1.5  (單人特強，原有)
 
 3. **`src/components/dungeon/DungeonShop.jsx`**
    - `SHOP_ITEM_META`：移除 `contract_reset` 和 `rune_repair` 的定義
+
+---
+
+## 🎲 貓貓村大富翁（villageBoard，2026-07-25 補記，實查原始碼）
+
+> 資料：`src/lib/boardData.js`｜資料層：`src/lib/villageBoardDb.js`（單人）＋`villageBoardTeamDb.js`（組隊）
+
+- **棋盤**：`BOARD_LAYOUT` 固定 28 格環形（`BOARD_SIZE=28`），index 0 = 起點，順時針。同類格子刻意分散。
+- **骰子**：`DAILY_DICE=15`，每日補滿至 15、**不囤積**（`ensureDailyDice`/`refillBoardDice`）。
+- **格子類型 `TILE_TYPES`（12 種）**：start/material/mining/monster/arrowdew/coins/gacha/potion/chest/catbond/fate(命運)/opp(機會)。
+  其中 **`mining`/`monster`/`chest` 是 `shooting:true`**——踩到要**實際射箭**，射箭完成度會影響獎勵。
+- **射箭完成度分帶**：`scoreToBand(scoreRatio)`（命中總分/滿分，6 箭）→ `{ band, monsterMult, miningMult, chestCount }`；≥0.85 給 S 帶（怪物 ×3.0、挖礦 ×1.8、寶箱 3 個）。**這是「射箭表現連動獎勵」的核心**。
+- **模式與難度**：`BOARD_MODES` 由採集地圖 `GATHERING_SITES` 衍生；`getModeTierCap(modeId, villageBuildings)`——**難度上限受村莊建築等級控制**（村蓋得越高，大富翁能跑的 tier 越高）。
+- **核心流程函式**：`rollAndMove`（擲骰移動）→ `settleBoardTile`（結算落點，傳 villageBuildings/catId/partyMult/scoreRatio）→ `applyBoardReward`／`applyEventEffect`（命運/機會格效果）。
+- ⚠️ 設計連動：獎勵吃 `villageBuildings`（村莊建築）＋`catId`（貓咪）＋`partyMult`（組隊）＋`scoreRatio`（射箭）四個輸入，改任一來源前先確認 `settleBoardTile` 有沒有在讀。
+
+## 🛡️ 裝備專精（equipmentSpecialization，2026-07-25 補記，實查原始碼）
+
+> 引擎：`src/lib/equipmentSpecializationEngine.js`｜資料/公式：`equipmentSpecializationCatalog.js`｜資料層：`equipSpecializationDb.js`
+
+- **9 條專精軌** `SPECIALIZATION_TRACKS`（`validateSpecializationCatalog` 強制 length===9、id 不重複）。
+- **解鎖成本** `SPECIALIZATION_UNLOCK_COST = 10000`。
+- **三類部位效果**（各自套用時機不同）：
+  - `applyWeaponSpecialization({ damage, monsterDefense, trackId, level, highQuality, bossTagged })` — 攻擊時
+  - `applyArmorSpecialization({ incomingDamage, currentHp, maxHp, trackId, level, status })` — 受擊時
+  - `applyAccessorySpecialization({ currentHp, maxHp, trackId, level, companionAttack, companionHealing, alive })` — 貓咪/續戰相關
+- **升級機制（機率制，含保底）**：`getSpecializationUpgradeCost` → `getSpecializationAttemptChance({ ..., consecutiveFailures })`（**連續失敗會提升成功率**）→ `resolveSpecializationAttempt({ ..., roll })`。
+- ⚠️ `getSpecializationEffect(trackId, level)` 是所有效果的查表源頭，改數值先看誰在讀它。
+
+## 🧟 殭屍生存模式（zombie，2026-07-25 補記，實查原始碼）
+
+> 完全獨立的 DDD 模組 `src/zombie/`，**不走 `src/lib/db.js`**，自帶 `db/zombieDb.js`。入口：網址帶 `?zombie` → `App.jsx` render `ZombieGame.jsx`。
+>
+> 🚧 **測試中，禁止建立玩家可點入口**（2026-07-25）：只保留 `?zombie` 隱藏網址供測試，**不要**在 MemberApp 底部導覽/首頁/任何選單加按鈕連進來。等正式上線再另行處理入口。
+
+- **遊戲循環**：地圖探索 → 遭遇戰 → 戰鬥 → 結算 → 下一回合 → 撤離/勝利（`gameStateMachine.js` 的 `GAME_PHASE` 狀態機驅動）。
+- **分層架構**（跟主專案風格不同，是刻意的 domain-driven 隔離）：
+  - `domain/`：純函數引擎——`infectionEngine`（🦠 感染進程狀態機，`LIFE_STATE`、`FULLY_INFECTED` 完全感染）、`fullyInfectedSupportEngine`（完全感染後的支援玩法）、`baseEngine`（基地）、`bossEngine`（王）、`mapEngine`、`encounterResolver`、`eventEngine`、`backpackEngine`、`partyEngine`（組隊）
+  - `data/`：`zombieArchetypes` / `itemData` / `baseData` / `bossRewards`
+  - `ui/`：`ZombieGame` 下的 HUD/Lobby/Map/BattleArena/BossArena/Backpack… 一整套獨立 UI
+  - `bridge/crossWorldAdapter.js`：**與主世界（貓射箭）連動的橋接層**——要串殭屍↔主系統的資源時看這裡
+  - `target/ZombieTargetSVG.jsx`：殭屍版靶面
+- **有單元測試**：`domain/*.test.js`（infection/encounter/base/boss/party/gameStateMachine 都有），改 domain 引擎後跑對應 test。
+- ⚠️ 這是 self-contained 模組，別把它的邏輯跟主戰鬥引擎（`src/battle/`）搞混，兩套是分開的。

@@ -1,7 +1,23 @@
 # 📝 changelog — 變更日誌
 > 每次功能完工後由 Claude 自動寫入。格式：日期 / 改了什麼 / 為什麼 / 踩坑提醒
+>
+> ⚠️ **這是歷史紀錄，不是現況**：每條都是「當時」的快照，舊條目描述的機制可能已被後續改版取代（例如舊地下城房間制、舊貓咪 XP 寫法都已淘汰）。要確認「現在是怎樣」，看 `features.md`（功能現況）、`game-systems.md`（玩法規格）、`quick-ref.md`（函式/DB 事實），不要拿舊 changelog 條目當現況。
 
 ---
+
+## 2026-07-25（第二大腦大校正 — 稽核筆記 vs 實際 code）
+
+**背景**：作者發現第二大腦筆記與現況嚴重脫節。用 Gemini Flash 做全專案稽核（讀 210 檔），Claude 逐條驗收後修正。稽核結果：筆記正確率約 29%（✅42 / ⚠️過時38 / ❌缺漏45 / 🗑️已死18）。稽核報告留存於 `docs/second_brain/_audit/`（`gap-map.md` + `src-inventory.md`）。
+
+- **`ai-guide.md`**：DB 模組清單從 6 個補成 **20 個 `*Db.js` 權威清單**（實查 `src/lib/*Db.js`）；新增鐵律 #11「成本控制會靜默擋寫入」；除錯表補「寫入沒反應」第三嫌疑犯；快速路標補 `?zombie`/`?catalog` 路由（標🚧測試中）。
+- **`quick-ref.md`**：`const C` 修正 5 個錯誤常數名（`C_MONSTER`→`C_MONSTER_SESSION` 等）、集合名 `monthlyCards`→`monthlyCardRequests`；補 6 個漏記集合 + 15 個獨立常數；`subscribeTodayPracticeLogs`（已刪）兩處標「已廢除」。
+- **`game-systems.md`**：補 3 個真玩法——貓貓村大富翁、裝備專精、殭屍生存模式（各實查原始碼）。
+- **`features.md`**：補漏列功能——大富翁/約課/裝備專精/殭屍/catalog/成本控制。
+- **殭屍 & catalog 定位**：作者指示兩者仍測試中，**只保留隱藏網址、禁止建玩家入口**，已寫入 game-systems/ai-guide/features 三處明文約束。
+
+**踩坑提醒（重要）**：
+- **Gemini Flash 稽核會產生幻覺**。這次抓到它捏造一條「quick-ref.md:271 還在用舊 token 訪客機制」——實際整份筆記早已是 `resolveGuestSession`，那個位置是遠征/卡片市集。**結論：Flash 適合做「讀 code 填表」的機械稽核（省 token），但它的落差判斷會捏造、會誇大嚴重度，必須由 Claude 逐條回原始碼驗證後才能寫進筆記。分工＝Flash 稽核、Claude 驗收+編寫。**
+- 判斷性內容（為什麼/踩坑/架構敘述）不可交給 Flash 寫——它會產出「看似合理實為幻覺」的敘述污染事實來源。
 
 ## 2026-07-25（排行榜全面改版 + 季賽系統）
 
@@ -20,7 +36,7 @@
 - **兩套家族**：怪物擊殺/突破榜用 `FAMILIES`(monsterData，含 treasure 共 7)；地下城地圖 `FAMILY_META` 只 6 族(無寶箱)→突破榜資料驅動顯示，有破才亮。
 - **firestore.rules**：member 兩份白名單加 `villageTotalLaps/dungeonClears/worldBossDmgTotal/partyDmgTotal/maxCatXP`；新增 `seasons` collection(登入者可讀+create，admin 可改)。
 - **⚠️ 踩坑**：Bash 工具是 Git Bash 不是 PowerShell——`@'...'@` heredoc 會被當字面 `@`，commit 訊息開頭多 `@`；bash 要用 `<<'EOF'`。
-- **待辦**：①firestore.rules 需**手動貼 Console**(CLI 403)否則新欄位寫入+季快照全被拒 ②組隊遠征突破次數未埋 ③季快照在季中首次開榜才拍→會漏該季開榜前的量(首季上線自然、可接受)。
+- **待辦**：①~~firestore.rules 需手動貼 Console~~ **✅ 已貼（2026-07-25 作者確認）** ②組隊遠征突破次數未埋 ③季快照在季中首次開榜才拍→會漏該季開榜前的量(首季上線自然、可接受)。
 
 ## 2026-07-23（怪物掉落改新族系/王素材箱 — 接線 FREEBUFF 設計）
 
