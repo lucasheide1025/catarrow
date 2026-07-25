@@ -154,3 +154,31 @@ describe("射擊表現 → 掉落（這是射箭遊戲，射得準要有回報�
     expect(r.equipDrops.length).toBeGreaterThanOrEqual(2);   // 基礎 + 神射 + 首領
   });
 });
+
+describe("詞綴保底（刷詞綴是核心循環）", () => {
+  const mkState = danger => ({
+    status: "won", guildStats: baseStats, derived: deriveGuildCombat(baseStats),
+    shotStats: { count: 3, score: 33 },
+    expedition: { danger, families: ["ghost"], waves: [{ monsters: [
+      { family: "ghost", tier: "common", tierIndex: 1, encounter: "normal" },
+    ] }] },
+  });
+
+  test("掉落的裝備一定至少帶 1 條詞綴（各危險度都是）", () => {
+    for (const danger of [1, 2, 3, 4, 5, 6]) {
+      for (const roll of [0.05, 0.3, 0.6, 0.85]) {
+        const r = settleExpedition(mkState(danger), { rand: () => roll });
+        for (const d of r.equipDrops) {
+          expect(d.affixes.length).toBeGreaterThanOrEqual(1);
+          expect(d.affixes.length).toBeLessThanOrEqual(2);
+        }
+      }
+    }
+  });
+
+  test("T5+ 保證兩條詞綴", () => {
+    const r = settleExpedition(mkState(6), { rand: () => 0.1 });
+    expect(r.equipDrops.length).toBeGreaterThan(0);
+    for (const d of r.equipDrops) expect(d.affixes).toHaveLength(2);
+  });
+});

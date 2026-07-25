@@ -110,13 +110,15 @@ export function settleExpedition(state, opts = {}) {
     const archIds = Object.keys(GUILD_EQUIP_ARCHETYPES);
     const archetypeId = archIds[Math.floor(rand() * archIds.length)];
     const gi = Math.min(GRADES.length - 1, Math.floor(rand() * (danger + 1)));
-    // 詞綴：危險度越高越可能帶（T1~T2 最多 1 條、T5~T6 最多 2 條），商店貨一律無詞綴
-    const maxAffix = danger >= 5 ? 2 : danger >= 3 ? 1 : (rand() < 0.5 ? 1 : 0);
+    // 詞綴：**掉落品一律至少 1 條**（商店貨永遠 0 條）——「刷詞綴」是公會的核心循環，
+    // 每件都有詞綴才值得一件一件看。危險度越高越容易出第二條。
+    //   T1~T2：1 條（25% 兩條）／T3~T4：1 條（50% 兩條）／T5~T6：保證 2 條
+    const maxAffix = danger >= 5 ? 2 : 1 + (rand() < (danger >= 3 ? 0.5 : 0.25) ? 1 : 0);
+    // ⚠️ 從「還沒抽中的池子」挑，不要抽到重複就放棄——舊寫法會讓該掉兩條的偶爾只掉一條
     const affixes = [];
-    while (affixes.length < maxAffix) {
-      const pick = AFFIX_IDS[Math.floor(rand() * AFFIX_IDS.length)];
-      if (!affixes.includes(pick)) affixes.push(pick);
-      else break;
+    const pool = [...AFFIX_IDS];
+    while (affixes.length < maxAffix && pool.length) {
+      affixes.push(pool.splice(Math.floor(rand() * pool.length), 1)[0]);
     }
     equipDrops.push({ archetypeId, grade: GRADES[gi], affixes });
   };
