@@ -25,11 +25,12 @@
 - [x] `firestore.rules` 加 `guildProfiles` block → **待老闆手動貼 Console**。
 - **驗證**：34 測試全過、`CI=true` build 過、`grep -rn "guild/" src` 僅 App.jsx 路由（隔離佐證）。
 
-## P2：階級系統重做
-- [ ] `src/lib/guildRank.js`：`repToRank`/`rankUnlocks`/`nextRankRep`（新聲望階級表）。
-- [ ] 廢除舊 `RANKS.mult` 公會金幣加乘與舊等級升級意義（舊欄位保留不刪）。
-- [ ] 完成遠征給 `guildRep`；聲望達標升階；階級 gate 危險委託上限 + 商店層級。
-- [ ] 稱號 / 冒險者證(可分享卡) / 獨占外觀解鎖。
+## P2：階級系統重做 ✅ 2026-07-25（稱號/分享卡除外）
+- [x] `domain/guildRank.js`（放公會模組內不放 `src/lib`，維持隔離）：`repToRank`/`nextRankInfo`/`rankUnlocks`/`canAcceptDanger`/`repNeededForDanger`。
+- [x] 廢除舊 `RANKS.mult`：**新階級零戰力加成**，測試斷言階級表不得有 `mult`/`atk`/`hp`。
+- [x] 完成遠征給聲望（危險度×10，存 `guildProfiles.rep`）；階級 gate 危險度上限 + 商店層級（UI 鎖住仍顯示「差X聲望」）。
+- [x] 公會商店（本來排 P3，跟階級一起做才有意義）：`data/guildShop.js` + `domain/guildShopPurchase.js` + `ui/GuildShop.jsx`，CAT幣買主線材料/公會裝。
+- [ ] 稱號 / 冒險者證(可分享卡) / 獨占外觀解鎖 ← 未做（倉庫頁已有「冒險者證」卡雛形，但不能分享）。
 - **驗證**：完成遠征→聲望↑→升階→解鎖更高危險委託；主線數值不受影響。
 
 ## P3：怪物・掉落・裝備・經濟（貓村×打怪核心，隔離）

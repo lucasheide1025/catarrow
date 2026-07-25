@@ -3,6 +3,7 @@
 // 純 UI：所有變換走 domain/guildRewards 的純函數，改完把新存檔丟給 onChange 存。
 import { calcGuildExpeditionStats, STAT_META } from "../domain/guildStats";
 import { equipFromStash, unequipSlot, GUILD_STASH_LIMIT } from "../domain/guildRewards";
+import { nextRankInfo } from "../domain/guildRank";
 import { GUILD_SLOTS, SLOT_META, GRADE_META, GUILD_EQUIP_ARCHETYPES, equipDisplayName, resolveEquipStats, resolveEquipWeight } from "../data/guildEquipCatalog";
 
 const card = { background: "rgba(0,0,0,.3)", borderRadius: 12, padding: 12 };
@@ -29,12 +30,28 @@ function statSummary(archetypeId, grade) {
 
 export default function GuildStash({ member, profile, onChange, onClose }) {
   const stats = calcGuildExpeditionStats(member, profile.equipped);
+  const rankInfo = nextRankInfo(profile.rep);
+  const rank = rankInfo.current;
 
   return (
     <div style={{ minHeight: "100dvh", background: "linear-gradient(180deg,#0b1220,#1a1207)", color: "#e2e8f0", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ fontSize: 18, fontWeight: 900, color: "#fbbf24" }}>🎒 公會倉庫</div>
         <button type="button" onClick={onClose} style={{ padding: "7px 14px", borderRadius: 9, border: "none", background: "#334155", color: "#fff", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>返回</button>
+      </div>
+
+      {/* 冒險者證：階級 + 聲望進度（階級只給解鎖，不給任何戰力） */}
+      <div style={{ ...card, border: `1px solid ${rank.color}55` }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+          <span style={{ fontSize: 16, fontWeight: 900, color: rank.color }}>{rank.icon} {rank.name}</span>
+          <span style={{ fontSize: 11, color: "#94a3b8" }}>可接 ☠️×{rank.maxDanger}　{rank.shopTier} 級貨架</span>
+        </div>
+        <div style={{ height: 6, background: "rgba(255,255,255,.08)", borderRadius: 3, overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${rankInfo.progressPct}%`, background: "linear-gradient(90deg,#fbbf24,#f59e0b)" }} />
+        </div>
+        <div style={{ fontSize: 10, color: "#64748b", marginTop: 4 }}>
+          🏅 聲望 {profile.rep}{rankInfo.next ? ` ／ 距 ${rankInfo.next.name} 還差 ${rankInfo.need}` : "（已達頂階）"}
+        </div>
       </div>
 
       {/* 資產 */}

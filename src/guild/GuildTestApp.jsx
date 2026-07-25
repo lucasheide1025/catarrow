@@ -8,10 +8,13 @@ import { rollExpedition } from "./domain/rollExpedition";
 import { calcGuildExpeditionStats, STAT_META } from "./domain/guildStats";
 import { settleExpedition } from "./domain/settleExpedition";
 import { normalizeGuildProfile } from "./domain/guildRewards";
-import { loadGuildProfile, saveGuildProfile, grantExpeditionRewards } from "./db/guildDb";
+import { rankUnlocks, nextRankInfo, canAcceptDanger, repNeededForDanger } from "./domain/guildRank";
+import { loadGuildProfile, saveGuildProfile, grantExpeditionRewards, buyGuildShopItem } from "./db/guildDb";
+import { DANGER_META } from "./domain/rollExpedition";
 import GuildBattle from "./ui/GuildBattle";
 import GuildLoadout from "./ui/GuildLoadout";
 import GuildStash from "./ui/GuildStash";
+import GuildShop from "./ui/GuildShop";
 
 const MOCK_MEMBER = { archerXP: 8000 };
 const MOCK_CATS = [
@@ -34,7 +37,7 @@ export default function GuildTestApp() {
   const [result, setResult] = useState(null);
   const [loot, setLoot] = useState(null);        // 只 roll 一次：顯示與入帳同一份
   const [grantMsg, setGrantMsg] = useState("");
-  const [phase, setPhase] = useState("loadout"); // loadout | battle | stash
+  const [phase, setPhase] = useState("loadout"); // loadout | battle | stash | shop
   const [supplies, setSupplies] = useState({ food: 6, water: 6 });
   const grantedRef = useRef(null);               // 一趟只請領一次
 
@@ -68,12 +71,45 @@ export default function GuildTestApp() {
     saveGuildProfile(memberId, p);
   };
 
+  const buy = async itemId => {
+    const res = await buyGuildShopItem(memberId, gp, itemId);
+    if (res.ok) setGp(res.profile);
+    return res;
+  };
+
   if (loading || !gp) {
     return <div style={{ minHeight: "100dvh", display: "grid", placeItems: "center", background: "#0b1220", color: "#94a3b8", fontSize: 13 }}>載入公會存檔…</div>;
   }
 
+  const rankInfo = nextRankInfo(gp.rep);
+  const rank = rankInfo.current;
+
+  // 危險度按鈕（階級不足就鎖住，並顯示還差多少聲望——鎖著也要看得到目標）
+  const DangerButtons = ({ small }) => (
+    <>
+      {[1, 2, 3].map(d => {
+        const locked = !canAcceptDanger(gp.rep, d);
+        const need = repNeededForDanger(gp.rep, d);
+        return (
+          <button key={d} type="button" disabled={locked} onClick={() => restart(d)}
+            title={locked ? `還差 ${need} 聲望` : ""}
+            style={{ padding: small ? "6px 10px" : "10px 16px", borderRadius: 10, fontWeight: 900, fontSize: small ? 11 : 14, color: "#fff", border: "none",
+              background: locked ? "#475569" : d === danger ? "linear-gradient(135deg,#f59e0b,#b45309)" : "#334155",
+              cursor: locked ? "not-allowed" : "pointer" }}>
+            {locked ? "🔒" : DANGER_META[d].skulls} {DANGER_META[d].label}
+            {locked && <span style={{ fontSize: 10, opacity: .8 }}>（差{need}聲望）</span>}
+          </button>
+        );
+      })}
+    </>
+  );
+
   if (phase === "stash") {
     return <GuildStash member={member} profile={gp} onChange={changeProfile} onClose={() => setPhase("loadout")} />;
+  }
+
+  if (phase === "shop") {
+    return <GuildShop profile={gp} onBuy={buy} onClose={() => setPhase("loadout")} />;
   }
 
   if (result) {
@@ -93,14 +129,25 @@ export default function GuildTestApp() {
           </div>
         )}
         {grantMsg && <div style={{ fontSize: 12, color: grantMsg.startsWith("⚠️") ? "#f87171" : "#6ee7b7" }}>{grantMsg}</div>}
-        <div style={{ fontSize: 12, color: "#94a3b8" }}>🐾 CAT幣 {gp.catCoins}　🏅 聲望 {gp.rep}</div>
-        <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", justifyContent: "center" }}>
-          {[1, 2, 3].map(d => (
-            <button key={d} onClick={() => restart(d)} style={{ padding: "10px 16px", borderRadius: 10, fontWeight: 900, color: "#fff", border: "none", background: "linear-gradient(135deg,#f59e0b,#b45309)", cursor: "pointer" }}>
-              再來一趟（危險{d}）
-            </button>
-          ))}
-          <button onClick={() => { setResult(null); setPhase("stash"); }} style={{ padding: "10px 16px", borderRadius: 10, fontWeight: 900, color: "#fff", border: "none", background: "#334155", cursor: "pointer" }}>🎒 倉庫</button>
+
+        {/* 階級進度：聲望的意義在這裡被看見 */}
+        <div style={{ width: "100%", maxWidth: 340 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+            <span style={{ color: rank.color, fontWeight: 900 }}>{rank.icon} {rank.name}</span>
+            <span style={{ color: "#94a3b8" }}>🏅 {gp.rep}{rankInfo.next ? `　距 ${rankInfo.next.name} 還差 ${rankInfo.need}` : "　已達頂階"}</span>
+          </div>
+          <div style={{ height: 6, background: "rgba(255,255,255,.08)", borderRadius: 3, overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${rankInfo.progressPct}%`, background: "linear-gradient(90deg,#fbbf24,#f59e0b)" }} />
+          </div>
+        </div>
+        <div style={{ fontSize: 12, color: "#94a3b8" }}>🐾 CAT幣 {gp.catCoins}</div>
+
+        <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap", justifyContent: "center" }}>
+          <DangerButtons />
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
+          <button onClick={() => { setResult(null); setPhase("stash"); }} style={{ padding: "8px 14px", borderRadius: 10, fontWeight: 900, fontSize: 12, color: "#fff", border: "none", background: "#334155", cursor: "pointer" }}>🎒 倉庫</button>
+          <button onClick={() => { setResult(null); setPhase("shop"); }} style={{ padding: "8px 14px", borderRadius: 10, fontWeight: 900, fontSize: 12, color: "#fff", border: "none", background: "#4c1d95", cursor: "pointer" }}>🏪 商店</button>
         </div>
       </div>
     );
@@ -109,9 +156,17 @@ export default function GuildTestApp() {
   if (phase === "loadout") {
     return (
       <div>
-        <div style={{ padding: "8px 12px", background: "#1a1207", color: "#fcd34d", fontSize: 11, fontWeight: 800, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span>🐾 {gp.catCoins}　🏅 {gp.rep}{memberId ? "" : "（離線試玩）"}</span>
-          <button type="button" onClick={() => setPhase("stash")} style={{ padding: "4px 10px", borderRadius: 7, border: "none", background: "#334155", color: "#fff", fontSize: 11, fontWeight: 800, cursor: "pointer" }}>🎒 倉庫</button>
+        <div style={{ padding: "8px 12px", background: "#1a1207", color: "#fcd34d", fontSize: 11, fontWeight: 800, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+          <span style={{ color: rank.color }}>{rank.icon} {rank.name}　🐾 {gp.catCoins}　🏅 {gp.rep}{memberId ? "" : "（離線試玩）"}</span>
+          <span style={{ display: "flex", gap: 6 }}>
+            <button type="button" onClick={() => setPhase("stash")} style={{ padding: "4px 10px", borderRadius: 7, border: "none", background: "#334155", color: "#fff", fontSize: 11, fontWeight: 800, cursor: "pointer" }}>🎒 倉庫</button>
+            <button type="button" onClick={() => setPhase("shop")} style={{ padding: "4px 10px", borderRadius: 7, border: "none", background: "#4c1d95", color: "#fff", fontSize: 11, fontWeight: 800, cursor: "pointer" }}>🏪 商店</button>
+          </span>
+        </div>
+        {/* 委託危險度：階級 gate 就在這裡發生作用 */}
+        <div style={{ padding: "8px 12px", background: "#0f172a", display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 800 }}>委託危險度</span>
+          <DangerButtons small />
         </div>
         <GuildLoadout member={member} guildEquip={gp.equipped} onDepart={sup => { setSupplies(sup); setPhase("battle"); }} />
       </div>

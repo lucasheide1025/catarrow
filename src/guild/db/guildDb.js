@@ -15,6 +15,7 @@ import { doc, getDoc, setDoc, updateDoc, onSnapshot, increment, serverTimestamp 
 import { db } from "../../lib/firebase";
 import { addMaterials } from "../../lib/db";
 import { normalizeGuildProfile, applyLootToProfile, expandLootMaterials } from "../domain/guildRewards";
+import { purchaseFromShop } from "../domain/guildShopPurchase";
 
 const C_GUILD = "guildProfiles";
 
@@ -60,6 +61,22 @@ export async function saveGuildProfile(memberId, profile) {
   } catch (e) {
     console.warn("saveGuildProfile:", e?.message);
     return { ok: false, reason: e?.message };
+  }
+}
+
+// 公會商店購買：驗證全在 domain（階級/CAT幣/倉庫），這裡只寫。
+// 材料類商品的材料寫進主線 materialInventory（回饋打怪/貓村經濟）。
+export async function buyGuildShopItem(memberId, profile, itemId) {
+  const res = purchaseFromShop(profile, itemId);
+  if (!res.ok) return res;
+  if (!memberId) return { ...res, offline: true };   // 離線試玩：算得出結果但不存
+  try {
+    await setDoc(ref(memberId), toDoc(res.profile), { merge: true });
+    if (res.materials.length) await addMaterials(memberId, res.materials);
+    return { ...res, offline: false };
+  } catch (e) {
+    console.warn("buyGuildShopItem:", e?.message);
+    return { ok: false, reason: e?.message || "購買失敗", profile: normalizeGuildProfile(profile), materials: [] };
   }
 }
 
