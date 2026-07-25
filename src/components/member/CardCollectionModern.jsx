@@ -6,9 +6,9 @@ import {
   unequipCard, upgradeCard,
 } from "../../lib/db";
 import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
-import { FAMILY_SET_BONUSES, calcFamilySetStatus } from "../../lib/cardTalents";
 import { sfxBuff, sfxError, sfxLevelUp } from "../../lib/sound";
 import CardCollectionPrototype from "./cards/CardCollectionPrototype";
+import TalentEffectPanel from "./cards/TalentEffectPanel";
 
 const EMPTY_COLLECTION = { cards:{}, wbCards:{}, equipped:[] };
 
@@ -91,24 +91,8 @@ export default function CardCollectionModern({ guestProfile }) {
         <span style={pillStyle}>⚔️ ATK +{bonus.atk || 0}</span>
         <span style={pillStyle}>🛡️ DEF +{bonus.def || 0}</span>
       </div>
-      {/* 族系套裝狀態（同族怪物卡 2/4 張觸發） */}
-      {(() => {
-        const cards = collection.cards || {};
-        const views = (collection.equipped || [])
-          .map(item => (typeof item === "string" ? { key: item, source: "monster" } : item))
-          .filter(item => item.source !== "wb")
-          .map(item => cards[item.key] ? { monsterId: item.key, family: cards[item.key].family, source: "monster" } : null)
-          .filter(Boolean);
-        const sets = calcFamilySetStatus(views);
-        if (!sets.length) return <div style={{marginTop:8,fontSize:10,color:"#a5b4fc"}}>💡 裝備同族卡 2／4 張可觸發族系套裝效果</div>;
-        return <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
-          {sets.map(set => (
-            <span key={set.family} style={{...pillStyle, border:`1px solid ${set.tier2?"rgba(52,211,153,.5)":"rgba(255,255,255,.12)"}`, color:set.tier2?"#6ee7b7":"#94a3b8"}}>
-              {FAMILY_SET_BONUSES[set.family]?.name}（{set.count}）{set.tier4?`✦ ${set.text2}＋${set.text4}`:set.tier2?`✦ ${set.text2}`:`（2張啟動）`}
-            </span>
-          ))}
-        </div>;
-      })()}
+      {/* 裝備總效果面板（天賦 bars＋貢獻小字＋主動建議＋族系套裝） */}
+      <TalentEffectPanel collection={collection} />
     </header>
     {notice && <div role="status" style={{margin:"0 12px 8px",padding:"9px 12px",borderRadius:10,textAlign:"center",background:"rgba(16,185,129,.12)",border:"1px solid rgba(52,211,153,.35)",color:"#6ee7b7",fontWeight:900,fontSize:12}}>{notice}</div>}
     <CardCollectionPrototype

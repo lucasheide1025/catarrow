@@ -383,12 +383,30 @@ useDuelReveal({ room, onSoundEffect, onComplete, opts? })
 ## 卡片系統
 
 ```
-MAX_EQUIPPED=5
+MAX_EQUIPPED_BY_STAT = { hp:5, atk:3, def:3 } → 總共可裝 11 張（⚠️舊筆記誤記 MAX_EQUIPPED=5，2026-07-25 修正）
 種族→屬性：forest→hp / dragon→atk / undead→def / beast→atk / demon→hp / machine→def
 升星費用：STAR_UPGRADE_COST=[1,2,3,4,5]（碎片）
 cardColl 訂閱：subscribeCardCollection → { cards:{}, equipped:[] }
 顯示用 useState，異步函式用 useRef（雙軌設計，MonsterBattle 已套用）
 ```
+
+### 卡片天賦系統（`src/lib/cardTalents.js`）
+
+- **天賦「零手工」**：每張怪物卡的天賦由 `getSignatureEffect(sig_<monsterId>)` 的積木**自動映射**（`TALENT_RULES` 取第一個命中），tier 放大（T1-2×1 / T3-4×1.5 / T5-6×2）。世界王卡不參與。
+- **隱形上限 `TALENT_CAPS`**：傷害8/穿甲10/爆擊8/…。彙總後砍上限，防疊加失衡。
+- **共池陷阱**：名字不同的天賦其實共用同一 key＋同一上限——蓄勁/淬毒/蠻力→`damagePct`；連擊/挑戰者→`critRatePct`。
+- **族系套裝 `FAMILY_SET_BONUSES`**：同族怪物卡裝 2/4 張觸發兩階加成。
+- **戰鬥端只吃 `calcCardCombatEffects` 的彙總結果**（各鍵有 cap＋套裝）。
+
+### 天賦透明化面板（2026-07-25，純顯示零平衡）
+
+> 玩家反映「裝上去跟顯示有落差、不知道怎麼搭」＝上面三個隱形機制沒攤開。第一段做純顯示，不動任何數值。
+
+- `src/lib/cardTalentDisplay.js`：顯示 metadata（`EFFECT_DISPLAY`，cap 一律引用 `TALENT_CAPS` 不抄數字）＋ `buildContribution`（key→貢獻卡片）＋ `buildSuggestion`（主動搭配建議）。
+- `TalentEffectPanel.jsx`（裝備頁 header）：實際生效值進度條（x/上限、封頂「已滿」變灰）、每條下方「來自：卡片名」、族系套裝、主動建議、可收合。**顯示＝戰鬥實際吃的**。
+- `CardMiniCell`：卡面直接顯示天賦（不用點進詳情）。`CardDetailSheet`：補「歸【分類】共享上限」說明。
+- ⚠️ 零平衡：`cardTalents.js` 唯一改動是把 `TALENT_CAPS` 加 `export`，數值一個沒動。
+- **第二段（未做）**：拆分共池 key、套裝 vs 天賦流派重設計＝會動平衡，另案。
 
 ## 箭露與里程碑
 

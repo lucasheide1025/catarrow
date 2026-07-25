@@ -70,7 +70,8 @@ function talentText(key, value) {
 }
 
 // 各天賦鍵彙總上限（防 10 張同天賦疊到失衡）
-const TALENT_CAPS = Object.freeze({
+// export：供顯示層 cardTalentDisplay 引用同一份上限（不抄數字，避免顯示與實際 cap 漂移）
+export const TALENT_CAPS = Object.freeze({
   armorPiercePct: 10, shieldPiercePct: 10, critRatePct: 8, damagePct: 8,
   openingShieldPct: 8, damageReductionPct: 6, reflectPct: 6,
   monsterAtkDownPct: 6, monsterDefDownPct: 6, endRoundHeal: 20, hqDamagePct: 12,

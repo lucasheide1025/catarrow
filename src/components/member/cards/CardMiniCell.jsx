@@ -4,6 +4,7 @@
 
 import CardArtImage from "./CardArt";
 import { calcCardBonus, getCardStat } from "../../../lib/monsterCards";
+import { getCardTalent } from "../../../lib/cardTalents";
 
 const STAT_ICON = { hp: "❤️", atk: "⚔️", def: "🛡️" };
 
@@ -59,6 +60,10 @@ export default function CardMiniCell({ view, isNew = false, onOpen }) {
           const stat = getCardStat(view);
           if (!stat) return <span style={{ display: "block", fontSize: 9, color: "#a5b4fc" }}>待選屬性</span>;
           return <span style={{ display: "block", fontSize: 9, fontWeight: 800, color: "#6ee7b7" }}>{STAT_ICON[stat] || ""} {stat.toUpperCase()} +{calcCardBonus(view.tier, view.stars || 1)}</span>;
+        })()}
+        {owned && (() => {
+          const talent = getCardTalent(view);
+          return talent ? <span style={{ display: "block", fontSize: 9, fontWeight: 800, color: "#c4b5fd", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{talent.icon} {talent.label}</span> : null;
         })()}
       </span>
     </button>

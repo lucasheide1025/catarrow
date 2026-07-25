@@ -5,6 +5,18 @@
 
 ---
 
+## 2026-07-25（卡片天賦透明化：裝備總效果面板 — 純顯示零平衡）
+
+**背景**：玩家反映怪物卡天賦「裝上去跟顯示有落差、不知道怎麼搭」。根因＝三個隱形機制沒攤開：①`TALENT_CAPS` 隱形上限 ②名字不同卻共用同一 key＋上限（蓄勁/淬毒/蠻力→damagePct）③UI 只顯示單卡、戰鬥吃彙總砍上限後的值。決策：第一段只做「純顯示」，不動任何數值/公式/上限。
+
+- **新 `src/lib/cardTalentDisplay.js`**：`EFFECT_DISPLAY`（key→icon/名/共池來源，cap 一律引用 `TALENT_CAPS` 不抄數字）、`buildEquippedViews`、`buildContribution`（key→貢獻卡片含 monsterId）、`buildSuggestion`（撞頂/差一張套裝/有空間 主動建議）。
+- **新 `TalentEffectPanel.jsx`**（裝備頁 header）：實際生效值進度條（x/上限、封頂「已滿」變灰）、每條下「來自：卡片名」、族系套裝、主動建議、可收合。移除 `CardCollectionModern` 舊的重複套裝區。
+- **`CardMiniCell`**：卡面直接顯示天賦（不用點進去）。**`CardDetailSheet`**：天賦後補「歸【分類】共享上限」。
+- **零平衡佐證**：`cardTalents.js` 唯一改動＝`TALENT_CAPS` 加 `export`（供顯示層引用同一份上限），數值/caps/公式一個沒動。
+- **踩坑**：①`TALENT_CAPS` 原本沒 export → 顯示層 import 到 undefined，`effectCap` 讀 `undefined.damagePct` 在**教練射手模式**直接白屏崩潰（正是 ai-guide 鐵律 #7 的點）；加 export 修好。②卡名要用 `CARD_CATALOG_BY_ID[monsterId].name` 解析，且名稱解析放**元件層**不放 lib（避免 lib→component 循環 import）。
+- **順帶修正**：`game-systems.md` 舊記「MAX_EQUIPPED=5」錯誤 → 實際 `MAX_EQUIPPED_BY_STAT {hp:5,atk:3,def:3}` 共 11 張。
+- **第二段（未做）**：拆共池 key、套裝 vs 天賦流派重設計＝會動平衡，另案。
+
 ## 2026-07-25（第二大腦大校正 — 稽核筆記 vs 實際 code）
 
 **背景**：作者發現第二大腦筆記與現況嚴重脫節。用 Gemini Flash 做全專案稽核（讀 210 檔），Claude 逐條驗收後修正。稽核結果：筆記正確率約 29%（✅42 / ⚠️過時38 / ❌缺漏45 / 🗑️已死18）。稽核報告留存於 `docs/second_brain/_audit/`（`gap-map.md` + `src-inventory.md`）。

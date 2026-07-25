@@ -9,6 +9,7 @@ import { calcCardBonus, getCardStat, canUpgradeStar, getUpgradeCost } from "../.
 import { EXPANSION_MONSTER_BY_ID } from "../../../lib/monsterExpansionCatalog";
 import { MONSTERS } from "../../../lib/monsterData";
 import { getCardTalent } from "../../../lib/cardTalents";
+import { EFFECT_DISPLAY, effectCap } from "../../../lib/cardTalentDisplay";
 import { getBreakRuleText } from "../../../lib/combatSkillEngine";
 
 const STAT_LABEL = { hp: "❤️ HP", atk: "⚔️ ATK", def: "🛡️ DEF" };
@@ -71,7 +72,14 @@ export default function CardDetailSheet({ view, onClose, onSeen, onEquip, onUpgr
                 })()}
                 {(() => {
                   const talent = getCardTalent(view);
-                  return talent ? <div style={{ marginTop: 2, color: "#c4b5fd", fontWeight: 800 }}>天賦：{talent.text}</div> : null;
+                  if (!talent) return null;
+                  const meta = EFFECT_DISPLAY[talent.key];
+                  const cap = effectCap(talent.key);
+                  const note = meta ? `歸【${meta.name}】${cap != null ? `，與同類共享上限 ${cap}` : ""}` : "";
+                  return <div style={{ marginTop: 2, color: "#c4b5fd", fontWeight: 800 }}>
+                    天賦：{talent.text}
+                    {note && <span style={{ color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>（{note}）</span>}
+                  </div>;
                 })()}
               </div>
             ) : (
