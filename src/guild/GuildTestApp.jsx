@@ -8,7 +8,9 @@ import { rollExpedition } from "./domain/rollExpedition";
 import { calcGuildExpeditionStats, STAT_META } from "./domain/guildStats";
 import { settleExpedition } from "./domain/settleExpedition";
 import { normalizeGuildProfile } from "./domain/guildRewards";
-import { rankUnlocks, nextRankInfo, canAcceptDanger, repNeededForDanger } from "./domain/guildRank";
+import { buildCatRoster, pickPartyCats, togglePartyCat } from "./domain/guildCats";
+import { subscribeMyCats } from "../lib/catDb";
+import { nextRankInfo, canAcceptDanger, repNeededForDanger } from "./domain/guildRank";
 import { loadGuildProfile, saveGuildProfile, grantExpeditionRewards, buyGuildShopItem } from "./db/guildDb";
 import { DANGER_META } from "./domain/rollExpedition";
 import GuildBattle from "./ui/GuildBattle";
@@ -17,9 +19,10 @@ import GuildStash from "./ui/GuildStash";
 import GuildShop from "./ui/GuildShop";
 
 const MOCK_MEMBER = { archerXP: 8000 };
+// 離線試玩（未登入直接開 ?guild）才用的假貓；登入後一律用 members/{id}/cats 的真貓
 const MOCK_CATS = [
-  { id: "cat_a", name: "小黑", icon: "🐈‍⬛", atk: 28, def: 6 },
-  { id: "cat_b", name: "橘子", icon: "🐈", atk: 22, def: 4 },
+  { id: "cat_a", name: "小黑（測試）", icon: "🐈‍⬛", typeLabel: "攻擊型", level: 10, atk: 28, def: 6 },
+  { id: "cat_b", name: "橘子（測試）", icon: "🐈", typeLabel: "全能型", level: 8, atk: 22, def: 4 },
 ];
 
 function newRun(danger) {
@@ -39,6 +42,7 @@ export default function GuildTestApp() {
   const [grantMsg, setGrantMsg] = useState("");
   const [phase, setPhase] = useState("loadout"); // loadout | battle | stash | shop
   const [supplies, setSupplies] = useState({ food: 6, water: 6 });
+  const [catRoster, setCatRoster] = useState(MOCK_CATS);
   const grantedRef = useRef(null);               // 一趟只請領一次
 
   // 載入存檔（auth 還在解析時先不載，免得用離線存檔覆蓋真存檔）
@@ -48,6 +52,15 @@ export default function GuildTestApp() {
     loadGuildProfile(memberId).then(p => { if (alive) setGp(p); });
     return () => { alive = false; };
   }, [memberId, loading]);
+
+  // 真貓（members/{id}/cats）：等級/羈絆/裝備沿用主線養成，公會只讀不寫
+  useEffect(() => {
+    if (!memberId) { setCatRoster(MOCK_CATS); return; }
+    return subscribeMyCats(memberId, cats => {
+      const roster = buildCatRoster(cats);
+      setCatRoster(roster);   // 沒有貓 → 空陣列，備包不顯示貓區塊、戰鬥就沒助攻
+    });
+  }, [memberId]);
 
   // 結算入帳：settleExpedition 有隨機性，只能 roll 這一次
   useEffect(() => {
@@ -83,6 +96,11 @@ export default function GuildTestApp() {
 
   const rankInfo = nextRankInfo(gp.rep);
   const rank = rankInfo.current;
+
+  // 實際出戰的貓：存檔沒選過 → 自動帶最強的前 N 隻（新玩家不必先進設定）
+  const partyCats = pickPartyCats(catRoster, gp.partyCats);
+  const partyCatIds = partyCats.map(c => c.id);
+  const toggleCat = catId => changeProfile({ ...gp, partyCats: togglePartyCat(partyCatIds, catId) });
 
   // 危險度按鈕（階級不足就鎖住，並顯示還差多少聲望——鎖著也要看得到目標）
   const DangerButtons = ({ small }) => (
@@ -168,7 +186,8 @@ export default function GuildTestApp() {
           <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 800 }}>委託危險度</span>
           <DangerButtons small />
         </div>
-        <GuildLoadout member={member} guildEquip={gp.equipped} onDepart={sup => { setSupplies(sup); setPhase("battle"); }} />
+        <GuildLoadout member={member} guildEquip={gp.equipped} catRoster={catRoster} partyCatIds={partyCatIds} onToggleCat={toggleCat}
+          onDepart={sup => { setSupplies(sup); setPhase("battle"); }} />
       </div>
     );
   }
@@ -182,7 +201,7 @@ export default function GuildTestApp() {
           {Object.keys(STAT_META).map(k => `${STAT_META[k].short} ${stats[k]}`).join(" · ")}
         </span>
       </div>
-      <GuildBattle key={run.key} expedition={run.exp} guildStats={stats} supplies={supplies} cats={MOCK_CATS} onEnd={setResult} />
+      <GuildBattle key={run.key} expedition={run.exp} guildStats={stats} supplies={supplies} cats={partyCats} onEnd={setResult} />
     </div>
   );
 }

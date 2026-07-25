@@ -27,6 +27,7 @@ const toDoc = p => ({
   rep: p.rep,
   equipped: p.equipped,
   stash: p.stash,
+  partyCats: p.partyCats,
   junkSeen: p.junkSeen,
   expeditions: p.expeditions,
   updatedAt: serverTimestamp(),

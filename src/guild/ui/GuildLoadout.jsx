@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { calcGuildExpeditionStats, deriveGuildCombat, STAT_META } from "../domain/guildStats";
 import { GUILD_SLOTS, SLOT_META, resolveEquipWeight, equipDisplayName, GRADE_META } from "../data/guildEquipCatalog";
+import { MAX_PARTY_CATS } from "../domain/guildCats";
 
 const BASE_CAPACITY = 20;
 const SUPPLY_WEIGHT = 1;
@@ -22,7 +23,7 @@ function Stepper({ label, icon, value, set, min = 0, max = 20 }) {
 }
 const btn = { width: 30, height: 30, borderRadius: 8, border: "none", background: "#334155", color: "#fff", fontWeight: 900, fontSize: 16, cursor: "pointer" };
 
-export default function GuildLoadout({ member, guildEquip, onDepart }) {
+export default function GuildLoadout({ member, guildEquip, onDepart, catRoster = [], partyCatIds = [], onToggleCat }) {
   const stats = calcGuildExpeditionStats(member, guildEquip);
   const derived = deriveGuildCombat(stats);
   const capacity = Math.round((BASE_CAPACITY + derived.carryBonus) * 10) / 10;
@@ -31,6 +32,7 @@ export default function GuildLoadout({ member, guildEquip, onDepart }) {
     return w + (it && it.archetypeId ? resolveEquipWeight(it.archetypeId, it.grade) : 0);
   }, 0) * 10) / 10;
 
+  const party = partyCatIds; // 已由上層解析成「實際出戰」的 id（空選單時上層會自動填最強的）
   const [food, setFood] = useState(6);
   const [water, setWater] = useState(6);
   const supplyWeight = (food + water) * SUPPLY_WEIGHT;
@@ -67,6 +69,32 @@ export default function GuildLoadout({ member, guildEquip, onDepart }) {
           );
         })}
       </div>
+
+      {/* 出戰貓貓（貓的等級/羈絆/裝備沿用主線養成 → 在貓村養貓會讓遠征變強）*/}
+      {catRoster.length > 0 && (
+        <div style={{ background: "rgba(0,0,0,.3)", borderRadius: 12, padding: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 900, color: "#c7d2fe", marginBottom: 8 }}>
+            出戰貓貓 {party.length}/{MAX_PARTY_CATS}
+            <span style={{ color: "#64748b", fontWeight: 700, marginLeft: 6 }}>（每回合自動助攻，不佔負重）</span>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {catRoster.map(cat => {
+              const on = party.includes(cat.id);
+              const blocked = !on && party.length >= MAX_PARTY_CATS;
+              return (
+                <button key={cat.id} type="button" disabled={blocked && !on} onClick={() => onToggleCat?.(cat.id)}
+                  style={{ padding: "6px 9px", borderRadius: 9, fontSize: 11, fontWeight: 800, cursor: blocked ? "not-allowed" : "pointer",
+                    color: on ? "#0b1220" : blocked ? "#64748b" : "#e2e8f0", border: `1px solid ${on ? "#fbbf24" : "rgba(255,255,255,.1)"}`,
+                    background: on ? "linear-gradient(135deg,#fcd34d,#f59e0b)" : "rgba(255,255,255,.04)", textAlign: "left" }}>
+                  {cat.icon} {cat.name} <span style={{ opacity: .8 }}>Lv{cat.level}</span>
+                  <div style={{ fontSize: 10, fontWeight: 700, opacity: .85 }}>{cat.typeLabel}　⚔️{cat.atk} 🛡️{cat.def}</div>
+                </button>
+              );
+            })}
+          </div>
+          {party.length === 0 && <div style={{ fontSize: 10, color: "#f87171", marginTop: 6 }}>沒帶貓也能出發，但少了每回合助攻會吃力很多。</div>}
+        </div>
+      )}
 
       {/* 補給 + 容量 */}
       <div style={{ background: "rgba(0,0,0,.3)", borderRadius: 12, padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>

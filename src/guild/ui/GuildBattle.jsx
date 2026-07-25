@@ -98,11 +98,16 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
             </button>
           );
         })}
-        {/* 玩家 + 貓（近端） */}
+        {/* 玩家 + 出戰的真貓（近端）：實際帶幾隻就畫幾隻 */}
         <div style={{ position: "absolute", bottom: 6, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 14, alignItems: "flex-end" }}>
-          <div style={{ fontSize: 30 }}>🐱</div>
           <div style={{ fontSize: 46 }}>🏹</div>
-          <div style={{ fontSize: 30 }}>🐱</div>
+          {(state.cats || []).map(c => (
+            <div key={c.id} style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 30 }}>{c.icon || "🐱"}</div>
+              <div style={{ fontSize: 9, fontWeight: 800, color: "#fcd34d", whiteSpace: "nowrap" }}>{c.name}</div>
+              <div style={{ fontSize: 9, color: "#94a3b8" }}>⚔️{c.atk}</div>
+            </div>
+          ))}
         </div>
         {flash && <div style={{ position: "absolute", top: 8, left: "50%", transform: "translateX(-50%)", background: "rgba(0,0,0,.7)", padding: "4px 12px", borderRadius: 999, fontSize: 12, fontWeight: 800 }}>{flash}</div>}
       </div>

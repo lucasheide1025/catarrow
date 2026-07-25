@@ -28,6 +28,7 @@ export function emptyGuildProfile() {
     rep: 0,
     equipped: { ...STARTER_EQUIPPED },
     stash: [],
+    partyCats: null,      // 出戰貓（catId 陣列）。null = 還沒設定過→自動帶最強的；[] = 刻意不帶貓
     junkSeen: {},
     expeditions: { total: 0, won: 0, byDanger: { 1: 0, 2: 0, 3: 0 } },
   };
@@ -47,6 +48,7 @@ export function normalizeGuildProfile(raw) {
     rep: Number(raw.rep) || 0,
     equipped: Object.keys(eq).length ? eq : base.equipped,
     stash: (Array.isArray(raw.stash) ? raw.stash : []).filter(i => i && GUILD_EQUIP_ARCHETYPES[i.archetypeId]),
+    partyCats: Array.isArray(raw.partyCats) ? raw.partyCats.filter(id => typeof id === "string") : null,
     junkSeen: raw.junkSeen && typeof raw.junkSeen === "object" ? { ...raw.junkSeen } : {},
     expeditions: {
       total: Number(raw.expeditions?.total) || 0,
