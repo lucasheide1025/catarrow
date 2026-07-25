@@ -23,7 +23,7 @@ const paperStyle = {
 };
 const dangerColor = d => (d >= 5 ? "#7f1d1d" : d >= 3 ? "#b45309" : "#3f6212");
 
-export default function GuildBoard({ profile, contracts, doneIds = [], onOpen, onOpenStash, onOpenShop }) {
+export default function GuildBoard({ profile, contracts, doneIds = [], onOpen, onOpenStash, onOpenShop, onOpenVault }) {
   const rankInfo = nextRankInfo(profile.rep);
   const rank = rankInfo.current;
   const { maxDanger } = rankUnlocks(profile.rep);
@@ -31,6 +31,7 @@ export default function GuildBoard({ profile, contracts, doneIds = [], onOpen, o
   const openable = contracts.filter(c => canAcceptDanger(profile.rep, c.danger));
   const allDone = openable.length > 0 && openable.every(c => doneIds.includes(c.id));
   const lines = MASTER_LINES[rank.id] || MASTER_LINES.apprentice;
+  const junkCount = Object.values(profile.junkStock || {}).reduce((s, n) => s + n, 0);
 
   return (
     <div style={{ minHeight: "100dvh", ...bgLayer(hallBg(), { overlay: "rgba(10,7,3,.62)" }), backgroundAttachment: "fixed", color: "#f1e7d5", padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -50,6 +51,9 @@ export default function GuildBoard({ profile, contracts, doneIds = [], onOpen, o
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <button type="button" onClick={() => { sfxOpen(); onOpenStash(); }} style={{ ...iconBtn, background: "rgba(51,65,85,.85)" }}>🎒 倉庫</button>
           <button type="button" onClick={() => { sfxOpen(); onOpenShop(); }} style={{ ...iconBtn, background: "rgba(76,29,149,.85)" }}>🏪 商店</button>
+          <button type="button" onClick={() => { sfxOpen(); onOpenVault?.(); }} style={{ ...iconBtn, background: "rgba(120,53,15,.85)" }}>
+            🧺 雜貨{junkCount > 0 ? `（${junkCount}）` : ""}
+          </button>
         </div>
       </div>
 

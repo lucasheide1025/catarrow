@@ -13,7 +13,7 @@ import { subscribeMyCats } from "../lib/catDb";
 import { nextRankInfo, repToRank } from "./domain/guildRank";
 import { unlockAudio, sfxLevelUp, sfxCoinDrop, sfxOpenChest } from "../lib/sound";
 import { rollDailyContracts, contractsStateFor, todayKey } from "./domain/guildContracts";
-import { loadGuildProfile, saveGuildProfile, grantExpeditionRewards, buyGuildShopItem } from "./db/guildDb";
+import { loadGuildProfile, saveGuildProfile, grantExpeditionRewards, buyGuildShopItem, sellGuildJunk } from "./db/guildDb";
 import GuildBattle from "./ui/GuildBattle";
 import { fieldBg, bgLayer, rankBadge, junkArt, ArtOrEmoji } from "./ui/GuildArt";
 import GuildBoard from "./ui/GuildBoard";
@@ -21,6 +21,7 @@ import GuildContractSheet from "./ui/GuildContractSheet";
 import GuildLoadout from "./ui/GuildLoadout";
 import GuildStash from "./ui/GuildStash";
 import GuildShop from "./ui/GuildShop";
+import GuildVault from "./ui/GuildVault";
 
 const MOCK_MEMBER = { archerXP: 8000 };
 // 離線試玩（未登入直接開 ?guild）才用的假貓；登入後一律用 members/{id}/cats 的真貓
@@ -45,7 +46,7 @@ export default function GuildTestApp() {
   const [result, setResult] = useState(null);
   const [loot, setLoot] = useState(null);        // 只 roll 一次：顯示與入帳同一份
   const [grantMsg, setGrantMsg] = useState("");
-  const [phase, setPhase] = useState("board");   // board | loadout | battle | stash | shop
+  const [phase, setPhase] = useState("board");   // board | loadout | battle | stash | shop | vault
   const [supplies, setSupplies] = useState({ food: 6, water: 6 });
   const [catRoster, setCatRoster] = useState(MOCK_CATS);
   const [rankUp, setRankUp] = useState(null);    // 這趟升階了 → 顯示橫幅
@@ -120,6 +121,12 @@ export default function GuildTestApp() {
     saveGuildProfile(memberId, p);
   };
 
+  const sellJunk = async (sellMap, valuationMult) => {
+    const res = await sellGuildJunk(memberId, gp, sellMap, valuationMult);
+    if (res.ok) setGp(res.profile);
+    return res;
+  };
+
   const buy = async itemId => {
     const res = await buyGuildShopItem(memberId, gp, itemId);
     if (res.ok) setGp(res.profile);
@@ -149,11 +156,16 @@ export default function GuildTestApp() {
     return <GuildShop profile={gp} onBuy={buy} onClose={closePanel} />;
   }
 
+  if (phase === "vault") {
+    return <GuildVault member={member} profile={gp} onSell={sellJunk} onClose={closePanel} />;
+  }
+
   if (phase === "board" && !result) {
     return (
       <>
         <GuildBoard profile={gp} contracts={dailyContracts} doneIds={doneIds}
-          onOpen={setSheet} onOpenStash={() => setPhase("stash")} onOpenShop={() => setPhase("shop")} />
+          onOpen={setSheet} onOpenStash={() => setPhase("stash")} onOpenShop={() => setPhase("shop")}
+          onOpenVault={() => setPhase("vault")} />
         {sheet && (
           <GuildContractSheet contract={sheet} profile={gp} done={doneIds.includes(sheet.id)}
             onAccept={acceptContract} onClose={() => setSheet(null)} />
@@ -175,7 +187,7 @@ export default function GuildTestApp() {
             {loot.materials.length > 0 && <div style={{ color: "#a7f3d0" }}>📦 材料：{loot.materials.map(m => `${m.familyTier}×${m.qty}`).join("、")}</div>}
             {loot.junk.length > 0 && (
               <div style={{ color: "#93c5fd", display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                🎒 雜貨：
+                🧺 入庫雜貨：
                 {loot.junk.map((j, i) => (
                   <span key={`${j.id}-${i}`} style={{ display: "flex", alignItems: "center", gap: 3 }}>
                     <ArtOrEmoji sources={[junkArt(j.id)]} emoji={j.icon} size={22} />
@@ -256,7 +268,8 @@ export default function GuildTestApp() {
   if (!run || !contract) {
     return (
       <GuildBoard profile={gp} contracts={dailyContracts} doneIds={doneIds}
-        onOpen={setSheet} onOpenStash={() => setPhase("stash")} onOpenShop={() => setPhase("shop")} />
+        onOpen={setSheet} onOpenStash={() => setPhase("stash")} onOpenShop={() => setPhase("shop")}
+        onOpenVault={() => setPhase("vault")} />
     );
   }
 

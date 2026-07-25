@@ -3,7 +3,9 @@ import {
   guildMaterialId, expandLootMaterials, emptyGuildProfile, normalizeGuildProfile,
   applyLootToProfile, equipFromStash, unequipSlot, GUILD_STASH_LIMIT, REP_PER_DANGER,
 } from "./guildRewards";
-import { GUILD_EQUIP_ARCHETYPES } from "../data/guildEquipCatalog";
+import { sellJunkFromStock, junkStockView, allJunkSellMap } from "./guildRewards";
+import { GUILD_EQUIP_ARCHETYPES, GUILD_SLOTS } from "../data/guildEquipCatalog";
+import { JUNK_BY_ID, evaluateJunk } from "../data/guildJunkCatalog";
 
 let seq = 0;
 const uidFn = () => `u${seq++}`;
@@ -84,6 +86,78 @@ describe("applyLootToProfile", () => {
     const { profile, stashFull } = applyLootToProfile(full, wonLoot, { danger: 1, uidFn });
     expect(stashFull).toBe(true);
     expect(profile.stash).toHaveLength(GUILD_STASH_LIMIT);
+  });
+});
+
+describe("雜貨倉庫（不自動賣，玩家決定何時賣）", () => {
+  const loot = { won: true, coins: 100, catCoins: 8, materials: [], legacyMaterials: [],
+    junk: [{ id: "rusty_gear" }, { id: "rusty_gear" }, { id: "gemstone_shard" }], equipDrops: [] };
+
+  test("撈到的雜貨進倉庫，不會變成錢", () => {
+    const { profile } = applyLootToProfile(emptyGuildProfile(), loot, { danger: 1, uidFn });
+    expect(profile.junkStock).toEqual({ rusty_gear: 2, gemstone_shard: 1 });
+    expect(profile.catCoins).toBe(8);          // 只有委託酬金，沒有雜貨的錢
+    expect(profile.junkSeen.rusty_gear).toBe(2); // 圖鑑照樣記
+  });
+
+  test("賣出：扣庫存、CAT幣入袋、金幣回傳給 db 寫主線", () => {
+    const { profile: p0 } = applyLootToProfile(emptyGuildProfile(), loot, { danger: 1, uidFn });
+    const res = sellJunkFromStock(p0, { rusty_gear: 1 }, 1);
+    expect(res.profile.junkStock.rusty_gear).toBe(1);
+    const unit = evaluateJunk("rusty_gear", 1);
+    expect(res.coins).toBe(unit.coins);
+    expect(res.profile.catCoins).toBe(8 + unit.catCoins);
+    expect(res.sold).toEqual([{ id: "rusty_gear", name: JUNK_BY_ID.rusty_gear.name, qty: 1 }]);
+  });
+
+  test("賣光某項就從倉庫消失；賣超過持有量只賣到持有量", () => {
+    const { profile: p0 } = applyLootToProfile(emptyGuildProfile(), loot, { danger: 1, uidFn });
+    const res = sellJunkFromStock(p0, { rusty_gear: 99 }, 1);
+    expect(res.profile.junkStock.rusty_gear).toBeUndefined();
+    expect(res.sold[0].qty).toBe(2);
+  });
+
+  test("LUK 評估加成是賣出當下才算（先囤再賣更值錢）", () => {
+    const { profile: p0 } = applyLootToProfile(emptyGuildProfile(), loot, { danger: 1, uidFn });
+    const poor = sellJunkFromStock(p0, { gemstone_shard: 1 }, 1);
+    const rich = sellJunkFromStock(p0, { gemstone_shard: 1 }, 1.5);
+    expect(rich.coins).toBeGreaterThan(poor.coins);
+  });
+
+  test("沒有的雜貨/髒 id 不會賣出東西", () => {
+    const res = sellJunkFromStock(emptyGuildProfile(), { nope: 5, rusty_gear: 3 }, 1);
+    expect(res.sold).toEqual([]);
+    expect(res.coins).toBe(0);
+  });
+
+  test("倉庫檢視：稀有度高的排前面、單價/總價正確", () => {
+    const { profile } = applyLootToProfile(emptyGuildProfile(), loot, { danger: 1, uidFn });
+    const view = junkStockView(profile, 1);
+    expect(view[0].id).toBe("gemstone_shard");     // prize > common
+    const gear = view.find(v => v.id === "rusty_gear");
+    expect(gear.totalCoins).toBe(gear.unitCoins * 2);
+    expect(allJunkSellMap(profile)).toEqual({ rusty_gear: 2, gemstone_shard: 1 });
+  });
+
+  test("存檔正規化：不存在的雜貨 id 與非正數量會被丟掉", () => {
+    const p = normalizeGuildProfile({ junkStock: { rusty_gear: 3, ghost_of_nothing: 2, bad: 0, neg: -1 } });
+    expect(p.junkStock).toEqual({ rusty_gear: 3 });
+  });
+});
+
+describe("裝備圖鑑要夠豐富", () => {
+  test("每個槽位都有多種基礎裝（作者要求非常豐富）", () => {
+    for (const slot of GUILD_SLOTS) {
+      const n = Object.values(GUILD_EQUIP_ARCHETYPES).filter(a => a.slot === slot).length;
+      expect(n).toBeGreaterThanOrEqual(6);
+    }
+    expect(Object.keys(GUILD_EQUIP_ARCHETYPES).length).toBeGreaterThanOrEqual(35);
+  });
+
+  test("起手裝與商店設定用到的 id 都還存在（擴充不能弄壞舊存檔）", () => {
+    for (const id of ["wood_bow", "wood_arrow", "cloth_armor", "hunter_bow", "leather_armor", "potion_pouch_l", "ranger_quiver", "long_bow", "scout_armor", "heavy_arrow", "sharp_arrow", "small_quiver", "iron_bow", "potion_pouch_s"]) {
+      expect(GUILD_EQUIP_ARCHETYPES[id]).toBeTruthy();
+    }
   });
 });
 

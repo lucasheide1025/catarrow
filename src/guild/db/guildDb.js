@@ -14,7 +14,7 @@
 import { doc, getDoc, setDoc, updateDoc, onSnapshot, increment, serverTimestamp } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import { addMaterials } from "../../lib/db";
-import { normalizeGuildProfile, applyLootToProfile, expandLootMaterials } from "../domain/guildRewards";
+import { normalizeGuildProfile, applyLootToProfile, expandLootMaterials, expandExpansionMaterials, sellJunkFromStock } from "../domain/guildRewards";
 import { purchaseFromShop } from "../domain/guildShopPurchase";
 import { markContractDone } from "../domain/guildContracts";
 
@@ -31,6 +31,7 @@ const toDoc = p => ({
   partyCats: p.partyCats,
   contracts: p.contracts,
   junkSeen: p.junkSeen,
+  junkStock: p.junkStock,
   expeditions: p.expeditions,
   updatedAt: serverTimestamp(),
 });
@@ -83,6 +84,24 @@ export async function buyGuildShopItem(memberId, profile, itemId) {
   }
 }
 
+// 賣雜貨：驗證與計價全在 domain（`sellJunkFromStock`），這裡只寫。
+// CAT幣進 guildProfiles、金幣進主線 members.coins（跟遠征結算同一條路）。
+export async function sellGuildJunk(memberId, profile, sell, valuationMult = 1) {
+  const res = sellJunkFromStock(profile, sell, valuationMult);
+  if (!res.sold.length) return { ok: false, reason: "沒有可賣的雜貨", ...res };
+  if (!memberId) return { ok: true, offline: true, ...res };
+  try {
+    await setDoc(ref(memberId), toDoc(res.profile), { merge: true });
+    if (res.coins > 0) {
+      await updateDoc(doc(db, "members", memberId), { coins: increment(res.coins), updatedAt: serverTimestamp() });
+    }
+    return { ok: true, offline: false, ...res };
+  } catch (e) {
+    console.warn("sellGuildJunk:", e?.message);
+    return { ok: false, reason: e?.message || "賣出失敗", profile: normalizeGuildProfile(profile), coins: 0, catCoins: 0, sold: [] };
+  }
+}
+
 // 遠征結算 → 真的發獎。呼叫端要自己做 once-guard（一趟只請領一次）。
 // 回傳 { ok, profile, repGained, coinsGained, materialsGranted, stashFull, offline }
 export async function grantExpeditionRewards(memberId, loot, opts = {}) {
@@ -90,7 +109,10 @@ export async function grantExpeditionRewards(memberId, loot, opts = {}) {
   const applied = applyLootToProfile(current, loot, { danger: opts.danger || 1 });
   // 委託結案：勝敗都鎖同一張（企劃拍板——失敗也算接過了，當天不能重刷）
   if (opts.contractId) applied.profile = markContractDone(applied.profile, opts.contractId, opts.dateKey);
-  const materials = loot?.won ? expandLootMaterials(loot.materials) : [];
+  // 擴充材料（主力，2~3 倍量）＋ 舊六族材料鏈（保底）都寫進主線 materialInventory
+  const materials = loot?.won
+    ? [...expandExpansionMaterials(loot.materials), ...expandLootMaterials(loot.legacyMaterials)]
+    : [];
 
   // 未登入（?guild 直接開）→ 只回傳算好的結果，讓畫面照樣試玩，不打 Firestore
   if (!memberId) return { ok: true, offline: true, ...applied, materialsGranted: materials.length };

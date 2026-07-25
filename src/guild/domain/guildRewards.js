@@ -11,6 +11,7 @@
 // ─────────────────────────────────────────────────────────────
 import { MATERIALS } from "../../lib/monsterMaterials";
 import { GUILD_SLOTS, GUILD_EQUIP_ARCHETYPES } from "../data/guildEquipCatalog";
+import { JUNK_BY_ID, evaluateJunk } from "../data/guildJunkCatalog";
 
 export const GUILD_STASH_LIMIT = 60;          // 倉庫上限（滿了就不再收，避免存檔無限膨脹）
 export const REP_PER_DANGER = 10;             // 完成一趟遠征的聲望 = 危險度 × 此值
@@ -29,6 +30,7 @@ export function emptyGuildProfile() {
     equipped: { ...STARTER_EQUIPPED },
     stash: [],
     partyCats: null,      // 出戰貓（catId 陣列）。null = 還沒設定過→自動帶最強的；[] = 刻意不帶貓
+    junkStock: {},         // 雜貨倉庫 { [junkId]: qty }——**不自動賣**，玩家自己決定何時賣
     contracts: null,      // 今日委託完成紀錄 { dateKey, done:[contractId] }；跨日自動換板（見 guildContracts）
     junkSeen: {},
     expeditions: { total: 0, won: 0, byDanger: { 1: 0, 2: 0, 3: 0 } },
@@ -54,6 +56,12 @@ export function normalizeGuildProfile(raw) {
       ? { dateKey: raw.contracts.dateKey, done: Array.isArray(raw.contracts.done) ? raw.contracts.done.filter(x => typeof x === "string") : [] }
       : null,
     junkSeen: raw.junkSeen && typeof raw.junkSeen === "object" ? { ...raw.junkSeen } : {},
+    // 倉庫只留圖鑑裡存在的雜貨、數量正整數（壞資料不會炸畫面）
+    junkStock: Object.fromEntries(
+      Object.entries(raw.junkStock && typeof raw.junkStock === "object" ? raw.junkStock : {})
+        .filter(([id, n]) => JUNK_BY_ID[id] && Number(n) > 0)
+        .map(([id, n]) => [id, Math.floor(Number(n))]),
+    ),
     expeditions: {
       total: Number(raw.expeditions?.total) || 0,
       won: Number(raw.expeditions?.won) || 0,
@@ -70,7 +78,7 @@ export function guildMaterialId(familyTier) {
   return MATERIALS.some(x => x.id === id) ? id : null;
 }
 
-// loot.materials（[{familyTier,qty}]）→ addMaterials 要的陣列（每個元素 +1，故依 qty 展開）
+// 舊六族材料鏈（保底）：[{familyTier,qty}] → addMaterials 要的陣列（每元素 +1，依 qty 展開）
 export function expandLootMaterials(materials = []) {
   const out = [];
   for (const entry of materials) {
@@ -78,6 +86,16 @@ export function expandLootMaterials(materials = []) {
     if (!id) continue;
     const mat = MATERIALS.find(x => x.id === id);
     for (let i = 0; i < (entry.qty || 0); i++) out.push({ id: mat.id, name: mat.name, icon: mat.icon });
+  }
+  return out;
+}
+
+// 擴充材料（主線打怪同一份）：[{id,name,qty}] → addMaterials 要的陣列
+export function expandExpansionMaterials(materials = []) {
+  const out = [];
+  for (const entry of materials) {
+    if (!entry?.id) continue;
+    for (let i = 0; i < (entry.qty || 0); i++) out.push({ id: entry.id, name: entry.name });
   }
   return out;
 }
@@ -96,8 +114,13 @@ export function applyLootToProfile(profile, loot, opts = {}) {
   };
   if (!won) return { profile: { ...p, expeditions }, repGained: 0, coinsGained: 0, stashFull: false };
 
+  // 雜貨：圖鑑計數 + **進倉庫**（賣出的錢等玩家自己決定時機，見 sellJunkFromStock）
   const junkSeen = { ...p.junkSeen };
-  for (const j of loot.junk || []) junkSeen[j.id] = (junkSeen[j.id] || 0) + 1;
+  const junkStock = { ...p.junkStock };
+  for (const j of loot.junk || []) {
+    junkSeen[j.id] = (junkSeen[j.id] || 0) + 1;
+    junkStock[j.id] = (junkStock[j.id] || 0) + 1;
+  }
 
   const uidFn = opts.uidFn || (() => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`);
   const stash = [...p.stash];
@@ -109,11 +132,55 @@ export function applyLootToProfile(profile, loot, opts = {}) {
 
   const repGained = danger * REP_PER_DANGER;
   return {
-    profile: { ...p, catCoins: p.catCoins + (loot.catCoins || 0), rep: p.rep + repGained, junkSeen, stash, expeditions },
+    profile: { ...p, catCoins: p.catCoins + (loot.catCoins || 0), rep: p.rep + repGained, junkSeen, junkStock, stash, expeditions },
     repGained,
     coinsGained: loot.coins || 0,
     stashFull,
   };
+}
+
+// ── 賣雜貨（純函數）──
+// sell = { [junkId]: qty }（qty 省略或超過持有量 → 全賣該項）。
+// valuationMult＝LUK 的評估加成，**賣出的當下才算** → 養高 LUK 再賣是刻意的策略空間。
+export function sellJunkFromStock(profile, sell = {}, valuationMult = 1) {
+  const p = normalizeGuildProfile(profile);
+  const stock = { ...p.junkStock };
+  let coins = 0;
+  let catCoins = 0;
+  const sold = [];
+  for (const [id, want] of Object.entries(sell)) {
+    const have = stock[id] || 0;
+    if (!have || !JUNK_BY_ID[id]) continue;
+    const n = want == null ? have : Math.min(have, Math.max(0, Math.floor(want)));
+    if (n <= 0) continue;
+    const unit = evaluateJunk(id, valuationMult);
+    coins += unit.coins * n;
+    catCoins += unit.catCoins * n;
+    if (have - n > 0) stock[id] = have - n; else delete stock[id];
+    sold.push({ id, name: JUNK_BY_ID[id].name, qty: n });
+  }
+  return {
+    profile: { ...p, junkStock: stock, catCoins: p.catCoins + catCoins },   // 金幣走主線 members.coins，由 db 層寫
+    coins, catCoins, sold,
+  };
+}
+
+// 倉庫總覽（UI 用）：持有的雜貨 + 單價 + 總價，稀有度高的排前面
+export function junkStockView(profile, valuationMult = 1) {
+  const p = normalizeGuildProfile(profile);
+  const order = { legend: 0, prize: 1, rare: 2, fine: 3, common: 4 };
+  return Object.entries(p.junkStock)
+    .map(([id, qty]) => {
+      const j = JUNK_BY_ID[id];
+      const unit = evaluateJunk(id, valuationMult);
+      return { ...j, qty, unitCoins: unit.coins, unitCatCoins: unit.catCoins, totalCoins: unit.coins * qty, totalCatCoins: unit.catCoins * qty };
+    })
+    .sort((a, b) => (order[a.rarity] ?? 9) - (order[b.rarity] ?? 9) || b.totalCoins - a.totalCoins);
+}
+
+// 全部賣掉的預覽/執行用：{ [id]: qty }
+export function allJunkSellMap(profile) {
+  return { ...normalizeGuildProfile(profile).junkStock };
 }
 
 // ── 換裝（純函數）：倉庫件 → 對應槽位；原本裝著的回倉庫（不會憑空消失）──
