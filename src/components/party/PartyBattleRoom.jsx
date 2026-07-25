@@ -825,10 +825,15 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setStarting(false);
   }
   async function handleLeave() {
-    // 戰鬥進行中：防誤觸確認
-    if (room?.status === "active") {
-      if (!window.confirm("⚠️ 戰鬥進行中！確定要離開房間嗎？")) return;
-    }
+    // 防誤觸確認。⚠️ 房主離開 = leavePartyRoom 把房間設成 completed ＝ 整房解散，
+    //    所以房主「任何狀態」都要先問，不能只在戰鬥中問。
+    const others = Math.max(0, Object.values(room?.members || {}).filter(Boolean).length - 1);
+    const msg = isHost
+      ? `⚠️ 你是房主，離開會解散整間房間，${others} 位隊友會一起被踢出。確定嗎？`
+      : room?.status === "active"
+        ? "⚠️ 戰鬥進行中！確定要離開房間嗎？"
+        : null;
+    if (msg && !window.confirm(msg)) return;
     await leavePartyRoom(roomId, myId, isHost);
     sessionStorage.removeItem("guest_party_session");
     onLeave();

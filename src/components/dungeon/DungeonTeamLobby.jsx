@@ -55,6 +55,7 @@ export default function DungeonTeamLobby({
   const isHost = myId === hostId;
   const [room, setRoom] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [confirmExit, setConfirmExit] = useState(false); // 返回/解散前的確認（房主一按＝全房解散）
   const [copied, setCopied] = useState(false);
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [settingsError, setSettingsError] = useState("");
@@ -84,6 +85,7 @@ export default function DungeonTeamLobby({
   const memberCount = memberEntries.length;
 
   async function handleDisband() {
+    setConfirmExit(false);
     setLoading(true);
     await disbandTeamExpeditionRoom(roomId, myId);
     await cleanupTeamExpeditionRoom(roomId).catch(() => {});
@@ -92,11 +94,36 @@ export default function DungeonTeamLobby({
   }
 
   async function handleLeave() {
+    setConfirmExit(false);
     setLoading(true);
     await leaveTeamExpeditionRoom(roomId, myId);
     setLoading(false);
     onBack();
   }
+
+  // 返回鍵（←）在上層 DungeonLobby 的 onBack 裡也會解散/離開房間，
+  // 所以這裡一律先確認，房主與隊員的後果不同要分開講。
+  const confirmDialog = confirmExit ? (
+    <div className="fixed inset-0 z-[300] flex items-center justify-center p-6 bg-black/75">
+      <div className="w-full max-w-xs rounded-3xl border border-amber-500/30 bg-slate-950 p-5 text-center shadow-2xl">
+        <div className="text-4xl mb-2">{isHost ? "⚠️" : "🚪"}</div>
+        <div className="text-amber-200 font-black text-base mb-1">{isHost ? "解散整間房間？" : "確定要離開？"}</div>
+        <div className="text-slate-300/80 text-xs leading-relaxed mb-4">
+          {isHost
+            ? `你是房主，離開會解散這間戰術大廳，${Math.max(0, memberCount - 1)} 位隊友會一起被踢出。`
+            : "離開後隊伍就少你一人，房間還在的話可以再從大廳加入。"}
+        </div>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => setConfirmExit(false)}
+            className="flex-1 py-2.5 rounded-2xl bg-amber-400 text-slate-900 font-black text-sm active:scale-95">留在房間</button>
+          <button type="button" disabled={loading} onClick={isHost ? handleDisband : handleLeave}
+            className="flex-1 py-2.5 rounded-2xl bg-slate-900 border border-rose-500/40 text-rose-300 font-black text-sm active:scale-95 disabled:opacity-50">
+            {isHost ? "解散" : "離開"}
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
 
   async function handleStart() {
     setLoading(true);
@@ -154,7 +181,7 @@ export default function DungeonTeamLobby({
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={onBack}
+            onClick={() => setConfirmExit(true)}
             className="w-9 h-9 rounded-xl bg-slate-800/80 border border-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition active:scale-95"
           >
             ←
@@ -374,7 +401,7 @@ export default function DungeonTeamLobby({
               <>
                 <button
                   type="button"
-                  onClick={handleDisband}
+                  onClick={() => setConfirmExit(true)}
                   disabled={loading}
                   className="px-4 py-3 rounded-2xl text-xs font-bold border border-slate-700 hover:border-rose-500/50 hover:bg-rose-500/10 text-slate-400 hover:text-rose-300 transition active:scale-95 shrink-0"
                 >
@@ -393,7 +420,7 @@ export default function DungeonTeamLobby({
               <>
                 <button
                   type="button"
-                  onClick={handleLeave}
+                  onClick={() => setConfirmExit(true)}
                   disabled={loading}
                   className="px-4 py-3 rounded-2xl text-xs font-bold border border-slate-700 hover:border-rose-500/50 hover:bg-rose-500/10 text-slate-400 hover:text-rose-300 transition active:scale-95 shrink-0"
                 >
@@ -408,6 +435,7 @@ export default function DungeonTeamLobby({
           </div>
         </div>
       </footer>
+      {confirmDialog}
     </div>
   );
 }

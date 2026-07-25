@@ -168,6 +168,11 @@ export default function PartyQuestRoom({ roomId, isHost, onLeave }) {
   }
 
   async function handleLeave() {
+    // ⚠️ 房主離開 = leavePartyRoom 把房間設成 completed ＝ 整房解散，先問過再走
+    if (isHost) {
+      const others = Math.max(0, memberList.length - 1);
+      if (!window.confirm(`⚠️ 你是房主，離開會解散整間房間，${others} 位隊友會一起被踢出。確定嗎？`)) return;
+    }
     await leavePartyRoom(roomId, myId, isHost);
     onLeave();
   }
