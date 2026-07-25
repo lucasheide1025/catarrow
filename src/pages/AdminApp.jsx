@@ -70,7 +70,7 @@ const MemberPerformance  = lazy(() => import("../components/member/MemberPerform
 const MonsterBattle      = lazy(() => import("../components/member/MonsterBattle"));
 const MonsterHandbook    = lazy(() => import("../components/member/MonsterHandbook"));
 const CardCollection     = lazy(() => import("../components/member/CardCollectionModern"));
-const AdventurerGuild    = lazy(() => import("../components/member/AdventurerGuild"));
+const GuildExpedition    = lazy(() => import("../guild/GuildTestApp"));
 const CatVillage         = lazy(() => import("../components/member/CatVillage"));
 const CatCollection      = lazy(() => import("../components/cat/CatCollection"));
 const CatStoryBook       = lazy(() => import("../components/cat/CatStoryBook"));
@@ -311,6 +311,7 @@ export default function AdminApp() {
   const pendingExtN  = pendingExtList.length;
   const pendingExamN = certTasksList.length;
 
+  // eslint-disable-next-line no-unused-vars -- 舊公會下架後暫時沒有呼叫者，保留以備懸賞玩法回歸
   function handleGuildNavigate(targetPage, ctx) {
     setFromGuild(true);
     setQuestCtx(prev => ({
@@ -632,12 +633,9 @@ const adminNav = [
           {page==="cats"        && <CatCollection onBack={()=>setPage("inventory-hub")} onOpenBook={()=>setPage("catbook")} onOpenForge={()=>{ setGachaInitTab("forge"); setPage("gacha"); }}/>}
           {page==="catbook"     && <CatStoryBook  onBack={()=>setPage("cats")}/>}
           {page==="story"       && <StoryBook     onBack={()=>setPage("inventory-hub")}/>}
-          {page==="guild"       && <AdventurerGuild
-            onBack={()=>{ setQuestCtx(null); setPage("adventure-hub"); }}
-            onNavigate={handleGuildNavigate}
-            questCtx={questCtx?.completed ? null : questCtx}
-            onQuestCtxClear={()=>setQuestCtx(null)}
-          />}
+          {/* 冒險者公會：2026-07-25 起全面換成新的公會遠征介面（射手模式與教練端一致）。
+              舊 AdventurerGuild（懸賞任務清單）已下架；擊殺自動提交仍靠下方 handleQuestKill。*/}
+          {page==="guild"       && <GuildExpedition onBack={()=>setPage("adventure-hub")} />}
           {page==="booking"     && <MemberBooking />}
         </Suspense>
         </div>

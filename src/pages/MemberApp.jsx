@@ -65,9 +65,7 @@ const MonsterHandbook    = lazy(() => import("../components/member/MonsterHandbo
 const CardCollection     = lazy(() => import("../components/member/CardCollectionModern"));
 const EquipmentPage      = lazy(() => import("../components/member/EquipmentPage"));
 const CoinShop           = lazy(() => import("../components/member/CoinShop"));
-const AdventurerGuild    = lazy(() => import("../components/member/AdventurerGuild"));
-// 冒險者公會遠征（2026-07-25 正式對玩家開放）。教練(admin)仍走舊 AdventurerGuild，
-// 因為後台懸賞任務流程（handleGuildNavigate/questCtx）還接在舊元件上。
+// 冒險者公會遠征（2026-07-25 全面取代舊 AdventurerGuild，射手與教練都走這個）
 const GuildExpedition    = lazy(() => import("../guild/GuildTestApp"));
 const CatVillage         = lazy(() => import("../components/member/CatVillage"));
 const CatCollection      = lazy(() => import("../components/cat/CatCollection"));
@@ -201,7 +199,6 @@ export default function MemberApp() {
   const [certRecords,   setCertRecords]   = useState([]);   // 年度檢定紀錄（成就偵測用）
   const [dexUnlockToast, setDexUnlockToast] = useState(null); // App 層成就解鎖提示
   const [dexSeenTick,   setDexSeenTick]   = useState(0);    // 圖鑑看過後 bump，重算紅點
-  const [guildLegacy, setGuildLegacy] = useState(false); // 教練切回舊公會（懸賞後台）
   const [questCtx,     setQuestCtx]      = useState(null); // 公會任務導航上下文
   const [fromGuild,    setFromGuild]     = useState(false); // 是否從公會進入打怪
   const [specialAlert, setSpecialAlert]  = useState(null);  // 緊急任務浮動通知
@@ -309,14 +306,8 @@ export default function MemberApp() {
 
   // 從公會接任務後導向對應功能
   // 若是同一個任務，保留目前的擊殺進度，不重置 killsSoFar
-  function handleGuildNavigate(targetPage, ctx) {
-    setFromGuild(true);
-    setQuestCtx(prev => ({
-      ...ctx,
-      killsSoFar: (prev?.questId === ctx.questId) ? (prev.killsSoFar || 0) : 0,
-    }));
-    setPage(targetPage);
-  }
+  // handleGuildNavigate 已隨舊公會（AdventurerGuild）一起下架：新公會不透過它導航。
+  // `questCtx`/handleQuestKill 保留——進行中的舊懸賞任務，擊殺仍會自動提交完成。
 
   // MonsterBattle 回報擊殺
   function handleQuestKill(monsterId) {
@@ -847,21 +838,13 @@ export default function MemberApp() {
         {page==="cats"        && <CatCollection onBack={()=>setPage("inventory-hub")} onOpenBook={()=>setPage("catbook")} onOpenForge={()=>{ setGachaInitTab("forge"); setPage("gacha"); }}/>}
         {page==="catbook"     && <CatStoryBook  onBack={()=>setPage("cats")}/>}
         {page==="story"       && <StoryBook     onBack={()=>setPage("inventory-hub")}/>}
-        {/* 冒險者公會（2026-07-25 全新遠征上線）：
-            所有人（含教練）預設進新公會；教練另有一顆按鈕切回舊公會，
-            因為後台懸賞任務流程（handleGuildNavigate/questCtx）還接在舊元件上。
-            questCtx 有值時（從懸賞任務跳回來）強制走舊公會，不然任務結算會斷。*/}
-        {page==="guild"       && ((role === "admin" && (guildLegacy || questCtx)) ? <AdventurerGuild
-          onBack={()=>{ setQuestCtx(null); setGuildLegacy(false); setPage("adventure-hub"); }}
-          onNavigate={handleGuildNavigate}
-          questCtx={questCtx?.completed ? null : questCtx}
-          onQuestCtxClear={()=>setQuestCtx(null)}
-        /> : (
-          <GuildExpedition
-            onBack={()=>setPage("adventure-hub")}
-            onLegacy={role === "admin" ? () => setGuildLegacy(true) : undefined}
-          />
-        ))}
+        {/* 冒險者公會：2026-07-25 起**全面換成新的公會遠征介面**（作者拍板）。
+            舊 `AdventurerGuild`（懸賞任務清單）整個下架，射手與教練都走新介面。
+            ⚠️ 副作用：玩家不再能從公會「接懸賞任務」——該玩法已被每日委託板取代。
+            仍保留 `questCtx`/`handleQuestKill`：若有進行中的舊任務，擊殺照樣會自動
+            提交完成（`submitGuildQuestCompletion` 本來就在 MemberApp，不在舊元件裡）。
+            教練後台的懸賞管理在 AdminApp，不受影響。*/}
+        {page==="guild"       && <GuildExpedition onBack={()=>setPage("adventure-hub")} />}
         {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom} onBack={()=>setPage("adventure-hub")} />}
         {page==="party-quest" && partyRoomId && (
           <PartyQuestRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty} />

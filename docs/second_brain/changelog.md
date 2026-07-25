@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-07-25（公會全面換新：舊 AdventurerGuild 下架）
+
+作者拍板「全面換成新公會介面」→ `MemberApp` 與 `AdminApp` 的 `page==="guild"` **一律**渲染新的
+`src/guild/GuildTestApp`（委託板/備包/2.5D 戰鬥/倉庫/商店/雜貨倉庫）。教練端與射手模式一致。
+
+- 舊 `components/member/AdventurerGuild.jsx`（懸賞任務清單）**兩個入口都移除**（檔案留著沒刪）。
+- ⚠️ **副作用要知道**：玩家不再能從公會「接懸賞任務」——該玩法已被每日委託板取代。
+- **不受影響**：①`submitGuildQuestCompletion` 本來就寫在 `MemberApp`/`AdminApp` 的 `handleQuestKill`（由 MonsterBattle 回報擊殺觸發），**不在舊元件裡** → 進行中的舊任務照樣自動完成 ②教練後台的懸賞範本/獎勵管理在 `AdminApp` 的其他分頁 ③`AdminAdventurerGuild`（冒險者等級總覽）是不同元件，照舊。
+- `handleGuildNavigate` 目前沒有呼叫者（保留 + eslint-disable，懸賞玩法若回歸可再接）。
+- 冒險入口的「🔧 改建中」→ 金色流光「✨ 全新系統」（純 CSS，`MemberAdventureHub`）。
+
 ## 2026-07-25（公會正式對玩家開放＋商店重構＋報酬調高）
 
 - **🚀 正式開放**：`MemberApp` 的 `page==="guild"` 從「改建中」擋板換成新公會遠征（`src/guild/GuildTestApp` + `onBack`）。**教練(admin) 仍走舊 `AdventurerGuild`**——後台懸賞任務流程（`handleGuildNavigate`/`questCtx`）還接在舊元件上，不能一起換掉。`?guild` 隱藏入口保留。
