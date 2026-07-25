@@ -843,12 +843,20 @@ export default function MemberApp() {
         {page==="cats"        && <CatCollection onBack={()=>setPage("inventory-hub")} onOpenBook={()=>setPage("catbook")} onOpenForge={()=>{ setGachaInitTab("forge"); setPage("gacha"); }}/>}
         {page==="catbook"     && <CatStoryBook  onBack={()=>setPage("cats")}/>}
         {page==="story"       && <StoryBook     onBack={()=>setPage("inventory-hub")}/>}
-        {page==="guild"       && <AdventurerGuild
+        {page==="guild"       && (role === "admin" ? <AdventurerGuild
           onBack={()=>{ setQuestCtx(null); setPage("adventure-hub"); }}
           onNavigate={handleGuildNavigate}
           questCtx={questCtx?.completed ? null : questCtx}
           onQuestCtxClear={()=>setQuestCtx(null)}
-        />}
+        /> : (
+          /* 冒險者公會改建中：射手看更新畫面，教練(admin)可直接進去測試 */
+          <div style={{ minHeight:"100dvh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:16, padding:24, textAlign:"center", background:"linear-gradient(180deg,#0b1220,#1a1207)" }}>
+            <div style={{ fontSize:56 }}>🏛️🔧</div>
+            <div style={{ fontSize:22, fontWeight:900, color:"#fbbf24" }}>冒險者公會改建中</div>
+            <div style={{ fontSize:14, color:"#cbd5e1", lineHeight:1.7, maxWidth:320 }}>公會正在進行大改版，即將以全新面貌重新開張，敬請期待！</div>
+            <button onClick={()=>setPage("adventure-hub")} style={{ marginTop:8, padding:"10px 24px", borderRadius:12, fontWeight:900, color:"#fff", background:"linear-gradient(135deg,#f59e0b,#b45309)", border:"none", cursor:"pointer" }}>返回冒險</button>
+          </div>
+        ))}
         {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom} onBack={()=>setPage("adventure-hub")} />}
         {page==="party-quest" && partyRoomId && (
           <PartyQuestRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty} />

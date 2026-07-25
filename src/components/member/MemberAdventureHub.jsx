@@ -16,9 +16,10 @@ const ADVENTURE_ITEMS = [
 ];
 
 export default function MemberAdventureHub({ onPageChange, badges = {} }) {
-  const { profile } = useAuth();
+  const { profile, role } = useAuth();
   const advLv   = levelFromXP(profile?.adventurerXP || 0);
   const advRank = rankFromLevel(advLv);
+  const guildLocked = role !== "admin"; // 公會改建中：射手鎖、教練可進去測試
 
   return (
     <div className="p-4 flex flex-col gap-3" style={{ minHeight:"100dvh", backgroundImage:"url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"top center", backgroundAttachment:"local" }}>
@@ -28,7 +29,7 @@ export default function MemberAdventureHub({ onPageChange, badges = {} }) {
           <HubTile key={item.page}
             icon={item.icon}
             title={item.title}
-            desc={item.page === "guild" ? `Lv.${advLv} ${advRank.icon}` : item.desc}
+            desc={item.page === "guild" ? (guildLocked ? "🔧 改建中" : `Lv.${advLv} ${advRank.icon}`) : item.desc}
             accent={item.accent}
             image={`/ui/adventure/${item.page}.webp`}
             badge={badges[item.badgeKey] || 0}
