@@ -15,7 +15,7 @@
 // ─────────────────────────────────────────────────────────────
 import { LOOT_BY_DANGER } from "../data/guildLootTable";
 import { junkPoolFor, drawJunk } from "../data/guildJunkCatalog";
-import { GUILD_EQUIP_ARCHETYPES, GRADES } from "../data/guildEquipCatalog";
+import { GUILD_EQUIP_ARCHETYPES, GRADES, AFFIX_IDS } from "../data/guildEquipCatalog";
 import { EXPANSION_MATERIALS } from "../../lib/monsterExpansionCatalog";
 import { deriveGuildCombat } from "./guildStats";
 
@@ -89,7 +89,15 @@ export function settleExpedition(state, opts = {}) {
     const archIds = Object.keys(GUILD_EQUIP_ARCHETYPES);
     const archetypeId = archIds[Math.floor(rand() * archIds.length)];
     const gi = Math.min(GRADES.length - 1, Math.floor(rand() * (danger + 1)));
-    equipDrops.push({ archetypeId, grade: GRADES[gi] });
+    // 詞綴：危險度越高越可能帶（T1~T2 最多 1 條、T5~T6 最多 2 條），商店貨一律無詞綴
+    const maxAffix = danger >= 5 ? 2 : danger >= 3 ? 1 : (rand() < 0.5 ? 1 : 0);
+    const affixes = [];
+    while (affixes.length < maxAffix) {
+      const pick = AFFIX_IDS[Math.floor(rand() * AFFIX_IDS.length)];
+      if (!affixes.includes(pick)) affixes.push(pick);
+      else break;
+    }
+    equipDrops.push({ archetypeId, grade: GRADES[gi], affixes });
   }
 
   return { won: true, materials, legacyMaterials, junk, equipDrops, coins, catCoins };

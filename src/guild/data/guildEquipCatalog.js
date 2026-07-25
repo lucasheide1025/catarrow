@@ -85,13 +85,53 @@ export const GUILD_EQUIP_ARCHETYPES = Object.freeze({
   waterskin:      { slot: "potionPouch", name: "水囊",     icon: "🧪", weight: 0.6, base: { vit: 5, def: 1 } },
 });
 
-// 取某件裝備（archetype × grade）的實際六維
-export function resolveEquipStats(archetypeId, grade) {
+// ── 詞綴（2026-07-25）：讓同名同品級的裝備也有差異，刷裝才有意義 ──
+// pct = 對該件裝備自身六維的百分比加成；flat = 直接加值。
+// 掉落時依危險度 roll 0~2 條（見 settleExpedition），商店貨一律無詞綴（更凸顯「打到的比較好」）。
+export const GUILD_AFFIXES = Object.freeze({
+  sharp:     { name: "銳利",   icon: "⚔️", pct: { atk: 0.25 } },
+  brutal:    { name: "兇暴",   icon: "💢", pct: { atk: 0.40 }, flat: { agi: -2 } },
+  sturdy:    { name: "堅韌",   icon: "🛡️", pct: { def: 0.30 } },
+  vital:     { name: "強壯",   icon: "❤️", pct: { hp: 0.30 } },
+  swift:     { name: "疾風",   icon: "💨", flat: { agi: 4 } },
+  lucky:     { name: "幸運",   icon: "🍀", flat: { luk: 5 } },
+  enduring:  { name: "耐勞",   icon: "🍖", flat: { vit: 5 } },
+  balanced:  { name: "均衡",   icon: "⚖️", pct: { atk: 0.12, def: 0.12, hp: 0.12 } },
+  hunters:   { name: "獵手",   icon: "🎯", pct: { atk: 0.18 }, flat: { luk: 3 } },
+  guardians: { name: "守衛",   icon: "🏰", pct: { def: 0.20, hp: 0.15 } },
+});
+export const AFFIX_IDS = Object.freeze(Object.keys(GUILD_AFFIXES));
+
+// ── 強化（+N）──
+// 每級 +8% 六維（對「品級後」的數值），必定成功（隨機性已經在掉落與詞綴上了，
+// 強化再賭會變成挫敗來源）。上限依品級遞增 → 高階裝才值得長期投資。
+export const PLUS_PCT_PER_LEVEL = 0.08;
+export const PLUS_CAP_BY_GRADE = Object.freeze({ common: 3, rare: 5, elite: 7, fierce: 8, boss: 9, mythic: 10 });
+export const plusCapOf = grade => PLUS_CAP_BY_GRADE[grade] || 3;
+
+// 取某件裝備的實際六維。
+// item 可傳 { plus, affixes }：先套品級倍率 → 加詞綴 → 再乘強化係數。
+export function resolveEquipStats(archetypeId, grade, item = {}) {
   const a = GUILD_EQUIP_ARCHETYPES[archetypeId];
   if (!a) return {};
   const m = GRADE_MULT[grade] || 1;
+  const base = {};
+  for (const [k, v] of Object.entries(a.base)) base[k] = v * m;
+
+  // 詞綴
+  for (const id of item.affixes || []) {
+    const af = GUILD_AFFIXES[id];
+    if (!af) continue;
+    for (const [k, p] of Object.entries(af.pct || {})) base[k] = (base[k] || 0) + (base[k] || 0) * p;
+    for (const [k, f] of Object.entries(af.flat || {})) base[k] = (base[k] || 0) + f;
+  }
+
+  // 強化（夾在品級上限內）
+  const plus = Math.max(0, Math.min(plusCapOf(grade), Math.floor(Number(item.plus) || 0)));
+  const mult = 1 + plus * PLUS_PCT_PER_LEVEL;
+
   const out = {};
-  for (const [k, v] of Object.entries(a.base)) out[k] = Math.round(v * m);
+  for (const [k, v] of Object.entries(base)) out[k] = Math.round(v * mult);
   return out;
 }
 
@@ -103,9 +143,16 @@ export function resolveEquipWeight(archetypeId, grade) {
   return Math.round((a.weight * (1 + (tier - 1) * 0.05)) * 10) / 10;
 }
 
-// 顯示名（含品級）
-export function equipDisplayName(archetypeId, grade) {
+// 顯示名（含品級／詞綴／+N）。例：「銳利 精良獵弓 +3」
+export function equipDisplayName(archetypeId, grade, item = {}) {
   const a = GUILD_EQUIP_ARCHETYPES[archetypeId];
   if (!a) return archetypeId;
-  return `${GRADE_META[grade]?.label || ""}${a.name}`;
+  const affixPart = (item.affixes || []).map(id => GUILD_AFFIXES[id]?.name).filter(Boolean).join("");
+  const plus = Math.max(0, Math.floor(Number(item.plus) || 0));
+  return `${affixPart}${GRADE_META[grade]?.label || ""}${a.name}${plus > 0 ? ` +${plus}` : ""}`;
+}
+
+// 詞綴摘要（UI 標籤用）
+export function affixTags(item = {}) {
+  return (item.affixes || []).map(id => GUILD_AFFIXES[id]).filter(Boolean);
 }

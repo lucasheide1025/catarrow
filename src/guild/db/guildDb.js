@@ -30,6 +30,7 @@ const toDoc = p => ({
   stash: p.stash,
   partyCats: p.partyCats,
   arrowsPerRound: p.arrowsPerRound,
+  shards: p.shards,
   contracts: p.contracts,
   junkSeen: p.junkSeen,
   junkStock: p.junkStock,

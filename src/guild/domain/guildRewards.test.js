@@ -61,7 +61,7 @@ describe("applyLootToProfile", () => {
     expect(profile.rep).toBe(2 * REP_PER_DANGER);
     expect(coinsGained).toBe(100); // 金幣不進公會存檔，交給 members.coins
     expect(profile.catCoins).not.toBe(before.catCoins);
-    expect(profile.stash).toEqual([{ uid: "u0", archetypeId: "iron_bow", grade: "elite", at: 1 }]);
+    expect(profile.stash).toEqual([{ uid: "u0", archetypeId: "iron_bow", grade: "elite", plus: 0, affixes: [], at: 1 }]);
     expect(profile.junkSeen.rusty_gear).toBe(1);
     expect(profile.expeditions).toEqual({ total: 1, won: 1, byDanger: { 1: 0, 2: 1, 3: 0 } });
   });
@@ -165,7 +165,7 @@ describe("換裝", () => {
   test("倉庫件裝上對應槽位，原本那件退回倉庫（不消失）", () => {
     const p0 = { ...emptyGuildProfile(), stash: [{ uid: "a", archetypeId: "iron_bow", grade: "boss" }] };
     const p1 = equipFromStash(p0, "a");
-    expect(p1.equipped.bow).toEqual({ archetypeId: "iron_bow", grade: "boss" });
+    expect(p1.equipped.bow).toEqual({ archetypeId: "iron_bow", grade: "boss", plus: 0, affixes: [] });
     expect(p1.stash).toHaveLength(1);
     expect(p1.stash[0].archetypeId).toBe("wood_bow"); // 舊弓退回
     expect(GUILD_EQUIP_ARCHETYPES.iron_bow.slot).toBe("bow");

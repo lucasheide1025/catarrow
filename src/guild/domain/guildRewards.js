@@ -10,7 +10,7 @@
 //    公會只獨佔 CAT幣 / 聲望 / 公會裝，維持「戰力隔離、經濟回饋主線」。
 // ─────────────────────────────────────────────────────────────
 import { MATERIALS } from "../../lib/monsterMaterials";
-import { GUILD_SLOTS, GUILD_EQUIP_ARCHETYPES } from "../data/guildEquipCatalog";
+import { GUILD_SLOTS, GUILD_EQUIP_ARCHETYPES, AFFIX_IDS } from "../data/guildEquipCatalog";
 import { JUNK_BY_ID, evaluateJunk } from "../data/guildJunkCatalog";
 
 export const GUILD_STASH_LIMIT = 60;          // 倉庫上限（滿了就不再收，避免存檔無限膨脹）
@@ -31,6 +31,7 @@ export function emptyGuildProfile() {
     stash: [],
     partyCats: null,      // 出戰貓（catId 陣列）。null = 還沒設定過→自動帶最強的；[] = 刻意不帶貓
     arrowsPerRound: 3,     // 一回合射幾箭（3 或 6，備包可改；6 箭補給消耗加倍）
+    shards: 0,             // 公會裝碎片：分解重複裝備取得，用來強化主力裝（見 guildEnhance）
     junkStock: {},         // 雜貨倉庫 { [junkId]: qty }——**不自動賣**，玩家自己決定何時賣
     contracts: null,      // 今日委託完成紀錄 { dateKey, done:[contractId] }；跨日自動換板（見 guildContracts）
     junkSeen: {},
@@ -42,16 +43,26 @@ export function emptyGuildProfile() {
 export function normalizeGuildProfile(raw) {
   const base = emptyGuildProfile();
   if (!raw) return base;
+  // 裝備欄位正規化：舊存檔沒有 plus/affixes → 補 0/[]（強化與詞綴是後來才加的）
+  const normItem = it => ({
+    archetypeId: it.archetypeId,
+    grade: it.grade || "common",
+    plus: Math.max(0, Math.floor(Number(it.plus) || 0)),
+    affixes: (Array.isArray(it.affixes) ? it.affixes : []).filter(id => AFFIX_IDS.includes(id)),
+  });
   const eq = {};
   for (const slot of GUILD_SLOTS) {
     const it = raw.equipped?.[slot];
-    if (it && GUILD_EQUIP_ARCHETYPES[it.archetypeId]) eq[slot] = { archetypeId: it.archetypeId, grade: it.grade || "common" };
+    if (it && GUILD_EQUIP_ARCHETYPES[it.archetypeId]) eq[slot] = normItem(it);
   }
   return {
     catCoins: Number(raw.catCoins) || 0,
     rep: Number(raw.rep) || 0,
     equipped: Object.keys(eq).length ? eq : base.equipped,
-    stash: (Array.isArray(raw.stash) ? raw.stash : []).filter(i => i && GUILD_EQUIP_ARCHETYPES[i.archetypeId]),
+    stash: (Array.isArray(raw.stash) ? raw.stash : [])
+      .filter(i => i && GUILD_EQUIP_ARCHETYPES[i.archetypeId])
+      .map(i => ({ uid: i.uid, at: i.at || 0, ...normItem(i) })),
+    shards: Math.max(0, Math.floor(Number(raw.shards) || 0)),
     partyCats: Array.isArray(raw.partyCats) ? raw.partyCats.filter(id => typeof id === "string") : null,
     arrowsPerRound: Number(raw.arrowsPerRound) === 6 ? 6 : 3,
     contracts: raw.contracts?.dateKey
@@ -129,7 +140,8 @@ export function applyLootToProfile(profile, loot, opts = {}) {
   let stashFull = false;
   for (const d of loot.equipDrops || []) {
     if (stash.length >= GUILD_STASH_LIMIT) { stashFull = true; break; }
-    stash.push({ uid: uidFn(), archetypeId: d.archetypeId, grade: d.grade, at: opts.now || Date.now() });
+    stash.push({ uid: uidFn(), archetypeId: d.archetypeId, grade: d.grade,
+      plus: 0, affixes: Array.isArray(d.affixes) ? d.affixes : [], at: opts.now || Date.now() });
   }
 
   const repGained = danger * REP_PER_DANGER;
@@ -196,8 +208,13 @@ export function equipFromStash(profile, uid) {
 
   const stash = p.stash.filter((_, i) => i !== idx);
   const prev = p.equipped[slot];
-  if (prev?.archetypeId) stash.push({ uid: `${uid}-off`, archetypeId: prev.archetypeId, grade: prev.grade, at: Date.now() });
-  return { ...p, equipped: { ...p.equipped, [slot]: { archetypeId: item.archetypeId, grade: item.grade } }, stash };
+  // ⚠️ 換裝一定要把 plus/affixes 一起搬，否則強化過的裝備換上/換下就歸零
+  if (prev?.archetypeId) stash.push({ uid: `${uid}-off`, archetypeId: prev.archetypeId, grade: prev.grade, plus: prev.plus || 0, affixes: prev.affixes || [], at: Date.now() });
+  return {
+    ...p,
+    equipped: { ...p.equipped, [slot]: { archetypeId: item.archetypeId, grade: item.grade, plus: item.plus || 0, affixes: item.affixes || [] } },
+    stash,
+  };
 }
 
 export function unequipSlot(profile, slot) {
@@ -209,6 +226,6 @@ export function unequipSlot(profile, slot) {
   return {
     ...p,
     equipped,
-    stash: [...p.stash, { uid: `off-${slot}-${Date.now().toString(36)}`, archetypeId: prev.archetypeId, grade: prev.grade, at: Date.now() }],
+    stash: [...p.stash, { uid: `off-${slot}-${Date.now().toString(36)}`, archetypeId: prev.archetypeId, grade: prev.grade, plus: prev.plus || 0, affixes: prev.affixes || [], at: Date.now() }],
   };
 }

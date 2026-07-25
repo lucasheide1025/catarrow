@@ -21,7 +21,7 @@ export function sumGuildEquipStats(guildEquip = {}) {
   for (const slot of GUILD_SLOTS) {
     const it = guildEquip[slot];
     if (!it || !it.archetypeId) continue;
-    const s = resolveEquipStats(it.archetypeId, it.grade);
+    const s = resolveEquipStats(it.archetypeId, it.grade, it);   // 含 +N 強化與詞綴
     for (const k of STAT_KEYS) total[k] += s[k] || 0;
   }
   return total;
