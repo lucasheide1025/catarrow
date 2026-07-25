@@ -8,6 +8,10 @@ import { settleExpedition } from "./domain/settleExpedition";
 import GuildBattle from "./ui/GuildBattle";
 
 const MOCK_MEMBER = { archerXP: 8000 };
+const MOCK_CATS = [
+  { id: "cat_a", name: "小黑", icon: "🐈‍⬛", atk: 28, def: 6 },
+  { id: "cat_b", name: "橘子", icon: "🐈", atk: 22, def: 4 },
+];
 const MOCK_EQUIP = {
   bow: { archetypeId: "hunter_bow", grade: "elite" },
   arrow: { archetypeId: "sharp_arrow", grade: "rare" },
@@ -64,7 +68,7 @@ export default function GuildTestApp() {
           {Object.keys(STAT_META).map(k => `${STAT_META[k].short} ${stats[k]}`).join(" · ")}
         </span>
       </div>
-      <GuildBattle key={run.key} expedition={run.exp} guildStats={stats} supplies={{ food: 6, water: 6 }} onEnd={setResult} />
+      <GuildBattle key={run.key} expedition={run.exp} guildStats={stats} supplies={{ food: 6, water: 6 }} cats={MOCK_CATS} onEnd={setResult} />
     </div>
   );
 }

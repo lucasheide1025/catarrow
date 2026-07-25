@@ -20,12 +20,14 @@ function arrowDamage(score, atk, def, crit) {
   return crit ? Math.round(base * 1.5) : base;
 }
 
-export function createExpeditionState(expedition, guildStats, supplies = { food: 6, water: 6 }) {
+// cats: [{ id, name, icon?, atk, def }]（由 calcCatCombatStats 映射；每回合自動攻擊）
+export function createExpeditionState(expedition, guildStats, supplies = { food: 6, water: 6 }, cats = []) {
   const derived = deriveGuildCombat(guildStats);
   return {
     expedition,
     guildStats,
     derived,
+    cats: cats.map(c => ({ ...c })),
     maxHp: derived.maxHP,
     hp: derived.maxHP,
     supplies: { ...supplies },
@@ -58,6 +60,17 @@ export function processRound(state, shots = [], opts = {}) {
     const dmg = arrowDamage(shot.score, s.guildStats.atk, mon.def, crit);
     mon.hp = Math.max(0, mon.hp - dmg);
     s.log.push({ type: "arrow", target: mon.instanceId, dmg, crit, killed: mon.hp <= 0 });
+  }
+  s.monsters = s.monsters.filter(m => m.hp > 0);
+
+  // 1b. 貓貓攻擊（自動鎖定最近/低血怪，助攻清場）
+  for (const cat of s.cats || []) {
+    const alive = s.monsters.filter(m => m.hp > 0);
+    if (!alive.length) break;
+    const target = alive.slice().sort((a, b) => a.distance - b.distance || a.hp - b.hp)[0];
+    const dmg = Math.max(1, Math.round((cat.atk || 10) - target.def * 0.3));
+    target.hp = Math.max(0, target.hp - dmg);
+    s.log.push({ type: "catAttack", cat: cat.id, name: cat.name, target: target.instanceId, dmg, killed: target.hp <= 0 });
   }
   s.monsters = s.monsters.filter(m => m.hp > 0);
 

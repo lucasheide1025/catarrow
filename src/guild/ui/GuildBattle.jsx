@@ -29,8 +29,8 @@ function Bar({ cur, max, color = "#ef4444", h = 5 }) {
   );
 }
 
-export default function GuildBattle({ expedition, guildStats, supplies, onEnd }) {
-  const [state, setState] = useState(() => createExpeditionState(expedition, guildStats, supplies));
+export default function GuildBattle({ expedition, guildStats, supplies, cats = [], onEnd }) {
+  const [state, setState] = useState(() => createExpeditionState(expedition, guildStats, supplies, cats));
   const [target, setTarget] = useState(null);
   const [shots, setShots] = useState([]);
   const [flash, setFlash] = useState(null); // 上一回合摘要
@@ -46,12 +46,13 @@ export default function GuildBattle({ expedition, guildStats, supplies, onEnd })
   const fireRound = () => {
     if (state.status !== "fighting") return;
     const next = processRound(state, shots, {});
-    const kills = next.log.filter(l => l.type === "arrow" && l.killed).length;
+    const kills = next.log.filter(l => (l.type === "arrow" || l.type === "catAttack") && l.killed).length;
+    const catHit = next.log.some(l => l.type === "catAttack");
     const hit = next.log.find(l => l.type === "monsterAttack");
     setFlash(
       next.status === "won" ? "🎉 討伐成功，凱旋歸來！"
       : next.status === "lost" ? `💀 ${next.lostReason}`
-      : `本回合擊殺 ${kills} 隻${hit ? "，你受到攻擊！" : ""}`
+      : `本回合擊殺 ${kills} 隻${catHit ? "（貓貓助攻）" : ""}${hit ? "，你受到攻擊！" : ""}`
     );
     setShots([]);
     setTarget(null);

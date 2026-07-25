@@ -42,6 +42,15 @@ describe("expeditionFlow — 戰鬥核心狀態機", () => {
     expect(s.hp).toBe(90); // 100 - 10%(=10)
   });
 
+  test("貓貓每回合自動攻擊怪物（助攻清場）", () => {
+    const exp = { totalWaves: 1, waves: [{ monsters: [mon("z", { hp: 40, maxHp: 40, atk: 5, def: 0, distance: 9 })] }] };
+    const cats = [{ id: "c1", name: "小黑", atk: 30, def: 0 }];
+    let s = createExpeditionState(exp, { ...STATS, atk: 1, vit: 99 }, { food: 9, water: 9 }, cats);
+    s = processRound(s, [], NO_LUCK); // 玩家不射，只靠貓
+    expect(s.log.some(l => l.type === "catAttack")).toBe(true);
+    expect(s.monsters[0]?.hp ?? 0).toBeLessThan(40); // 被貓打掉血
+  });
+
   test("HP 歸零 → 失敗", () => {
     const exp = { totalWaves: 1, waves: [{ monsters: [mon("z", { hp: 9999, maxHp: 9999, atk: 999, distance: 1 })] }] };
     let s = createExpeditionState(exp, { ...STATS, hp: 50, vit: 99 }, { food: 9, water: 9 });
