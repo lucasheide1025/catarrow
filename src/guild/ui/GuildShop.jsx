@@ -7,6 +7,7 @@ import { GUILD_SHOP_ITEMS, SHOP_TIER_META } from "../data/guildShop";
 import { GRADE_META, SLOT_META, GUILD_EQUIP_ARCHETYPES, equipDisplayName, resolveEquipStats } from "../data/guildEquipCatalog";
 import { rankUnlocks, GUILD_RANKS } from "../domain/guildRank";
 import { STAT_META } from "../domain/guildStats";
+import { sfxShopBuy, sfxError, sfxClose } from "../../lib/sound";
 
 const card = { background: "rgba(0,0,0,.3)", borderRadius: 12, padding: 12 };
 
@@ -31,6 +32,7 @@ export default function GuildShop({ profile, onBuy, onClose }) {
 
   const buy = async item => {
     const res = await onBuy(item.id);
+    if (res.ok) sfxShopBuy(); else sfxError();
     setMsg(res.ok ? `✅ 已購入 ${itemView(item).name}${res.offline ? "（離線試玩，未存檔）" : ""}` : `⚠️ ${res.reason}`);
   };
 
@@ -38,7 +40,7 @@ export default function GuildShop({ profile, onBuy, onClose }) {
     <div style={{ minHeight: "100dvh", background: "linear-gradient(180deg,#0b1220,#1a1207)", color: "#e2e8f0", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ fontSize: 18, fontWeight: 900, color: "#fbbf24" }}>🏪 公會商店</div>
-        <button type="button" onClick={onClose} style={{ padding: "7px 14px", borderRadius: 9, border: "none", background: "#334155", color: "#fff", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>返回</button>
+        <button type="button" onClick={() => { sfxClose(); onClose(); }} style={{ padding: "7px 14px", borderRadius: 9, border: "none", background: "#334155", color: "#fff", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>返回</button>
       </div>
 
       <div style={{ ...card, display: "flex", justifyContent: "space-between", alignItems: "center" }}>

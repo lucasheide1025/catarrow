@@ -3,6 +3,7 @@
 // 階級不足的委託**照樣顯示但鎖住**（看得到目標才想升階，同商店手法）。
 // 已結案的當天不能重接（勝敗都算接過，企劃拍板）。
 import { rankUnlocks, canAcceptDanger, repNeededForDanger, nextRankInfo } from "../domain/guildRank";
+import { sfxPathSelect, sfxOpen } from "../../lib/sound";
 import { contractRewardPreview } from "../domain/guildContracts";
 
 const card = { background: "rgba(0,0,0,.34)", borderRadius: 14, padding: 12 };
@@ -23,8 +24,8 @@ export default function GuildBoard({ profile, contracts, doneIds = [], onAccept,
           </div>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
-          <button type="button" onClick={onOpenStash} style={{ padding: "6px 10px", borderRadius: 9, border: "none", background: "#334155", color: "#fff", fontSize: 11, fontWeight: 800, cursor: "pointer" }}>🎒 倉庫</button>
-          <button type="button" onClick={onOpenShop} style={{ padding: "6px 10px", borderRadius: 9, border: "none", background: "#4c1d95", color: "#fff", fontSize: 11, fontWeight: 800, cursor: "pointer" }}>🏪 商店</button>
+          <button type="button" onClick={() => { sfxOpen(); onOpenStash(); }} style={{ padding: "6px 10px", borderRadius: 9, border: "none", background: "#334155", color: "#fff", fontSize: 11, fontWeight: 800, cursor: "pointer" }}>🎒 倉庫</button>
+          <button type="button" onClick={() => { sfxOpen(); onOpenShop(); }} style={{ padding: "6px 10px", borderRadius: 9, border: "none", background: "#4c1d95", color: "#fff", fontSize: 11, fontWeight: 800, cursor: "pointer" }}>🏪 商店</button>
         </div>
       </div>
 
@@ -64,7 +65,7 @@ export default function GuildBoard({ profile, contracts, doneIds = [], onAccept,
             </div>
             <div style={{ fontSize: 10, color: "#64748b", marginTop: 5 }}>{c.hint}</div>
 
-            <button type="button" disabled={dim} onClick={() => onAccept(c)}
+            <button type="button" disabled={dim} onClick={() => { sfxPathSelect(); onAccept(c); }}
               style={{ marginTop: 10, width: "100%", padding: "10px 0", borderRadius: 10, fontWeight: 900, fontSize: 13, color: "#fff", border: "none",
                 background: done ? "#334155" : locked ? "#475569" : "linear-gradient(135deg,#f59e0b,#b45309)", cursor: dim ? "not-allowed" : "pointer" }}>
               {done ? "✓ 今日已結案" : locked ? `🔒 階級不足（還差 ${need} 聲望）` : "📝 接下委託"}

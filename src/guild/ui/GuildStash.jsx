@@ -4,6 +4,7 @@
 import { calcGuildExpeditionStats, STAT_META } from "../domain/guildStats";
 import { equipFromStash, unequipSlot, GUILD_STASH_LIMIT } from "../domain/guildRewards";
 import { nextRankInfo } from "../domain/guildRank";
+import { sfxSwitch, sfxClose } from "../../lib/sound";
 import { GUILD_SLOTS, SLOT_META, GRADE_META, GUILD_EQUIP_ARCHETYPES, equipDisplayName, resolveEquipStats, resolveEquipWeight } from "../data/guildEquipCatalog";
 
 const card = { background: "rgba(0,0,0,.3)", borderRadius: 12, padding: 12 };
@@ -37,7 +38,7 @@ export default function GuildStash({ member, profile, onChange, onClose }) {
     <div style={{ minHeight: "100dvh", background: "linear-gradient(180deg,#0b1220,#1a1207)", color: "#e2e8f0", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ fontSize: 18, fontWeight: 900, color: "#fbbf24" }}>🎒 公會倉庫</div>
-        <button type="button" onClick={onClose} style={{ padding: "7px 14px", borderRadius: 9, border: "none", background: "#334155", color: "#fff", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>返回</button>
+        <button type="button" onClick={() => { sfxClose(); onClose(); }} style={{ padding: "7px 14px", borderRadius: 9, border: "none", background: "#334155", color: "#fff", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>返回</button>
       </div>
 
       {/* 冒險者證：階級 + 聲望進度（階級只給解鎖，不給任何戰力） */}
@@ -81,7 +82,7 @@ export default function GuildStash({ member, profile, onChange, onClose }) {
                     <b style={{ color: GRADE_META[it.grade]?.color || "#fff" }}>{equipDisplayName(it.archetypeId, it.grade)}</b>
                     <span style={{ color: "#94a3b8", marginLeft: 6 }}>{statSummary(it.archetypeId, it.grade)}</span>
                   </span>
-                  <button type="button" onClick={() => onChange(unequipSlot(profile, slot))}
+                  <button type="button" onClick={() => { sfxSwitch(); onChange(unequipSlot(profile, slot)); }}
                     style={{ padding: "4px 9px", borderRadius: 7, border: "none", background: "#475569", color: "#fff", fontSize: 11, fontWeight: 800, cursor: "pointer" }}>卸下</button>
                 </>
               ) : <span style={{ flex: 1, fontSize: 12, color: "#64748b" }}>空</span>}
@@ -103,7 +104,7 @@ export default function GuildStash({ member, profile, onChange, onClose }) {
                 <span style={{ color: "#94a3b8", marginLeft: 6 }}>{statSummary(it.archetypeId, it.grade)}</span>
                 <span style={{ color: "#64748b", marginLeft: 6 }}>{resolveEquipWeight(it.archetypeId, it.grade)}kg</span>
               </span>
-              <button type="button" onClick={() => onChange(equipFromStash(profile, it.uid))}
+              <button type="button" onClick={() => { sfxSwitch(); onChange(equipFromStash(profile, it.uid)); }}
                 style={{ padding: "4px 9px", borderRadius: 7, border: "none", background: "linear-gradient(135deg,#f59e0b,#b45309)", color: "#fff", fontSize: 11, fontWeight: 800, cursor: "pointer" }}>裝備</button>
             </div>
           );

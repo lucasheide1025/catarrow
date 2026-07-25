@@ -5,6 +5,25 @@
 
 ---
 
+## 2026-07-25（公會動畫＋音效實裝——把「瞬間結算」演成有過程的戰鬥）
+
+**問題**：`processRound` 是純函數、**一瞬間就算完整個回合**，玩家只看到數字忽然變了，完全沒有打擊感。
+
+**演出架構（重點，下次改動畫先看這段）**：算完先把結果**扣在手上**，照 `next.log` 的順序排時間軸播動畫與音效，**播完才 `setState(next)`**。
+- 動畫期間 `animating` 鎖住所有輸入（分數鈕/發動鈕/選目標）。
+- 血條用 `hitMap`（動畫期間累積的傷害）先扣 → 數字跟得上畫面，收尾時清空換成真實狀態。
+- 位置用**開打前**的座標快照（`posMap`）——因為打完怪就從 `alive` 移除了，箭要有東西可以飛過去。
+- `posOf(index, len, distance)` 抽成共用函式：怪物定位與箭矢飛行終點用同一份計算，兩邊才對得準。
+- 所有 `setTimeout` 進 `timersRef`，卸載時全清（不然動畫跑一半離開畫面會 setState on unmounted）。
+- 節奏參數集中在 `const T = { arrowStep, arrowFly, catStep, hitLinger, endPause }`，要調快慢只改這裡。
+
+**動畫**：箭矢從玩家位置飛向目標（CSS transition）、命中抖動＋浮動傷害數字（爆擊 💥 金色）、擊殺殘影 poof、貓貓助攻往前彈跳＋🐾爪痕數字、玩家受擊全畫面紅閃、閃避顯示 MISS、補給耗盡「🍖💧力竭」、怪物距離推進有 0.5s 移動過渡、回合摘要橫幅淡入淡出。
+
+**音效（全部沿用 `src/lib/sound.js` 的 Web Audio 合成，零音檔）**：選目標 `sfxTap`、射箭 `sfxArrowShoot`＋拉弓動畫、命中 `sfxArrowHit`／爆擊 `sfxCritBoom`＋震動、擊殺 `sfxMonsterDead`、貓助攻 `sfxCounter`、受擊 `sfxOrganHit`＋震動、力竭 `sfxSoftFail`、清波 `sfxRoundEnd`、勝 `sfxVictoryFanfare`／敗 `sfxDefeat`；結算頁金幣 `sfxCoinDrop`→裝備 `sfxOpenChest`→升階 `sfxLevelUp` **依序錯開**才聽得出層次。委託板接委託 `sfxPathSelect`、備包加減 `sfxTap`／選貓 `sfxSwitch`／出發 `sfxCast`、商店買到 `sfxShopBuy`／買不到 `sfxError`、倉庫換裝 `sfxSwitch`。
+- ⚠️ `unlockAudio()` 在 `GuildTestApp` 掛載時呼叫一次——Web Audio 要使用者手勢才出聲，不解鎖第一個音效會被吃掉。
+
+**新增**：升階橫幅（聲望跨門檻當下顯示新階級＋解鎖內容，配 `sfxLevelUp`）。
+
 ## 2026-07-25（公會委託板——扁平的「選危險度」變成有故事的每日委託）
 
 **背景**：公會的入口原本是三顆「危險度 1／2／3」按鈕，完全沒有選擇感與敘事。

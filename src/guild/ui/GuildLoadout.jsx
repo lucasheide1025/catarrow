@@ -5,6 +5,7 @@ import { useState } from "react";
 import { calcGuildExpeditionStats, deriveGuildCombat, STAT_META } from "../domain/guildStats";
 import { GUILD_SLOTS, SLOT_META, resolveEquipWeight, equipDisplayName, GRADE_META } from "../data/guildEquipCatalog";
 import { MAX_PARTY_CATS } from "../domain/guildCats";
+import { sfxTap, sfxSwitch, sfxCast } from "../../lib/sound";
 
 const BASE_CAPACITY = 20;
 const SUPPLY_WEIGHT = 1;
@@ -14,9 +15,9 @@ function Stepper({ label, icon, value, set, min = 0, max = 20 }) {
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
       <span style={{ fontSize: 13, fontWeight: 800 }}>{icon} {label}</span>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <button type="button" onClick={() => set(Math.max(min, value - 1))} style={btn}>−</button>
+        <button type="button" onClick={() => { sfxTap(); set(Math.max(min, value - 1)); }} style={btn}>−</button>
         <span style={{ minWidth: 24, textAlign: "center", fontWeight: 900 }}>{value}</span>
-        <button type="button" onClick={() => set(Math.min(max, value + 1))} style={btn}>＋</button>
+        <button type="button" onClick={() => { sfxTap(); set(Math.min(max, value + 1)); }} style={btn}>＋</button>
       </div>
     </div>
   );
@@ -82,7 +83,7 @@ export default function GuildLoadout({ member, guildEquip, onDepart, catRoster =
               const on = party.includes(cat.id);
               const blocked = !on && party.length >= MAX_PARTY_CATS;
               return (
-                <button key={cat.id} type="button" disabled={blocked && !on} onClick={() => onToggleCat?.(cat.id)}
+                <button key={cat.id} type="button" disabled={blocked && !on} onClick={() => { sfxSwitch(); onToggleCat?.(cat.id); }}
                   style={{ padding: "6px 9px", borderRadius: 9, fontSize: 11, fontWeight: 800, cursor: blocked ? "not-allowed" : "pointer",
                     color: on ? "#0b1220" : blocked ? "#64748b" : "#e2e8f0", border: `1px solid ${on ? "#fbbf24" : "rgba(255,255,255,.1)"}`,
                     background: on ? "linear-gradient(135deg,#fcd34d,#f59e0b)" : "rgba(255,255,255,.04)", textAlign: "left" }}>
@@ -113,7 +114,7 @@ export default function GuildLoadout({ member, guildEquip, onDepart, catRoster =
         </div>
       </div>
 
-      <button type="button" disabled={over} onClick={() => onDepart({ food, water })}
+      <button type="button" disabled={over} onClick={() => { sfxCast(); onDepart({ food, water }); }}
         style={{ marginTop: "auto", padding: "13px 0", borderRadius: 12, fontWeight: 900, fontSize: 15, color: "#fff", border: "none",
           background: over ? "#475569" : "linear-gradient(135deg,#f59e0b,#b45309)", cursor: over ? "not-allowed" : "pointer" }}>
         {over ? "超重，減少補給或卸裝" : "🚩 出發討伐"}

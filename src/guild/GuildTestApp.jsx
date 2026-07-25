@@ -10,7 +10,8 @@ import { settleExpedition } from "./domain/settleExpedition";
 import { normalizeGuildProfile } from "./domain/guildRewards";
 import { buildCatRoster, pickPartyCats, togglePartyCat } from "./domain/guildCats";
 import { subscribeMyCats } from "../lib/catDb";
-import { nextRankInfo } from "./domain/guildRank";
+import { nextRankInfo, repToRank } from "./domain/guildRank";
+import { unlockAudio, sfxLevelUp, sfxCoinDrop, sfxOpenChest } from "../lib/sound";
 import { rollDailyContracts, contractsStateFor, todayKey } from "./domain/guildContracts";
 import { loadGuildProfile, saveGuildProfile, grantExpeditionRewards, buyGuildShopItem } from "./db/guildDb";
 import GuildBattle from "./ui/GuildBattle";
@@ -45,7 +46,11 @@ export default function GuildTestApp() {
   const [phase, setPhase] = useState("board");   // board | loadout | battle | stash | shop
   const [supplies, setSupplies] = useState({ food: 6, water: 6 });
   const [catRoster, setCatRoster] = useState(MOCK_CATS);
+  const [rankUp, setRankUp] = useState(null);    // 這趟升階了 → 顯示橫幅
   const grantedRef = useRef(null);               // 一趟只請領一次
+
+  // Web Audio 需要使用者手勢才能出聲；進公會就先解鎖，第一個音效才不會被吃掉
+  useEffect(() => { unlockAudio(); }, []);
 
   // 每日委託：同一天同一個人固定同一批（重整不會換，見 guildContracts）
   const dateKey = todayKey();
@@ -82,12 +87,24 @@ export default function GuildTestApp() {
       if (res.offline) setGrantMsg("（未登入：離線試玩，未存檔）");
       else if (!res.ok) setGrantMsg(`⚠️ 入帳失敗：${res.reason || "請確認 Firestore 規則已貼上"}`);
       else if (rolled.won) setGrantMsg(`✅ 已入帳　聲望 +${res.repGained}${res.stashFull ? "　⚠️倉庫已滿，裝備沒收進去" : ""}`);
+
+      // 戰利品音效：金幣 → 裝備開箱 → 升階（依序錯開，才聽得出層次）
+      if (rolled.won) {
+        setTimeout(() => sfxCoinDrop(), 500);
+        if (rolled.equipDrops.length) setTimeout(() => sfxOpenChest(), 1000);
+        const before = repToRank(gp.rep).id;
+        const after = repToRank(res.profile.rep).id;
+        if (before !== after) {
+          setRankUp(repToRank(res.profile.rep));
+          setTimeout(() => sfxLevelUp(), 1500);
+        }
+      }
     });
   }, [result, gp, run, memberId, contract, dateKey]); // eslint-disable-line
 
   // 回委託板（一趟結束或中途放棄）
   const backToBoard = () => {
-    setResult(null); setLoot(null); setGrantMsg(""); setContract(null); setRun(null); setPhase("board");
+    setResult(null); setLoot(null); setGrantMsg(""); setContract(null); setRun(null); setRankUp(null); setPhase("board");
   };
   const acceptContract = c => {
     setContract(c); setRun(newRun(c)); setResult(null); setLoot(null); setGrantMsg(""); setPhase("loadout");
@@ -152,6 +169,18 @@ export default function GuildTestApp() {
           </div>
         )}
         {grantMsg && <div style={{ fontSize: 12, color: grantMsg.startsWith("⚠️") ? "#f87171" : "#6ee7b7" }}>{grantMsg}</div>}
+
+        {/* 升階橫幅：聲望跨過門檻的那一刻要被看見 */}
+        {rankUp && (
+          <>
+            <style>{"@keyframes gt-rankup{0%{opacity:0;transform:scale(.7)}40%{opacity:1;transform:scale(1.08)}100%{opacity:1;transform:scale(1)}}"}</style>
+            <div style={{ animation: "gt-rankup .7s ease-out", background: "rgba(0,0,0,.45)", border: `1px solid ${rankUp.color}`, borderRadius: 14, padding: "10px 18px" }}>
+              <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 800 }}>🎖️ 階級提升！</div>
+              <div style={{ fontSize: 18, fontWeight: 900, color: rankUp.color }}>{rankUp.icon} {rankUp.name}</div>
+              <div style={{ fontSize: 10, color: "#cbd5e1", marginTop: 2 }}>可接 ☠️×{rankUp.maxDanger} 委託・{rankUp.shopTier} 級貨架解鎖</div>
+            </div>
+          </>
+        )}
 
         {/* 階級進度：聲望的意義在這裡被看見 */}
         <div style={{ width: "100%", maxWidth: 340 }}>
