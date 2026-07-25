@@ -9,12 +9,21 @@
 - [ ] 建 `src/guild/` 模組骨架（比照 zombie：`domain/`、`data/`、`ui/`、`db/`）。入口決定（`?guild` 隱藏網址 or MemberApp 分頁；先隱藏測試）。
 
 ## P1：委託遠征核心玩法（獨立戰鬥 + 補給）
-- [ ] `src/guild/domain/`：`rollExpedition`（隨機怪陣容 by client/danger）、`expeditionFlow`（逐 wave 狀態機）、`guildStats`（**六維 HP/ATK/AGI/DEF/VIT/LUK** = 射手等級+貓+公會裝）、`settleExpedition`。
-- [ ] **公會自己的 2.5D 鳥瞰戰鬥**（`src/guild/ui/`）：等距戰場、距離倒數、手動選目標(≤4)、貓貓上場；重用 `damage.js`/`score.js` 與殭屍 `processRound`，**不嵌 MonsterBattle**。
+- [x] `src/guild/domain/`：`rollExpedition`（隨機怪陣容 by client/danger）、`expeditionFlow`（逐 wave 狀態機）、`guildStats`（**六維 HP/ATK/AGI/DEF/VIT/LUK** = 射手等級+貓+公會裝）、`settleExpedition`。
+- [x] **公會自己的 2.5D 鳥瞰戰鬥**（`src/guild/ui/`）：等距戰場、距離倒數、手動選目標(≤4)、貓貓上場；重用 `damage.js`/`score.js` 與殭屍 `processRound`，**不嵌 MonsterBattle**。
 - [ ] 背包/補給：重用 `backpackEngine`；推進途中**多重事件**各自消耗食/水；食或水歸零→減益升級→耗盡**強迫撤退**；出發前備包畫面（裝備+補給 vs 負重，VIT 影響）。
 - [ ] 失敗處理（陣亡/補給耗盡撤退 → 委託失敗，當天鎖同一張）。
 - [ ] 委託板（大廳）→ 接委託 → 出發 → 逐 wave 2.5D 戰鬥 → 凱旋回報。
 - **驗證**：接委託→連打 N 場 2.5D 戰鬥→補給消耗→全勝結算/失敗有後果；主線完全不受影響；`CI=true` build 過。
+- ⚠️ 未做：委託板/大廳留到 P4（P1 用 `?guild` 測試殼直接選危險度出發）。
+
+## P1.5：持久化（獎勵真的入帳）✅ 2026-07-25
+- [x] 新集合 `guildProfiles/{memberId}`（CAT幣/聲望/equipped/stash/junkSeen/expeditions）——選獨立集合而非 members 欄位，理由：不動 members 兩份 hasOnly 白名單、隔離更乾淨。
+- [x] `domain/guildRewards.js` 純函數（normalize/applyLoot/換裝，13 測試）＋ `db/guildDb.js` 只做 I/O。
+- [x] 回饋主線：金幣 → `members.coins`（increment）、材料 → `materialInventory`（`ghost_t3`→`ghost_m3`）。
+- [x] `ui/GuildStash.jsx` 倉庫換裝；`GuildTestApp` 接 `useAuth`（未登入仍可離線試玩不寫庫）。
+- [x] `firestore.rules` 加 `guildProfiles` block → **待老闆手動貼 Console**。
+- **驗證**：34 測試全過、`CI=true` build 過、`grep -rn "guild/" src` 僅 App.jsx 路由（隔離佐證）。
 
 ## P2：階級系統重做
 - [ ] `src/lib/guildRank.js`：`repToRank`/`rankUnlocks`/`nextRankRep`（新聲望階級表）。

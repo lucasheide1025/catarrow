@@ -5,6 +5,22 @@
 
 ---
 
+## 2026-07-25（公會 P1.5：持久化——獎勵真的入帳、公會裝可換）
+
+**背景**：P1 迴圈可玩但**打完什麼都不留**（CAT幣/聲望/掉的裝備一重整就沒了）。這次把存檔接上，公會才算真的有「養成」。
+
+- **存哪裡（決策）**：新集合 **`guildProfiles/{memberId}`**（`catCoins` / `rep` / `equipped` / `stash` / `junkSeen` / `expeditions`）。design.md 原本寫「members 欄位或獨立集合」，選獨立集合的理由＝**不必動 members 那兩份 hasOnly 白名單**（規則只加一個 block），也更符合公會隔離。
+- **回饋主線的兩樣照舊寫主線**：金幣 → `members/{id}.coins`（已在白名單）、材料 → `materialInventory`（`addMaterials`）。公會的 `ghost_t3` 用 `guildMaterialId()` 對應主線 `ghost_m3`（同族同階），對不到就丟棄不寫髒資料。
+- **新 `domain/guildRewards.js`（純函數，13 測試）**：`normalizeGuildProfile`（舊/壞資料補完整形狀＋過濾不存在的裝備 id）、`applyLootToProfile`（CAT幣/聲望/裝備入庫/雜貨圖鑑/場次，不改輸入）、`equipFromStash`/`unequipSlot`（換下來的**退回倉庫不消失**）、`GUILD_STASH_LIMIT=60`、聲望＝危險度×10。
+- **新 `db/guildDb.js`**：只做 I/O，規則全在 domain。`loadGuildProfile`/`subscribeGuildProfile`/`saveGuildProfile`/`grantExpeditionRewards`。
+- **新 `ui/GuildStash.jsx`**：CAT幣/聲望/勝場、六維、5 槽卸下、倉庫換裝（顯示每件六維與重量）。
+- **`GuildTestApp`**：接 `useAuth`，登入 → 真存檔；**未登入 `?guild` 仍可離線試玩**（算得出結果但不寫 Firestore，畫面標「離線試玩」）。新玩家給起手裝（木弓/木箭/布甲 common），不裸奔。
+- **⚠️ 待辦：`firestore.rules` 新增 `guildProfiles` block，需老闆手動貼 Console**，否則入帳會顯示「⚠️ 入帳失敗」。
+
+**踩坑**：`settleExpedition` 有隨機性——原本用 `useMemo` 算一份顯示、入帳時若再算一次就會**顯示與實得不同**。改成在入帳的 effect 裡 roll 一次存進 state，顯示與寫入同一份；一趟一次用 `grantedRef` 鎖 `run.key`。
+
+**隔離佐證**：`grep -rn "guild/" src` 除 `App.jsx` 路由外零引用；`calcGuildExpeditionStats`/`guildRewards`/`guildDb` 沒有任何主線檔案 import。
+
 ## 2026-07-25（冒險者公會重生 P1：獨立 2.5D 遠征遊戲雛形）
 
 **背景**：舊冒險者公會「雞肋」→ 企劃成一款**貓村×打怪融合的獨立 2.5D ARPG 遠征遊戲**（完整企劃在 `.trellis/tasks/07-25-adventurer-guild-rework/` prd/design/implement）。前台舊入口已鎖「改建中」（射手鎖/教練可測），新雛形走隱藏入口 **`?guild`**。

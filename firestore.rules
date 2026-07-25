@@ -431,6 +431,12 @@ service cloud.firestore {
     match /materialInventory/{docId} {
       allow read, write: if isAdmin() || ownsMember(docId);
     }
+    // 冒險者公會存檔（CAT幣/聲望/公會裝/雜貨圖鑑/遠征場次）：只有本人可讀寫自己的。
+    // 公會戰力與主線隔離，所以獨立集合，不必動 members 白名單；
+    // 金幣仍寫 members.coins、材料仍寫 materialInventory（走各自既有規則）。
+    match /guildProfiles/{docId} {
+      allow read, write: if isAdmin() || ownsMember(docId);
+    }
     // 裝備專精（design.md §8）：解鎖/升級/切換,transaction 內驗證金幣與素材
     match /equipSpecializations/{docId} {
       allow read, write: if isAdmin() || ownsMember(docId);

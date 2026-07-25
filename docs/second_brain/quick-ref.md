@@ -172,6 +172,10 @@ guildQuests       C_GUILD_Q
 guildQuestSubs    C_GUILD_SUBS
 guildBountyTemplates "guildBountyTemplates"  // 一般懸賞任務範本池（2026-07-04）
 guildBountyRewards   "guildBountyRewards"    // 一般懸賞難度獎勵表，單一文件 config（2026-07-04）
+guildProfiles     "guildProfiles"  // ★新公會（?guild 遠征）存檔，docId=memberId：
+                                   // { catCoins, rep, equipped:{slot:{archetypeId,grade}}, stash:[{uid,archetypeId,grade,at}],
+                                   //   junkSeen:{[junkId]:n}, expeditions:{total,won,byDanger} }
+                                   // 讀寫全在 src/guild/db/guildDb.js；金幣仍寫 members.coins、材料仍寫 materialInventory
 questConfig       C_QUEST_CONFIG
 monsterSessions   C_MONSTER_SESSION
 monsterLogs       C_MONSTER_LOGS

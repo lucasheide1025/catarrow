@@ -29,6 +29,8 @@
 
 ## ✅ 已實作
 
+**🏛️ 冒險者公會遠征（2026-07-25，🚧 測試中：只走 `?guild` 隱藏網址，禁止建玩家入口）**：舊公會重做成獨立 2.5D 鳥瞰 ARPG 遠征遊戲（`src/guild/`，與主線平衡完全隔離）。P1＝備包→2.5D 戰鬥（貓助攻/補給消耗）→凱旋結算；P1.5＝持久化（`guildProfiles` 存 CAT幣/聲望/公會裝倉庫，金幣與材料回饋主線）＋倉庫換裝。規格見 `game-systems.md` 公會章節。**未做**：階級解鎖、公會商店、大廳/委託板/公會長貓、美術（現為 emoji 佔位）、真貓資料。
+
 **冒險者公會一般懸賞任務自動化（2026-07-04 新增）**：4 個全新獨立難度（1~4，獨立於六階雙週懸賞與三階每日靶紙任務），教練後台管理任務範本池（`guildBountyTemplates`）+ 難度獎勵表（`guildBountyRewards`），每日全員同一批自動刷新（每難度固定抽 1 個範本，日期當 seed），沿用既有 `publishGuildQuest`/`submitGuildQuestCompletion` 發佈與結算路徑；結算時依難度額外發放固定寶箱（wood/iron/gold/epic）
 
 **官網（2026-07-04 新增，2026-07-10 視覺互動改版）**：`website/` 靜態 SEO 單頁官網（與 App 完全獨立、無建置流程、單一 `index.html`），暖紙＋炭墨＋品牌橘編輯風；JSON-LD（LocalBusiness+FAQ）、OG、sitemap/robots；預約 CTA 連 SimplyBook `#book`；✅ **已上線於 `https://archery.catgroup.com.tw/`（2026-07-25 作者確認，舊 placeholder `catarchery.tw` 作廢）**；學生 App 在 `https://student.catgroup.com.tw/`（不同 Vercel 專案）；地址 12/14 號待確認

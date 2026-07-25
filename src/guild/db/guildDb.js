@@ -1,0 +1,87 @@
+// src/guild/db/guildDb.js
+// ─────────────────────────────────────────────────────────────
+// 公會存檔的 Firestore I/O。**只做讀寫，規則全在 domain/guildRewards.js**。
+//
+// 存放位置的決策（design.md §4 給了兩個選項，這裡選後者）：
+//   公會獨佔資料 → 新集合 `guildProfiles/{memberId}`（CAT幣/聲望/公會裝/雜貨圖鑑/場次）
+//   ⇒ 不必動 members 那兩份 hasOnly 白名單，規則只加一個 block，隔離也更乾淨。
+//   回饋主線的兩樣東西照舊寫主線：金幣 → `members/{id}.coins`（已在白名單）、
+//   材料 → `materialInventory`（addMaterials）。
+//
+// ⚠️ 一律只寫自己的（memberId = profile.id，不是 auth uid），不幫別人請領。
+// ⚠️ 新集合要貼 firestore.rules 到 Console，否則 permission-denied。
+// ─────────────────────────────────────────────────────────────
+import { doc, getDoc, setDoc, updateDoc, onSnapshot, increment, serverTimestamp } from "firebase/firestore";
+import { db } from "../../lib/firebase";
+import { addMaterials } from "../../lib/db";
+import { normalizeGuildProfile, applyLootToProfile, expandLootMaterials } from "../domain/guildRewards";
+
+const C_GUILD = "guildProfiles";
+
+const ref = memberId => doc(db, C_GUILD, memberId);
+
+// 只挑要存的欄位（避免把 UI 暫存欄位一起寫上去）
+const toDoc = p => ({
+  catCoins: p.catCoins,
+  rep: p.rep,
+  equipped: p.equipped,
+  stash: p.stash,
+  junkSeen: p.junkSeen,
+  expeditions: p.expeditions,
+  updatedAt: serverTimestamp(),
+});
+
+export async function loadGuildProfile(memberId) {
+  if (!memberId) return normalizeGuildProfile(null);
+  try {
+    const snap = await getDoc(ref(memberId));
+    return normalizeGuildProfile(snap.exists() ? snap.data() : null);
+  } catch (e) {
+    console.warn("loadGuildProfile:", e?.message);
+    return normalizeGuildProfile(null);
+  }
+}
+
+export function subscribeGuildProfile(memberId, callback) {
+  if (!memberId) { callback(normalizeGuildProfile(null)); return () => {}; }
+  return onSnapshot(
+    ref(memberId),
+    snap => callback(normalizeGuildProfile(snap.exists() ? snap.data() : null)),
+    err => { console.warn("subscribeGuildProfile:", err.message); callback(normalizeGuildProfile(null)); },
+  );
+}
+
+// 換裝/卸下後存檔（equipped + stash 是一體的，一起寫才不會掉件）
+export async function saveGuildProfile(memberId, profile) {
+  if (!memberId) return { ok: false, reason: "未登入（測試模式不存檔）" };
+  try {
+    await setDoc(ref(memberId), toDoc(normalizeGuildProfile(profile)), { merge: true });
+    return { ok: true };
+  } catch (e) {
+    console.warn("saveGuildProfile:", e?.message);
+    return { ok: false, reason: e?.message };
+  }
+}
+
+// 遠征結算 → 真的發獎。呼叫端要自己做 once-guard（一趟只請領一次）。
+// 回傳 { ok, profile, repGained, coinsGained, materialsGranted, stashFull, offline }
+export async function grantExpeditionRewards(memberId, loot, opts = {}) {
+  const current = opts.profile !== undefined ? opts.profile : await loadGuildProfile(memberId);
+  const applied = applyLootToProfile(current, loot, { danger: opts.danger || 1 });
+  const materials = loot?.won ? expandLootMaterials(loot.materials) : [];
+
+  // 未登入（?guild 直接開）→ 只回傳算好的結果，讓畫面照樣試玩，不打 Firestore
+  if (!memberId) return { ok: true, offline: true, ...applied, materialsGranted: materials.length };
+
+  try {
+    await setDoc(ref(memberId), toDoc(applied.profile), { merge: true });
+    if (applied.coinsGained > 0) {
+      await updateDoc(doc(db, "members", memberId), { coins: increment(applied.coinsGained), updatedAt: serverTimestamp() });
+    }
+    if (materials.length) await addMaterials(memberId, materials);
+    return { ok: true, offline: false, ...applied, materialsGranted: materials.length };
+  } catch (e) {
+    console.warn("grantExpeditionRewards:", e?.message);
+    return { ok: false, reason: e?.message, ...applied, materialsGranted: 0 };
+  }
+}

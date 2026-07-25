@@ -639,3 +639,16 @@ team_boost     ATK ×1.5  (單人特強，原有)
   - `target/ZombieTargetSVG.jsx`：殭屍版靶面
 - **有單元測試**：`domain/*.test.js`（infection/encounter/base/boss/party/gameStateMachine 都有），改 domain 引擎後跑對應 test。
 - ⚠️ 這是 self-contained 模組，別把它的邏輯跟主戰鬥引擎（`src/battle/`）搞混，兩套是分開的。
+
+## 🏛️ 冒險者公會遠征（guild，2026-07-25 P1+P1.5）
+
+> 舊公會（任務清單/懸賞，`AdventurerGuild.jsx`）被判定「雞肋」，重做成**獨立的 2.5D 鳥瞰 ARPG 遠征遊戲**＝貓村×打怪的融合。獨立模組 `src/guild/`（比照 zombie DDD）。完整企劃：`.trellis/tasks/07-25-adventurer-guild-rework/`。
+>
+> 🚧 **測試中，禁止建立玩家可點入口**：只走 `?guild` 隱藏網址（`App.jsx`）。前台舊入口已鎖「改建中」（射手鎖／教練 admin 可測，見 `MemberApp.jsx` page==="guild"）。
+
+- **隔離鐵律（最重要）**：只帶入 **射手等級**（`archerLevel.js`）＋怪物**資料**（`monsterData`/`monsterMaterials`）。**不帶**怪物卡、主線裝備、`calcArcherStats`。公會六維與公會裝**永不進主線**（主線平衡零風險，改動前 `grep -rn "guild/" src` 佐證只有 App.jsx 路由）。
+- **六維**（`domain/guildStats.js`）：HP 生命／ATK 箭傷／AGI 額外箭+閃避／DEF 減傷／VIT 省補給+負重／LUK 掉寶+爆擊+雜貨價值。＝基底 + 射手等級(hp/atk/def) + 公會裝(六維)。
+- **裝備**（`data/guildEquipCatalog.js`）：5 槽（弓/箭/護具/箭袋/藥水袋）× 多基礎裝 × 6 品級（common→mythic，`GRADE_MULT` 放大六維）。每件有 `weight`，**與補給搶背包容量**＝出發前「帶裝變強 vs 帶糧撐久」的核心抉擇。
+- **一趟遠征**：備包（`GuildLoadout`）→ `rollExpedition` 依危險度 1~3 抽 3~5 波怪 → 2.5D 戰鬥（`GuildBattle`：選目標射真實箭、貓貓自動助攻、怪距離倒數歸零就攻擊、每回合吃補給）→ `settleExpedition` 凱旋結算。
+- **存檔／經濟**（P1.5）：`guildProfiles/{memberId}`（CAT幣/聲望/裝備/倉庫/雜貨圖鑑/場次），規則見 quick-ref。**公會獨佔**＝CAT幣、聲望、公會裝；**回饋主線**＝金幣寫 `members.coins`、材料寫 `materialInventory`（`ghost_t3`→`ghost_m3` 同族同階）。聲望 ＝ 危險度×10（`REP_PER_DANGER`），倉庫上限 60。
+- **未做（下次接）**：階級/聲望階級表與解鎖（P2）、公會商店花 CAT幣（P3）、大廳+委託板+公會長貓（P4）、ComfyUI 2.5D 美術（目前全是 emoji 佔位）、貓貓還是 `MOCK_CATS` 假資料尚未接真貓。
