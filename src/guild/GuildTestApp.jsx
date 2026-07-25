@@ -6,6 +6,7 @@ import { rollExpedition } from "./domain/rollExpedition";
 import { calcGuildExpeditionStats, STAT_META } from "./domain/guildStats";
 import { settleExpedition } from "./domain/settleExpedition";
 import GuildBattle from "./ui/GuildBattle";
+import GuildLoadout from "./ui/GuildLoadout";
 
 const MOCK_MEMBER = { archerXP: 8000 };
 const MOCK_CATS = [
@@ -28,10 +29,12 @@ export default function GuildTestApp() {
   const [danger, setDanger] = useState(1);
   const [run, setRun] = useState(() => newRun(1));
   const [result, setResult] = useState(null);
+  const [phase, setPhase] = useState("loadout"); // loadout | battle
+  const [supplies, setSupplies] = useState({ food: 6, water: 6 });
   const stats = calcGuildExpeditionStats(MOCK_MEMBER, MOCK_EQUIP);
   const loot = useMemo(() => (result && result.status === "won" ? settleExpedition(result) : null), [result]);
 
-  const restart = d => { setResult(null); setDanger(d); setRun(newRun(d)); };
+  const restart = d => { setResult(null); setDanger(d); setRun(newRun(d)); setPhase("loadout"); };
 
   if (result) {
     const won = result.status === "won";
@@ -60,6 +63,10 @@ export default function GuildTestApp() {
     );
   }
 
+  if (phase === "loadout") {
+    return <GuildLoadout member={MOCK_MEMBER} guildEquip={MOCK_EQUIP} onDepart={sup => { setSupplies(sup); setPhase("battle"); }} />;
+  }
+
   return (
     <div>
       <div style={{ padding: "6px 12px", background: "#1a1207", color: "#fcd34d", fontSize: 11, fontWeight: 800, display: "flex", justifyContent: "space-between" }}>
@@ -68,7 +75,7 @@ export default function GuildTestApp() {
           {Object.keys(STAT_META).map(k => `${STAT_META[k].short} ${stats[k]}`).join(" · ")}
         </span>
       </div>
-      <GuildBattle key={run.key} expedition={run.exp} guildStats={stats} supplies={{ food: 6, water: 6 }} cats={MOCK_CATS} onEnd={setResult} />
+      <GuildBattle key={run.key} expedition={run.exp} guildStats={stats} supplies={supplies} cats={MOCK_CATS} onEnd={setResult} />
     </div>
   );
 }
