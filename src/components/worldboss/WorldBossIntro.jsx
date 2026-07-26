@@ -64,7 +64,7 @@ export default function WorldBossIntro({ event, onClose }) {
   const [closing, setClosing] = useState(false);
 
   useEffect(() => {
-    sfxWorldBossAppear();
+    sfxWorldBossAppear(boss);   // 依族群挑登場音（怪物族/貓貓族/教練群各一種）
     const t1 = setTimeout(() => setPhase("reveal"), 600);
     const t2 = setTimeout(() => setPhase("title"),  1800);
     const t3 = setTimeout(() => setPhase("done"),   4200);

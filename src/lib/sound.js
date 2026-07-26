@@ -881,8 +881,17 @@ function sfxBattleIntroSynth() {
 }
 
 // 世界王登場 — 震撼長音效（低頻轟炸 + 警報上升旋律 + 持續電流）
-export function sfxWorldBossAppear() {
-  sample("boss_appear", 0.9, sfxWorldBossAppearSynth, [0, 100, 80, 120, 80, 200, 100, 300]);
+// 世界王登場音依**族群**分三種（作者 2026-07-26 準備）：
+//   怪物族（ghost/forest/poison/office/exam/western…）→ boss_appear
+//   貓貓族 family="cat"                                → boss_appear1
+//   教練群 family="coach"                              → boss_appear2
+// 缺檔一律退回同一個合成版（不會無聲）。傳 family 或整個 boss 物件都可以。
+const BOSS_APPEAR_FILE = { cat: "boss_appear1", coach: "boss_appear2" };
+
+export function sfxWorldBossAppear(bossOrFamily) {
+  const family = typeof bossOrFamily === "string" ? bossOrFamily : bossOrFamily?.family;
+  const file = BOSS_APPEAR_FILE[family] || "boss_appear";
+  sample(file, 0.9, sfxWorldBossAppearSynth, [0, 80, 60, 120]);
 }
 
 function sfxWorldBossAppearSynth() {

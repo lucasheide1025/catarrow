@@ -67,7 +67,9 @@
 | 檔名 | 用在哪 |
 |---|---|
 | `battle_intro.mp3` | 戰鬥開場 |
-| `boss_appear.mp3` | 世界王登場 |
+| `boss_appear.mp3` | 世界王登場 —— **怪物族**（ghost/forest/poison/office/exam/western） |
+| `boss_appear1.mp3` | 世界王登場 —— **貓貓族**（family=`cat`） |
+| `boss_appear2.mp3` | 世界王登場 —— **教練群**（family=`coach`） |
 | `zombie_roar.mp3` | 殭屍吼叫 |
 | `door_open.mp3` | 地下城開門 |
 | `epic.mp3` | 史詩級事件 |
