@@ -31,6 +31,23 @@ import { MAX_TEAM_SIZE } from "../domain/teamExpeditionFlow";
 const R = "guildTeamRooms";
 const roomRef = roomId => doc(db, R, roomId);
 
+// ⚠️ Firestore **拒收 undefined**，而且是直接丟 exception（不是回錯誤碼）——
+//    所以任何來自 domain/目錄的物件（委託、遠征、戰鬥狀態）在寫入前都要先過這一層。
+//    這是「多人送出戰鬥出錯」的根因：物件裡只要有一個 optional 欄位是 undefined 就整個炸。
+//    修一個欄位治不了本，統一在寫入邊界剝掉才是。
+function prune(value) {
+  if (Array.isArray(value)) return value.map(prune);
+  if (value && typeof value === "object" && !(value instanceof Date)) {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (v === undefined) continue;          // 直接丟掉，不要寫成 null（讀回來時語意不同）
+      out[k] = prune(v);
+    }
+    return out;
+  }
+  return value;
+}
+
 // 寫入重試：可重試的錯誤退避重試 3 次；權限/不存在這種重試也沒用的直接放棄
 async function retryWrite(fn, label) {
   let last = "";
@@ -52,7 +69,7 @@ export async function createGuildTeamRoom({ hostId, hostName, contract }) {
     const ref = await addDoc(collection(db, R), {
       hostId, hostName: hostName || "房主",
       status: "waiting",
-      contract,
+      contract: prune(contract),
       battle: null, submits: {}, claims: {}, seq: 0,
       loadouts: {},
       members: { [hostId]: { name: hostName || "房主", ready: false, joinedAt: serverTimestamp() } },
@@ -85,7 +102,7 @@ export async function joinGuildTeamRoomById(roomId, memberId, memberName) {
 // 備包完成 → 寫進 loadouts 並標記 ready（房主用這個判斷可不可以出發）
 export function setGuildTeamLoadout(roomId, memberId, loadout) {
   return retryWrite(() => updateDoc(roomRef(roomId), {
-    [`loadouts.${memberId}`]: loadout,
+    [`loadouts.${memberId}`]: prune(loadout),
     [`members.${memberId}.ready`]: true,
     updatedAt: serverTimestamp(),
   }), "setGuildTeamLoadout");
@@ -107,7 +124,7 @@ export async function startGuildTeamExpedition(roomId, hostId, battle) {
       const d = s.data();
       if (d.hostId !== hostId) throw new Error("只有房主可以出發");
       if (d.status !== "waiting") throw new Error("遠征已經出發了");
-      tx.update(roomRef(roomId), { status: "active", battle, seq: 1, submits: {}, updatedAt: serverTimestamp() });
+      tx.update(roomRef(roomId), { status: "active", battle: prune(battle), seq: 1, submits: {}, updatedAt: serverTimestamp() });
     });
     return { ok: true };
   } catch (e) { return { ok: false, reason: e?.message }; }
@@ -116,7 +133,7 @@ export async function startGuildTeamExpedition(roomId, hostId, battle) {
 // 成員交箭（帶 seq：避免上一回合的箭被算進這一回合）
 export function submitGuildTeamShots(roomId, memberId, seq, shots) {
   return retryWrite(() => updateDoc(roomRef(roomId), {
-    [`submits.${memberId}`]: { seq, shots, at: Date.now() },
+    [`submits.${memberId}`]: prune({ seq, shots, at: Date.now() }),
     updatedAt: serverTimestamp(),
   }), "submitGuildTeamShots");
 }
@@ -131,7 +148,7 @@ export async function commitGuildTeamRound(roomId, hostId, battle, nextSeq) {
       if (d.hostId !== hostId) throw new Error("只有房主可以推進回合");
       if ((d.seq || 0) >= nextSeq) return;          // 已經被推進過（重複點擊/重試）→ 視為成功
       tx.update(roomRef(roomId), {
-        battle, seq: nextSeq, submits: {},
+        battle: prune(battle), seq: nextSeq, submits: {},
         status: battle.status === "fighting" ? "active" : "done",
         updatedAt: serverTimestamp(),
       });

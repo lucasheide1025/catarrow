@@ -9,7 +9,8 @@
 // 沒有人想在等別人的時候還被逼著重新配裝。
 import { useEffect, useState } from "react";
 import { MAX_TEAM_SIZE } from "../domain/teamExpeditionFlow";
-import { STAT_META } from "../domain/guildStats";
+import { STAT_META, deriveGuildCombat, carryStatus } from "../domain/guildStats";
+import { GUILD_SLOTS, resolveEquipWeight } from "../data/guildEquipCatalog";
 import { sfxTap, sfxClose, sfxError, sfxSwitch } from "../../lib/sound";
 import { hallBg, bgLayer, CatArt, HeroArt } from "./GuildArt";
 
@@ -20,12 +21,20 @@ const btn = (bg, extra = {}) => ({
 });
 
 export default function GuildTeamLobby({
-  room, openRooms = [], myId, isHost, contract, stats, partyCats, arrowsPerRound,
+  room, openRooms = [], myId, isHost, contract, stats, guildEquip = {}, partyCats, arrowsPerRound,
   onCreate, onJoinRoom, onReady, onUnready, onDepart, onLeave, onClose, busy,
 }) {
   const [food, setFood] = useState(6);
   const [water, setWater] = useState(6);
   const [msg, setMsg] = useState("");
+
+  // 背包負重：跟單人備包用**同一組常數與同一個算式**（domain/guildStats.carryStatus），
+  // 否則兩邊數字會慢慢長歪。裝備佔重、補給也佔重 → 帶太多裝就帶不了糧。
+  const gearWeight = Math.round(GUILD_SLOTS.reduce((w, slot) => {
+    const it = guildEquip?.[slot];
+    return w + (it && it.archetypeId ? resolveEquipWeight(it.archetypeId, it.grade) : 0);
+  }, 0) * 10) / 10;
+  const carry = carryStatus({ derived: deriveGuildCombat(stats), gearWeight, food, water });
 
   const members = room?.members || {};
   const ids = Object.keys(members);
@@ -153,16 +162,36 @@ export default function GuildTeamLobby({
             <button type="button" disabled={meReady} onClick={() => { sfxSwitch(); set(v => Math.min(12, v + 1)); }} style={btn("#334155", { padding: "3px 10px" })}>＋</button>
           </div>
         ))}
+        {/* 負重：這才是「帶多少糧」的取捨所在 */}
+        <div style={{ marginTop: 4 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, marginBottom: 3 }}>
+            <span style={{ color: "#94a3b8" }}>🎒 負重　裝備 {gearWeight}kg ＋ 補給 {carry.supplyWeight}kg</span>
+            <span style={{ fontWeight: 900, color: carry.over ? "#f87171" : "#6ee7b7" }}>
+              {carry.used} / {carry.capacity} kg
+            </span>
+          </div>
+          <div style={{ height: 7, background: "rgba(0,0,0,.5)", borderRadius: 4, overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${carry.pct}%`, background: carry.over ? "#ef4444" : "linear-gradient(90deg,#22c55e,#84cc16)", transition: "width .3s" }} />
+          </div>
+          {carry.over && <div style={{ fontSize: 10, color: "#f87171", marginTop: 3 }}>⚠️ 超重了，減少食物/水或換輕一點的裝備</div>}
+        </div>
+
+        {/* 箭數是全隊跟房主的，講清楚免得隊員以為自己的設定沒生效 */}
+        <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 6, lineHeight: 1.6 }}>
+          🏹 每回合箭數**全隊統一跟房主**（現在是 {arrowsPerRound} 箭）。
+          {!isHost && " 要改的話請房主到自己的備包畫面調整。"}
+        </div>
+
         {partyCats.length > 0 && (
           <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 6, flexWrap: "wrap" }}>
             <span style={{ fontSize: 11, color: "#94a3b8" }}>出戰貓</span>
             {partyCats.map(c => <CatArt key={c.id} catId={c.id} icon={c.icon} size={26} />)}
           </div>
         )}
-        <button type="button" disabled={busy}
+        <button type="button" disabled={busy || (!meReady && carry.over)}
           onClick={() => act(() => (meReady ? onUnready() : onReady({ food, water })))}
           style={{ ...btn(meReady ? "#334155" : "linear-gradient(135deg,#22c55e,#15803d)"), marginTop: 10, width: "100%" }}>
-          {meReady ? "↩ 取消準備" : "✅ 準備完成"}
+          {meReady ? "↩ 取消準備" : carry.over ? "⚠️ 超重，無法準備" : "✅ 準備完成"}
         </button>
       </div>
 

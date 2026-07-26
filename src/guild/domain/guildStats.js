@@ -70,3 +70,16 @@ export const STAT_META = Object.freeze({
   vit: { name: "體力", short: "VIT", icon: "🍖", desc: "補給消耗／負重" },
   luk: { name: "幸運", short: "LUK", icon: "🍀", desc: "掉寶／爆擊／雜貨價值" },
 });
+
+// ── 背包負重（單人備包與組隊等待室共用同一組數字）─────────────
+// 放在 domain 而不是某個 UI 檔：它是**平衡數值**，兩邊各自寫一份遲早會不一致。
+export const BASE_CAPACITY = 20;      // 基礎可負重（kg）
+export const SUPPLY_WEIGHT = 1;       // 每 1 份食物/水 = 1kg
+
+// 目前負重狀況：capacity = 基礎 + STR/VIT 給的 carryBonus
+export function carryStatus({ derived, gearWeight = 0, food = 0, water = 0 }) {
+  const capacity = Math.round((BASE_CAPACITY + (derived?.carryBonus || 0)) * 10) / 10;
+  const supplyWeight = (food + water) * SUPPLY_WEIGHT;
+  const used = Math.round((gearWeight + supplyWeight) * 10) / 10;
+  return { capacity, supplyWeight, used, over: used > capacity, pct: Math.min(100, (used / Math.max(1, capacity)) * 100) };
+}

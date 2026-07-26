@@ -299,6 +299,9 @@ export default function GuildTestApp({ onBack, onLegacy }) {
 
   const teamDepart = () => teamAct(async () => {
     const ids = Object.keys(teamRoom?.members || {});
+    // ⚠️ 箭數**全隊跟房主**（作者要求）：不然每人不同箭數 → 補給消耗與清場速度全隊不一致，
+    //    「6 箭清場快但補給加倍」這個取捨會變成各玩各的，回合節奏也對不起來。
+    const hostArrows = teamRoom.loadouts?.[teamRoom.hostId]?.arrowsPerRound || 3;
     const roster = ids.map(id => {
       const lo = teamRoom.loadouts?.[id] || {};
       return {
@@ -307,7 +310,7 @@ export default function GuildTestApp({ onBack, onLegacy }) {
         guildStats: lo.guildStats,
         supplies: lo.supplies,
         cats: lo.cats || [],
-        arrowsPerRound: lo.arrowsPerRound,
+        arrowsPerRound: hostArrows,
       };
     });
     if (roster.some(r => !r.guildStats)) return { ok: false, reason: "有人還沒備包完成" };
@@ -339,9 +342,15 @@ export default function GuildTestApp({ onBack, onLegacy }) {
     }
   }, [teamRoom?.status, teamRoom?.id]); // eslint-disable-line
 
-  const teamSubmit = shots => {
-    recordArrows(shots.length);                    // 公會的箭也算進今日/終身箭數
-    return submitGuildTeamShots(teamRoomId, memberId, teamRoom?.seq || 0, shots);
+  const teamSubmit = async shots => {
+    try {
+      recordArrows(shots.length);                  // 公會的箭也算進今日/終身箭數
+      return await submitGuildTeamShots(teamRoomId, memberId, teamRoom?.seq || 0, shots);
+    } catch (e) {
+      // 寧可在畫面上顯示錯誤讓玩家重按，也不要讓例外冒出去變成 uncaught
+      console.warn("teamSubmit:", e);
+      return { ok: false, reason: e?.message || "送出時發生錯誤" };
+    }
   };
 
   // 房主推進一回合：全員交齊（或強制）→ processTeamRound → 寫回房間
@@ -359,10 +368,17 @@ export default function GuildTestApp({ onBack, onLegacy }) {
       if (pending.length) return { ok: false, reason: "還有人沒送出" };
     }
     teamCommitRef.current = seq;
-    const next = processTeamRound(battle, shotsByMember);
-    const res = await commitGuildTeamRound(teamRoomId, memberId, next, seq + 1);
-    if (!res.ok) teamCommitRef.current = 0;        // 寫失敗 → 讓它可以再試
-    return res;
+    try {
+      const next = processTeamRound(battle, shotsByMember);
+      const res = await commitGuildTeamRound(teamRoomId, memberId, next, seq + 1);
+      if (!res.ok) teamCommitRef.current = 0;      // 寫失敗 → 讓它可以再試
+      return res;
+    } catch (e) {
+      // 房主這裡一丟例外，全隊就永遠等不到下一回合 → 一定要吞下並讓它可重試
+      console.warn("teamCommit:", e);
+      teamCommitRef.current = 0;
+      return { ok: false, reason: e?.message || "推進回合時發生錯誤" };
+    }
   });
 
   const teamLeave = () => teamAct(async () => {
@@ -389,9 +405,13 @@ export default function GuildTestApp({ onBack, onLegacy }) {
   };
 
   // 公會遠征射出的箭 → 記進今日／終身箭數（跟主線同一條 addRoundArrows 路徑，含離線佇列）
+  // ⚠️ 一定要 .catch()：這支回傳 promise，沒接的話任何失敗都會變成
+  //    「Uncaught (in promise)」浮到 console，看起來像戰鬥送出爆掉。
+  //    箭數同步失敗本身不該中斷戰鬥（它有 localStorage 佇列會補傳）。
   const recordArrows = n => {
     if (!memberId || !n) return;
-    addRoundArrows(memberId, n, { accountType: profile?.accountType || "official" });
+    addRoundArrows(memberId, n, { accountType: profile?.accountType || "official" })
+      .catch(e => console.warn("公會箭數同步失敗（已排進本機佇列，稍後補傳）:", e?.message || e));
   };
 
   const buy = async itemId => {
@@ -430,7 +450,8 @@ export default function GuildTestApp({ onBack, onLegacy }) {
     return (
       <GuildTeamLobby
         room={teamRoom} openRooms={openTeamRooms} myId={memberId} isHost={isTeamHost} contract={contract}
-        stats={teamStats || {}} partyCats={partyCats} arrowsPerRound={gp.arrowsPerRound}
+        stats={teamStats || {}} guildEquip={gp.equipped} partyCats={partyCats}
+        arrowsPerRound={teamRoom?.loadouts?.[teamRoom?.hostId]?.arrowsPerRound || gp.arrowsPerRound}
         busy={teamBusy}
         onCreate={teamCreate} onJoinRoom={teamJoinRoom} onReady={teamReady} onUnready={teamUnready}
         onDepart={teamDepart} onLeave={teamLeave}

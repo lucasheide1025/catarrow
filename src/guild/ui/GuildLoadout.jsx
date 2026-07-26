@@ -2,14 +2,13 @@
 // 出發前「備包」畫面：顯示六維、裝備、並在「背包容量」限制下抉擇帶多少食/水。
 // 核心張力：裝備佔重、補給也佔重；容量 = 基礎 + VIT 加成。帶太多裝就帶不了糧。
 import { useState } from "react";
-import { calcGuildExpeditionStats, deriveGuildCombat, STAT_META } from "../domain/guildStats";
+import { calcGuildExpeditionStats, deriveGuildCombat, STAT_META, BASE_CAPACITY, SUPPLY_WEIGHT } from "../domain/guildStats";
 import { GUILD_SLOTS, SLOT_META, resolveEquipWeight, equipDisplayName, GRADE_META } from "../data/guildEquipCatalog";
 import { MAX_PARTY_CATS } from "../domain/guildCats";
 import { sfxTap, sfxSwitch, sfxCast } from "../../lib/sound";
 import { hallBg, bgLayer, CatArt, HeroArt } from "./GuildArt";
 
-const BASE_CAPACITY = 20;
-const SUPPLY_WEIGHT = 1;
+// 負重常數已搬到 domain/guildStats（組隊等待室也要用同一組，見 carryStatus）
 
 function Stepper({ label, icon, value, set, min = 0, max = 20 }) {
   return (
