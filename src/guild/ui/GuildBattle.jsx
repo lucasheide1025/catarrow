@@ -84,8 +84,11 @@ function posOf(index, len, distance) {
 }
 const PLAYER_POS = { topPct: 88, leftPct: 50 };
 
-export default function GuildBattle({ expedition, guildStats, supplies, cats = [], arrowsPerRound = 3, onEnd, onArrowsShot }) {
-  const [state, setState] = useState(() => createExpeditionState(expedition, guildStats, supplies, cats, { arrowsPerRound }));
+// resumeState：斷線/關頁後回來續戰用（由上層從 localStorage 取出）。
+// onPersist：每回合結束把最新狀態往上報，上層負責存檔——這樣「防斷線」的責任在一個地方，
+//            戰鬥畫面本身不用知道存哪裡。
+export default function GuildBattle({ expedition, guildStats, supplies, cats = [], arrowsPerRound = 3, onEnd, onArrowsShot, resumeState = null, onPersist }) {
+  const [state, setState] = useState(() => resumeState || createExpeditionState(expedition, guildStats, supplies, cats, { arrowsPerRound }));
   const ARROWS_PER_ROUND = state.arrowsPerRound || arrowsPerRound;
   const [target, setTarget] = useState(null);
   const [shots, setShots] = useState([]);
@@ -230,6 +233,7 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
     later(() => {
       setHitMap({});
       setState(next);
+      onPersist?.(next);          // 每回合落地一次：關掉 App 再回來能從這一回合續戰
       setAnimating(false);
       const kills = next.log.filter(l => (l.type === "arrow" || l.type === "catAttack") && l.killed).length;
       if (next.status === "won") { setFlash("🎉 討伐成功，凱旋歸來！"); sfxVictoryFanfare(); }

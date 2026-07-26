@@ -20,7 +20,7 @@
 //    ③ 新集合要**手動把 firestore.rules 貼到 Console**（CLI 會 403）。
 // ─────────────────────────────────────────────────────────────
 import {
-  collection, doc, addDoc, onSnapshot, query, where,
+  collection, doc, addDoc, getDocs, onSnapshot, query, where,
   runTransaction, serverTimestamp, updateDoc, deleteDoc, limit,
 } from "firebase/firestore";
 import { db } from "../../lib/firebase";
@@ -174,6 +174,29 @@ export async function disbandGuildTeamRoom(roomId, hostId) {
     });
     return { ok: true };
   } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+// ── 斷線重連（2026-07-26）─────────────────────────────────────
+// 組隊的戰鬥狀態本來就存在房間文件裡，斷線其實**沒有掉任何進度**——缺的只是
+// 「回來的時候有人告訴你還有一場在打」。這支就是那個角色：找出我還在裡面的房間。
+//
+// ⚠️ 為什麼不用 `where('members.<id>', '!=', null)`：Firestore 的巢狀 map 鍵無法動態查詢，
+//    而且會需要為每個 memberId 建索引。房間數量本來就少（同時最多幾間），
+//    抓 waiting/active 再在 client 端過濾最單純——跟貓貓村的 findReconnectableBoardRoom 同一手法。
+export async function findReconnectableGuildTeamRoom(memberId) {
+  if (!memberId) return { ok: false, room: null };
+  try {
+    const snap = await getDocs(query(collection(db, R), where("status", "in", ["waiting", "active"]), limit(30)));
+    const rooms = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(r => r.members?.[memberId])
+      .sort((a, b) => {
+        const ta = a.updatedAt?.toMillis?.() || a.updatedAt || 0;
+        const tb = b.updatedAt?.toMillis?.() || b.updatedAt || 0;
+        return tb - ta;   // 最近有動作的優先
+      });
+    return { ok: true, room: rooms[0] || null };
+  } catch (e) { return { ok: false, reason: e?.message, room: null }; }
 }
 
 export function subscribeGuildTeamRoom(roomId, cb) {

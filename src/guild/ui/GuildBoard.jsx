@@ -24,7 +24,7 @@ const paperStyle = {
 };
 const dangerColor = d => (d >= 5 ? "#7f1d1d" : d >= 3 ? "#b45309" : "#3f6212");
 
-export default function GuildBoard({ profile, contracts, doneIds = [], onOpen, onOpenStash, onOpenShop, onOpenVault, onOpenLicense, onOpenTeam, onBack, onLegacy }) {
+export default function GuildBoard({ profile, contracts, doneIds = [], onOpen, onOpenStash, onOpenShop, onOpenVault, onOpenLicense, onOpenTeam, resume, onBack, onLegacy }) {
   const rankInfo = nextRankInfo(profile.rep);
   const rank = rankInfo.current;
   const { maxDanger } = rankUnlocks(profile.rep);
@@ -87,6 +87,28 @@ export default function GuildBoard({ profile, contracts, doneIds = [], onOpen, o
           </button>
         </div>
       </div>
+
+      {/* 防斷線：有沒打完的遠征就先問要不要接回去（單人在本機、組隊在雲端）*/}
+      {resume && (
+        <div style={{ background: "rgba(120,53,15,.55)", border: "1px solid rgba(251,191,36,.45)", borderRadius: 12, padding: 11 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 900, color: "#fde68a" }}>
+            ⏸ 你有一場沒打完的遠征
+          </div>
+          <div style={{ fontSize: 11, color: "#e7dcc6", margin: "3px 0 8px" }}>
+            {resume.label}
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button type="button" onClick={() => { sfxOpen(); resume.onResume(); }}
+              style={{ flex: 1, padding: "8px 0", borderRadius: 9, border: "none", background: "linear-gradient(135deg,#f59e0b,#b45309)", color: "#fff", fontSize: 12, fontWeight: 900, cursor: "pointer" }}>
+              ▶ 回到戰場
+            </button>
+            <button type="button" onClick={() => { sfxOpen(); resume.onDrop(); }}
+              style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid rgba(255,255,255,.16)", background: "rgba(0,0,0,.35)", color: "#cbd5e1", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
+              放棄
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 公會長貓：依階級講話 */}
       <div style={{ display: "flex", alignItems: "flex-end", gap: 8 }}>

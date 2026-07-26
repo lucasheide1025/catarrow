@@ -18,6 +18,7 @@ import {
   createGuildTeamRoom, joinGuildTeamRoomById, setGuildTeamLoadout, unreadyGuildTeamMember,
   startGuildTeamExpedition, submitGuildTeamShots, commitGuildTeamRound,
   markGuildTeamClaimed, leaveGuildTeamRoom, subscribeGuildTeamRoom, subscribeOpenGuildTeamRooms,
+  findReconnectableGuildTeamRoom,
 } from "./db/guildTeamDb";
 import {
   createTeamState, processTeamRound, memberSettleState, scaleExpeditionForParty,
@@ -42,6 +43,32 @@ const MOCK_CATS = [
   { id: "cat_a", name: "小黑（測試）", icon: "🐈‍⬛", typeLabel: "攻擊型", level: 10, atk: 28, def: 6 },
   { id: "cat_b", name: "橘子（測試）", icon: "🐈", typeLabel: "全能型", level: 8, atk: 22, def: 4 },
 ];
+
+// ── 防斷線：單人遠征的本機續戰存檔（2026-07-26）───────────────────
+// 組隊的戰鬥狀態本來就在 Firestore（斷線不掉），但**單人的只在 React 記憶體裡**——
+// 關掉 App／手機殺背景就整趟消失，而委託又還沒結案，玩家會覺得「白打了」。
+// 所以每回合結束把狀態存一份到 localStorage，回來就能從那一回合續戰。
+//
+// ⚠️ 為什麼不存 Firestore：一回合寫一次雲端＝純粹浪費（見 feedback：省不到的不要動）。
+//    單人進度只有自己需要，本機就夠；真正需要跨裝置的是組隊，那本來就在雲端。
+const RUN_KEY_VERSION = 2;
+const runKey = memberId => `catarrow.guild.run.v${RUN_KEY_VERSION}.${memberId || "guest"}`;
+
+function loadSavedRun(memberId) {
+  try {
+    const v = JSON.parse(localStorage.getItem(runKey(memberId)) || "null");
+    if (!v?.battle || !v?.contract || !v?.exp) return null;
+    if (v.battle.status !== "fighting") return null;              // 已經結束的不算續戰
+    if (Date.now() - (v.at || 0) > 24 * 3600 * 1000) return null; // 隔一天以上就別留了
+    return v;
+  } catch { return null; }
+}
+function saveRun(memberId, data) {
+  try { localStorage.setItem(runKey(memberId), JSON.stringify({ at: Date.now(), ...data })); } catch { /* 滿了就算了 */ }
+}
+function clearSavedRun(memberId) {
+  try { localStorage.removeItem(runKey(memberId)); } catch { /* ignore */ }
+}
 
 // 一趟遠征 = 一張委託（委託決定族群與危險度）
 function newRun(contract) {
@@ -70,10 +97,26 @@ export default function GuildTestApp({ onBack, onLegacy }) {
   const [teamRoom, setTeamRoom] = useState(null);
   const [teamBusy, setTeamBusy] = useState(false);
   const [openTeamRooms, setOpenTeamRooms] = useState([]);   // 正在招人的隊伍（取代房號）
+  const [resumeState, setResumeState] = useState(null);    // 單人續戰用的戰鬥狀態
+  const [savedRun, setSavedRun] = useState(null);          // 本機找到的未完成遠征（顯示續戰橫幅）
+  const [teamResume, setTeamResume] = useState(null);      // 雲端找到的未完成組隊
   const teamCommitRef = useRef(0);               // 房主推進的防重複（同一 seq 只推一次）
 
   // Web Audio 需要使用者手勢才能出聲；進公會就先解鎖，第一個音效才不會被吃掉
   useEffect(() => { unlockAudio(); }, []);
+
+  // ── 防斷線：進公會就掃「有沒有沒打完的」──────────────────────
+  // 單人 → 本機 localStorage；組隊 → 雲端房間（狀態本來就在那，只是沒人去找回來）
+  useEffect(() => {
+    if (loading) return;
+    setSavedRun(loadSavedRun(memberId));
+    if (!memberId) { setTeamResume(null); return; }
+    let alive = true;
+    findReconnectableGuildTeamRoom(memberId).then(res => {
+      if (alive) setTeamResume(res.room || null);
+    });
+    return () => { alive = false; };
+  }, [memberId, loading]);
 
   // 每日委託：同一天同一個人固定同一批（重整不會換，見 guildContracts）
   const dateKey = todayKey();
@@ -134,6 +177,8 @@ export default function GuildTestApp({ onBack, onLegacy }) {
 
   // 回委託板（一趟結束或中途放棄）
   const backToBoard = () => {
+    clearSavedRun(memberId);   // 這趟結束/放棄了 → 續戰存檔作廢
+    setResumeState(null);
     setResult(null); setLoot(null); setGrantMsg(""); setContract(null); setRun(null); setRankUp(null); setPhase("board");
   };
   // 組隊：帶這張委託進等待室（開房前先記住委託，開房那步才真的寫 Firestore）
@@ -142,8 +187,36 @@ export default function GuildTestApp({ onBack, onLegacy }) {
     setContract(c); setRun(null); setResult(null); setLoot(null); setGrantMsg("");
     setTeamRoomId(null); setTeamRoom(null); setPhase("team");
   };
+  // 續戰：把存檔還原成「正在戰鬥」的狀態
+  const resumeSavedRun = () => {
+    if (!savedRun) return;
+    setContract(savedRun.contract);
+    setRun({ exp: savedRun.exp, key: savedRun.key || `resume_${Date.now()}` });
+    setSupplies(savedRun.battle.supplies || { food: 6, water: 6 });
+    setResumeState(savedRun.battle);
+    grantedRef.current = null;
+    setResult(null); setLoot(null); setGrantMsg("");
+    setSavedRun(null);
+    setPhase("battle");
+  };
+  const dropSavedRun = () => { clearSavedRun(memberId); setSavedRun(null); };
+
+  // 回到未打完的組隊（狀態在房間文件裡，直接接回去）
+  const resumeTeamRoom = () => {
+    if (!teamResume) return;
+    setTeamRoomId(teamResume.id);
+    setContract(teamResume.contract || null);
+    setPhase(teamResume.status === "active" ? "teamBattle" : "team");
+    setTeamResume(null);
+  };
+  const dropTeamResume = () => {
+    if (teamResume) leaveGuildTeamRoom(teamResume.id, memberId);
+    setTeamResume(null);
+  };
+
   const acceptContract = c => {
     setSheet(null);
+    clearSavedRun(memberId); setResumeState(null); setSavedRun(null);   // 開新的一趟 → 舊續戰作廢
     setContract(c); setRun(newRun(c)); setResult(null); setLoot(null); setGrantMsg(""); setPhase("loadout");
   };
 
@@ -316,6 +389,19 @@ export default function GuildTestApp({ onBack, onLegacy }) {
 
   const toggleCat = catId => changeProfile({ ...gp, partyCats: togglePartyCat(partyCatIds, catId) });
 
+  // 續戰橫幅：組隊優先（別人也在等你），沒有才顯示單人的
+  const resumeBanner = teamResume
+    ? {
+        label: `🤝 組隊：${teamResume.contract?.title || "遠征"}（${Object.keys(teamResume.members || {}).length} 人${teamResume.status === "active" ? "・戰鬥中" : "・等待室"}）`,
+        onResume: resumeTeamRoom, onDrop: dropTeamResume,
+      }
+    : savedRun
+      ? {
+          label: `🏹 單人：${savedRun.contract?.title || "遠征"}（第 ${savedRun.battle?.round || 1} 回合・波 ${(savedRun.battle?.waveIndex || 0) + 1}）`,
+          onResume: resumeSavedRun, onDrop: dropSavedRun,
+        }
+      : null;
+
   const doneIds = contractsStateFor(gp, dateKey).done;
   const closePanel = () => setPhase(contract ? "loadout" : "board");
 
@@ -368,7 +454,8 @@ export default function GuildTestApp({ onBack, onLegacy }) {
         <GuildBoard profile={gp} contracts={dailyContracts} doneIds={doneIds}
           onOpen={setSheet} onOpenStash={() => setPhase("stash")} onOpenShop={() => setPhase("shop")}
           onOpenVault={() => setPhase("vault")} onOpenLicense={() => setPhase("license")}
-          onOpenTeam={() => { setContract(null); setTeamRoomId(null); setPhase("team"); }} onBack={onBack} onLegacy={onLegacy} />
+          onOpenTeam={() => { setContract(null); setTeamRoomId(null); setPhase("team"); }}
+          resume={resumeBanner} onBack={onBack} onLegacy={onLegacy} />
         {sheet && (
           <GuildContractSheet contract={sheet} profile={gp} done={doneIds.includes(sheet.id)}
             onAccept={acceptContract} onTeam={startTeamFrom} onClose={() => setSheet(null)} />
@@ -507,7 +594,8 @@ export default function GuildTestApp({ onBack, onLegacy }) {
       <GuildBoard profile={gp} contracts={dailyContracts} doneIds={doneIds}
         onOpen={setSheet} onOpenStash={() => setPhase("stash")} onOpenShop={() => setPhase("shop")}
         onOpenVault={() => setPhase("vault")} onOpenLicense={() => setPhase("license")}
-          onOpenTeam={() => { setContract(null); setTeamRoomId(null); setPhase("team"); }} onBack={onBack} onLegacy={onLegacy} />
+          onOpenTeam={() => { setContract(null); setTeamRoomId(null); setPhase("team"); }}
+          resume={resumeBanner} onBack={onBack} onLegacy={onLegacy} />
     );
   }
 
@@ -521,7 +609,13 @@ export default function GuildTestApp({ onBack, onLegacy }) {
         </span>
       </div>
       <GuildBattle key={run.key} expedition={run.exp} guildStats={stats} supplies={supplies} cats={partyCats}
-        arrowsPerRound={gp.arrowsPerRound} onArrowsShot={recordArrows} onEnd={setResult} />
+        arrowsPerRound={gp.arrowsPerRound} onArrowsShot={recordArrows} onEnd={setResult}
+        resumeState={resumeState}
+        onPersist={battle => {
+          // 每回合落地一次：關掉 App 再回來能從這一回合續戰；打完就清掉
+          if (battle.status === "fighting") saveRun(memberId, { contract, exp: run.exp, battle, key: run.key });
+          else clearSavedRun(memberId);
+        }} />
     </div>
   );
 }
