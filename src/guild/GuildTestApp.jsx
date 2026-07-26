@@ -145,9 +145,11 @@ export default function GuildTestApp({ onBack, onLegacy }) {
     grantedRef.current = run.key;
     const rolled = result.status === "won" ? settleExpedition(result) : { won: false, materials: [], junk: [], equipDrops: [], coins: 0, catCoins: 0 };
     setLoot(rolled);
+    // 組隊時委託額度**只算房主那張**（鼓勵揪人）：隊員不傳 contractId，自己的每日委託不被消耗
+    const inTeam = !!teamRoom?.battle;
     grantExpeditionRewards(memberId, rolled, {
       danger: contract?.danger || 1, profile: gp,
-      contractId: contract?.id, dateKey,   // 勝敗都把這張委託結案（當天不能重刷）
+      contractId: inTeam && !isTeamHost ? undefined : contract?.id, dateKey,   // 勝敗都把這張委託結案（當天不能重刷）
     }).then(res => {
       setGp(res.profile);
       if (res.offline) setGrantMsg("（未登入：離線試玩，未存檔）");
@@ -179,6 +181,7 @@ export default function GuildTestApp({ onBack, onLegacy }) {
   const backToBoard = () => {
     clearSavedRun(memberId);   // 這趟結束/放棄了 → 續戰存檔作廢
     setResumeState(null);
+    setTeamRoomId(null); setTeamRoom(null);   // 順手收掉房間監聽（打完的房間沒必要繼續訂閱）
     setResult(null); setLoot(null); setGrantMsg(""); setContract(null); setRun(null); setRankUp(null); setPhase("board");
   };
   // 組隊：帶這張委託進等待室（開房前先記住委託，開房那步才真的寫 Firestore）
@@ -314,10 +317,27 @@ export default function GuildTestApp({ onBack, onLegacy }) {
       roster.length,
     );
     const battle = createTeamState(exp, roster, { alreadyScaled: true });
-    const res = await startGuildTeamExpedition(teamRoomId, memberId, battle);
-    if (res.ok) { setContract(teamRoom.contract); setRun({ exp, key: `team_${teamRoomId}_${Date.now()}` }); setPhase("teamBattle"); }
-    return res;
+    // ⚠️ 不在這裡 setPhase：房主與隊員都由下面的 effect 依「房間狀態」進場，
+    //    否則只有按按鈕的那個人會進去（隊員的 phase 沒人改 → 卡在等待室）。
+    return startGuildTeamExpedition(teamRoomId, memberId, battle);
   });
+
+  // 🐛 2026-07-26 修：房主點出發後**隊員沒有跟著進場**。
+  // 原因：出發只有房主自己 setPhase，隊員的房間快照雖然更新了（status→active、battle 有值），
+  // 但沒有任何地方改他們的 phase，所以卡在等待室。
+  // 順帶修好的另外兩個致命問題（隊員專屬）：
+  //   ① `run` 沒設 → 結算 effect 的 `if (!run) return` 直接擋掉 ⇒ **隊員永遠領不到獎勵**
+  //   ② `contract` 沒設 → 發獎時 danger 當成 1 ⇒ 聲望算錯（掉落沒事，那個讀 expedition.danger）
+  // 現在改成「以房間狀態為準」，房主與隊員走同一條路徑，只有一份邏輯要維護。
+  useEffect(() => {
+    if (!teamRoom) return;
+    if (teamRoom.status === "active" && teamRoom.battle) {
+      setContract(teamRoom.contract || null);
+      // key 用房間 id：一個房間＝一趟遠征＝只結算一次（grantedRef 靠這個防重複）
+      setRun(prev => (prev?.key === `team_${teamRoom.id}` ? prev : { exp: teamRoom.battle.expedition, key: `team_${teamRoom.id}` }));
+      setPhase(p => (p === "team" || p === "teamBattle" ? "teamBattle" : p));
+    }
+  }, [teamRoom?.status, teamRoom?.id]); // eslint-disable-line
 
   const teamSubmit = shots => {
     recordArrows(shots.length);                    // 公會的箭也算進今日/終身箭數
