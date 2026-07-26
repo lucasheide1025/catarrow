@@ -15,7 +15,8 @@ import { auth } from "../../lib/firebase";
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from "firebase/auth";
 import { APP_THEMES } from "../../lib/theme";
 import { getSoundEnabled, setSoundEnabled, getAnimEnabled, setAnimEnabled } from "../../lib/fxSettings";
-import { sfxTap, sfxLevelUp } from "../../lib/sound";
+import { sfxTap, sfxLevelUp, sfxSwitch } from "../../lib/sound";
+import * as SFX from "../../lib/sound";
 import { PlayerAvatar, PLAYER_AVATAR_OPTIONS } from "../shared/PlayerAvatar";
 import { calcArcherStats } from "../../lib/monsterData";
 import { calcEquippedBonus, resolveEquippedCards, TIER_CARD_BONUS } from "../../lib/monsterCards";
@@ -1106,9 +1107,28 @@ function FxToggleRow({ icon, label, desc, on, onToggle }) {
   );
 }
 
+// 音效試聽清單（照「場合」分組，比照字母排序好用）
+const SFX_GROUPS = [
+  { title: "介面", items: [
+    ["點擊", SFX.sfxTap], ["切換", SFX.sfxSwitch], ["開啟", SFX.sfxOpen], ["關閉", SFX.sfxClose],
+    ["錯誤", SFX.sfxError], ["成功", SFX.sfxSuccess], ["選定/接受", SFX.sfxPathSelect],
+  ] },
+  { title: "戰鬥", items: [
+    ["射箭", SFX.sfxArrowShoot], ["命中", SFX.sfxArrowHit], ["暴擊", SFX.sfxCritBoom],
+    ["貓助攻", SFX.sfxOrganHit], ["閃避", SFX.sfxSoftFail], ["被打", SFX.sfxCounter],
+    ["被暴擊", SFX.sfxCounterCrit], ["擊倒怪物", SFX.sfxMonsterDead], ["回合結束", SFX.sfxRoundEnd],
+    ["施法", SFX.sfxCast], ["增益", SFX.sfxBuff],
+  ] },
+  { title: "結算與獎勵", items: [
+    ["勝利", SFX.sfxVictoryFanfare], ["失敗", SFX.sfxDefeat], ["升級", SFX.sfxLevelUp],
+    ["金幣", SFX.sfxCoinDrop], ["開寶箱", SFX.sfxOpenChest], ["購買", SFX.sfxShopBuy],
+  ] },
+];
+
 function FxSettings() {
   const [sound, setSound] = useState(getSoundEnabled());
   const [anim,  setAnim]  = useState(getAnimEnabled());
+  const [audition, setAudition] = useState(false);
 
   function toggleSound() {
     const v = !sound;
@@ -1131,6 +1151,32 @@ function FxSettings() {
         <FxToggleRow icon="✨" label="介面動畫" desc="關閉後減少畫面晃動與耗電"
           on={anim} onToggle={toggleAnim} />
       </div>
+
+      {/* 音效試聽：調音的時候要能一顆一顆點來聽，不然只能在戰鬥裡碰運氣觸發 */}
+      <button type="button" onClick={() => { setAudition(v => !v); sfxSwitch(); }}
+        className="mt-3 w-full text-[11px] font-black text-slate-300 bg-white/5 border border-white/10 rounded-xl py-2">
+        {audition ? "▲ 收起音效試聽" : "▼ 音效試聽（逐一測試）"}
+      </button>
+      {audition && (
+        <div className="mt-2">
+          {!sound && (
+            <div className="text-[10px] text-amber-300/80 mb-2">⚠️ 音效目前是關閉的，先打開上面的開關才聽得到。</div>
+          )}
+          {SFX_GROUPS.map(group => (
+            <div key={group.title} className="mb-3">
+              <div className="text-[10px] text-slate-400 font-black mb-1.5">{group.title}</div>
+              <div className="flex flex-wrap gap-1.5">
+                {group.items.map(([label, fn]) => (
+                  <button key={label} type="button" onClick={() => fn()}
+                    className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-slate-800/80 border border-white/10 text-slate-200 active:scale-95">
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </Card>
   );
 }

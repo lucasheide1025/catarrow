@@ -5,6 +5,35 @@
 
 ---
 
+## 2026-07-26（音效現代化：合成引擎重寫，仍然零音檔）
+
+作者問「有辦法創造更符合現代的遊戲音效嗎」→ **可以，而且不用音檔**。舊音效聽起來像電子琴 beep 是有具體技術原因的：
+
+| 舊做法 | 為什麼聽起來廉價 |
+|---|---|
+| 每個音效**直接接 `destination`** | 沒有空間感、沒有整體壓縮，兩個音效同時觸發就爆音 |
+| `tone()` ＝ 單一振盪器 ＋ 線性 attack | 這正是「beep」的來源 |
+| `noiseBurst()` 的 lowpass 是**固定頻率** | 少了厚度——現代衝擊音的重量來自**濾波器包絡** |
+| 沒有 pitch envelope、沒有 detune | 聲音很薄、很平 |
+
+**新引擎的三個關鍵**（全部 Web Audio 合成）
+- **A. 分層**：transient（點擊感）＋ body（音色）＋ air（高頻空氣感）＋ sub（低頻重量）
+- **B. 包絡**：不只音量，**音高與濾波器也要有包絡**——「punch」感就來自音高瞬降
+- **C. 總線**：共用 `DynamicsCompressor`（黏合、防爆）＋ **合成 IR 的 convolution reverb**（空間感，不需要 IR 音檔）＋ `StereoPanner`
+
+**新原語**：`punch`（音高瞬降）／`pluck`（兩顆失諧鋸齒＋lowpass 包絡）／`impact`（噪音＋lowpass **往下掃**＝重量）／`air`（highpass 噪音＝清脆）／`sub`（低頻墊底）／`swell`（帶通掃頻 whoosh）／`notes`（用 pluck 疊和弦）。
+
+**改了 24 個音效，函式名稱全部不變** → 呼叫端零改動、零回歸風險。
+- 介面：tap／switch／open／close／error／success／pathSelect
+- 戰鬥：arrowShoot／arrowHit／critBoom／counter／counterCrit／organHit／softFail／monsterDead／roundEnd／cast／buff
+- 結算：victoryFanfare／defeat／levelUp／coinDrop／openChest／shopBuy
+
+**刻意不改的**
+- 舊的 `tone`／`noiseBurst`／`distTone` **保留不動**——還有二十幾個音效在用，不動就沒有回歸風險。
+- **教練後台的三個提醒音**（`sfxCheckinAlert`／`sfxNewBookingAlert`／`sfxNextHourAlert`）：它們是為了在工作電腦上穿透環境噪音而刻意設計的刺耳上行音。「現代化」會讓它變得不夠醒目＝**功能退化**，不是改進。
+
+**新增音效試聽面板**：「我的」→ 音效與動畫卡 → 「▼ 音效試聽」。分介面／戰鬥／結算三組逐一點播——調音要能一顆一顆聽，不然只能在戰鬥裡碰運氣觸發。
+
 ## 2026-07-26（🐛 組隊死鎖：房主的自動推進被 busy 卡住）
 
 作者回報「全員輸出完成後，如果不是房主最後輸入會卡死，要等房主出去再回來才會跑」。

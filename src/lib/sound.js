@@ -109,12 +109,237 @@ function distTone(startFreq, endFreq, dur, gainVal, delay = 0) {
   } catch {}
 }
 
+
+// ═══════════════════════════════════════════════════════════════
+// 現代化音效引擎（2026-07-26）
+// ═══════════════════════════════════════════════════════════════
+// 為什麼舊音效聽起來像電子琴 beep：
+//   ① 每個音效**直接接 destination** → 沒有空間感、沒有整體壓縮，疊在一起就爆音
+//   ② `tone()` 是**單一振盪器 + 線性 attack** → 這正是「beep」的來源
+//   ③ `noiseBurst()` 的 lowpass 是**固定頻率** → 缺少厚度（現代衝擊音的重量來自濾波器包絡）
+//   ④ 沒有 pitch envelope、沒有 detune → 聽起來很薄、很平
+//
+// 現代遊戲音效的三個關鍵，全部可以用 Web Audio 合成、**不需要任何音檔**：
+//   A. **分層**：transient（點擊感）＋ body（音色）＋ air（高頻空氣感）＋ sub（低頻重量）
+//   B. **包絡**：不只音量有包絡，**音高與濾波器也要有**（punch 感來自音高瞬降）
+//   C. **總線**：共用 compressor（黏合、防爆）＋ convolution reverb（空間）＋ stereo pan
+//
+// ⚠️ 舊的 tone/noiseBurst/distTone 保留不動——還有二十幾個音效在用，不動就沒有回歸風險。
+// ⚠️ 教練後台的三個提醒音（sfxCheckinAlert 等）**刻意不改**：它們是為了在工作電腦上穿透
+//    環境噪音而設計的刺耳上行音，「現代化」會讓它變得不夠醒目＝功能退化。
+
+let _bus = null;      // { ctx, in, send }
+
+// 合成一段脈衝響應當殘響（不需要 IR 音檔）：指數衰減的噪音，兩耳用不同亂數 → 有立體寬度
+function buildIR(c, seconds = 0.42, decay = 3.2) {
+  const len = Math.max(1, Math.floor(c.sampleRate * seconds));
+  const buf = c.createBuffer(2, len, c.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    for (let i = 0; i < len; i++) {
+      const t = i / len;
+      const early = i < c.sampleRate * 0.008 ? 0.25 : 1;   // 前 8ms 壓低，避免糊掉 transient
+      d[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, decay) * early;
+    }
+  }
+  return buf;
+}
+
+// 總線：voice → busIn → compressor → master → destination
+//                   ↘ send → convolver → wet ↗
+function bus() {
+  const c = ctx(); if (!c) return null;
+  if (_bus && _bus.ctx === c) return _bus;
+  try {
+    const busIn = c.createGain();
+    const comp = c.createDynamicsCompressor();
+    comp.threshold.value = -16;   // 稍微壓一下，多個音效同時觸發不會爆
+    comp.knee.value = 12;
+    comp.ratio.value = 3.5;
+    comp.attack.value = 0.003;
+    comp.release.value = 0.18;
+    const master = c.createGain();
+    master.gain.value = 0.9;
+
+    const send = c.createGain();
+    send.gain.value = 1;
+    const conv = c.createConvolver();
+    conv.buffer = buildIR(c);
+    const wet = c.createGain();
+    wet.gain.value = 0.5;
+
+    busIn.connect(comp);
+    send.connect(conv); conv.connect(wet); wet.connect(comp);
+    comp.connect(master); master.connect(c.destination);
+    _bus = { ctx: c, in: busIn, send };
+    return _bus;
+  } catch { return null; }
+}
+
+// 一個「聲音」的出口：自帶音量、pan、以及往殘響送多少
+function voice(gainVal = 0.2, pan = 0, sendAmt = 0.12) {
+  const b = bus(); if (!b) return null;
+  const c = b.ctx;
+  const g = c.createGain();
+  g.gain.value = gainVal;
+  let out = g;
+  if (pan && c.createStereoPanner) {
+    const pn = c.createStereoPanner();
+    pn.pan.value = Math.max(-1, Math.min(1, pan));
+    g.connect(pn); out = pn;
+  }
+  out.connect(b.in);
+  if (sendAmt > 0) {
+    const sg = c.createGain();
+    sg.gain.value = sendAmt;
+    out.connect(sg); sg.connect(b.send);
+  }
+  return { c, node: g };
+}
+
+// ── 原語 ──────────────────────────────────────────────────────
+
+// punch：音高瞬降 → 現代 UI 與打擊音的「thock」感
+function punch({ freq = 320, drop = 0.45, dur = 0.16, gain = 0.3, type = 'sine', pan = 0, send = 0.1, delay = 0 } = {}) {
+  const v = voice(gain, pan, send); if (!v) return;
+  const { c, node } = v;
+  const t0 = c.currentTime + delay;
+  const osc = c.createOscillator();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, t0);
+  osc.frequency.exponentialRampToValueAtTime(Math.max(30, freq * drop), t0 + dur * 0.8);
+  const env = c.createGain();
+  env.gain.setValueAtTime(0.0001, t0);
+  env.gain.exponentialRampToValueAtTime(1, t0 + 0.004);          // 極快 attack ＝ 有「點」
+  env.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  osc.connect(env); env.connect(node);
+  osc.start(t0); osc.stop(t0 + dur + 0.05);
+}
+
+// pluck：兩顆微微失諧的鋸齒波 + lowpass 包絡 → 有質感的 UI 點擊（不再是 beep）
+function pluck({ freq = 620, dur = 0.13, gain = 0.16, detune = 12, cut0 = 5200, cut1 = 700, pan = 0, send = 0.1, delay = 0 } = {}) {
+  const v = voice(gain, pan, send); if (!v) return;
+  const { c, node } = v;
+  const t0 = c.currentTime + delay;
+  const filt = c.createBiquadFilter();
+  filt.type = 'lowpass';
+  filt.Q.value = 1.1;
+  filt.frequency.setValueAtTime(cut0, t0);
+  filt.frequency.exponentialRampToValueAtTime(Math.max(80, cut1), t0 + dur);
+  const env = c.createGain();
+  env.gain.setValueAtTime(0.0001, t0);
+  env.gain.exponentialRampToValueAtTime(1, t0 + 0.005);
+  env.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  for (const d of [-detune, detune]) {
+    const osc = c.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.value = freq;
+    osc.detune.value = d;
+    osc.connect(filt);
+    osc.start(t0); osc.stop(t0 + dur + 0.05);
+  }
+  filt.connect(env); env.connect(node);
+}
+
+// impact：噪音 + lowpass **往下掃** → 衝擊音「重量」的來源
+function impact({ dur = 0.26, cut0 = 7000, cut1 = 260, gain = 0.34, q = 0.9, pan = 0, send = 0.18, delay = 0 } = {}) {
+  const v = voice(gain, pan, send); if (!v) return;
+  const { c, node } = v;
+  const t0 = c.currentTime + delay;
+  const len = Math.max(1, Math.ceil(c.sampleRate * dur));
+  const buf = c.createBuffer(1, len, c.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 1.4);
+  const src = c.createBufferSource(); src.buffer = buf;
+  const filt = c.createBiquadFilter();
+  filt.type = 'lowpass'; filt.Q.value = q;
+  filt.frequency.setValueAtTime(cut0, t0);
+  filt.frequency.exponentialRampToValueAtTime(Math.max(80, cut1), t0 + dur);
+  const env = c.createGain();
+  env.gain.setValueAtTime(1, t0);
+  env.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  src.connect(filt); filt.connect(env); env.connect(node);
+  src.start(t0);
+}
+
+// air：highpass 噪音 → 高頻空氣感，疊在衝擊上讓它變清脆
+function air({ dur = 0.2, gain = 0.12, hp = 3600, pan = 0, send = 0.22, delay = 0 } = {}) {
+  const v = voice(gain, pan, send); if (!v) return;
+  const { c, node } = v;
+  const t0 = c.currentTime + delay;
+  const len = Math.max(1, Math.ceil(c.sampleRate * dur));
+  const buf = c.createBuffer(1, len, c.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.2);
+  const src = c.createBufferSource(); src.buffer = buf;
+  const filt = c.createBiquadFilter();
+  filt.type = 'highpass'; filt.frequency.value = hp;
+  const env = c.createGain();
+  env.gain.setValueAtTime(1, t0);
+  env.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  src.connect(filt); filt.connect(env); env.connect(node);
+  src.start(t0);
+}
+
+// sub：低頻正弦墊底。手機小喇叭聽不太到，但耳機/震動會有「胸口一沉」的重量
+function sub({ freq = 72, dur = 0.24, gain = 0.5, delay = 0 } = {}) {
+  const v = voice(gain, 0, 0); if (!v) return;
+  const { c, node } = v;
+  const t0 = c.currentTime + delay;
+  const osc = c.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(freq * 1.6, t0);
+  osc.frequency.exponentialRampToValueAtTime(freq, t0 + dur * 0.6);
+  const env = c.createGain();
+  env.gain.setValueAtTime(0.0001, t0);
+  env.gain.exponentialRampToValueAtTime(1, t0 + 0.008);
+  env.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  osc.connect(env); env.connect(node);
+  osc.start(t0); osc.stop(t0 + dur + 0.05);
+}
+
+// swell：往上/往下掃的帶通噪音 → 開關面板的 whoosh
+function swell({ up = true, dur = 0.28, gain = 0.16, pan = 0, send = 0.18, delay = 0 } = {}) {
+  const v = voice(gain, pan, send); if (!v) return;
+  const { c, node } = v;
+  const t0 = c.currentTime + delay;
+  const len = Math.max(1, Math.ceil(c.sampleRate * dur));
+  const buf = c.createBuffer(1, len, c.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  const src = c.createBufferSource(); src.buffer = buf;
+  const filt = c.createBiquadFilter();
+  filt.type = 'bandpass'; filt.Q.value = 1.6;
+  filt.frequency.setValueAtTime(up ? 500 : 4200, t0);
+  filt.frequency.exponentialRampToValueAtTime(up ? 4200 : 500, t0 + dur);
+  const env = c.createGain();
+  env.gain.setValueAtTime(0.0001, t0);
+  env.gain.linearRampToValueAtTime(1, t0 + dur * 0.35);
+  env.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  src.connect(filt); filt.connect(env); env.connect(node);
+  src.start(t0);
+}
+
+// 旋律/和弦：用 pluck 疊出來（比單音 tone 厚得多）
+function notes(list, opts = {}) {
+  list.forEach(([freq, delay, dur = 0.3], i) => {
+    pluck({
+      freq, dur, delay,
+      gain: opts.gain === undefined ? 0.14 : opts.gain,
+      cut0: 6500, cut1: 1200,
+      send: opts.send === undefined ? 0.3 : opts.send,
+      pan: opts.spread ? (i % 2 ? 0.18 : -0.18) : 0,
+    });
+  });
+}
+
 // ── UI 音效 ──────────────────────────────────────────────────
 
 export function sfxTap() {
-  tone(520, 0.07, "sine", 0.2, 0);
-  tone(780, 0.04, "triangle", 0.1, 0.02);
-  vibrate(10);
+  // 分層：短 pluck 當「點」＋一絲 air 當「亮」。比單顆 sine 有質感又不吵。
+  pluck({ freq: 880, dur: 0.075, gain: 0.13, cut0: 6000, cut1: 1400, send: 0.06 });
+  air({ dur: 0.05, gain: 0.05, hp: 5000, send: 0.05 });
+  vibrate(8);
 }
 
 export function sfxNotify() {
@@ -149,141 +374,120 @@ export function sfxNextHourAlert() {
 
 // tab / 開關切換 — 短促雙音（比 sfxTap 更輕）
 export function sfxSwitch() {
-  tone(600, 0.05, "triangle", 0.14, 0);
-  tone(900, 0.04, "sine",     0.10, 0.03);
-  vibrate(8);
+  pluck({ freq: 1180, dur: 0.06, gain: 0.11, cut0: 7000, cut1: 2000, send: 0.05 });
+  punch({ freq: 240, drop: 0.7, dur: 0.05, gain: 0.06, send: 0 });
+  vibrate(6);
 }
 
 // 彈窗開啟 — 上滑感
 export function sfxOpen() {
-  tone(440, 0.06, "sine",     0.14, 0);
-  tone(660, 0.08, "triangle", 0.12, 0.05);
-  vibrate(10);
+  swell({ up: true, dur: 0.26, gain: 0.13, send: 0.2 });
+  pluck({ freq: 640, dur: 0.16, gain: 0.12, cut0: 4200, cut1: 1400, delay: 0.06, send: 0.18 });
+  vibrate(12);
 }
 
 // 彈窗關閉 — 下滑感
 export function sfxClose() {
-  tone(660, 0.05, "sine",     0.12, 0);
-  tone(440, 0.07, "triangle", 0.10, 0.04);
+  swell({ up: false, dur: 0.22, gain: 0.12, send: 0.14 });
+  punch({ freq: 300, drop: 0.5, dur: 0.12, gain: 0.14, delay: 0.03, send: 0.08 });
+  vibrate(10);
 }
 
 // 錯誤/不可行操作 — 低音雙頓
 export function sfxError() {
-  tone(220, 0.09, "square", 0.14, 0);
-  tone(185, 0.14, "square", 0.14, 0.11);
-  vibrate([0, 40, 40, 40]);
+  // 兩顆下行的失諧 punch：不用刺耳的高頻也能讓人知道「不行」
+  punch({ freq: 300, drop: 0.55, dur: 0.14, gain: 0.24, type: 'triangle', pan: -0.12, send: 0.1 });
+  punch({ freq: 224, drop: 0.55, dur: 0.2, gain: 0.22, type: 'triangle', pan: 0.12, delay: 0.09, send: 0.14 });
+  impact({ dur: 0.14, cut0: 1800, cut1: 300, gain: 0.1, send: 0.1 });
+  vibrate([0, 40, 50, 40]);
 }
 
 // ── 射箭音效 ─────────────────────────────────────────────────
 
 // 普通命中
 export function sfxArrowHit() {
-  noiseBurst(0, 0.06, 1200, 0.4);
-  tone(220, 0.08, "sine", 0.18, 0);
-  tone(440, 0.05, "triangle", 0.12, 0.04);
-  vibrate(16);
+  // 命中＝transient(air) + 重量(impact 下掃) + 低頻(sub)。這三層就是「打到東西」的感覺。
+  air({ dur: 0.05, gain: 0.1, hp: 5200, send: 0.08 });
+  impact({ dur: 0.2, cut0: 5200, cut1: 300, gain: 0.3, send: 0.16 });
+  sub({ freq: 84, dur: 0.14, gain: 0.32 });
+  vibrate(18);
 }
 
 // 爆擊
 export function sfxCritBoom() {
-  noiseBurst(0, 0.18, 800, 0.8);
-  tone(440, 0.10, "sine", 0.28, 0);
-  tone(660, 0.08, "triangle", 0.22, 0.07);
-  tone(880, 0.16, "sine", 0.16, 0.14);
-  vibrate([0, 30, 55, 35]);
+  // 暴擊＝同一套但每層都加大，並多送殘響（空間變大＝更有威力）
+  air({ dur: 0.09, gain: 0.16, hp: 4600, send: 0.24 });
+  impact({ dur: 0.42, cut0: 8000, cut1: 180, gain: 0.44, send: 0.3 });
+  sub({ freq: 62, dur: 0.34, gain: 0.6 });
+  punch({ freq: 420, drop: 0.28, dur: 0.24, gain: 0.18, type: 'triangle', delay: 0.02, send: 0.22 });
+  vibrate([0, 55, 40, 70]);
 }
 
 // 器官/要害命中 — 低沉厚重
 export function sfxOrganHit() {
-  noiseBurst(0, 0.25, 200, 0.9);
-  tone(100, 0.32, "sine",     0.3, 0.06);
-  tone(660, 0.05, "triangle", 0.2, 0);
-  vibrate([0, 50, 70, 40]);
+  // 貓貓助攻/軟命中：比箭輕、比較「肉」，高頻少一點
+  impact({ dur: 0.16, cut0: 3000, cut1: 400, gain: 0.22, send: 0.12 });
+  punch({ freq: 340, drop: 0.5, dur: 0.1, gain: 0.12, type: 'triangle', send: 0.08 });
+  vibrate(14);
 }
 
 // 脫靶
 export function sfxSoftFail() {
-  tone(180, 0.12, "sine", 0.12, 0);
-  tone(150, 0.15, "sawtooth", 0.08, 0.08);
-  vibrate(12);
+  // 閃避/沒中：短的空氣感 + 一顆很輕的下行音，不要有衝擊
+  air({ dur: 0.14, gain: 0.1, hp: 3000, send: 0.16 });
+  punch({ freq: 400, drop: 0.6, dur: 0.1, gain: 0.08, type: 'sine', send: 0.1 });
+  vibrate(8);
 }
 
 // 射箭弓弦聲
 export function sfxArrowShoot() {
-  noiseBurst(0, 0.05, 1500, 0.35);
-  tone(260, 0.06, "triangle", 0.18, 0);
-  tone(520, 0.04, "sine", 0.10, 0.03);
-  vibrate(12);
+  // 弓弦：低頻 pluck（弦）＋ 往上掃的 air（箭離弦的颯）
+  pluck({ freq: 196, dur: 0.09, gain: 0.16, detune: 26, cut0: 2600, cut1: 500, send: 0.06 });
+  air({ dur: 0.16, gain: 0.14, hp: 2800, send: 0.12 });
+  vibrate(10);
 }
 
 // ── 戰鬥音效 ─────────────────────────────────────────────────
 
 // 怪物反擊
 export function sfxCounter() {
-  distTone(120, 80, 0.35, 0.35, 0);
-  noiseBurst(0.08, 0.12, 250, 0.5);
-  tone(80, 0.30, "sawtooth", 0.18, 0);
-  vibrate([0, 55, 75, 50]);
+  // 被打：cutoff 壓得更低＝更「悶」，聽起來是自己吃了一下
+  impact({ dur: 0.3, cut0: 2400, cut1: 160, gain: 0.36, send: 0.14 });
+  sub({ freq: 58, dur: 0.26, gain: 0.5 });
+  punch({ freq: 180, drop: 0.5, dur: 0.16, gain: 0.14, type: 'triangle', send: 0.08 });
+  vibrate([0, 45]);
 }
 
 // 怪物爆擊反擊
 export function sfxCounterCrit() {
-  noiseBurst(0,    0.40, 120, 1.2);   // 重擊低頻衝擊
-  noiseBurst(0.05, 0.15, 700, 0.7);   // 高頻撕裂瞬間
-  distTone(200, 70, 0.45, 0.9, 0);    // 下行嘶吼
-  tone(55, 0.55, "sine", 0.45, 0.05); // 深沉 bass 震動
-  vibrate([0, 90, 110, 80, 60]);
+  impact({ dur: 0.46, cut0: 3200, cut1: 130, gain: 0.46, send: 0.24 });
+  sub({ freq: 48, dur: 0.42, gain: 0.66 });
+  punch({ freq: 150, drop: 0.4, dur: 0.3, gain: 0.2, type: 'triangle', delay: 0.03, send: 0.2 });
+  vibrate([0, 70, 40, 90]);
 }
 
 // 怪物死亡 — 上行6音 + 最後爆炸
 export function sfxMonsterDead() {
-  const c = ctx(); if (!c) return;
-  const t = c.currentTime;
-  [261, 329, 392, 523, 659, 784].forEach((freq, i) => {
-    const n = c.createOscillator(); const g = c.createGain();
-    n.type = "square"; n.frequency.value = freq;
-    const st = t + i * 0.09;
-    g.gain.setValueAtTime(0.18, st);
-    g.gain.exponentialRampToValueAtTime(0.001, st + 0.28);
-    n.connect(g); g.connect(c.destination);
-    n.start(st); n.stop(st + 0.3);
-  });
-  noiseBurst(0.52, 0.4, 600, 0.8);
-  tone(180, 0.5, "sine", 0.16, 0.48);
-  vibrate([0, 60, 80, 60, 80, 120]);
+  // 擊倒：下行的失真吼叫 + 崩落的 impact 尾巴（多送殘響 → 有「散開」的感覺）
+  punch({ freq: 260, drop: 0.22, dur: 0.34, gain: 0.2, type: 'sawtooth', send: 0.24 });
+  impact({ dur: 0.4, cut0: 3400, cut1: 140, gain: 0.28, send: 0.28 });
+  sub({ freq: 54, dur: 0.3, gain: 0.4, delay: 0.04 });
+  vibrate([0, 30, 30, 50]);
 }
 
 // 施法/結算開始 — 上行鋸齒5音
 export function sfxCast() {
-  const c = ctx(); if (!c) return;
-  const t = c.currentTime;
-  [280, 390, 520, 700, 880].forEach((freq, i) => {
-    const n = c.createOscillator(); const g = c.createGain();
-    n.type = "sawtooth"; n.frequency.value = freq;
-    const st = t + i * 0.07;
-    g.gain.setValueAtTime(0.14, st);
-    g.gain.exponentialRampToValueAtTime(0.001, st + 0.14);
-    n.connect(g); g.connect(c.destination);
-    n.start(st); n.stop(st + 0.16);
-  });
-  vibrate(18);
+  // 施法：往上掃的 swell + 失諧和聲，最後一顆停在五度（有「蓄力完成」的感覺）
+  swell({ up: true, dur: 0.36, gain: 0.14, send: 0.32 });
+  notes([[440, 0.1], [659.3, 0.22, 0.45]], { gain: 0.12, send: 0.4 });
+  vibrate([0, 20, 30, 30]);
 }
 
 // Buff — 12 顆隨機閃光
 export function sfxBuff() {
-  const c = ctx(); if (!c) return;
-  const t = c.currentTime;
-  for (let i = 0; i < 12; i++) {
-    const n = c.createOscillator(); const g = c.createGain();
-    n.type = "sine";
-    n.frequency.value = 600 + Math.random() * 900;
-    const st = t + i * 0.06 + Math.random() * 0.03;
-    g.gain.setValueAtTime(0.13, st);
-    g.gain.exponentialRampToValueAtTime(0.001, st + 0.1);
-    n.connect(g); g.connect(c.destination);
-    n.start(st); n.stop(st + 0.12);
-  }
-  vibrate([0, 25, 40, 25]);
+  notes([[659.3, 0], [880, 0.08], [1108.7, 0.16, 0.42]], { gain: 0.12, send: 0.36, spread: true });
+  air({ dur: 0.34, gain: 0.06, hp: 5000, delay: 0.1, send: 0.34 });
+  vibrate([0, 18, 30, 18]);
 }
 
 // Debuff — 下行失諧失真
@@ -314,18 +518,16 @@ export function sfxRevive() {
 
 // 勝利/成功 — 3音上行
 export function sfxSuccess() {
-  tone(659,  0.13, "triangle", 0.22, 0);
-  tone(784,  0.13, "triangle", 0.22, 0.13);
-  tone(1047, 0.40, "triangle", 0.28, 0.26);
-  vibrate([0, 40, 50, 80]);
+  // 大三和弦上行琶音 + 空間感（送較多殘響 → 有「完成」的餘韻）
+  notes([[659.3, 0], [830.6, 0.07], [987.8, 0.14, 0.42]], { gain: 0.13, send: 0.34, spread: true });
+  air({ dur: 0.3, gain: 0.06, hp: 4200, delay: 0.14, send: 0.3 });
+  vibrate([0, 25, 40, 25]);
 }
 
 // 回合結算 — 3音輕快確認
 export function sfxRoundEnd() {
-  tone(440, 0.08, "triangle", 0.2,  0);
-  tone(554, 0.12, "triangle", 0.22, 0.08);
-  tone(659, 0.18, "sine",     0.18, 0.16);
-  vibrate(16);
+  notes([[523.3, 0], [659.3, 0.08, 0.34]], { gain: 0.11, send: 0.3 });
+  vibrate(12);
 }
 
 // 喝藥水 — 泡泡上升5音
@@ -346,26 +548,15 @@ export function sfxPotionDrink() {
 
 // 打怪/世界王勝利 — 爆炸聲 + 8音上行凱旋旋律（sfxVictory 為別名）
 export function sfxVictoryFanfare() {
-  const c = ctx(); if (!c) return;
-  const t = c.currentTime;
-  // 開場爆炸音
-  noiseBurst(0, 0.25, 300, 0.9);
-  distTone(110, 220, 0.35, 0.5, 0);
-  // 8音上行旋律（方波+三角和聲）
-  [261, 329, 392, 523, 659, 784, 988, 1047].forEach((freq, i) => {
-    const st = t + 0.25 + i * 0.1;
-    ["square", "triangle"].forEach((type, j) => {
-      const n = c.createOscillator(); const g = c.createGain();
-      n.type = type; n.frequency.value = freq * (j === 1 ? 2 : 1);
-      g.gain.setValueAtTime(j === 0 ? 0.22 : 0.10, st);
-      g.gain.exponentialRampToValueAtTime(0.001, st + 0.25);
-      n.connect(g); g.connect(c.destination);
-      n.start(st); n.stop(st + 0.28);
-    });
-  });
-  // 最後持續長音
-  tone(1047, 0.8, "triangle", 0.18, 1.15);
-  vibrate([0, 60, 50, 80, 50, 120, 80, 200]);
+  // 開場一擊（impact + sub）→ 大三和弦上行 → 高八度收尾。用 pluck 疊比方波旋律厚得多。
+  impact({ dur: 0.34, cut0: 6000, cut1: 200, gain: 0.34, send: 0.3 });
+  sub({ freq: 66, dur: 0.4, gain: 0.5 });
+  notes([
+    [392.0, 0.18], [523.3, 0.30], [659.3, 0.42],
+    [784.0, 0.56, 0.5], [1046.5, 0.72, 0.7],
+  ], { gain: 0.15, send: 0.38, spread: true });
+  air({ dur: 0.6, gain: 0.07, hp: 4000, delay: 0.56, send: 0.4 });
+  vibrate([0, 60, 60, 60, 60, 120]);
 }
 
 // 保底大招 — 8音上行旋律（方波+三角諧波）
@@ -390,35 +581,21 @@ export function sfxEpic() {
 
 // 升等/通過檢定
 export function sfxLevelUp() {
-  const c = ctx(); if (!c) return;
-  const t = c.currentTime;
-  [440, 554, 659, 880].forEach((freq, i) => {
-    const n = c.createOscillator(); const g = c.createGain();
-    n.type = "triangle"; n.frequency.value = freq;
-    const st = t + i * 0.09;
-    g.gain.setValueAtTime(0.22, st);
-    g.gain.exponentialRampToValueAtTime(0.001, st + 0.28);
-    n.connect(g); g.connect(c.destination);
-    n.start(st); n.stop(st + 0.3);
-  });
-  vibrate([0, 60, 80, 100]);
+  // 升級：上行四音 + 每一階都往上加亮度，最後一顆送很多殘響（成就感的餘韻）
+  notes([[523.3, 0], [659.3, 0.09], [784.0, 0.18], [1046.5, 0.28, 0.6]], { gain: 0.15, send: 0.36, spread: true });
+  swell({ up: true, dur: 0.42, gain: 0.1, send: 0.3 });
+  sub({ freq: 80, dur: 0.28, gain: 0.34, delay: 0.26 });
+  vibrate([0, 40, 40, 40, 40, 100]);
 }
 
 // 開寶箱
 export function sfxOpenChest() {
-  const c = ctx(); if (!c) return;
-  const t = c.currentTime;
-  [660, 880, 1100].forEach((freq, i) => {
-    const n = c.createOscillator(); const g = c.createGain();
-    n.type = "triangle"; n.frequency.value = freq;
-    const st = t + i * 0.08;
-    g.gain.setValueAtTime(0.24, st);
-    g.gain.exponentialRampToValueAtTime(0.001, st + 0.20);
-    n.connect(g); g.connect(c.destination);
-    n.start(st); n.stop(st + 0.22);
-  });
-  noiseBurst(0.02, 0.12, 2000, 0.28);
-  vibrate([0, 40, 60, 80, 100]);
+  // 開箱：木頭吱一下（低 pluck）→ 掀開的 swell → 寶物閃光（高頻和弦）
+  pluck({ freq: 140, dur: 0.14, gain: 0.16, detune: 30, cut0: 1800, cut1: 300, send: 0.1 });
+  swell({ up: true, dur: 0.3, gain: 0.14, delay: 0.08, send: 0.26 });
+  notes([[880, 0.26], [1174.7, 0.34], [1568, 0.42, 0.5]], { gain: 0.13, send: 0.38, spread: true });
+  sub({ freq: 70, dur: 0.2, gain: 0.3, delay: 0.06 });
+  vibrate([0, 25, 40, 60]);
 }
 
 // 大勝利
@@ -440,20 +617,11 @@ export function sfxVictory() {
 
 // 失敗/全滅 — 下行哀鳴 + 低頻衰退
 export function sfxDefeat() {
-  const c = ctx(); if (!c) return;
-  const t = c.currentTime;
-  [[392,0],[311,0.22],[261,0.44],[196,0.7]].forEach(([freq, d]) => {
-    const n = c.createOscillator(); const g = c.createGain();
-    n.type = "sine";
-    n.frequency.setValueAtTime(freq, t + d);
-    n.frequency.linearRampToValueAtTime(freq * 0.82, t + d + 0.2);
-    g.gain.setValueAtTime(0.32, t + d);
-    g.gain.exponentialRampToValueAtTime(0.001, t + d + 0.25);
-    n.connect(g); g.connect(c.destination);
-    n.start(t + d); n.stop(t + d + 0.28);
-  });
-  distTone(100, 50, 0.8, 0.18, 0.2);
-  vibrate([0, 80, 100, 120]);
+  // 失敗：小三和弦下行 + 悶掉的 impact（cutoff 很低）＋長 sub → 沉下去的感覺
+  notes([[392.0, 0], [311.1, 0.2], [261.6, 0.4], [196.0, 0.62, 0.7]], { gain: 0.14, send: 0.34 });
+  impact({ dur: 0.5, cut0: 1400, cut1: 110, gain: 0.24, delay: 0.02, send: 0.26 });
+  sub({ freq: 44, dur: 0.7, gain: 0.44, delay: 0.5 });
+  vibrate([0, 90, 60, 140]);
 }
 
 // 怪物嘶吼 — WaveShaper 失真低頻
@@ -465,26 +633,22 @@ export function sfxZombieRoar() {
 
 // 金幣掉落 — 叮鈴叮鈴
 export function sfxCoinDrop() {
-  const c = ctx(); if (!c) return;
-  const t = c.currentTime;
-  [1200, 1600, 2000, 1600, 1200].forEach((freq, i) => {
-    const n = c.createOscillator(); const g = c.createGain();
-    n.type = "triangle"; n.frequency.value = freq;
-    const st = t + i * 0.06;
-    g.gain.setValueAtTime(0.22, st);
-    g.gain.exponentialRampToValueAtTime(0.001, st + 0.18);
-    n.connect(g); g.connect(c.destination);
-    n.start(st); n.stop(st + 0.2);
+  // 金幣：五顆高頻 pluck 左右散開，模擬硬幣彈跳（有 pan 才像散落而不是一坨）
+  [1568, 2093, 1760, 2349, 1976].forEach((f, i) => {
+    pluck({ freq: f, dur: 0.09, gain: 0.1, detune: 6, cut0: 9000, cut1: 3000,
+      delay: i * 0.055, pan: (i % 2 ? 1 : -1) * (0.1 + i * 0.05), send: 0.26 });
   });
-  vibrate([0, 15, 20]);
+  air({ dur: 0.22, gain: 0.05, hp: 6000, delay: 0.05, send: 0.3 });
+  vibrate([0, 12, 25, 12]);
 }
 
 // 商店購買 — 確認三音
 export function sfxShopBuy() {
-  tone(440, 0.08, "sine",     0.2,  0);
-  tone(660, 0.08, "sine",     0.2,  0.08);
-  tone(880, 0.22, "triangle", 0.24, 0.16);
-  vibrate([0, 20, 30, 40]);
+  // 購買：收銀機的「叮」＋紙袋感的短 impact
+  pluck({ freq: 1318.5, dur: 0.1, gain: 0.12, cut0: 9000, cut1: 3500, send: 0.24 });
+  pluck({ freq: 1760, dur: 0.14, gain: 0.1, delay: 0.06, cut0: 9000, cut1: 4000, send: 0.28 });
+  impact({ dur: 0.1, cut0: 2200, cut1: 500, gain: 0.12, delay: 0.02, send: 0.1 });
+  vibrate([0, 18, 30, 18]);
 }
 
 // 地下城開門 — 低頻嗡嗡 + 鏈條叮
@@ -498,10 +662,10 @@ export function sfxDoorOpen() {
 
 // 路線確認 — 清脆雙音選擇
 export function sfxPathSelect() {
-  tone(660,  0.1, "triangle", 0.2, 0);
-  tone(880,  0.1, "triangle", 0.2, 0.1);
-  tone(1100, 0.2, "sine",     0.18, 0.2);
-  vibrate([0, 15, 25]);
+  // 選定/接受：確認感來自「音高瞬降的 punch」，比單純的高音 beep 有份量
+  punch({ freq: 520, drop: 0.62, dur: 0.14, gain: 0.2, type: 'triangle', send: 0.14 });
+  pluck({ freq: 784, dur: 0.16, gain: 0.11, delay: 0.05, cut0: 6000, cut1: 1600, send: 0.22 });
+  vibrate([0, 20, 30]);
 }
 
 // 進場戰鬥 — 緊張鼓點 + 張力上升（戰前氣氛）
