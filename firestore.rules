@@ -543,6 +543,14 @@ service cloud.firestore {
       allow read, write: if isLoggedIn();
     }
 
+    // guildTeamRooms：公會組隊遠征的房間（2026-07-26）。
+    // 房間是共享的即時狀態——成員要能交箭、房主要能推進回合、任何人要能加入/離開，
+    // 所以跟其他組隊房（partyRooms／villageBoardRooms）採同一套：登入者可讀寫。
+    // 房間裡沒有經濟資料；獎勵一律由各人自己的 guildProfiles 結算（那份只有本人能寫）。
+    match /guildTeamRooms/{roomId} {
+      allow read, write: if isLoggedIn();
+    }
+
     // worldBossHistory：歷史紀錄，登入者可讀，管理員可寫
     match /worldBossHistory/{docId} {
       allow read: if isLoggedIn();

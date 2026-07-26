@@ -5,6 +5,34 @@
 
 ---
 
+## 2026-07-26（公會組隊遠征：最多 4 人打同一張委託）
+
+**回合順序（作者拍板）**：隊友A 射完 → 隊友B 射完 → 貓貓支援 → 怪物移動或攻擊 → 下一回合。
+由 `domain/teamExpeditionFlow.processTeamRound` 保證，**有測試鎖住**（15 條）。
+
+**架構**
+- `domain/teamExpeditionFlow.js`（純函數）：怪物**全隊共享**，但 HP／補給／六維／貓／射擊表現**每人各自一份**。
+  - 為什麼不改單人版：單人狀態機只有一個 `hp`/`guildStats`/`supplies`，要支援多人得把三樣都改成 map＝整支重寫，還會讓單人流程背上多人的複雜度。**分兩支、共用箭傷公式**（`arrowDamage` 已 export）最乾淨。
+  - `partyHpScale`：怪物 HP 隨人數放大，但**加得比人數少**（1 人 1.0 → 4 人 2.8，不是 4.0）。組隊的獎勵是**效率**，不是更難。
+  - `memberSettleState`：把組隊狀態「投影」成單人形狀，讓 `settleExpedition` 原封不動就能用——每人用**自己的**命中率與 LUK 結算，同一場戰鬥裡射得準的人拿得比較好。
+- `db/guildTeamDb.js`：`guildTeamRooms/{roomId}`（code／status／contract／battle／loadouts／submits／claims／seq）。
+- `ui/GuildTeamLobby.jsx`：開房／房號加入／各自備包（只調食水，六維與貓沿用自己的存檔）／房主出發。
+- `ui/GuildTeamBattle.jsx`：共享戰場、我方小隊站位、回合摘要。
+
+**規則設計**
+- 個人 HP 歸零＝`down`（不能再射，但**全隊繼續**）；**全員 down 才失敗**。
+- 已倒地的人送出的箭一律忽略（連射擊表現都不算）。
+- 委託額度**只算房主那張**——鼓勵揪人，隊員不消耗自己的每日委託。
+
+**踩過的坑全部預先套用**
+- 交箭／領獎的寫入**自動重試**（`retryWrite`）：一次網路抖動就會讓全隊卡住等他（地下城 `confirmNonCombatRoom` 就是這樣，房主只能按強制推進）。
+- 房間快照的錯誤回呼**不回 null**，暫時斷線不會把人踢出房間。
+- **不做逐箭動畫時間軸**：多人是同時射的，硬要照 log 逐格播會讓所有人卡在動畫上等彼此（貓貓村就是這樣卡死）。改成「回合摘要」，結果一到就顯示。
+- 房主端**全員交齊自動推進**（不用手動按），卡超過 20 秒才顯示「強制推進」。
+- `partyCats` 的計算搬到 early return **之前**——組隊 handler 會用到它，放在後面會變成依賴渲染順序的 TDZ 陷阱。
+
+⚠️ **要手動貼 Firestore 規則到 Console**（CLI 會 403）：`match /guildTeamRooms/{roomId} { allow read, write: if isLoggedIn(); }`。已寫進 repo 的 `firestore.rules`。**沒貼的話開房會 permission-denied**。
+
 ## 2026-07-26（讀寫量稽核第三輪：把剩下沒查的全查完）
 
 **① 世界王的扇出放大（本輪最大一筆）**

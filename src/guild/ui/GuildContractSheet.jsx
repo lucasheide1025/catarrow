@@ -8,7 +8,7 @@ import { paperBg, MonsterArt } from "./GuildArt";
 
 const chip = { fontSize: 10, fontWeight: 800, borderRadius: 6, padding: "3px 7px", whiteSpace: "nowrap" };
 
-export default function GuildContractSheet({ contract: c, profile, done, onAccept, onClose }) {
+export default function GuildContractSheet({ contract: c, profile, done, onAccept, onTeam, onClose }) {
   const locked = !canAcceptDanger(profile.rep, c.danger);
   const need = repNeededForDanger(profile.rep, c.danger);
   const rw = contractRewardPreview(c);
@@ -113,8 +113,18 @@ export default function GuildContractSheet({ contract: c, profile, done, onAccep
           style={{ marginTop: 14, width: "100%", padding: "13px 0", borderRadius: 10, fontWeight: 900, fontSize: 15, color: "#fff", border: "none",
             background: done ? "#57534e" : locked ? "#6b6b6b" : "linear-gradient(135deg,#b45309,#7c2d12)",
             cursor: locked || done ? "not-allowed" : "pointer", boxShadow: locked || done ? "none" : "0 4px 12px rgba(0,0,0,.4)" }}>
-          {done ? "✓ 今日已結案" : locked ? `🔒 階級不足（還差 ${need} 聲望）` : "📝 接下這張委託"}
+          {done ? "✓ 今日已結案" : locked ? `🔒 階級不足（還差 ${need} 聲望）` : "📝 一個人去（單人）"}
         </button>
+
+        {/* 組隊：帶同一張委託開房，最多 4 人。委託額度只算房主這張 */}
+        {onTeam && (
+          <button type="button" disabled={locked || done} onClick={() => { sfxPathSelect(); onTeam(c); }}
+            style={{ marginTop: 8, width: "100%", padding: "12px 0", borderRadius: 10, fontWeight: 900, fontSize: 14, color: "#fff", border: "none",
+              background: done ? "#57534e" : locked ? "#6b6b6b" : "linear-gradient(135deg,#15803d,#166534)",
+              cursor: locked || done ? "not-allowed" : "pointer", boxShadow: locked || done ? "none" : "0 4px 12px rgba(0,0,0,.4)" }}>
+            🤝 揪人一起打（最多 4 人）
+          </button>
+        )}
       </div>
     </div>
   );

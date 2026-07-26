@@ -15,7 +15,8 @@ function cloneWaveMonsters(wave) {
 }
 
 // 公會箭傷公式（重用「分數×攻擊 − 防禦」概念，獨立於主線 damage.js 呼叫）
-function arrowDamage(score, atk, def, crit) {
+// export：組隊版狀態機（teamExpeditionFlow）要用同一條公式，單人/組隊的手感才會一致。
+export function arrowDamage(score, atk, def, crit) {
   const base = Math.max(1, Math.round(atk * (0.5 + (score || 0) / 11) - def * 0.5));
   return crit ? Math.round(base * 1.5) : base;
 }

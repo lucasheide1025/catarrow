@@ -14,6 +14,14 @@ import { addRoundArrows } from "../lib/db";
 import { nextRankInfo, repToRank } from "./domain/guildRank";
 import { unlockAudio, sfxLevelUp, sfxCoinDrop, sfxOpenChest } from "../lib/sound";
 import { rollDailyContracts, contractsStateFor, todayKey } from "./domain/guildContracts";
+import {
+  createGuildTeamRoom, joinGuildTeamRoom, setGuildTeamLoadout, unreadyGuildTeamMember,
+  startGuildTeamExpedition, submitGuildTeamShots, commitGuildTeamRound,
+  markGuildTeamClaimed, leaveGuildTeamRoom, subscribeGuildTeamRoom,
+} from "./db/guildTeamDb";
+import {
+  createTeamState, processTeamRound, memberSettleState, scaleExpeditionForParty,
+} from "./domain/teamExpeditionFlow";
 import { loadGuildProfile, saveGuildProfileDebounced, flushGuildSave, grantExpeditionRewards, buyGuildShopItem, sellGuildJunk } from "./db/guildDb";
 import { equipDisplayName, GRADE_META } from "./data/guildEquipCatalog";
 import GuildBattle from "./ui/GuildBattle";
@@ -21,6 +29,8 @@ import { fieldBg, bgLayer, rankBadge, junkArt, ArtOrEmoji, HeroArt, CatArt } fro
 import GuildBoard from "./ui/GuildBoard";
 import GuildContractSheet from "./ui/GuildContractSheet";
 import GuildLoadout from "./ui/GuildLoadout";
+import GuildTeamLobby from "./ui/GuildTeamLobby";
+import GuildTeamBattle from "./ui/GuildTeamBattle";
 import GuildStash from "./ui/GuildStash";
 import GuildShop from "./ui/GuildShop";
 import GuildVault from "./ui/GuildVault";
@@ -55,6 +65,11 @@ export default function GuildTestApp({ onBack, onLegacy }) {
   const [rankUp, setRankUp] = useState(null);    // 這趟升階了 → 顯示橫幅
   const [sheet, setSheet] = useState(null);      // 正在看詳情的委託（點小卡才開）
   const grantedRef = useRef(null);               // 一趟只請領一次
+  // ── 組隊遠征 ──────────────────────────────────────────────
+  const [teamRoomId, setTeamRoomId] = useState(null);
+  const [teamRoom, setTeamRoom] = useState(null);
+  const [teamBusy, setTeamBusy] = useState(false);
+  const teamCommitRef = useRef(0);               // 房主推進的防重複（同一 seq 只推一次）
 
   // Web Audio 需要使用者手勢才能出聲；進公會就先解鎖，第一個音效才不會被吃掉
   useEffect(() => { unlockAudio(); }, []);
@@ -120,6 +135,12 @@ export default function GuildTestApp({ onBack, onLegacy }) {
   const backToBoard = () => {
     setResult(null); setLoot(null); setGrantMsg(""); setContract(null); setRun(null); setRankUp(null); setPhase("board");
   };
+  // 組隊：帶這張委託進等待室（開房前先記住委託，開房那步才真的寫 Firestore）
+  const startTeamFrom = c => {
+    setSheet(null);
+    setContract(c); setRun(null); setResult(null); setLoot(null); setGrantMsg("");
+    setTeamRoomId(null); setTeamRoom(null); setPhase("team");
+  };
   const acceptContract = c => {
     setSheet(null);
     setContract(c); setRun(newRun(c)); setResult(null); setLoot(null); setGrantMsg(""); setPhase("loadout");
@@ -146,6 +167,121 @@ export default function GuildTestApp({ onBack, onLegacy }) {
     };
   }, []);
 
+  // 實際出戰的貓：存檔沒選過 → 自動帶最強的前 N 隻（新玩家不必先進設定）
+  // ⚠️ 這段要放在「載入中 early return」**之前**：組隊的 handler 會用到它，
+  //    放在後面會變成依賴渲染順序的 TDZ 陷阱。
+  const partyCats = gp ? pickPartyCats(catRoster, gp.partyCats) : [];
+  const partyCatIds = partyCats.map(c => c.id);
+
+  // ── 組隊遠征：房間訂閱與操作 ──────────────────────────────
+  useEffect(() => {
+    if (!teamRoomId) { setTeamRoom(null); return; }
+    return subscribeGuildTeamRoom(teamRoomId, r => {
+      if (r === null) { setTeamRoomId(null); setTeamRoom(null); setPhase("board"); return; }  // 房間被解散
+      setTeamRoom(r);
+    });
+  }, [teamRoomId]);
+
+  const teamStats = useMemo(() => (gp ? calcGuildExpeditionStats(member, gp.equipped) : null), [member, gp]);
+  const isTeamHost = !!teamRoom && teamRoom.hostId === memberId;
+
+  const teamAct = async fn => {
+    setTeamBusy(true);
+    try { return await fn(); } finally { setTeamBusy(false); }
+  };
+
+  const teamCreate = () => teamAct(async () => {
+    if (!contract) return { ok: false, reason: "先從委託板選一張委託" };
+    const res = await createGuildTeamRoom({ hostId: memberId, hostName: member?.nickname || member?.name || "房主", contract });
+    if (res.ok) { setTeamRoomId(res.roomId); setPhase("team"); }
+    return res;
+  });
+
+  const teamJoin = code => teamAct(async () => {
+    const res = await joinGuildTeamRoom(code, memberId, member?.nickname || member?.name || "隊員");
+    if (res.ok) { setTeamRoomId(res.roomId); setPhase("team"); }
+    return res;
+  });
+
+  // 備包完成：六維/貓/箭數直接沿用自己的存檔，只有食水是這一場現場決定的
+  const teamReady = sup => teamAct(() => setGuildTeamLoadout(teamRoomId, memberId, {
+    guildStats: teamStats,
+    supplies: { food: sup.food, water: sup.water },
+    cats: partyCats.map(c => ({ id: c.id, name: c.name, icon: c.icon || null, atk: c.atk, def: c.def })),
+    arrowsPerRound: gp.arrowsPerRound,
+    name: member?.nickname || member?.name || "隊員",
+  }));
+
+  const teamUnready = () => teamAct(() => unreadyGuildTeamMember(teamRoomId, memberId));
+
+  const teamDepart = () => teamAct(async () => {
+    const ids = Object.keys(teamRoom?.members || {});
+    const roster = ids.map(id => {
+      const lo = teamRoom.loadouts?.[id] || {};
+      return {
+        id,
+        name: lo.name || teamRoom.members[id]?.name || "隊員",
+        guildStats: lo.guildStats,
+        supplies: lo.supplies,
+        cats: lo.cats || [],
+        arrowsPerRound: lo.arrowsPerRound,
+      };
+    });
+    if (roster.some(r => !r.guildStats)) return { ok: false, reason: "有人還沒備包完成" };
+    // 委託 → 遠征（怪物依人數放大血量，見 partyHpScale）
+    const exp = scaleExpeditionForParty(
+      rollExpedition({ id: teamRoom.contract.id, danger: teamRoom.contract.danger, family: teamRoom.contract.family }),
+      roster.length,
+    );
+    const battle = createTeamState(exp, roster, { alreadyScaled: true });
+    const res = await startGuildTeamExpedition(teamRoomId, memberId, battle);
+    if (res.ok) { setContract(teamRoom.contract); setRun({ exp, key: `team_${teamRoomId}_${Date.now()}` }); setPhase("teamBattle"); }
+    return res;
+  });
+
+  const teamSubmit = shots => {
+    recordArrows(shots.length);                    // 公會的箭也算進今日/終身箭數
+    return submitGuildTeamShots(teamRoomId, memberId, teamRoom?.seq || 0, shots);
+  };
+
+  // 房主推進一回合：全員交齊（或強制）→ processTeamRound → 寫回房間
+  const teamCommit = ({ force = false } = {}) => teamAct(async () => {
+    const battle = teamRoom?.battle;
+    const seq = teamRoom?.seq || 0;
+    if (!battle || battle.status !== "fighting") return { ok: true };
+    if (teamCommitRef.current === seq) return { ok: true };   // 這個 seq 已經推過了
+    const shotsByMember = {};
+    for (const [id, sub] of Object.entries(teamRoom.submits || {})) {
+      if (sub?.seq === seq) shotsByMember[id] = sub.shots || [];
+    }
+    if (!force) {
+      const pending = (battle.order || []).filter(id => battle.members[id]?.status === "alive" && !shotsByMember[id]);
+      if (pending.length) return { ok: false, reason: "還有人沒送出" };
+    }
+    teamCommitRef.current = seq;
+    const next = processTeamRound(battle, shotsByMember);
+    const res = await commitGuildTeamRound(teamRoomId, memberId, next, seq + 1);
+    if (!res.ok) teamCommitRef.current = 0;        // 寫失敗 → 讓它可以再試
+    return res;
+  });
+
+  const teamLeave = () => teamAct(async () => {
+    await leaveGuildTeamRoom(teamRoomId, memberId);
+    setTeamRoomId(null); setTeamRoom(null); setPhase("board");
+    return { ok: true };
+  });
+
+  // 戰鬥結束 → 把「自己那份」投影成單人形狀，走既有的結算頁與發獎路徑
+  useEffect(() => {
+    const battle = teamRoom?.battle;
+    if (!battle || battle.status === "fighting" || !memberId) return;
+    if (teamRoom.claims?.[memberId]) return;
+    const mine = memberSettleState(battle, memberId);
+    if (!mine) return;
+    markGuildTeamClaimed(teamRoomId, memberId);
+    setResult(mine);
+  }, [teamRoom?.battle?.status, teamRoom?.seq]); // eslint-disable-line
+
   const sellJunk = async (sellMap, valuationMult) => {
     const res = await sellGuildJunk(memberId, gp, sellMap, valuationMult);
     if (res.ok) setGp(res.profile);
@@ -171,13 +307,34 @@ export default function GuildTestApp({ onBack, onLegacy }) {
   const rankInfo = nextRankInfo(gp.rep);
   const rank = rankInfo.current;
 
-  // 實際出戰的貓：存檔沒選過 → 自動帶最強的前 N 隻（新玩家不必先進設定）
-  const partyCats = pickPartyCats(catRoster, gp.partyCats);
-  const partyCatIds = partyCats.map(c => c.id);
   const toggleCat = catId => changeProfile({ ...gp, partyCats: togglePartyCat(partyCatIds, catId) });
 
   const doneIds = contractsStateFor(gp, dateKey).done;
   const closePanel = () => setPhase(contract ? "loadout" : "board");
+
+  // ── 組隊遠征畫面 ──────────────────────────────────────────
+  if (phase === "team") {
+    return (
+      <GuildTeamLobby
+        room={teamRoom} myId={memberId} isHost={isTeamHost} contract={contract}
+        stats={teamStats || {}} partyCats={partyCats} arrowsPerRound={gp.arrowsPerRound}
+        busy={teamBusy}
+        onCreate={teamCreate} onJoin={teamJoin} onReady={teamReady} onUnready={teamUnready}
+        onDepart={teamDepart} onLeave={teamLeave}
+        onClose={() => { setTeamRoomId(null); setPhase("board"); }}
+      />
+    );
+  }
+
+  if (phase === "teamBattle" && teamRoom?.battle && !result) {
+    return (
+      <GuildTeamBattle
+        room={teamRoom} battle={teamRoom.battle} myId={memberId} isHost={isTeamHost}
+        arrowsPerRound={teamRoom.battle.members?.[memberId]?.arrowsPerRound || gp.arrowsPerRound}
+        onSubmitShots={teamSubmit} onCommitRound={teamCommit} onLeave={teamLeave}
+      />
+    );
+  }
 
   if (phase === "stash") {
     return <GuildStash member={member} profile={gp} onChange={changeProfile} onClose={closePanel} />;
@@ -203,10 +360,11 @@ export default function GuildTestApp({ onBack, onLegacy }) {
       <>
         <GuildBoard profile={gp} contracts={dailyContracts} doneIds={doneIds}
           onOpen={setSheet} onOpenStash={() => setPhase("stash")} onOpenShop={() => setPhase("shop")}
-          onOpenVault={() => setPhase("vault")} onOpenLicense={() => setPhase("license")} onBack={onBack} onLegacy={onLegacy} />
+          onOpenVault={() => setPhase("vault")} onOpenLicense={() => setPhase("license")}
+          onOpenTeam={() => { setContract(null); setTeamRoomId(null); setPhase("team"); }} onBack={onBack} onLegacy={onLegacy} />
         {sheet && (
           <GuildContractSheet contract={sheet} profile={gp} done={doneIds.includes(sheet.id)}
-            onAccept={acceptContract} onClose={() => setSheet(null)} />
+            onAccept={acceptContract} onTeam={startTeamFrom} onClose={() => setSheet(null)} />
         )}
       </>
     );
@@ -341,7 +499,8 @@ export default function GuildTestApp({ onBack, onLegacy }) {
     return (
       <GuildBoard profile={gp} contracts={dailyContracts} doneIds={doneIds}
         onOpen={setSheet} onOpenStash={() => setPhase("stash")} onOpenShop={() => setPhase("shop")}
-        onOpenVault={() => setPhase("vault")} onOpenLicense={() => setPhase("license")} onBack={onBack} onLegacy={onLegacy} />
+        onOpenVault={() => setPhase("vault")} onOpenLicense={() => setPhase("license")}
+          onOpenTeam={() => { setContract(null); setTeamRoomId(null); setPhase("team"); }} onBack={onBack} onLegacy={onLegacy} />
     );
   }
 

@@ -24,7 +24,7 @@ const paperStyle = {
 };
 const dangerColor = d => (d >= 5 ? "#7f1d1d" : d >= 3 ? "#b45309" : "#3f6212");
 
-export default function GuildBoard({ profile, contracts, doneIds = [], onOpen, onOpenStash, onOpenShop, onOpenVault, onOpenLicense, onBack, onLegacy }) {
+export default function GuildBoard({ profile, contracts, doneIds = [], onOpen, onOpenStash, onOpenShop, onOpenVault, onOpenLicense, onOpenTeam, onBack, onLegacy }) {
   const rankInfo = nextRankInfo(profile.rep);
   const rank = rankInfo.current;
   const { maxDanger } = rankUnlocks(profile.rep);
@@ -80,6 +80,10 @@ export default function GuildBoard({ profile, contracts, doneIds = [], onOpen, o
           </button>
           <button type="button" onClick={() => { sfxOpen(); onOpenLicense?.(); }} style={{ ...iconBtn, background: "rgba(30,58,95,.85)" }}>
             🎫 冒險者證
+          </button>
+          {/* 組隊：這裡進去可以「輸入房號加入別人」；要當房主開房請從委託小卡點進去 */}
+          <button type="button" onClick={() => { sfxOpen(); onOpenTeam?.(); }} style={{ ...iconBtn, background: "rgba(21,128,61,.85)" }}>
+            🤝 組隊
           </button>
         </div>
       </div>
