@@ -4,6 +4,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { updateMember, getCertRecords, subscribeMaterials, upgradeEquipSlot } from "../../lib/db";
 import { computeDexStats } from "../../lib/achievementDex";
 import { archerLevelFromXP, archerXPProgress, archerLevelBonus, MAX_ARCHER_LEVEL, TOTAL_XP_TO_MAX, getLevelStyle } from "../../lib/archerLevel";
+import { useGuildRank } from "../../guild/useGuildRank";
 import { getCohort, cohortLabel } from "../../lib/cohort";
 import { calcAge, formatArcherNo, BOW_TYPES, getCertLevel, certLevelStyle, EQUIP_SLOT_DEFS, EQUIP_GRADES, getEquipSlotBonus } from "../../lib/constants";
 import { KING_SEAL_BREAKTHROUGH_COST, EQUIP_UPGRADE_COST } from "../../lib/equipData";
@@ -107,6 +108,8 @@ export default function MemberProfile({
   const [upgradingSlot, setUpgradingSlot] = useState(false);
   const [upgradeError, setUpgradeError] = useState("");
   const [specializations, setSpecializations] = useState(null);
+  // 冒險者公會階級（新公會存檔）。放在其他 hook 旁邊，避免掉到條件式 return 後面。
+  const guildRank = useGuildRank(profile?.id);
 
   useEffect(() => {
     if (profile?.id) {
@@ -941,6 +944,32 @@ export default function MemberProfile({
 
     <div className="text-[10px] text-slate-500 mt-2.5 text-center">
       💡 等級加成規則：每一級 +5 HP，每 5 級增加 1 點 ATK 與 DEF！
+    </div>
+  </Card>
+
+  {/* ── 冒險者公會階級（讀新公會存檔 guildProfiles.rep，非舊的 adventurerXP）── */}
+  <Card className="p-4 border border-white/5 animate-fade-in-up delay-225" style={{ background:"rgba(15,23,42,0.55)" }}>
+    <ST>🏛️ 冒險者公會</ST>
+    <div className="flex items-center justify-between mb-2 mt-1">
+      <div>
+        <div style={{ fontSize:16, fontWeight:900, color:guildRank.current.color }}>
+          {guildRank.current.icon} {guildRank.current.name}
+        </div>
+        <div className="text-slate-400 text-[10px] mt-0.5">
+          {guildRank.registered ? `聲望 ${guildRank.rep}　已完成 ${guildRank.expeditions} 次遠征` : "尚未踏進公會——接一張委託就會有紀錄"}
+        </div>
+      </div>
+      <div className="text-right text-[11px] font-bold" style={{ color:"#a5b4fc" }}>
+        可接委託 ☠️×{guildRank.current.maxDanger}
+      </div>
+    </div>
+    <div className="relative h-3 w-full bg-slate-950/70 rounded-full border border-white/10 overflow-hidden">
+      <div className="absolute left-0 top-0 bottom-0 transition-all duration-700"
+        style={{ width:`${guildRank.progressPct}%`, background:"linear-gradient(90deg,#fbbf24,#f59e0b)" }} />
+    </div>
+    <div className="text-[10px] text-slate-500 mt-2 text-center">
+      {guildRank.next ? `距 ${guildRank.next.name} 還差 ${guildRank.need} 聲望` : "已達頂階 👑"}
+      　·　階級只解鎖「能接多難的委託」與商店層級，**不含任何戰力加成**
     </div>
   </Card>
 

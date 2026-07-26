@@ -11,6 +11,17 @@
 // ⚠️ 這裡是唯一的數值來源，調價只改這張表。
 // ─────────────────────────────────────────────────────────────
 import { GRADE_META, GUILD_EQUIP_ARCHETYPES } from "./guildEquipCatalog";
+import { EXPANSION_MATERIALS } from "../../lib/monsterExpansionCatalog";
+
+// ── 分店（2026-07-26 作者要求）────────────────────────────
+// 商品太多了，一條長列表捲不完 → 分成三家店，各自再有自己的分頁。
+export const SHOP_SECTIONS = Object.freeze([
+  { id: "weapon", label: "武器商店", icon: "🏹", hint: "弓與箭・靠打出來的高階款這裡沒有" },
+  { id: "armor", label: "防具商店", icon: "🛡️", hint: "護具・箭袋・藥水袋" },
+  { id: "material", label: "材料商店", icon: "📦", hint: "七大族素材・不限量・打怪缺什麼就補什麼" },
+]);
+// 槽位 → 分店
+const SLOT_SECTION = { bow: "weapon", arrow: "weapon", armor: "armor", quiver: "armor", potionPouch: "armor" };
 
 export const SHOP_TIER_META = Object.freeze({
   1: { label: "基礎貨架", hint: "見習就能買・常見款式" },
@@ -22,35 +33,40 @@ export const SHOP_TIER_META = Object.freeze({
 export const SHOP_MAX_GRADE = "rare";
 const SELLABLE_GRADES = ["common", "rare"];
 
-const MAT_FAMILIES = ["ghost", "mountain", "insect", "workplace", "exam", "temple"];
-// 材料是商店的主力（作者：讓玩家自由採購缺的素材，補打怪賺不夠的洞）。
-// 只賣 t1~t3（高階材料靠打），但**每族每階都有單買與 5 入包**，5 入包打 8 折。
-const MAT_TIER_PRICE = { 1: 8, 2: 18, 3: 40 };
-const MAT_TIER_SHELF = { 1: 1, 2: 2, 3: 3 };
+// ── 材料商店（2026-07-26 重做）────────────────────────────
+// 舊版只賣「舊六族材料鏈」的 t1~t3（`<族>_m<1~3>`），但玩家實際掉的是**擴充材料**
+// （`mat_<族>_t<N>_<role>`，252 種），所以商店貨架跟需求對不上。
+// 作者拍板：**七大族全開、除了小王/大王素材以外都買得到、不限量**。
+//   → 篩 `kind === "normal"`（一般怪素材，126 種）；miniBoss/boss 素材只能靠打。
+//   → **不做階級鎖**（tier 一律 1），高階材料用「價格」當門檻就好。
+export const MAT_FAMILY_META = Object.freeze({
+  ghost:     { label: "鬼怪", icon: "👻" },
+  mountain:  { label: "山林", icon: "🏔️" },
+  insect:    { label: "毒蟲", icon: "🐛" },
+  workplace: { label: "職場", icon: "💼" },
+  exam:      { label: "考試", icon: "📚" },
+  temple:    { label: "神殿", icon: "⛪" },
+  treasure:  { label: "寶藏", icon: "💰" },
+});
+export const MAT_FAMILIES = Object.keys(MAT_FAMILY_META);
+
+// 每階價格拉開差距（T6 一顆 320 CAT幣＝一趟 T5 遠征的 2.5 倍），高階自然買不多
+const MAT_TIER_PRICE = { 1: 8, 2: 18, 3: 40, 4: 85, 5: 170, 6: 320 };
 const BUNDLE_QTY = 5;
 const BUNDLE_DISCOUNT = 0.8;
 
-const materialItems = MAT_FAMILIES.flatMap(family =>
-  [1, 2, 3].flatMap(t => [
-    {
-      id: `mat_${family}_m${t}`,
-      kind: "material",
-      tier: MAT_TIER_SHELF[t],
-      costCat: MAT_TIER_PRICE[t],
-      materialId: `${family}_m${t}`,
-      qty: 1,
-    },
-    {
-      id: `mat_${family}_m${t}_x${BUNDLE_QTY}`,
-      kind: "material",
-      tier: MAT_TIER_SHELF[t],
-      costCat: Math.round(MAT_TIER_PRICE[t] * BUNDLE_QTY * BUNDLE_DISCOUNT),
-      materialId: `${family}_m${t}`,
-      qty: BUNDLE_QTY,
-      bundle: true,
-    },
-  ]),
-);
+export const SHOP_MATERIALS = EXPANSION_MATERIALS.filter(m => m.kind === "normal");
+// 查表放公會這邊自己建（主線目錄不動，維持隔離）
+export const SHOP_MATERIAL_BY_ID = Object.freeze(Object.fromEntries(EXPANSION_MATERIALS.map(m => [m.id, m])));
+
+const materialItems = SHOP_MATERIALS.flatMap(m => {
+  const unit = MAT_TIER_PRICE[m.tierIndex] || 8;
+  const base = { kind: "material", section: "material", tier: 1, materialId: m.id, family: m.family, matTier: m.tierIndex };
+  return [
+    { ...base, id: `buy_${m.id}`, costCat: unit, qty: 1 },
+    { ...base, id: `buy_${m.id}_x${BUNDLE_QTY}`, costCat: Math.round(unit * BUNDLE_QTY * BUNDLE_DISCOUNT), qty: BUNDLE_QTY, bundle: true },
+  ];
+});
 
 // 款式分層：常見款（新手好懂）→ 進階款（流派分明）
 const COMMON_STYLE = ["wood_bow", "iron_bow", "bamboo_bow", "wood_arrow", "sharp_arrow", "feather_arrow",
@@ -72,6 +88,7 @@ function priceOf(archetypeId, grade) {
 const equipItem = (archetypeId, grade, shelf) => ({
   id: `eq_${archetypeId}_${grade}`,
   kind: "equip",
+  section: SLOT_SECTION[GUILD_EQUIP_ARCHETYPES[archetypeId]?.slot] || "armor",
   tier: shelf,
   costCat: priceOf(archetypeId, grade),
   archetypeId,
@@ -94,6 +111,11 @@ export function shopItemById(id) {
 // 這個階級（shopTier）買得到的貨
 export function shopItemsForTier(shopTier = 1) {
   return GUILD_SHOP_ITEMS.filter(i => i.tier <= shopTier);
+}
+
+// 分店取貨（UI 用）
+export function shopItemsOfSection(sectionId) {
+  return GUILD_SHOP_ITEMS.filter(i => i.section === sectionId);
 }
 
 // 商店天花板說明（UI 用）：讓玩家知道高階裝要靠打

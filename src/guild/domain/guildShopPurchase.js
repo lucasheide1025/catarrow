@@ -2,7 +2,7 @@
 // 公會商店購買的**純函數**：驗階級/CAT幣/倉庫，算出「新存檔 + 要發的材料」。
 // db 層只負責把結果寫進去（規則不進交易，才好測）。
 import { MATERIALS } from "../../lib/monsterMaterials";
-import { shopItemById } from "../data/guildShop";
+import { shopItemById, SHOP_MATERIAL_BY_ID } from "../data/guildShop";
 import { rankUnlocks } from "./guildRank";
 import { normalizeGuildProfile, GUILD_STASH_LIMIT } from "./guildRewards";
 
@@ -31,8 +31,10 @@ export function purchaseFromShop(profile, itemId, opts = {}) {
   }
 
   // material：扣 CAT幣，材料由 db 層寫進主線 materialInventory
-  const mat = MATERIALS.find(m => m.id === item.materialId);
+  // ⚠️ 兩套材料都要認：商店主力是**擴充材料**（mat_<族>_t<N>_<role>），
+  //    但舊六族鏈（<族>_m<N>）的商品 id 仍可能存在於舊存檔/舊連結。
+  const mat = SHOP_MATERIAL_BY_ID[item.materialId] || MATERIALS.find(m => m.id === item.materialId);
   if (!mat) return { ok: false, reason: "材料設定錯誤", profile: p, materials: [] };
-  const materials = Array.from({ length: item.qty || 1 }, () => ({ id: mat.id, name: mat.name, icon: mat.icon }));
+  const materials = Array.from({ length: item.qty || 1 }, () => ({ id: mat.id, name: mat.name, ...(mat.icon ? { icon: mat.icon } : {}) }));
   return { ok: true, spent: item.costCat, profile: { ...p, catCoins: p.catCoins - item.costCat }, materials };
 }

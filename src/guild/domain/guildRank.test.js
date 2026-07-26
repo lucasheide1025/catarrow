@@ -2,7 +2,8 @@
 import { GUILD_RANKS, repToRank, nextRankInfo, rankUnlocks, canAcceptDanger, repNeededForDanger } from "./guildRank";
 import { purchaseFromShop } from "./guildShopPurchase";
 import { emptyGuildProfile, GUILD_STASH_LIMIT } from "./guildRewards";
-import { shopItemById, shopItemsForTier, GUILD_SHOP_ITEMS, validateGuildShop } from "../data/guildShop";
+import { shopItemById, shopItemsForTier, GUILD_SHOP_ITEMS, validateGuildShop, SHOP_MATERIALS, MAT_FAMILIES } from "../data/guildShop";
+import { EXPANSION_MATERIALS } from "../../lib/monsterExpansionCatalog";
 
 describe("階級（聲望 → 解鎖，零戰力加成）", () => {
   test("階級表 rep 門檻遞增，且沒有任何數值加成欄位", () => {
@@ -76,28 +77,45 @@ describe("公會商店購買", () => {
     expect(shopItemById("eq_long_bow_fierce")).toBeNull();   // 舊的高階商品已移除
   });
 
-  test("材料是商店主力：每族每階都有單買與 5 入包（5 入更便宜）", () => {
+  test("材料商店：七族全開、每種都有單買與 5 入包（5 入更便宜）", () => {
     const mats = GUILD_SHOP_ITEMS.filter(i => i.kind === "material");
-    expect(mats.length).toBeGreaterThanOrEqual(36);          // 6 族 × 3 階 × (單買+5入)
-    const single = shopItemById("mat_ghost_m1");
-    const bundle = shopItemById("mat_ghost_m1_x5");
+    expect(mats.length).toBe(SHOP_MATERIALS.length * 2);       // 每種材料＝單買＋5入
+    expect(new Set(mats.map(i => i.family)).size).toBe(MAT_FAMILIES.length);  // 7 族
+    const single = shopItemById("buy_mat_ghost_t1_normal_a");
+    const bundle = shopItemById("buy_mat_ghost_t1_normal_a_x5");
     expect(bundle.qty).toBe(5);
     expect(bundle.costCat).toBeLessThan(single.costCat * 5);  // 有折扣
   });
 
+  test("材料商店只賣一般怪素材：小王/大王素材買不到", () => {
+    expect(SHOP_MATERIALS.every(m => m.kind === "normal")).toBe(true);
+    // 目錄裡確實有小王/大王素材，但不該出現在貨架上
+    const bossIds = EXPANSION_MATERIALS.filter(m => m.kind !== "normal").map(m => m.id);
+    expect(bossIds.length).toBeGreaterThan(0);
+    const onShelf = new Set(GUILD_SHOP_ITEMS.filter(i => i.kind === "material").map(i => i.materialId));
+    expect(bossIds.some(id => onShelf.has(id))).toBe(false);
+  });
+
+  test("材料不鎖階級：高階材料用價格當門檻（見習也買得到 T6）", () => {
+    const t6 = GUILD_SHOP_ITEMS.find(i => i.kind === "material" && i.matTier === 6);
+    expect(t6.tier).toBe(1);                                   // 貨架層級 1 = 不需升階
+    expect(t6.costCat).toBeGreaterThan(
+      GUILD_SHOP_ITEMS.find(i => i.kind === "material" && i.matTier === 1).costCat * 10);
+  });
+
   test("買 5 入包會拿到 5 個材料", () => {
-    const { ok, materials } = purchaseFromShop(rich(0), "mat_ghost_m1_x5");
+    const { ok, materials } = purchaseFromShop(rich(0), "buy_mat_ghost_t1_normal_a_x5");
     expect(ok).toBe(true);
     expect(materials).toHaveLength(5);
-    expect(materials.every(m => m.id === "ghost_m1")).toBe(true);
+    expect(materials.every(m => m.id === "mat_ghost_t1_normal_a")).toBe(true);
   });
 
   test("買材料：扣 CAT幣、回傳要寫進主線背包的材料", () => {
-    const { ok, profile, materials } = purchaseFromShop(rich(0), "mat_ghost_m1");
+    const { ok, profile, materials } = purchaseFromShop(rich(0), "buy_mat_ghost_t1_normal_a");
     expect(ok).toBe(true);
-    expect(profile.catCoins).toBe(1000 - shopItemById("mat_ghost_m1").costCat);
+    expect(profile.catCoins).toBe(1000 - shopItemById("buy_mat_ghost_t1_normal_a").costCat);
     expect(materials).toHaveLength(1);
-    expect(materials[0].id).toBe("ghost_m1");
+    expect(materials[0].id).toBe("mat_ghost_t1_normal_a");
     expect(materials[0].name).toBeTruthy();
   });
 

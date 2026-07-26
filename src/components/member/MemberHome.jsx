@@ -5,7 +5,8 @@ import { computeDexStats } from "../../lib/achievementDex";
 import { getCohort, cohortLabel } from "../../lib/cohort";
 import { useAuth } from "../../hooks/useAuth";
 import { calcAge, formatArcherNo, fmtDT, BOW_TYPES, getCertLevel, COMP_TYPE_COLOR, certLevelStyle, EQUIP_SLOT_DEFS } from "../../lib/constants";
-import { levelFromXP, rankFromLevel } from "../../lib/adventurerSystem";
+import { levelFromXP } from "../../lib/adventurerSystem";
+import { useGuildRank } from "../../guild/useGuildRank";
 import { archerLevelFromXP, archerXPProgress, archerLevelBonus, MAX_ARCHER_LEVEL, getLevelStyle } from "../../lib/archerLevel";
 import { catLevelFromXP, catXPProgress } from "../../lib/catLevel";
 import { getBondLevel, calcCatEquipBonus, CAT_SKILL_GROUPS, CAT_TYPES } from "../../lib/catData";
@@ -161,7 +162,8 @@ export default function MemberHome({
 
   const currentTheme = CARD_THEMES.find(t => t.id === cardTheme) || CARD_THEMES[0];
   const archerLevel = archerLevelFromXP(profile?.archerXP || 0);
-  const adventurerLevel = levelFromXP(profile?.adventurerXP || 0);
+  const adventurerLevel = levelFromXP(profile?.adventurerXP || 0);   // 舊冒險者等級：成就/圖鑑仍在用
+  const guildRankInfo = useGuildRank(profile?.id);                   // 新公會：階級由聲望決定
 
   async function submitCardRequest() {
     setCardBusy(true); setCardMsg("");
@@ -200,7 +202,10 @@ export default function MemberHome({
               }}>
                 🏹 射手 Lv.{archerLevel}
               </span>
-              <span style={{ color:"#e0f2fe", fontSize:11, fontWeight:800, padding:"3px 8px", borderRadius:999, background:"rgba(8,47,73,.48)", border:"1px solid rgba(103,232,249,.2)" }}>冒險 Lv.{adventurerLevel}</span>
+              {/* 公會階級改讀新公會存檔（guildProfiles.rep），不再用舊的 adventurerXP 等級 */}
+              <span style={{ color:guildRankInfo.current.color, fontSize:11, fontWeight:900, padding:"3px 8px", borderRadius:999, background:"rgba(8,47,73,.48)", border:`1px solid ${guildRankInfo.current.color}44` }}>
+                {guildRankInfo.current.icon} {guildRankInfo.current.name}
+              </span>
             </div>
           </div>
           <button onClick={() => onPageChange("notifications")} aria-label="查看通知" style={{ position:"relative", width:38, height:38, borderRadius:10, border:"1px solid rgba(255,255,255,.2)", background:"rgba(15,23,42,.35)", color:"#fff", fontSize:18, cursor:"pointer" }}>
@@ -210,11 +215,14 @@ export default function MemberHome({
         </div>
         {(() => {
           const dex = computeDexStats({ member: profile, certification, certRecords, checkinCount: profile?.dailyQuestCount || 0, granted: dexGrants, physicalMax: dexConfig.physicalMax, pointMax: dexConfig.pointMax, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats });
-          const guildRank = rankFromLevel(adventurerLevel);
+          const guildRank = guildRankInfo.current;
           return <div style={{ position:"relative", display:"flex", gap:6, flexWrap:"wrap", marginTop:12 }}>
             <span style={{ fontSize:11, color:"#e0f2fe", fontWeight:800 }}>{formatArcherNo(profile?.archerNo)}　射齡 {calcAge(profile?.joinDate)}　{getCohort(profile?.joinDate) != null ? cohortLabel(getCohort(profile.joinDate)) : ""}</span>
             <span style={{ fontSize:11, color: certification?.level === "gold" ? "#fde68a" : "#bfdbfe", fontWeight:900 }}>🏅 {certification?.level === "gold" ? "金證" : certification?.level === "blue" ? "藍證" : "未認證"}</span>
-            <span style={{ fontSize:11, color:guildRank.color, fontWeight:900 }}>🏛️ 公會 Lv.{adventurerLevel}</span>
+            <span style={{ fontSize:11, color:guildRank.color, fontWeight:900 }}>
+              🏛️ 公會 {guildRank.name}　🏅{guildRankInfo.rep}
+              {guildRankInfo.next && <span style={{ color:"rgba(255,255,255,.45)", fontWeight:700 }}>（距{guildRankInfo.next.name} {guildRankInfo.need}）</span>}
+            </span>
             <span style={{ fontSize:11, color:"#fef3c7", fontWeight:900 }}>🎖️ 圖鑑 {dex.totalUnlocked}/{dex.totalAll}</span>
           </div>;
         })()}
@@ -776,9 +784,9 @@ export default function MemberHome({
                 <span style={{ fontSize:9, color:"rgba(255,255,255,0.4)" }}>王之印記</span>
               </div>
               <div style={{ display:"flex", flexDirection:"column", alignItems:"center", background:"rgba(45,212,191,0.1)", borderRadius:8, padding:"4px 10px", minWidth:54 }}>
-                <span style={{ fontSize:16 }}>🧭</span>
-                <span style={{ fontSize:11, fontWeight:700, color:"#5eead4" }}>Lv.{adventurerLevel}</span>
-                <span style={{ fontSize:9, color:"rgba(255,255,255,0.4)" }}>冒險者等級</span>
+                <span style={{ fontSize:16 }}>🏛️</span>
+                <span style={{ fontSize:11, fontWeight:700, color:guildRankInfo.current.color }}>{guildRankInfo.current.icon}{guildRankInfo.rep}</span>
+                <span style={{ fontSize:9, color:"rgba(255,255,255,0.4)" }}>公會聲望</span>
               </div>
             </div>
             {/* 收藏進度列 */}
