@@ -15,7 +15,7 @@
 //   ① 交箭寫入失敗會自動重試（在 guildTeamDb）
 //   ② 動畫有保險絲：算好的狀態先扣在手上，就算 timer 被背景分頁凍結也會在切回前景時對齊
 //   ③ 房主看得到「還在等誰」＋卡超過 20 秒可強制推進（不等斷線的人）
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { aliveTeamTargets, aliveMemberIds } from "../domain/teamExpeditionFlow";
 import {
   sfxTap, sfxArrowShoot, sfxArrowHit, sfxCritBoom, sfxMonsterDead, sfxCounter,
@@ -317,21 +317,59 @@ export default function GuildTeamBattle({
     return () => clearTimeout(t);
   }, [seq, battle?.status]);
 
-  // 房主：全員交齊就自動推進（不用手動按）
-  useEffect(() => {
-    if (!isHost || battle?.status !== "fighting" || !allSubmitted || busy) return;
-    const t = setTimeout(() => { commit(); }, 350);
-    return () => clearTimeout(t);
-  }, [isHost, allSubmitted, seq, battle?.status]); // eslint-disable-line
+  // ── 房主：全員交齊就自動推進 ─────────────────────────────────
+  //
+  // 🐛 2026-07-26 修死鎖：原本守衛寫成 `... || busy` 但 **`busy` 不在依賴陣列裡**。
+  //    死鎖過程：房主送出自己的箭 → setBusy(true) → Firestore 的本地寫入**立刻**觸發快照，
+  //    最後一位隊員的箭也在此期間抵達 → allSubmitted 變 true → effect 重跑 → busy 還是 true
+  //    → 直接 return。接著 setBusy(false) 時 effect **不會再跑**（busy 不是依賴）⇒ 永遠不推進。
+  //    離開再回來＝重新掛載，effect 才用 busy=false 重跑——正是作者看到的症狀。
+  //
+  // 修法有兩層，因為「靠一次 render 剛好對上」本身就太脆弱：
+  //   ① 觸發路徑**完全不看 React state**：用 ref 當 in-flight 鎖。重複推進本來就已經被
+  //      擋兩道（`teamCommitRef` 比對 seq ＋ 交易裡的 `if (d.seq >= nextSeq) return`），
+  //      所以 busy 對正確性毫無貢獻，只是 UI 用的。
+  //   ② 加**看門狗**：戰鬥中每 2 秒重檢一次「全員交齊卻還沒推進」。這樣任何漏掉的 render
+  //      都補得回來，不必再靠玩家離開重進。
+  const commitInFlightRef = useRef(false);
 
-  async function commit(force = false) {
-    if (busy) return;
+  const commit = useCallback(async (force = false) => {
+    if (commitInFlightRef.current) return;
+    commitInFlightRef.current = true;
     setBusy(true);
     try {
       const res = await onCommitRound({ force });
       if (res?.ok === false && res.reason !== "還有人沒送出") { sfxError(); setMsg(`⚠️ ${res.reason || "推進失敗"}`); }
-    } finally { setBusy(false); }
-  }
+    } finally {
+      commitInFlightRef.current = false;
+      setBusy(false);
+    }
+  }, [onCommitRound]);
+
+  useEffect(() => {
+    if (!isHost || battle?.status !== "fighting" || !allSubmitted) return;
+    const t = setTimeout(() => { commit(); }, 350);
+    return () => clearTimeout(t);
+  }, [isHost, allSubmitted, seq, battle?.status, commit]);
+
+  // 看門狗：不依賴任何 render 時序，戰鬥中固定重檢。
+  // ⚠️ 依賴陣列**不能**放 `battle`/`room.submits`——它們每次快照都是新物件，interval 會被反覆
+  //    重建、2 秒永遠倒數不完。改成用 ref 讀最新值，interval 只在「開打／結束」時建立一次。
+  const latestRef = useRef({ room, battle });
+  latestRef.current = { room, battle };
+
+  useEffect(() => {
+    if (!isHost || battle?.status !== "fighting") return;
+    const iv = setInterval(() => {
+      if (commitInFlightRef.current) return;
+      const { room: r, battle: b } = latestRef.current;
+      if (!b || b.status !== "fighting") return;
+      const subs = r?.submits || {};
+      const pending = aliveMemberIds(b).filter(id => subs[id]?.seq !== (r?.seq || 0));
+      if (pending.length === 0) commit();
+    }, 2000);
+    return () => clearInterval(iv);
+  }, [isHost, battle?.status, commit]);
 
   const addShot = score => {
     if (animating || !target || shots.length >= arrowsPerRound || mySubmit || iAmDown) return;
