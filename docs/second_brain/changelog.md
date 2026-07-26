@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-07-26（讀寫量稽核第二輪：首頁與 per-member 查詢）
+
+把稽核從練習頁擴大到其他頁面，改掉的地方：
+
+| 位置 | 問題 | 處置 |
+|---|---|---|
+| **首頁**・徽章紀錄 | `subscribeBadgeLogs` 把該會員**歷來所有**徽章紀錄全撈，但只用 `filter(status === "pending_claim")` | 新增 `subscribePendingBadgeLogs`：兩個等式條件、不排序（Firestore index merging，免建複合索引），失敗自動退回原查詢 |
+| **首頁**・比賽成績 | `getMemberResults` 撈全部，但只顯示最近 5 筆 | 加 `maxCount` 參數，首頁傳 5（不傳＝維持全撈，成績歷史頁與後台要看全部） |
+| **首頁**・排行榜區塊 | 為了算 15 個榜要 `getMembers()`（**整個 members 集合**），而且掛在首頁＝每人每次開 App 都付一次 | 快取**算好的結果**（不是原始會員資料，只留 id/name/value）到 localStorage，TTL 30 分鐘 → 命中就是 0 次讀取。要即時的點「查看全部」進排行榜頁（那頁維持每次重算） |
+| 學習紀錄／對外比賽／訊息 | 三支 per-member 查詢都沒有 `limit`，會隨年資無限成長 | 分別加上 100／100／80 的預設上限 |
+
+**確認過沒問題、不動的**
+- 教練後台的紅點查詢（待審核成績／報到／月卡／公會提交）都已經是 `where(status == "pending")`，結果集本來就小。
+- 射手端常駐的十幾個監聽多半是**單一文件**（certification／monsterDex／cardCollection…），一次 1 次讀取，不值得動。
+
 ## 2026-07-26（local-first 歷史紀錄 × 組隊房自動同步）
 
 **練習頁改成 local-first 三層**（作者：「能用本地資料的優先」）

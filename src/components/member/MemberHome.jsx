@@ -1,6 +1,6 @@
 // src/components/member/MemberHome.jsx
 import { useState, useEffect } from "react";
-import { getMemberResults, subscribeBadgeLogs, submitMonthlyCardRequest, subscribeMyMonthlyRequests, checkExpireMonthlyCard, getCertRecords } from "../../lib/db";
+import { getMemberResults, subscribePendingBadgeLogs, submitMonthlyCardRequest, subscribeMyMonthlyRequests, checkExpireMonthlyCard, getCertRecords } from "../../lib/db";
 import { computeDexStats } from "../../lib/achievementDex";
 import { getCohort, cohortLabel } from "../../lib/cohort";
 import { useAuth } from "../../hooks/useAuth";
@@ -135,9 +135,10 @@ export default function MemberHome({
   useEffect(() => {
     if (!profile?.id) return;
     checkExpireMonthlyCard(profile.id).catch(() => {});
-    getMemberResults(profile.id).then(r => setResults(r)).catch(() => {});
+    getMemberResults(profile.id, 5).then(r => setResults(r)).catch(() => {});   // 首頁只顯示最近 5 筆
     getCertRecords(profile.id).then(setCertRecords).catch(() => {});
-    const unsub  = subscribeBadgeLogs(profile.id, setBadgeLogs);
+    // 首頁只需要「待領取」的那幾筆，不必把歷來所有徽章紀錄都拉下來
+    const unsub  = subscribePendingBadgeLogs(profile.id, setBadgeLogs);
     const unsub5 = subscribeMyMonthlyRequests(profile.id, setMonthlyReqs);
     return () => { unsub?.(); unsub5?.(); };
   }, [profile?.id]); // eslint-disable-line
@@ -147,7 +148,7 @@ export default function MemberHome({
     !(x.deletedBy || []).includes(profile?.id)
   ).length;
 
-  const pendingBadges = badgeLogs.filter(l => l.status === "pending_claim");
+  const pendingBadges = badgeLogs;   // 訂閱本身已經只給 pending_claim
   const recentResults = [...results]
     .sort((a,b) => (b.submittedAt?.seconds||0) - (a.submittedAt?.seconds||0))
     .slice(0, 5);

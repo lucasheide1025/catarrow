@@ -1033,6 +1033,23 @@ export function subscribeBadgeLogs(memberId, callback) {
   return onSnapshot(query(collection(db, C.badgeLogs), where("memberId", "==", memberId), orderBy("createdAt", "desc")), snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 }
 
+// 只訂閱「待領取」的徽章紀錄（2026-07-26 讀寫量稽核）。
+// 首頁原本用 subscribeBadgeLogs 把該會員**所有**徽章紀錄全撈下來，但只用到
+// `filter(l => l.status === "pending_claim")` ——射久了紀錄只會越來越多，全撈純屬浪費。
+// ⚠️ 兩個等式條件、不排序 → Firestore 可以用 index merging，不必建複合索引。
+//    真的失敗（舊資料沒有 status 欄位之類）就退回原本的全量查詢，功能不會壞。
+export function subscribePendingBadgeLogs(memberId, callback) {
+  let unsub = onSnapshot(
+    query(collection(db, C.badgeLogs), where("memberId", "==", memberId), where("status", "==", "pending_claim")),
+    snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+    err => {
+      console.warn("subscribePendingBadgeLogs fallback:", err?.message);
+      unsub = subscribeBadgeLogs(memberId, logs => callback(logs.filter(l => l.status === "pending_claim")));
+    },
+  );
+  return () => { unsub?.(); };
+}
+
 export async function getCompetitions() {
   const snap = await getDocs(query(collection(db, C.competitions), orderBy("date", "desc")));
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -1124,8 +1141,12 @@ export async function settleCompetition(compId, operatorId) {
   await updateCompetition(compId, { status: "settled", settledAt: serverTimestamp() }, operatorId);
 }
 
-export async function getMemberResults(memberId) {
-  const snap = await getDocs(query(collection(db, C.results), where("memberId", "==", memberId), orderBy("submittedAt", "desc")));
+// maxCount：首頁只顯示最近 5 筆，沒必要把歷來所有比賽成績都撈回來（2026-07-26 讀寫量稽核）。
+// 不傳＝維持原本的全部撈（成績歷史頁與教練後台要看全部）。
+export async function getMemberResults(memberId, maxCount = 0) {
+  const base = [collection(db, C.results), where("memberId", "==", memberId), orderBy("submittedAt", "desc")];
+  const q = maxCount > 0 ? query(...base, limit(maxCount)) : query(...base);
+  const snap = await getDocs(q);
   return snap.docs.map(reviveResult);
 }
 
@@ -1175,8 +1196,9 @@ export async function markLearnLogsRead(memberId) {
   updateDoc(doc(db, C.members, memberId), { hasNewLearnLog: false }).catch(() => {});
 }
 
-export function subscribeLearnLogs(memberId, callback) {
-  return onSnapshot(query(collection(db, C.learnLogs), where("memberId", "==", memberId), orderBy("date", "desc")), snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+// maxCount 預設 100：學習紀錄是逐堂累積的，射久了會有幾百筆，但畫面一次看不了那麼多。
+export function subscribeLearnLogs(memberId, callback, maxCount = 100) {
+  return onSnapshot(query(collection(db, C.learnLogs), where("memberId", "==", memberId), orderBy("date", "desc"), limit(maxCount)), snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 }
 
 export async function upsertCertRecord(memberId, year, half, bowType, score, operatorId) {
@@ -1221,8 +1243,8 @@ export async function reviewExternalComp(id, approved, badgeType, badgeColor, ba
   }
 }
 
-export function subscribeExternalComps(memberId, callback) {
-  return onSnapshot(query(collection(db, C.externalComps), where("memberId", "==", memberId), orderBy("submittedAt", "desc")), snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+export function subscribeExternalComps(memberId, callback, maxCount = 100) {
+  return onSnapshot(query(collection(db, C.externalComps), where("memberId", "==", memberId), orderBy("submittedAt", "desc"), limit(maxCount)), snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 }
 
 export async function sendMessage(memberId, content) {
@@ -1244,8 +1266,8 @@ export async function markMessagesRead(memberId) {
   updateDoc(doc(db, C.members, memberId), { hasUnreadReply: false }).catch(() => {});
 }
 
-export function subscribeMessages(memberId, callback) {
-  return onSnapshot(query(collection(db, C.messages), where("memberId", "==", memberId), orderBy("createdAt", "desc")), snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+export function subscribeMessages(memberId, callback, maxCount = 80) {
+  return onSnapshot(query(collection(db, C.messages), where("memberId", "==", memberId), orderBy("createdAt", "desc"), limit(maxCount)), snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 }
 
 export function subscribeAllMessages(callback) {
