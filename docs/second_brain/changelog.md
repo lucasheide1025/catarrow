@@ -15,8 +15,10 @@
   - 為什麼不改單人版：單人狀態機只有一個 `hp`/`guildStats`/`supplies`，要支援多人得把三樣都改成 map＝整支重寫，還會讓單人流程背上多人的複雜度。**分兩支、共用箭傷公式**（`arrowDamage` 已 export）最乾淨。
   - `partyHpScale`：怪物 HP 隨人數放大，但**加得比人數少**（1 人 1.0 → 4 人 2.8，不是 4.0）。組隊的獎勵是**效率**，不是更難。
   - `memberSettleState`：把組隊狀態「投影」成單人形狀，讓 `settleExpedition` 原封不動就能用——每人用**自己的**命中率與 LUK 結算，同一場戰鬥裡射得準的人拿得比較好。
-- `db/guildTeamDb.js`：`guildTeamRooms/{roomId}`（code／status／contract／battle／loadouts／submits／claims／seq）。
-- `ui/GuildTeamLobby.jsx`：開房／房號加入／各自備包（只調食水，六維與貓沿用自己的存檔）／房主出發。
+- `db/guildTeamDb.js`：`guildTeamRooms/{roomId}`（status／contract／battle／loadouts／submits／claims／seq）。
+- `ui/GuildTeamLobby.jsx`：開隊／**點進正在招人的隊伍**／各自備包（只調食水，六維與貓沿用自己的存檔）／房主出發。
+
+**⚠️ 不用房號（作者拍板）**：等待中的隊伍**直接列出來，點一下就進去**（`subscribeOpenGuildTeamRooms` → 顯示委託／房主／人數）。理由很簡單——大家都在同一間箭館，報房號純粹是多的步驟。列表只在「組隊大廳且還沒進隊」時訂閱，離開就取消，不會變成常駐的隱形讀取來源。
 - `ui/GuildTeamBattle.jsx`：共享戰場、我方小隊站位、回合摘要。
 
 **規則設計**

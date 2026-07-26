@@ -3,7 +3,6 @@
 // 公會組隊遠征的房間 I/O。**只做讀寫，規則全在 domain/teamExpeditionFlow.js**。
 //
 // 集合：`guildTeamRooms/{roomId}`
-//   code       6 碼房號（大寫）
 //   status     waiting | active | done
 //   contract   房主選的委託（整份帶著走，成員不必再各自抽）
 //   battle     teamExpeditionFlow 的狀態（怪物共享、成員各自 HP/補給/表現）
@@ -21,14 +20,15 @@
 //    ③ 新集合要**手動把 firestore.rules 貼到 Console**（CLI 會 403）。
 // ─────────────────────────────────────────────────────────────
 import {
-  collection, doc, addDoc, getDocs, onSnapshot, query, where,
+  collection, doc, addDoc, onSnapshot, query, where,
   runTransaction, serverTimestamp, updateDoc, deleteDoc, limit,
 } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import { MAX_TEAM_SIZE } from "../domain/teamExpeditionFlow";
 
+// ⚠️ 2026-07-26 作者拍板：**不用房號**。等待中的隊伍直接列出來，點一下就進去
+//    （報房號這個動作在現場很沒必要——大家都在同一間箭館）。
 const R = "guildTeamRooms";
-const genCode = () => Math.random().toString(36).slice(2, 8).toUpperCase();
 const roomRef = roomId => doc(db, R, roomId);
 
 // 寫入重試：可重試的錯誤退避重試 3 次；權限/不存在這種重試也沒用的直接放棄
@@ -49,9 +49,8 @@ async function retryWrite(fn, label) {
 export async function createGuildTeamRoom({ hostId, hostName, contract }) {
   if (!hostId || !contract) return { ok: false, reason: "參數錯誤" };
   try {
-    const code = genCode();
     const ref = await addDoc(collection(db, R), {
-      code, hostId, hostName: hostName || "房主",
+      hostId, hostName: hostName || "房主",
       status: "waiting",
       contract,
       battle: null, submits: {}, claims: {}, seq: 0,
@@ -59,35 +58,27 @@ export async function createGuildTeamRoom({ hostId, hostName, contract }) {
       members: { [hostId]: { name: hostName || "房主", ready: false, joinedAt: serverTimestamp() } },
       createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
     });
-    return { ok: true, roomId: ref.id, code };
+    return { ok: true, roomId: ref.id };
   } catch (e) { return { ok: false, reason: e?.message }; }
 }
 
-export async function joinGuildTeamRoom(code, memberId, memberName) {
-  if (!code || !memberId) return { ok: false, reason: "參數錯誤" };
+export async function joinGuildTeamRoomById(roomId, memberId, memberName) {
+  if (!roomId || !memberId) return { ok: false, reason: "參數錯誤" };
   try {
-    const snap = await getDocs(query(
-      collection(db, R),
-      where("code", "==", String(code).trim().toUpperCase()),
-      where("status", "==", "waiting"),
-      limit(1),
-    ));
-    if (snap.empty) return { ok: false, reason: "找不到房間，或遠征已出發" };
-    const found = snap.docs[0];
     await runTransaction(db, async tx => {
-      const latest = await tx.get(roomRef(found.id));
-      if (!latest.exists()) throw new Error("房間不存在");
+      const latest = await tx.get(roomRef(roomId));
+      if (!latest.exists()) throw new Error("這支隊伍已經解散了");
       const data = latest.data();
-      if (data.status !== "waiting") throw new Error("遠征已出發，無法加入");
+      if (data.status !== "waiting") throw new Error("這支隊伍已經出發了");
       const members = data.members || {};
       if (members[memberId]) return;                       // 重複加入＝視為成功
       if (Object.keys(members).length >= MAX_TEAM_SIZE) throw new Error(`小隊已滿（最多 ${MAX_TEAM_SIZE} 人）`);
-      tx.update(roomRef(found.id), {
+      tx.update(roomRef(roomId), {
         [`members.${memberId}`]: { name: memberName || "隊員", ready: false, joinedAt: serverTimestamp() },
         updatedAt: serverTimestamp(),
       });
     });
-    return { ok: true, roomId: found.id, code: found.data().code };
+    return { ok: true, roomId };
   } catch (e) { return { ok: false, reason: e?.message }; }
 }
 
@@ -194,11 +185,21 @@ export function subscribeGuildTeamRoom(roomId, cb) {
   );
 }
 
-// 等待中的公開房（大廳列表用）
+// 等待中的隊伍列表（取代房號：看得到就點得進去）。
+// 只在「組隊大廳」畫面掛著，離開就取消訂閱——不常駐，不會變成隱形的讀取來源。
 export function subscribeOpenGuildTeamRooms(cb) {
   return onSnapshot(
     query(collection(db, R), where("status", "==", "waiting"), limit(20)),
-    s => cb(s.docs.map(d => ({ id: d.id, ...d.data() }))),
+    s => cb(s.docs.map(d => {
+      const data = d.data();
+      return {
+        id: d.id,
+        hostName: data.hostName || "房主",
+        contract: data.contract || null,
+        size: Object.keys(data.members || {}).length,
+        createdAt: data.createdAt || null,
+      };
+    })),
     err => { console.warn("[guildTeamRooms] open list error:", err?.message); cb([]); },
   );
 }

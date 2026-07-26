@@ -15,9 +15,9 @@ import { nextRankInfo, repToRank } from "./domain/guildRank";
 import { unlockAudio, sfxLevelUp, sfxCoinDrop, sfxOpenChest } from "../lib/sound";
 import { rollDailyContracts, contractsStateFor, todayKey } from "./domain/guildContracts";
 import {
-  createGuildTeamRoom, joinGuildTeamRoom, setGuildTeamLoadout, unreadyGuildTeamMember,
+  createGuildTeamRoom, joinGuildTeamRoomById, setGuildTeamLoadout, unreadyGuildTeamMember,
   startGuildTeamExpedition, submitGuildTeamShots, commitGuildTeamRound,
-  markGuildTeamClaimed, leaveGuildTeamRoom, subscribeGuildTeamRoom,
+  markGuildTeamClaimed, leaveGuildTeamRoom, subscribeGuildTeamRoom, subscribeOpenGuildTeamRooms,
 } from "./db/guildTeamDb";
 import {
   createTeamState, processTeamRound, memberSettleState, scaleExpeditionForParty,
@@ -69,6 +69,7 @@ export default function GuildTestApp({ onBack, onLegacy }) {
   const [teamRoomId, setTeamRoomId] = useState(null);
   const [teamRoom, setTeamRoom] = useState(null);
   const [teamBusy, setTeamBusy] = useState(false);
+  const [openTeamRooms, setOpenTeamRooms] = useState([]);   // 正在招人的隊伍（取代房號）
   const teamCommitRef = useRef(0);               // 房主推進的防重複（同一 seq 只推一次）
 
   // Web Audio 需要使用者手勢才能出聲；進公會就先解鎖，第一個音效才不會被吃掉
@@ -182,6 +183,12 @@ export default function GuildTestApp({ onBack, onLegacy }) {
     });
   }, [teamRoomId]);
 
+  // 只在「組隊大廳且還沒進隊」時訂閱招人列表——不常駐，不會變成隱形的讀取來源
+  useEffect(() => {
+    if (phase !== "team" || teamRoomId) { setOpenTeamRooms([]); return; }
+    return subscribeOpenGuildTeamRooms(setOpenTeamRooms);
+  }, [phase, teamRoomId]);
+
   const teamStats = useMemo(() => (gp ? calcGuildExpeditionStats(member, gp.equipped) : null), [member, gp]);
   const isTeamHost = !!teamRoom && teamRoom.hostId === memberId;
 
@@ -197,8 +204,8 @@ export default function GuildTestApp({ onBack, onLegacy }) {
     return res;
   });
 
-  const teamJoin = code => teamAct(async () => {
-    const res = await joinGuildTeamRoom(code, memberId, member?.nickname || member?.name || "隊員");
+  const teamJoinRoom = roomId => teamAct(async () => {
+    const res = await joinGuildTeamRoomById(roomId, memberId, member?.nickname || member?.name || "隊員");
     if (res.ok) { setTeamRoomId(res.roomId); setPhase("team"); }
     return res;
   });
@@ -316,10 +323,10 @@ export default function GuildTestApp({ onBack, onLegacy }) {
   if (phase === "team") {
     return (
       <GuildTeamLobby
-        room={teamRoom} myId={memberId} isHost={isTeamHost} contract={contract}
+        room={teamRoom} openRooms={openTeamRooms} myId={memberId} isHost={isTeamHost} contract={contract}
         stats={teamStats || {}} partyCats={partyCats} arrowsPerRound={gp.arrowsPerRound}
         busy={teamBusy}
-        onCreate={teamCreate} onJoin={teamJoin} onReady={teamReady} onUnready={teamUnready}
+        onCreate={teamCreate} onJoinRoom={teamJoinRoom} onReady={teamReady} onUnready={teamUnready}
         onDepart={teamDepart} onLeave={teamLeave}
         onClose={() => { setTeamRoomId(null); setPhase("board"); }}
       />

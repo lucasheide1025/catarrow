@@ -1,5 +1,8 @@
 // src/guild/ui/GuildTeamLobby.jsx
-// 組隊遠征的等待室：開房／輸入房號加入／各自備包 → 房主出發。
+// 組隊遠征的等待室：開隊／**直接點進別人的隊伍**／各自備包 → 房主出發。
+//
+// ⚠️ 2026-07-26 作者拍板：**不用房號**。等待中的隊伍直接列出來點一下就進去——
+//    大家都在同一間箭館，報房號這個步驟純粹是多的。
 //
 // 設計取捨：不再做一套完整的備包畫面（單人版 GuildLoadout 已經有了）。這裡只讓成員調
 // 食物/水，其餘（六維、貓、箭數）**直接沿用他自己的存檔**——組隊時最重要的是「快速上線」，
@@ -7,7 +10,7 @@
 import { useEffect, useState } from "react";
 import { MAX_TEAM_SIZE } from "../domain/teamExpeditionFlow";
 import { STAT_META } from "../domain/guildStats";
-import { sfxTap, sfxOpen, sfxClose, sfxError, sfxSwitch } from "../../lib/sound";
+import { sfxTap, sfxClose, sfxError, sfxSwitch } from "../../lib/sound";
 import { hallBg, bgLayer, CatArt, HeroArt } from "./GuildArt";
 
 const card = { background: "rgba(0,0,0,.34)", borderRadius: 12, padding: 12 };
@@ -17,10 +20,9 @@ const btn = (bg, extra = {}) => ({
 });
 
 export default function GuildTeamLobby({
-  room, myId, isHost, contract, stats, partyCats, arrowsPerRound,
-  onCreate, onJoin, onReady, onUnready, onDepart, onLeave, onClose, busy,
+  room, openRooms = [], myId, isHost, contract, stats, partyCats, arrowsPerRound,
+  onCreate, onJoinRoom, onReady, onUnready, onDepart, onLeave, onClose, busy,
 }) {
-  const [code, setCode] = useState("");
   const [food, setFood] = useState(6);
   const [water, setWater] = useState(6);
   const [msg, setMsg] = useState("");
@@ -70,20 +72,43 @@ export default function GuildTeamLobby({
           </div>
         ) : (
           <div style={{ ...card, fontSize: 11.5, color: "#94a3b8" }}>
-            要開房的話，先從委託板點一張委託 →「組隊出發」。你也可以直接用下面的房號加入別人。
+            想自己當房主？先從委託板點一張委託 →「🤝 揪人一起打」。或者直接加入下面正在招人的隊伍。
           </div>
         )}
 
         <div style={{ ...card }}>
-          <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 6 }}>加入隊友的房間</div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input value={code} onChange={e => setCode(e.target.value.toUpperCase())} placeholder="房號 6 碼" maxLength={6}
-              style={{ flex: 1, minWidth: 0, padding: "9px 12px", borderRadius: 10, border: "1px solid rgba(255,255,255,.14)", background: "rgba(0,0,0,.4)", color: "#fff", fontSize: 15, fontWeight: 900, letterSpacing: 3, textAlign: "center" }} />
-            <button type="button" disabled={busy || code.length < 4} onClick={() => act(() => onJoin(code))}
-              style={btn(code.length < 4 ? "#475569" : "linear-gradient(135deg,#22c55e,#15803d)", { cursor: code.length < 4 ? "not-allowed" : "pointer" })}>
-              加入
-            </button>
+          <div style={{ fontSize: 12, fontWeight: 900, color: "#c7d2fe", marginBottom: 8 }}>
+            🧭 正在招人的隊伍 {openRooms.length > 0 && <span style={{ color: "#6ee7b7" }}>({openRooms.length})</span>}
           </div>
+          {openRooms.length === 0 && (
+            <div style={{ fontSize: 11.5, color: "#64748b", lineHeight: 1.7 }}>
+              現在沒有人在招人。<br />你可以自己從委託板點一張委託 →「揪人一起打」開一隊，等別人加入。
+            </div>
+          )}
+          {openRooms.map(r => {
+            const full = r.size >= MAX_TEAM_SIZE;
+            return (
+              <button key={r.id} type="button" disabled={busy || full}
+                onClick={() => act(() => onJoinRoom(r.id))}
+                style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left",
+                  background: "rgba(255,255,255,.05)", border: "1px solid rgba(255,255,255,.1)",
+                  borderRadius: 10, padding: "9px 11px", marginBottom: 6, color: "#e2e8f0",
+                  opacity: full ? 0.45 : 1, cursor: full ? "not-allowed" : "pointer" }}>
+                <span style={{ fontSize: 18 }}>{r.contract?.familyIcon || "📜"}</span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: "block", fontSize: 12.5, fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {r.contract?.title || "遠征委託"}
+                  </span>
+                  <span style={{ display: "block", fontSize: 10.5, color: "#94a3b8" }}>
+                    👑 {r.hostName}　{r.contract?.skulls}　{r.contract?.waves} 波
+                  </span>
+                </span>
+                <span style={{ fontSize: 11, fontWeight: 900, color: full ? "#f87171" : "#6ee7b7", flexShrink: 0 }}>
+                  {r.size}/{MAX_TEAM_SIZE}{full ? "　滿" : "　加入"}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {msg && <div style={{ fontSize: 12, color: msg.startsWith("⚠️") ? "#f87171" : "#6ee7b7" }}>{msg}</div>}
@@ -100,9 +125,8 @@ export default function GuildTeamLobby({
         <button type="button" onClick={() => { sfxClose(); onLeave(); }} style={btn("#7f1d1d")}>離開房間</button>
       </div>
 
-      <div style={{ ...card, textAlign: "center" }}>
-        <div style={{ fontSize: 10.5, color: "#94a3b8" }}>房號（報給隊友）</div>
-        <div style={{ fontSize: 30, fontWeight: 900, color: "#fcd34d", letterSpacing: 8 }}>{room.code}</div>
+      <div style={{ ...card, fontSize: 11.5, color: "#94a3b8", textAlign: "center" }}>
+        這支隊伍已經出現在「正在招人的隊伍」列表裡——隊友從公會大廳點「🤝 組隊」就看得到你。
       </div>
 
       {roomContract && (
