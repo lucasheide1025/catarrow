@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useMemo, lazy, Suspense, startTransition, useCallback } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { useCostControl } from "../hooks/useCostControl";
+import { COST_CAPABILITIES } from "../lib/costControl";
 import { subscribeResults, subscribeNotifications, subscribeAppVersion, isMemberRegistered,
   subscribeCertification, getDexConfig, subscribeDexGrants, getCertRecords, createNotification,
   subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex,
@@ -20,7 +21,7 @@ const ACH_RARITY_RANK = { common:0, uncommon:1, rare:2, epic:3, legendary:4, myt
 const ACH_ANNOUNCE = new Set(["epic", "legendary", "mythic"]);
 import { getAllowedPages, isAutoLocked } from "../lib/accessControl";
 import { MaintenanceScreen, FrozenScreen, LockedFeatureCard } from "../components/member/AccessLockScreens";
-import { subscribeActiveWorldBoss } from "../lib/worldBossDb";
+import { subscribeWorldBossStatus } from "../lib/worldBossDb";
 import { subscribeLatestBroadcast } from "../lib/dungeonDb";
 import { getDuelStats } from "../lib/duelDb";
 import { APP_VERSION } from "../lib/version";
@@ -121,7 +122,11 @@ const NAV_PRELOADS = {
 
 export default function MemberApp() {
   const { logout, profile, role } = useAuth();
-  const { policy: costPolicy } = useCostControl();
+  const { policy: costPolicy, allows: costAllows } = useCostControl();
+  // 成本防護升到 restricted 以上時關掉「非必要監聽」（橫幅/播報/彈窗這類看板功能）。
+  // ⚠️ 這個能力旗標本來就定義在 costControl.js，但一直沒有任何地方真的用它——等於警報升級了
+  //    也沒省到。核心功能（通知/報到/認證/存檔）不在此列，永遠保留。
+  const liveExtras = costAllows(COST_CAPABILITIES.nonessentialListeners);
   const [page, setPageState]   = useState(()=>sessionStorage.getItem("member_page")||"home");
   const setPage = useCallback((p) => startTransition(() => setPageState(p)), []);
   // 學生分級與系統鎖定（2026-07-04）
@@ -213,6 +218,7 @@ export default function MemberApp() {
 
   // 地下城首殺全系統播報（防重複：lastBroadcastIdRef 過濾 onSnapshot 重複觸發）
   useEffect(() => {
+    if (!liveExtras) return;
     const unsub = subscribeLatestBroadcast(data => {
       if (!data) return;
       // 失敗廣播（broadcastExpeditionFailure）跟首殺廣播寫同一個 dungeonBroadcasts collection，
@@ -226,7 +232,7 @@ export default function MemberApp() {
       setDungeonKillAlert(data);
     });
     return () => unsub?.();
-  }, []); // eslint-disable-line
+  }, [liveExtras]); // eslint-disable-line
 
   // 今日報到訂閱（供浮動視窗判斷）— 一天只彈一次
   useEffect(() => {
@@ -290,7 +296,7 @@ export default function MemberApp() {
 
   // 緊急任務訂閱：只在新任務出現時彈出通知
   useEffect(() => {
-    if (!profile?.id) return;
+    if (!profile?.id || !liveExtras) return;
     return subscribeActiveGuildQuests(quests => {
       if (seenQuestIds.current === null) {
         // 首次載入：記住目前所有任務 ID，不彈出通知
@@ -302,7 +308,7 @@ export default function MemberApp() {
       quests.forEach(q => seenQuestIds.current.add(q.id));
       if (newSpecial) setSpecialAlert(newSpecial);
     });
-  }, [profile?.id]); // eslint-disable-line
+  }, [profile?.id, liveExtras]); // eslint-disable-line
 
   // 從公會接任務後導向對應功能
   // 若是同一個任務，保留目前的擊殺進度，不重置 killsSoFar
@@ -375,7 +381,8 @@ export default function MemberApp() {
 
   // 世界王登場 + 擊殺公告
   useEffect(() => {
-    return subscribeActiveWorldBoss(ev => {
+    if (!liveExtras) return;
+    return subscribeWorldBossStatus(ev => {   // 小狀態文件：不再因為別人打王而被推 HP 更新
       setActiveWorldBoss(ev && ev.status === "active" ? ev : null);
       if (!ev) return;
       // 登場動畫
@@ -392,7 +399,7 @@ export default function MemberApp() {
         return () => clearTimeout(t);
       }
     });
-  }, []);
+  }, [liveExtras]);
 
   useEffect(() => {
     if (!profile?.id) return;

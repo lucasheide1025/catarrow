@@ -118,12 +118,17 @@ export async function resetAutoDigTimer(memberId) {
  * 初始化自動挖掘（首次使用時設定初始計時器）
  * 由 DungeonExcavationTab mount 時呼叫
  */
-export async function initAutoDigTimer(memberId) {
+// memberData：呼叫端（挖掘頁）手上已經有即時訂閱的 profile 了，傳進來就不必再讀一次
+// members 文件（原本每次進挖掘頁都多花 1 次讀取，而且讀到的內容跟 profile 一樣）。
+export async function initAutoDigTimer(memberId, memberData) {
   if (!memberId) return;
   try {
-    const snap = await getDoc(doc(db, "members", memberId));
-    if (!snap.exists()) return;
-    const data = snap.data();
+    let data = memberData;
+    if (!data) {
+      const snap = await getDoc(doc(db, "members", memberId));
+      if (!snap.exists()) return;
+      data = snap.data();
+    }
     const excavation = data.dungeonExcavation || {};
     // 已有計時器則不覆蓋
     if (excavation.autoDigNextAt) return;

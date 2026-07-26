@@ -5,6 +5,33 @@
 
 ---
 
+## 2026-07-26（讀寫量稽核第三輪：把剩下沒查的全查完）
+
+**① 世界王的扇出放大（本輪最大一筆）**
+- 問題：`subscribeActiveWorldBoss` 訂閱的是**完整王文件**，而每次攻擊都在寫那份文件（HP／參戰數／傷害榜）。Firestore 是「文件一變動就推給所有訂閱者、每人計 1 次讀取」——而這支監聽**常駐在 MemberApp**：20 人在線、每人打 10 次 = 200 次寫入 → **200 × 20 = 4,000 次讀取**，全部只為了顯示一句「世界王現身」。
+- 解法：新增 `worldBossStatus/current` 極小狀態文件（只有 `eventId/status/bossName/announcement`），**只在開場／被擊殺／結束時寫**（一場活動個位數次）。App 層改訂閱這份小的；完整王文件只在戰鬥畫面內訂閱（那裡本來就要看 HP）。
+- ⚠️ **要手動貼 Firestore 規則到 Console**（CLI 會 403）：`match /worldBossStatus/{docId} { allow read, write: if isLoggedIn(); }`。已寫進 repo 的 `firestore.rules`。寫入權必須開給登入者——「擊殺」是學生的攻擊觸發的；這份文件沒有經濟價值，被亂改最多是橫幅顯示錯誤。
+- ⚠️ **規則還沒貼也不會壞**：`subscribeWorldBossStatus` 讀不到（permission-denied 或文件不存在）會**自動退回舊的完整訂閱**，只是省不到。
+
+**② 接上一直沒接線的 `nonessentialListeners`**
+`costControl.js` 早就定義了這個能力旗標，但**程式裡從來沒有任何地方真的用它**——等於成本警報升到 restricted 也沒省到。現在 MemberApp 的三個「看板型」監聽（地下城首殺播報／世界王橫幅／緊急任務彈窗）會在 restricted 以上自動停掛。核心功能（通知／報到／認證／存檔）永遠保留。
+
+**③ 登入時的多餘讀寫**
+`updateLastLogin` 原本先 `getDoc` 再 `updateDoc`，但呼叫端（useAuth）**剛剛才讀過同一份文件**。改成把已知的舊值傳進來：省掉那次讀取，而且 **30 分鐘內重開 App 不重複寫**。
+
+**④ 挖掘頁的重複讀取**
+`initAutoDigTimer` 每次進頁面都 `getDoc(members/{id})`，但那份資料 `profile` 已經即時訂閱了。改成可傳入 `memberData`。
+
+**查過、確認乾淨、不用動的**
+- **Cloud Functions**：只有 2 個排程（每天 10:00），都有 `limit(50)`。不是問題來源。
+- **射手表現頁**：已經是完整 local-first（`getCached*`／`getChanged*`／本地 meta），300 筆完整歷史藏在按鈕後面。
+- **挖掘的箭數寫入**：早就改成「只算 patch，由 `addRoundArrows` 併進同一次 updateDoc」＋ `_excavCache`。
+- **貓村採集**（`catVillageGathering.js`）：全部是純函數，沒有 Firestore。
+- **卡片市集**：條件渲染，只有開到市集分頁才掛監聽。
+- **預約**：`getBookingsForMember` 有 `limit(200)`。
+- **訪客流程**：舊的 token 制 GuestBattle 已整個淘汰，沒有東西要查。
+- **組隊房每回合寫入**（submitArrows × N ＋ processRound）：這是即時多人的**固有成本**，除非大改架構否則省不掉；`writeBatch` 也不會變便宜（Firestore 按文件寫入次數計費）。
+
 ## 2026-07-26（首頁排行榜改「只看自己＋手動更新」× 首頁/我的本地優先）
 
 **首頁排行榜（作者拍板）**

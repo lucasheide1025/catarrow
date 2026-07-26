@@ -728,10 +728,15 @@ export async function deleteMember(id, operatorId) {
   await writeAuditLog("DELETE", id, "member", before, null, operatorId);
 }
 
-export async function updateLastLogin(id) {
+// prevLastLoginAt：呼叫端（useAuth）手上已經有 member 文件了，把舊值傳進來就能省掉：
+//   ① 原本那次毫無必要的 getDoc（呼叫端剛剛才讀過同一份文件）
+//   ② 30 分鐘內重開 App 的重複寫入（頻繁切換分頁/重整不必每次都寫）
+// 不傳＝維持原本行為（照寫），只是不再多讀一次。
+export async function updateLastLogin(id, prevLastLoginAt) {
   try {
-    const snap = await getDoc(doc(db, C.members, id));
-    if (snap.exists()) await updateDoc(doc(db, C.members, id), { lastLoginAt: serverTimestamp() });
+    const prevMs = prevLastLoginAt?.toMillis?.() ?? (prevLastLoginAt?.seconds ? prevLastLoginAt.seconds * 1000 : 0);
+    if (prevMs && Date.now() - prevMs < 30 * 60 * 1000) return;
+    await updateDoc(doc(db, C.members, id), { lastLoginAt: serverTimestamp() });
   } catch (e) { console.warn("updateLastLogin failed:", e.message); }
 }
 

@@ -12,7 +12,7 @@ import { getAppTheme, saveAppTheme, APP_THEMES } from "../lib/theme";
 import { levelFromXP, rankFromLevel } from "../lib/adventurerSystem";
 import { archerLevelFromXP } from "../lib/archerLevel";
 import { APP_VERSION } from "../lib/version";
-import { subscribeActiveWorldBoss } from "../lib/worldBossDb";
+import { subscribeWorldBossStatus } from "../lib/worldBossDb";
 import { subscribeLatestBroadcast } from "../lib/dungeonDb";
 import { OverlayModal } from "../components/shared/UI";
 import MemberHome         from "../components/member/MemberHome";
@@ -426,7 +426,7 @@ export default function AdminApp() {
 
   // 世界王登場：教練也要看到
   useEffect(() => {
-    return subscribeActiveWorldBoss(ev => {
+    return subscribeWorldBossStatus(ev => {   // 小狀態文件：不再因為別人打王而被推 HP 更新
       setActiveWorldBoss(ev && ev.status === "active" ? ev : null);
       if (!ev) return;
       const key = `wb_intro_${ev.id}`;

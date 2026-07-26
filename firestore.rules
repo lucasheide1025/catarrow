@@ -534,6 +534,15 @@ service cloud.firestore {
       allow read, write: if isLoggedIn();
     }
 
+    // worldBossStatus/current：給「全體常駐訂閱」用的極小狀態文件（2026-07-26 讀寫量優化）。
+    // 只有 {eventId, status, bossName, announcement}——App 層訂閱這份，就不會每次有人打王
+    // 就被推一次完整王文件（HP/傷害榜）的更新。詳見 worldBossDb.subscribeWorldBossStatus。
+    // 寫入權開給登入者：「擊殺」那一刻是由學生的攻擊觸發的。這份文件沒有經濟價值，
+    // 被亂改最多是橫幅顯示錯誤（跟 worldBossEvents 本身的權限一致）。
+    match /worldBossStatus/{docId} {
+      allow read, write: if isLoggedIn();
+    }
+
     // worldBossHistory：歷史紀錄，登入者可讀，管理員可寫
     match /worldBossHistory/{docId} {
       allow read: if isLoggedIn();

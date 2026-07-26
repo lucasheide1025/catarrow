@@ -123,7 +123,8 @@ export function AuthProvider({ children }) {
       setLoading(false);
 
       // 背景更新最後登入時間（傳正確的 member doc id，不阻塞登入）
-      if (memberDoc) updateLastLogin(memberDoc.id).catch(() => {});
+      // 傳入已知的舊值：省掉 db 端多餘的 getDoc，30 分鐘內也不重複寫
+      if (memberDoc) updateLastLogin(memberDoc.id, memberDoc.data()?.lastLoginAt).catch(() => {});
 
       // 即時訂閱：profile 有變動時自動更新（裝備、積分等）
       profileUnsub = onSnapshot(memberQuery, (snapshot) => {

@@ -125,8 +125,9 @@ export default function DungeonExcavationTab({ profile }) {
   // 初始化自動挖掘計時器
   useEffect(() => {
     if (!myId) return;
-    initAutoDigTimer(myId);
-  }, [myId]);
+    initAutoDigTimer(myId, profile);   // 傳入已訂閱的 profile，省掉重複讀 members 文件
+    // 只在換人時重跑，不要因為 profile 每次更新就重打
+  }, [myId]); // eslint-disable-line
 
   // 自動挖掘倒數計時器
   useEffect(() => {

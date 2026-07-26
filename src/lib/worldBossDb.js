@@ -57,6 +57,54 @@ export function subscribeActiveWorldBoss(cb) {
   });
 }
 
+// ── 「全體常駐訂閱」專用的極小狀態文件（2026-07-26 讀寫量稽核）────────────
+//
+// 問題：`subscribeActiveWorldBoss` 訂閱的是**完整王文件**，而每一次攻擊都在寫那份文件
+// （bossCurrentHP、totalParticipants、participants 傷害榜）。Firestore 是「文件一變動就推給
+// 所有訂閱者、每人計 1 次讀取」——而這支監聽**常駐在 MemberApp**（每個學生全程掛著）：
+//   20 人在線、每人打 10 次 = 200 次寫入 → 200 × 20 = **4,000 次讀取**，全部只為了顯示一句
+//   「世界王現身」。App 層其實只需要 status 與名字，HP 每次跳動它根本用不到。
+//
+// 解法：另存一份 `worldBossStatus/current`，**只在開場／被擊殺／結束時寫**（一場活動個位數次）。
+// App 層訂閱這份小的；完整王文件只在戰鬥畫面內訂閱（那裡本來就要看 HP）。
+//
+// ⚠️ 需要 Firestore 規則（記得**手動貼到 Console**，CLI 會 403）：
+//     match /worldBossStatus/{id} { allow read: if true; allow write: if request.auth != null; }
+//   「擊殺」是由學生的攻擊觸發的，所以寫入權必須開給登入者。這份文件只有狀態與名字、
+//   沒有經濟價值，被亂改最多是橫幅顯示錯誤。
+// ⚠️ 規則還沒貼、或文件還不存在時，會**自動退回舊的完整訂閱**——功能不會壞，只是省不到。
+const WBS = "worldBossStatus";
+const WBS_DOC = "current";
+
+async function writeWorldBossStatus(patch) {
+  try {
+    await setDoc(doc(db, WBS, WBS_DOC), { ...patch, updatedAt: serverTimestamp() }, { merge: true });
+  } catch (e) {
+    console.warn("writeWorldBossStatus:", e?.message);   // 寫不進去不影響主流程
+  }
+}
+
+export function subscribeWorldBossStatus(cb) {
+  let inner = null;                 // 退回舊訂閱時的 unsubscribe
+  const fallback = () => {
+    if (inner) return;
+    inner = subscribeActiveWorldBoss(cb);
+  };
+  const unsubDoc = onSnapshot(
+    doc(db, WBS, WBS_DOC),
+    snap => {
+      const d = snap.exists() ? snap.data() : null;
+      if (!d || !d.eventId) { fallback(); return; }   // 還沒建立過（舊活動）→ 用舊方式
+      if (inner) { inner(); inner = null; }
+      cb(d.status === "active" || d.status === "defeated"
+        ? { id: d.eventId, status: d.status, bossData: { name: d.bossName || "" }, announcement: d.announcement || null }
+        : null);
+    },
+    err => { console.warn("subscribeWorldBossStatus fallback:", err?.message); fallback(); },
+  );
+  return () => { unsubDoc?.(); inner?.(); };
+}
+
 // ── 訂閱最新一筆 Boss（active 或 defeated 皆包含，expired 排除）
 export function subscribeLatestWorldBoss(cb) {
   const q = query(collection(db, WB), orderBy("createdAt", "desc"), limit(1));
@@ -109,6 +157,7 @@ export async function createWorldBossEvent({ adminId, bossKey, durationDays, rew
       createdAt:     serverTimestamp(),
       autoSpawned:   !reward, // 標記是否為系統自動刷新
     });
+    await writeWorldBossStatus({ eventId: ref.id, status: "active", bossName: boss.name, announcement: null });
     return { ok: true, eventId: ref.id };
   } catch (e) { return { ok: false, reason: e.message }; }
 }
@@ -253,6 +302,8 @@ export async function attackWorldBoss({ eventId, memberId, memberName, weapon, r
         upd.status       = "defeated";
         upd.lastHitBy    = { memberId, memberName, weapon: weapon || "訪客弓組", killerStyle: killerStyle || "baobao", finishingArrow: finishingArrow || null };
         upd.announcement = announcement;
+        // 同步那份「全體常駐訂閱」用的小狀態文件（一場活動只會走到這裡一次）
+        writeWorldBossStatus({ eventId, status: "defeated", bossName: ev.bossData?.name || "", announcement });
         upd.defeatedAt   = serverTimestamp();
         createNotification({
           type: "worldboss",
@@ -604,6 +655,7 @@ export async function expireWorldBossEvent(eventId) {
     if (ev.status !== "active") return { ok: true };
 
     await updateDoc(doc(db, WB, eventId), { status: "expired", expiredAt: serverTimestamp() });
+    await writeWorldBossStatus({ eventId: null, status: "expired", bossName: ev.bossData?.name || "" });
 
     // 安慰獎：每人一個黃金寶箱
     for (const [mid, p] of Object.entries(ev.participants || {})) {
@@ -626,6 +678,7 @@ export async function expireWorldBossEvent(eventId) {
 export async function forceEndWorldBossEvent(eventId) {
   try {
     await updateDoc(doc(db, WB, eventId), { status: "cancelled", cancelledAt: serverTimestamp() });
+    await writeWorldBossStatus({ eventId: null, status: "cancelled" });
     return { ok: true };
   } catch (e) { return { ok: false, reason: e.message }; }
 }
