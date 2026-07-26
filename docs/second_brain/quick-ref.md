@@ -639,6 +639,15 @@ public/ui/
   equip-slot.webp / equip-slot-filled.webp
   battle-bg/bg_{family}_{1-6}.webp   ← family: forest/dragon/undead/beast/demon/machine
   village/                            ← 貓村圖片
+
+public/assets/guild/               ← 冒險者公會（scripts/gen-guild-art.py）
+  hall_bg / contract_paper / guild_master / field_{族} / rank_{階級} / junk_{id}
+public/assets/guild/chibi/         ← 公會角色 2.5D 微縮模型（scripts/gen-guild-chars.py，2026-07-26）
+  hero.webp / hero_shoot.webp      ← 玩家射手；戰鬥畫面 bowPull=true 時換 hero_shoot
+  cat_{catId}.webp                 ← 九貓全身（CatArt 預設不裁圓，round=true 才圓）
+  mob_{monsterId}.webp             ← 只有 42 隻舊怪（normalExisting）；擴充怪照舊用 /monsters-battle/
+  ⚠️ GuildArt 用 id 形態分流：舊怪 id 是 `<族>_<1~6>`、擴充怪是 `<族>_t<N>_<role>`，
+     所以不必維護名單，擴充怪也不會先打一發 404 才 fallback
 ```
 
 ---

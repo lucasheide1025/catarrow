@@ -16,7 +16,7 @@ import {
   sfxTap, sfxArrowShoot, sfxArrowHit, sfxCritBoom, sfxMonsterDead, sfxCounter,
   sfxOrganHit, sfxSoftFail, sfxRoundEnd, sfxVictoryFanfare, sfxDefeat, vibrate,
 } from "../../lib/sound";
-import { MonsterArt, CatArt, fieldBg, bgLayer } from "./GuildArt";
+import { MonsterArt, CatArt, HeroArt, fieldBg, bgLayer } from "./GuildArt";
 
 const SCORE_BUTTONS = [
   { label: "X", score: 11, color: "#fbbf24" },
@@ -311,10 +311,11 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
 
         {/* 玩家 + 出戰的真貓 */}
         <div style={{ position: "absolute", bottom: 6, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 14, alignItems: "flex-end", zIndex: 70 }}>
-          <div style={{ fontSize: 46, animation: bowPull ? "gb-bowpull .32s ease-out" : "none" }}>🏹</div>
+          <HeroArt drawing={bowPull} size={72}
+            style={{ animation: bowPull ? "gb-bowpull .32s ease-out" : "none", filter: "drop-shadow(0 4px 8px rgba(0,0,0,.65))" }} />
           {(state.cats || []).map(c => (
             <div key={c.id} style={{ textAlign: "center", animation: pouncing.includes(c.id) ? "gb-pounce .52s ease-out" : "none" }}>
-              <CatArt catId={c.id} icon={c.icon} size={42} style={{ border: "2px solid rgba(251,191,36,.55)", boxShadow: "0 3px 8px rgba(0,0,0,.6)" }} />
+              <CatArt catId={c.id} icon={c.icon} size={52} style={{ filter: "drop-shadow(0 3px 6px rgba(0,0,0,.6))" }} />
               <div style={{ fontSize: 9, fontWeight: 800, color: "#fcd34d", whiteSpace: "nowrap" }}>{c.name}</div>
               <div style={{ fontSize: 9, color: "#94a3b8" }}>⚔️{c.atk}</div>
             </div>

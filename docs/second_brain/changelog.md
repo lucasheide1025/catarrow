@@ -5,6 +5,35 @@
 
 ---
 
+## 2026-07-26（公會角色美術：玩家立繪 × 九貓微縮模型 × 42 隻舊怪重畫）
+
+戰鬥畫面原本是**三種畫風混在一起**：擴充怪（210 隻）動漫插畫風、舊怪（42 隻 `normalExisting`）寫實暗黑風、玩家還是 emoji 🏹、貓貓用的是「有背景的方形寫實頭像」。本次補齊衝突最大的那三塊。
+
+- **畫風＝跟地下城房塊同一套語言**（可愛微縮模型／黏土手作感／45° 視角／柔和打光）。作者原話：「**不用這麼 Q 版，就像地下城那樣的風格**」。
+- **新腳本 `scripts/gen-guild-chars.py`**：ComfyUI → rembg 去背 → 512 WebP → `public/assets/guild/chibi/`。53 張＝玩家 2（idle／拉弓）＋ 九貓 9 ＋ 舊怪 42。
+- **玩家立繪接上拉弓動畫**：戰鬥畫面本來就有 `bowPull` 狀態，`HeroArt drawing={bowPull}` 直接換成 `hero_shoot`。
+- **貓貓改全身微縮模型**：毛色花紋沿用 `gen-cat-portraits.py` 的九貓描述（玩家要認得出自己的貓）。`CatArt` 新增 `round` 參數並**預設不裁圓**——全身立繪裁圓會把腳切掉。
+- **不覆蓋主線圖**：`monsterSources` 改成「公會圖優先、找不到才退回 `/monsters-battle/`」。所以 42 隻舊怪自動吃新圖、210 隻擴充怪照舊，**程式裡不用維護「哪些有新圖」的名單**，主線打怪模式也完全不受影響（公會隔離鐵律）。
+
+**踩坑（生圖）**
+- ❌ 先用 Animagine（動漫模型）畫 chibi → 出來是**貼紙風**（白色描邊外框，去背後留一圈白邊）＋平塗向量，跟地下城完全不同世界。**畫風要一致就要用同一個 checkpoint 與同一套風格字串**（DreamShaperXL Turbo / 8 steps / cfg 2.0）。
+- ❌ 階級遞進寫 `radiant aura / glowing / floating energy motes` → T5 的熊噴滿彩虹特效塞滿畫面，rembg 認不出主體整張報廢。**強弱改用「裝飾密度／材質／表情」表達，光效字眼一律移到負面詞**。
+- ❌ DreamShaper 偏寫實：描述只要有 `huge / roaring / scarred` 就會壓過風格字串畫成寫實猛獸。解法＝每隻怪前面冠上 `a cute chunky toy figurine of`。
+- ❌ 模型很愛自己加一塊圓形展示底座（林投姐第一版站在黑色台座上）→ 底座類負面詞要**加權** `(pedestal:1.4)`。
+- ❌ **風格字串會決定體型**：STYLE 裡的 `short stubby limbs + FULL BODY standing` 讓所有東西都變兩足人形——百步蛇長出手腳、蜘蛛女王變外星人、六隻寶箱怪全變小怪（箱子不見）。→ 另開 `STYLE_NONBIPED`（換掉那兩句），蛇/蟲/寶箱/紙走這組。
+- ❌ 物件型的怪（紙、書、寶箱）連 `a cute toy figurine of` 前綴都要拿掉（前綴＝在叫模型生一隻生物），描述要寫「**身體就是那張紙／那個箱子**」，並把 `(creature:1.4)(animal:1.4)` 加進負面詞；階級遞進也要換成 `TIER_TAIL_OBJ`（不能寫盔甲）。
+- 壓不住模型偏好時用 `MOB_NEG` 逐怪加負面詞，比一直重抽有效（蛇連抽三次都失敗，加 `(arms:1.5)(legs:1.5)` 才成）。
+- 🧩 **拉弓姿勢用 img2img 從 idle 重繪**（denoise 0.62）：兩張都 txt2img 會抽出兩個長得不一樣的射手，戰鬥中一切換就「閃成別人」。
+- ComfyUI 中途卡住是常態（跑到第 7 張卡死）→ `POST /interrupt` 解卡，腳本預設**跳過已存在檔案**可直接續跑。
+
+## 2026-07-26（Vercel Analytics 上線：官網＋學生 App 兩邊都掛）
+
+⚠️ **是兩個不同的 Vercel 專案**，所以要各掛各的、數據也是分開看：
+- **官網**（`website/`，`archery.catgroup.com.tw`）：純靜態無建置流程，用 script 標籤 `<script defer src="/_vercel/insights/script.js"></script>`，**9 個頁面全掛**（首頁＋8 個情境子頁）。
+- **學生 App**（CRA，`student.catgroup.com.tw`）：`@vercel/analytics` 2.0.1，`src/index.js` 掛 `<Analytics />`。
+
+**本機 `npm start` / 直接開 html 不會有流量**（script 由 Vercel 邊緣注入才有效），數據看各專案的 Vercel → Analytics 分頁。
+
 ## 2026-07-26（公會倉庫體驗：撿取過濾器 × 自動分解 × 排序篩選）
 
 掉落率調高之後的**必要配套**——一天進 10+ 件，60 格倉庫兩三天就爆，而且找不到東西。

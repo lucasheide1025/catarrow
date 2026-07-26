@@ -6,7 +6,7 @@ import { calcGuildExpeditionStats, deriveGuildCombat, STAT_META } from "../domai
 import { GUILD_SLOTS, SLOT_META, resolveEquipWeight, equipDisplayName, GRADE_META } from "../data/guildEquipCatalog";
 import { MAX_PARTY_CATS } from "../domain/guildCats";
 import { sfxTap, sfxSwitch, sfxCast } from "../../lib/sound";
-import { hallBg, bgLayer, CatArt } from "./GuildArt";
+import { hallBg, bgLayer, CatArt, HeroArt } from "./GuildArt";
 
 const BASE_CAPACITY = 20;
 const SUPPLY_WEIGHT = 1;
@@ -46,13 +46,16 @@ export default function GuildLoadout({ member, guildEquip, onDepart, catRoster =
     <div style={{ minHeight: "100dvh", ...bgLayer(hallBg(), { overlay: "rgba(8,6,3,.74)" }), backgroundAttachment: "fixed", color: "#e2e8f0", padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
       <div style={{ fontSize: 18, fontWeight: 900, color: "#fbbf24" }}>🎒 出發前備包</div>
 
-      {/* 六維 */}
-      <div style={{ background: "rgba(0,0,0,.3)", borderRadius: 12, padding: 12 }}>
-        <div style={{ fontSize: 12, fontWeight: 900, color: "#c7d2fe", marginBottom: 8 }}>六維（射手Lv{stats._archerLevel} + 貓 + 公會裝）</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
-          {Object.keys(STAT_META).map(k => (
-            <div key={k} style={{ fontSize: 12 }}>{STAT_META[k].icon} {STAT_META[k].short} <b>{stats[k]}</b></div>
-          ))}
+      {/* 六維（旁邊放射手本人，出發前看得到自己的角色）*/}
+      <div style={{ background: "rgba(0,0,0,.3)", borderRadius: 12, padding: 12, display: "flex", gap: 10, alignItems: "center" }}>
+        <HeroArt size={84} style={{ flex: "0 0 auto", filter: "drop-shadow(0 4px 10px rgba(0,0,0,.6))" }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 900, color: "#c7d2fe", marginBottom: 8 }}>六維（射手Lv{stats._archerLevel} + 貓 + 公會裝）</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+            {Object.keys(STAT_META).map(k => (
+              <div key={k} style={{ fontSize: 12 }}>{STAT_META[k].icon} {STAT_META[k].short} <b>{stats[k]}</b></div>
+            ))}
+          </div>
         </div>
       </div>
 
