@@ -16,7 +16,7 @@ import { unlockAudio, sfxLevelUp, sfxCoinDrop, sfxOpenChest } from "../lib/sound
 import { rollDailyContracts, contractsStateFor, todayKey } from "./domain/guildContracts";
 import { loadGuildProfile, saveGuildProfile, grantExpeditionRewards, buyGuildShopItem, sellGuildJunk } from "./db/guildDb";
 import GuildBattle from "./ui/GuildBattle";
-import { fieldBg, bgLayer, rankBadge, junkArt, ArtOrEmoji } from "./ui/GuildArt";
+import { fieldBg, bgLayer, rankBadge, junkArt, ArtOrEmoji, HeroArt, CatArt } from "./ui/GuildArt";
 import GuildBoard from "./ui/GuildBoard";
 import GuildContractSheet from "./ui/GuildContractSheet";
 import GuildLoadout from "./ui/GuildLoadout";
@@ -200,7 +200,18 @@ export default function GuildTestApp({ onBack, onLegacy }) {
     const won = result.status === "won";
     return (
       <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, padding: 24, textAlign: "center", ...bgLayer(fieldBg(contract?.family), { overlay: won ? "rgba(6,14,8,.74)" : "rgba(18,6,6,.8)" }), color: "#e2e8f0" }}>
-        <div style={{ fontSize: 56 }}>{won ? "🎉" : "💀"}</div>
+        {/* 凱旋＝射手與出戰貓一起站在結算畫面上（失敗就維持骷髏，不放角色）*/}
+        {won ? (
+          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "center", gap: 6 }}>
+            <HeroArt size={104} style={{ filter: "drop-shadow(0 6px 12px rgba(0,0,0,.7))" }} />
+            {partyCats.map(c => (
+              <CatArt key={c.id} catId={c.id} icon={c.icon} size={54}
+                style={{ filter: "drop-shadow(0 4px 8px rgba(0,0,0,.6))" }} />
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontSize: 56 }}>💀</div>
+        )}
         <div style={{ fontSize: 22, fontWeight: 900, color: won ? "#fbbf24" : "#f87171" }}>{won ? "凱旋歸來！" : "遠征失敗"}</div>
         <div style={{ fontSize: 13, color: "#94a3b8" }}>{won ? "討伐完成，戰利品如下" : result.lostReason}</div>
         {loot && won && (

@@ -71,6 +71,8 @@ MOB_NEG = {
 #    紙怪/書怪套上去必定變成小怪。這幾隻的主體是物件，前綴要拿掉、改走 STYLE_OBJECT。
 #    蛇也放進來：`figure/character/creature` 這些字只要還在，牠就會被畫成兩足蜥蜴（抽四次都是）。
 NO_MOB_HEAD = {"exam_1", "exam_2", "exam_3", "mountain_2"}
+# ⚠️ 寶箱怪**不要**放進 NO_MOB_HEAD：牠是「箱子＋臉」的合體，走純物件風格會變成一個
+#    沒有五官的漂亮寶箱（或反過來變成沒有箱子的獸）。留在 STYLE_NONBIPED 才會長出蓋子當嘴巴。
 # 石台/地面一定要擋掉：地下城房塊是「怪坐在圓石台上」，戰鬥立繪要的是**單獨一隻**
 NEG = ("realistic, photorealistic, scary, horror, creepy, gore, blood, grim, ugly, "
        # 加權：不加權的話模型很愛給角色一塊圓形底座（林投姐第一版就站在黑色展示台上）
