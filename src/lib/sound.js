@@ -4,16 +4,64 @@
 
 import { getSoundEnabled, getVibrationEnabled } from "./fxSettings";
 
-// ── mp3 播放輔助 ──────────────────────────────────────────────
+// ── 真實錄音樣本（/sounds/*.mp3）────────────────────────────────
+//
+// ⚠️ 2026-07-26 發現：`public/sounds/` 裡有 8 個真實音檔（2026-06 加的），但 `playAudio`
+//    **一個呼叫點都沒有**——全被後來的合成音效蓋過去，等於白放了一個月。
+//
+// 為什麼這件事重要：**合成音效有硬天花板**。現代手遊音效是錄音素材（真金屬、真布料、真撞擊）
+// 經過 DAW 的多頻段壓縮／飽和／transient shaper 做出來的，用振盪器＋噪音永遠追不上——
+// 尤其是「有機」的撞擊聲。UI 點擊、whoosh、科技感這類合成得出來，箭射中肉體則不行。
+//
+// 所以策略是**混合**：有樣本的用樣本，沒樣本的用合成當保底。
+//   `sample(name, vol, fallback)` → 檔案播得出來就播檔案；載入失敗（或還沒解鎖）就跑合成版。
+//   這樣新增音檔只要丟進 /sounds/ 再加一行對照，不必改任何呼叫端。
 const _sfxCache = {};
+const _sfxBroken = {};     // 載入失敗的檔名 → 之後直接走合成，不再重試
+
 function playAudio(name, volume = 1) {
-  if (!getSoundEnabled()) return;
+  if (!getSoundEnabled()) return false;
+  if (_sfxBroken[name]) return false;
   try {
-    if (!_sfxCache[name]) _sfxCache[name] = new Audio(`/sounds/${name}.mp3`);
+    if (!_sfxCache[name]) {
+      const el = new Audio(`/sounds/${name}.mp3`);
+      el.preload = "auto";
+      el.addEventListener("error", () => { _sfxBroken[name] = true; }, { once: true });
+      _sfxCache[name] = el;
+    }
     const a = _sfxCache[name].cloneNode();
     a.volume = Math.max(0, Math.min(1, volume));
-    a.play().catch(() => {});
-  } catch {}
+    const pr = a.play();
+    if (pr && pr.catch) pr.catch(() => {});   // 自動播放被擋 → 不當成壞檔，下次還能試
+    return true;
+  } catch {
+    _sfxBroken[name] = true;
+    return false;
+  }
+}
+
+// 有樣本就用樣本，否則跑合成版（fallback）。
+// ⚠️ 震動要傳進來：合成版的函式體裡本來就有 vibrate()，但走樣本時那段不會執行，
+//    不補的話「用了真實音效反而沒有觸覺回饋」——這是實裝樣本時最容易漏的回歸。
+function sample(name, volume, fallback, vib) {
+  if (playAudio(name, volume)) { if (vib !== undefined) vibrate(vib); }
+  else fallback?.();
+}
+
+// 進 App 時先把樣本抓下來，第一次觸發才不會有延遲
+const SAMPLE_NAMES = ["normal_atk", "crit", "monster_atk", "monster_crit", "miss", "level_up", "open_chest", "victory"];
+let _preloaded = false;
+function preloadSamples() {
+  if (_preloaded || typeof window === "undefined") return;
+  _preloaded = true;
+  for (const n of SAMPLE_NAMES) {
+    try {
+      const el = new Audio(`/sounds/${n}.mp3`);
+      el.preload = "auto";
+      el.addEventListener("error", () => { _sfxBroken[n] = true; }, { once: true });
+      _sfxCache[n] = el;
+    } catch { _sfxBroken[n] = true; }
+  }
 }
 
 let _ctx = null;
@@ -34,6 +82,7 @@ function ctx() {
 // 確保 AudioContext 解鎖（在使用者互動後呼叫）
 export function unlockAudio() {
   ctx();
+  preloadSamples();   // 樣本也一起預載，第一次命中才不會延遲
 }
 
 let _gestured = false;
@@ -405,7 +454,12 @@ export function sfxError() {
 // ── 射箭音效 ─────────────────────────────────────────────────
 
 // 普通命中
+// 有真實樣本就用樣本；載入失敗會自動退回下面的合成版（不會變成無聲）
 export function sfxArrowHit() {
+  sample("normal_atk", 0.85, sfxArrowHitSynth, 18);
+}
+
+function sfxArrowHitSynth() {
   // 命中＝transient(air) + 重量(impact 下掃) + 低頻(sub)。這三層就是「打到東西」的感覺。
   air({ dur: 0.05, gain: 0.1, hp: 5200, send: 0.08 });
   impact({ dur: 0.2, cut0: 5200, cut1: 300, gain: 0.3, send: 0.16 });
@@ -414,7 +468,12 @@ export function sfxArrowHit() {
 }
 
 // 爆擊
+// 有真實樣本就用樣本；載入失敗會自動退回下面的合成版（不會變成無聲）
 export function sfxCritBoom() {
+  sample("crit", 0.9, sfxCritBoomSynth, [0, 55, 40, 70]);
+}
+
+function sfxCritBoomSynth() {
   // 暴擊＝同一套但每層都加大，並多送殘響（空間變大＝更有威力）
   air({ dur: 0.09, gain: 0.16, hp: 4600, send: 0.24 });
   impact({ dur: 0.42, cut0: 8000, cut1: 180, gain: 0.44, send: 0.3 });
@@ -432,7 +491,12 @@ export function sfxOrganHit() {
 }
 
 // 脫靶
+// 有真實樣本就用樣本；載入失敗會自動退回下面的合成版（不會變成無聲）
 export function sfxSoftFail() {
+  sample("miss", 0.7, sfxSoftFailSynth, 8);
+}
+
+function sfxSoftFailSynth() {
   // 閃避/沒中：短的空氣感 + 一顆很輕的下行音，不要有衝擊
   air({ dur: 0.14, gain: 0.1, hp: 3000, send: 0.16 });
   punch({ freq: 400, drop: 0.6, dur: 0.1, gain: 0.08, type: 'sine', send: 0.1 });
@@ -450,7 +514,12 @@ export function sfxArrowShoot() {
 // ── 戰鬥音效 ─────────────────────────────────────────────────
 
 // 怪物反擊
+// 有真實樣本就用樣本；載入失敗會自動退回下面的合成版（不會變成無聲）
 export function sfxCounter() {
+  sample("monster_atk", 0.85, sfxCounterSynth, [0, 45]);
+}
+
+function sfxCounterSynth() {
   // 被打：cutoff 壓得更低＝更「悶」，聽起來是自己吃了一下
   impact({ dur: 0.3, cut0: 2400, cut1: 160, gain: 0.36, send: 0.14 });
   sub({ freq: 58, dur: 0.26, gain: 0.5 });
@@ -459,7 +528,12 @@ export function sfxCounter() {
 }
 
 // 怪物爆擊反擊
+// 有真實樣本就用樣本；載入失敗會自動退回下面的合成版（不會變成無聲）
 export function sfxCounterCrit() {
+  sample("monster_crit", 0.9, sfxCounterCritSynth, [0, 70, 40, 90]);
+}
+
+function sfxCounterCritSynth() {
   impact({ dur: 0.46, cut0: 3200, cut1: 130, gain: 0.46, send: 0.24 });
   sub({ freq: 48, dur: 0.42, gain: 0.66 });
   punch({ freq: 150, drop: 0.4, dur: 0.3, gain: 0.2, type: 'triangle', delay: 0.03, send: 0.2 });
@@ -547,7 +621,12 @@ export function sfxPotionDrink() {
 }
 
 // 打怪/世界王勝利 — 爆炸聲 + 8音上行凱旋旋律（sfxVictory 為別名）
+// 有真實樣本就用樣本；載入失敗會自動退回下面的合成版（不會變成無聲）
 export function sfxVictoryFanfare() {
+  sample("victory", 0.85, sfxVictoryFanfareSynth, [0, 60, 60, 60, 60, 120]);
+}
+
+function sfxVictoryFanfareSynth() {
   // 開場一擊（impact + sub）→ 大三和弦上行 → 高八度收尾。用 pluck 疊比方波旋律厚得多。
   impact({ dur: 0.34, cut0: 6000, cut1: 200, gain: 0.34, send: 0.3 });
   sub({ freq: 66, dur: 0.4, gain: 0.5 });
@@ -580,7 +659,12 @@ export function sfxEpic() {
 // ── 新增音效 ─────────────────────────────────────────────────
 
 // 升等/通過檢定
+// 有真實樣本就用樣本；載入失敗會自動退回下面的合成版（不會變成無聲）
 export function sfxLevelUp() {
+  sample("level_up", 0.85, sfxLevelUpSynth, [0, 40, 40, 40, 40, 100]);
+}
+
+function sfxLevelUpSynth() {
   // 升級：上行四音 + 每一階都往上加亮度，最後一顆送很多殘響（成就感的餘韻）
   notes([[523.3, 0], [659.3, 0.09], [784.0, 0.18], [1046.5, 0.28, 0.6]], { gain: 0.15, send: 0.36, spread: true });
   swell({ up: true, dur: 0.42, gain: 0.1, send: 0.3 });
@@ -589,7 +673,12 @@ export function sfxLevelUp() {
 }
 
 // 開寶箱
+// 有真實樣本就用樣本；載入失敗會自動退回下面的合成版（不會變成無聲）
 export function sfxOpenChest() {
+  sample("open_chest", 0.85, sfxOpenChestSynth, [0, 25, 40, 60]);
+}
+
+function sfxOpenChestSynth() {
   // 開箱：木頭吱一下（低 pluck）→ 掀開的 swell → 寶物閃光（高頻和弦）
   pluck({ freq: 140, dur: 0.14, gain: 0.16, detune: 30, cut0: 1800, cut1: 300, send: 0.1 });
   swell({ up: true, dur: 0.3, gain: 0.14, delay: 0.08, send: 0.26 });
