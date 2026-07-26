@@ -5,6 +5,30 @@
 
 ---
 
+## 2026-07-26（Firestore 讀寫量稽核與優化）
+
+作者問「讀寫量變得很龐大」，做了一次全面盤點（69 個 onSnapshot、各層寫入路徑），結論與處置：
+
+**先確認已經做對的（沒動）**
+- `firebase.js` 有開 `persistentLocalCache`：listener 重新掛載時走 resume token，只計費「變動過的文件」。
+- 箭數寫入已批次（localStorage 佇列 ＋ 10 秒 debounce）。
+
+**改掉的五項**
+| 問題 | 原本 | 現在 |
+|---|---|---|
+| 公會存檔寫入放大 | 每個 UI 動作寫一份完整存檔（含 120 格 stash），整理 10 件裝備＝10 次寫入 | `saveGuildProfileDebounced` 1.5 秒合併；`pagehide`／切背景／卸載時 `flushGuildSave` 落地 |
+| 練習頁歷史紀錄 | 進頁面就拉 300 筆練習 ＋ 50 筆打怪＝**350 次讀取** | 預設 60 筆，「載入更早的紀錄」再加 120 |
+| 教練後台全會員 | 16 個分頁各自 `getMembers()`，切分頁就重讀整個 members | 30 秒 TTL 快取 ＋ inflight 去重；`createMember/updateMember/deleteMember` 會 `invalidateMembersCache()` |
+| 首頁/我的公會階級 | 每次掛載一次 `getDoc` | 模組級快取 5 分鐘 ＋ inflight 去重（`invalidateGuildRank` 可手動失效） |
+| 決鬥心跳 | 30 秒一次。心跳寫的是**房間文件**，4 人房≈每分鐘 8 寫 + 32 讀 | `DUEL_HEARTBEAT_MS` 90 秒（踢人門檻 5 分鐘，仍有 3 次以上餘裕） |
+
+**⚠️ debounce 的正確性條件**：排隊中的是「當下的完整存檔」，所以任何**直接整份寫入**的路徑（`saveGuildProfile`／購買／賣雜貨／遠征結算）都要先 `cancelGuildSave()`，否則舊快照可能在之後才落地把新資料蓋掉。這幾條路徑都已經加上。
+
+**刻意不做**
+- 用 `writeBatch` 合併戰鬥結算的 ~11 次寫入 → **不會變便宜**。Firestore 按「文件寫入次數」計費，batch 只省往返不省錢；要省只能合併 schema，風險高、先不動。
+- 縮小 `subscribeAllMessages(150)` → 那 150 筆同時餵給紅點計數與審核頁，砍掉可能讓教練**看不到較早的未回覆訊息**，是功能性退化而不只是省錢。
+- 大改計數器 schema → 先看 Firebase Console → Usage 的實際分佈再決定，不要憑猜測優化。
+
 ## 2026-07-26（商店三分店 × 七族材料無限量 × 首頁/我的改讀新公會階級 × 戰場站位修正）
 
 **商店重整（作者要求分類）**

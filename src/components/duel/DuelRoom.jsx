@@ -16,7 +16,7 @@ import { loadBattleShootingProfile } from "../../lib/battlePractice";
 import { sfxArrowHit, sfxCritBoom, sfxMonsterDead, sfxCounter } from "../../lib/sound";
 import {
   subscribeDuelRoom, submitDuelArrows, processDuelRound,
-  updateDuelHeartbeat, sendDuelCheer, resetDuelRoom, getDuelStats, recordDuelResult,
+  updateDuelHeartbeat, DUEL_HEARTBEAT_MS, sendDuelCheer, resetDuelRoom, getDuelStats, recordDuelResult,
   clearDuelProcessing, proposeRematch, voteRematch, clearRematch,
   removePlayerFromRoom, resetWithRedistribution,
   skipDisconnected, applyPlayerCatToRoom,
@@ -318,7 +318,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   // ── 心跳（30s）──────────────────────────────────────────
   useEffect(() => {
     if (!roomId || !myId) return;
-    heartbeatRef.current = setInterval(() => updateDuelHeartbeat(roomId, myId), 30000);
+    heartbeatRef.current = setInterval(() => updateDuelHeartbeat(roomId, myId), DUEL_HEARTBEAT_MS);
     return () => clearInterval(heartbeatRef.current);
   }, [roomId, myId]);
 

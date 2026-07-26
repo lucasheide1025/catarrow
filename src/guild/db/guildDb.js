@@ -65,6 +65,7 @@ export function subscribeGuildProfile(memberId, callback) {
 // 換裝/卸下後存檔（equipped + stash 是一體的，一起寫才不會掉件）
 export async function saveGuildProfile(memberId, profile) {
   if (!memberId) return { ok: false, reason: "未登入（測試模式不存檔）" };
+  cancelGuildSave();     // 有人要直接整份寫了，排隊中的舊快照就別再蓋回去
   try {
     await setDoc(ref(memberId), toDoc(normalizeGuildProfile(profile)), { merge: true });
     return { ok: true };
@@ -74,12 +75,50 @@ export async function saveGuildProfile(memberId, profile) {
   }
 }
 
+// ── 存檔寫入合併（2026-07-26）────────────────────────────────
+// 為什麼要這個：UI 每一個動作（換裝／卸下／分解／強化／按一下過濾器）都會呼叫
+// changeProfile → 整份存檔寫一次。整理十件裝備就是 **10 次寫入**，而且每次都帶著
+// 最多 120 格的 stash。Firestore 寫入單價是讀取的 3 倍，這是純浪費。
+//
+// 合併規則：同一份存檔在 delay 內的連續變更只寫最後一次。
+// ⚠️ 排隊中的是「當下的完整存檔」，所以任何**直接整份寫入**的路徑（購買/賣雜貨/結算）
+//    都要先 cancel，否則舊快照可能在之後才落地、把新資料蓋掉。
+let saveTimer = null;
+let savePending = null;   // { memberId, profile }
+
+export function cancelGuildSave() {
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+  savePending = null;
+}
+
+export async function flushGuildSave() {
+  if (!savePending) return { ok: true, skipped: true };
+  const { memberId, profile } = savePending;
+  cancelGuildSave();
+  try {
+    await setDoc(ref(memberId), toDoc(normalizeGuildProfile(profile)), { merge: true });
+    return { ok: true };
+  } catch (e) {
+    console.warn("flushGuildSave:", e?.message);
+    return { ok: false, reason: e?.message };
+  }
+}
+
+export function saveGuildProfileDebounced(memberId, profile, delay = 1500) {
+  if (!memberId) return { ok: false, reason: "未登入（測試模式不存檔）" };
+  savePending = { memberId, profile };
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { saveTimer = null; flushGuildSave(); }, delay);
+  return { ok: true, queued: true };
+}
+
 // 公會商店購買：驗證全在 domain（階級/CAT幣/倉庫），這裡只寫。
 // 材料類商品的材料寫進主線 materialInventory（回饋打怪/貓村經濟）。
 export async function buyGuildShopItem(memberId, profile, itemId) {
   const res = purchaseFromShop(profile, itemId);
   if (!res.ok) return res;
   if (!memberId) return { ...res, offline: true };   // 離線試玩：算得出結果但不存
+  cancelGuildSave();   // 下面會整份寫，排隊中的舊快照要作廢
   try {
     await setDoc(ref(memberId), toDoc(res.profile), { merge: true });
     if (res.materials.length) await addMaterials(memberId, res.materials);
@@ -96,6 +135,7 @@ export async function sellGuildJunk(memberId, profile, sell, valuationMult = 1) 
   const res = sellJunkFromStock(profile, sell, valuationMult);
   if (!res.sold.length) return { ok: false, reason: "沒有可賣的雜貨", ...res };
   if (!memberId) return { ok: true, offline: true, ...res };
+  cancelGuildSave();
   try {
     await setDoc(ref(memberId), toDoc(res.profile), { merge: true });
     if (res.coins > 0) {
@@ -111,6 +151,7 @@ export async function sellGuildJunk(memberId, profile, sell, valuationMult = 1) 
 // 遠征結算 → 真的發獎。呼叫端要自己做 once-guard（一趟只請領一次）。
 // 回傳 { ok, profile, repGained, coinsGained, materialsGranted, stashFull, offline }
 export async function grantExpeditionRewards(memberId, loot, opts = {}) {
+  cancelGuildSave();   // 結算會整份寫，排隊中的舊快照要作廢（否則獎勵可能被蓋掉）
   const current = opts.profile !== undefined ? opts.profile : await loadGuildProfile(memberId);
   const applied = applyLootToProfile(current, loot, { danger: opts.danger || 1 });
   // 委託結案：勝敗都鎖同一張（企劃拍板——失敗也算接過了，當天不能重刷）

@@ -5,7 +5,7 @@ import { calcArcherStats } from "../../lib/monsterData";
 import {
   createDuelRoom, joinDuelRoom, subscribeDuelRoom, subscribeOpenDuelRooms, cleanupStaleDuelRooms,
   startDuelBattle, skipDisconnected, shuffleDuelTeams, balanceDuelStats, getDuelStats,
-  updateDuelHeartbeat, closeDuelRoom, removePlayerFromRoom, scaleUnevenHost,
+  updateDuelHeartbeat, DUEL_HEARTBEAT_MS, closeDuelRoom, removePlayerFromRoom, scaleUnevenHost,
   addBotToDuelRoom, removeBotFromDuelRoom,
 } from "../../lib/duelDb";
 import { DUEL_BOT_STATS, makeBotId, randomBotName } from "../../lib/botUtils";
@@ -108,7 +108,7 @@ export default function DuelLobby({ profile, onEnterRoom, onBack, isGuest }) {
   useEffect(() => {
     if (phase !== "waiting" || !roomId || !myId) return;
     updateDuelHeartbeat(roomId, myIdRef.current).catch(() => {});
-    const t = setInterval(() => updateDuelHeartbeat(roomId, myIdRef.current).catch(() => {}), 30000);
+    const t = setInterval(() => updateDuelHeartbeat(roomId, myIdRef.current).catch(() => {}), DUEL_HEARTBEAT_MS);
     return () => clearInterval(t);
   }, [phase, roomId, myId]); // eslint-disable-line
 

@@ -14,31 +14,48 @@ import { nextRankInfo } from "./domain/guildRank";
 
 const EMPTY = { loading: true, rep: 0, ...nextRankInfo(0), expeditions: 0 };
 
+// 模組級快取：首頁與「我的」都會用，切分頁又會重新掛載——沒有快取的話每切一次就打一發網路。
+// 公會階級不是即時性資料（聲望只在遠征結算才變），5 分鐘綽綽有餘。
+const TTL_MS = 5 * 60 * 1000;
+const cache = new Map();   // memberId → { at, value }
+const inflight = new Map();  // 同時掛載兩個元件時只發一次請求
+
+// 遠征結算後呼叫，讓下次讀取拿到新聲望（公會畫面關閉時可用）
+export function invalidateGuildRank(memberId) {
+  cache.delete(memberId);
+}
+
+async function fetchRank(memberId) {
+  const snap = await getDoc(doc(db, "guildProfiles", memberId));
+  const d = snap.exists() ? snap.data() : null;
+  const rep = Math.max(0, Math.floor(Number(d?.rep) || 0));
+  return {
+    loading: false,
+    rep,
+    ...nextRankInfo(rep),
+    // 沒有存檔＝還沒踏進公會，UI 可以據此顯示「尚未註冊」
+    registered: !!d,
+    expeditions: Math.max(0, Math.floor(Number(d?.expeditions?.total) || 0)),
+  };
+}
+
 export function useGuildRank(memberId) {
-  const [state, setState] = useState(EMPTY);
+  const cached = memberId && cache.get(memberId);
+  const fresh = cached && Date.now() - cached.at < TTL_MS;
+  const [state, setState] = useState(fresh ? cached.value : EMPTY);
 
   useEffect(() => {
     if (!memberId) { setState({ ...EMPTY, loading: false }); return; }
+    const hit = cache.get(memberId);
+    if (hit && Date.now() - hit.at < TTL_MS) { setState(hit.value); return; }
+
     let alive = true;
-    (async () => {
-      try {
-        const snap = await getDoc(doc(db, "guildProfiles", memberId));
-        const d = snap.exists() ? snap.data() : null;
-        const rep = Math.max(0, Math.floor(Number(d?.rep) || 0));
-        if (alive) {
-          setState({
-            loading: false,
-            rep,
-            ...nextRankInfo(rep),
-            // 沒有存檔＝還沒踏進公會，UI 可以據此顯示「尚未註冊」
-            registered: !!d,
-            expeditions: Math.max(0, Math.floor(Number(d?.expeditions?.total) || 0)),
-          });
-        }
-      } catch {
-        if (alive) setState({ ...EMPTY, loading: false });   // 讀不到就當見習，不擋畫面
-      }
-    })();
+    const req = inflight.get(memberId) || fetchRank(memberId)
+      .then(value => { cache.set(memberId, { at: Date.now(), value }); return value; })
+      .finally(() => inflight.delete(memberId));
+    inflight.set(memberId, req);
+    req.then(v => { if (alive) setState(v); })
+       .catch(() => { if (alive) setState({ ...EMPTY, loading: false }); });   // 讀不到就當見習，不擋畫面
     return () => { alive = false; };
   }, [memberId]);
 

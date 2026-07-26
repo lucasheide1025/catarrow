@@ -14,7 +14,7 @@ import { addRoundArrows } from "../lib/db";
 import { nextRankInfo, repToRank } from "./domain/guildRank";
 import { unlockAudio, sfxLevelUp, sfxCoinDrop, sfxOpenChest } from "../lib/sound";
 import { rollDailyContracts, contractsStateFor, todayKey } from "./domain/guildContracts";
-import { loadGuildProfile, saveGuildProfile, grantExpeditionRewards, buyGuildShopItem, sellGuildJunk } from "./db/guildDb";
+import { loadGuildProfile, saveGuildProfileDebounced, flushGuildSave, grantExpeditionRewards, buyGuildShopItem, sellGuildJunk } from "./db/guildDb";
 import { equipDisplayName, GRADE_META } from "./data/guildEquipCatalog";
 import GuildBattle from "./ui/GuildBattle";
 import { fieldBg, bgLayer, rankBadge, junkArt, ArtOrEmoji, HeroArt, CatArt } from "./ui/GuildArt";
@@ -125,11 +125,26 @@ export default function GuildTestApp({ onBack, onLegacy }) {
     setContract(c); setRun(newRun(c)); setResult(null); setLoot(null); setGrantMsg(""); setPhase("loadout");
   };
 
+  // 存檔寫入**合併**：UI 連續操作（整理倉庫、按過濾器）只寫最後一次，
+  // 不是每點一下就寫一份含 120 格倉庫的文件。離開畫面/切到背景會強制落地。
   const changeProfile = next => {
     const p = normalizeGuildProfile(next);
     setGp(p);
-    saveGuildProfile(memberId, p);
+    saveGuildProfileDebounced(memberId, p);
   };
+
+  // 關頁、切到背景、元件卸載 → 把還沒寫的存檔補上（debounce 的代價就是要自己收尾）
+  useEffect(() => {
+    const flush = () => { flushGuildSave(); };
+    const onHide = () => { if (document.hidden) flush(); };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onHide);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onHide);
+      flush();
+    };
+  }, []);
 
   const sellJunk = async (sellMap, valuationMult) => {
     const res = await sellGuildJunk(memberId, gp, sellMap, valuationMult);

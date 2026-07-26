@@ -153,6 +153,12 @@ export async function submitDuelArrows(roomId, team, memberId, arrows, preferred
 }
 
 // ── 心跳更新（防斷線偵測）────────────────────────────────────
+// 心跳間隔（2026-07-26 讀寫量稽核：30s → 90s）。
+// 心跳寫的是**房間文件本身**，所以一次心跳＝1 次寫入 ＋ 房內每個訂閱者各 1 次讀取。
+// 4 人房用 30s ≈ 每分鐘 8 寫 + 32 讀，純粹為了「還在線上」這件事。
+// 踢人門檻是 5 分鐘，90s 仍有 3 次以上的心跳餘裕，安全邊際足夠。
+export const DUEL_HEARTBEAT_MS = 90000;
+
 export async function updateDuelHeartbeat(roomId, memberId) {
   try {
     await updateDoc(doc(db, DUEL, roomId), {

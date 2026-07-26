@@ -1347,7 +1347,7 @@ function BattleContextSummary({ log }) {
   );
 }
 
-function HistoryTab({ logs, monsterLogs }) {
+function HistoryTab({ logs, monsterLogs, canLoadMore = false, onLoadMore }) {
   const [expandLog,    setExpandLog]    = useState({});
   const [expandDist,   setExpandDist]   = useState({});
   const [sourceFilter, setSourceFilter] = useState("all");
@@ -1760,6 +1760,14 @@ function HistoryTab({ logs, monsterLogs }) {
             <div className="text-center text-white/40 text-sm py-4">沒有紀錄</div>
           )}
         </>
+      )}
+
+      {/* 預設只載近期紀錄，更早的按需載入（省讀取量） */}
+      {canLoadMore&&(
+        <button onClick={onLoadMore}
+          className="mx-auto mt-2 px-4 py-2 rounded-full text-xs font-bold bg-white/10 text-white/70 border border-white/20">
+          載入更早的紀錄
+        </button>
       )}
     </div>
   );
@@ -2212,6 +2220,9 @@ export default function MemberPractice({ profileOverride = null, isGuestMode = f
   const { toast, ToastContainer }=useToast();
   const [logs,        setLogs]        = useState([]);
   const [monsterLogs, setMonsterLogs] = useState([]);
+  // 歷史紀錄一次只載這麼多。舊值是預設的 300 筆＋50 筆打怪紀錄 → **光是開這一頁就 350 次讀取**，
+  // 而且大多數人只看最近幾次。要看更早的按「載入更多」再加載（2026-07-26 讀寫量稽核）。
+  const [logLimit, setLogLimit] = useState(60);
   const [loading, setLoading]=useState(true);
   const [tab,   setTab]  =useState("practice");
   const [phase, setPhase]=useState("setup");
@@ -2310,10 +2321,10 @@ export default function MemberPractice({ profileOverride = null, isGuestMode = f
     const unsubP=subscribePracticeLogs(profile.id, data=>{
       setLogs(data.filter(l=>l.rounds?.length||l.totalArrows>0));
       setLoading(false);
-    });
-    const unsubM=subscribeMonsterLogs(profile.id, setMonsterLogs, 50);
+    }, logLimit);
+    const unsubM=subscribeMonsterLogs(profile.id, setMonsterLogs, Math.min(50, Math.round(logLimit / 2)));
     return ()=>{ unsubP?.(); unsubM?.(); };
-  },[profile?.id]); // eslint-disable-line
+  },[profile?.id, logLimit]); // eslint-disable-line
 
   async function handleSave(){
     setSaving(true);
@@ -2454,7 +2465,9 @@ export default function MemberPractice({ profileOverride = null, isGuestMode = f
           setPhase("scoring");
         }} saving={saving} />
       )}
-      {tab==="history"  &&phase==="setup"&&<HistoryTab  logs={logs} monsterLogs={monsterLogs} />}
+      {tab==="history"  &&phase==="setup"&&<HistoryTab  logs={logs} monsterLogs={monsterLogs}
+        canLoadMore={logs.length + monsterLogs.length > 0 && logs.length >= logLimit}
+        onLoadMore={()=>setLogLimit(n=>n+120)} />}
       {tab==="overview" &&phase==="setup"&&<OverviewTab logs={logs} monsterLogs={monsterLogs} />}
       {tab==="analysis" &&phase==="setup"&&<AnalysisTab logs={logs} profile={profile} />}
     </div>

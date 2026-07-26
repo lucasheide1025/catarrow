@@ -650,9 +650,26 @@ async function isGuestOrKidMember(memberId) {
   }
 }
 
-export async function getMembers() {
-  const snap = await getDocs(collection(db, C.members));
-  return sortByLastLogin(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(isOfficial));
+// ── 全會員清單的短期快取（2026-07-26 讀寫量稽核）────────────────
+// 教練後台有 16 個分頁各自呼叫 getMembers()，每切一次分頁就把整個 members 集合重讀一遍。
+// 30 秒 TTL：切分頁不重讀，但改完資料很快就會看到新的。
+// ⚠️ 任何改動 members 的寫入都要呼叫 invalidateMembersCache()，否則編輯後畫面不會更新。
+const MEMBERS_TTL_MS = 30 * 1000;
+let membersCache = null;      // { at, list }
+let membersInflight = null;   // 同時多個分頁掛載時只發一次
+
+export function invalidateMembersCache() { membersCache = null; }
+
+export async function getMembers({ fresh = false } = {}) {
+  if (!fresh && membersCache && Date.now() - membersCache.at < MEMBERS_TTL_MS) return membersCache.list;
+  if (!fresh && membersInflight) return membersInflight;
+  membersInflight = (async () => {
+    const snap = await getDocs(collection(db, C.members));
+    const list = sortByLastLogin(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(isOfficial));
+    membersCache = { at: Date.now(), list };
+    return list;
+  })().finally(() => { membersInflight = null; });
+  return membersInflight;
 }
 
 export function subscribeMembers(callback) {
@@ -686,6 +703,7 @@ export async function createMember(data, operatorId) {
     lastLoginAt: now,
     updatedAt: now,
   });
+  invalidateMembersCache();   // 名單有變 → 讓快取失效，後台立刻看得到
   await writeAuditLog("CREATE", uid, "member", null, data, operatorId);
   return uid;
 }
@@ -699,12 +717,14 @@ const safeFields = ["name", "nickname", "username", "email", "phone", "archerNo"
   // 與 createMember 一致：email 一律存小寫，避免登入時的大小寫敏感比對查不到人
   if (updateData.email) updateData.email = String(updateData.email).trim().toLowerCase();
   await updateDoc(doc(db, C.members, id), updateData);
+  invalidateMembersCache();
   await writeAuditLog("UPDATE", id, "member", before, updateData, operatorId);
 }
 
 export async function deleteMember(id, operatorId) {
   const before = await getMember(id);
   await deleteDoc(doc(db, C.members, id));
+  invalidateMembersCache();
   await writeAuditLog("DELETE", id, "member", before, null, operatorId);
 }
 
