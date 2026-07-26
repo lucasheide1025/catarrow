@@ -78,10 +78,10 @@ export function mergeOwned(entry, collection) {
   };
 }
 
-// 已取得卡的圖片來源鏈（fallback：/cards/monsters → /monsters-battle → /monsters → emoji）。
-// 未取得回 []（不發任何圖片請求,由 UI 用純 CSS 剪影）。
+// 卡片圖片來源鏈（fallback：/cards/monsters → /monsters-battle → /monsters → SVG）。
+// 未取得卡也提供同一條有限鏈，由 UI lazy-load 後套灰階暗化，讓玩家能辨識收藏輪廓。
 export function ownedArtSources(view) {
-  if (!view || !view.owned) return [];
+  if (!view) return [];
   if (view.artSources) return view.artSources; // 外部來源（如世界王卡）自帶圖片鏈
   const portraitFallbacks = [
     `/monsters-battle/${view.monsterId}.webp`,
@@ -93,7 +93,7 @@ export function ownedArtSources(view) {
     : portraitFallbacks;
 }
 
-// 卡圖主 URL：只有已取得才回傳（未取得 → null,不發請求）。
+// 卡圖主 URL；是否以彩色顯示由 UI 的 owned 狀態決定。
 export function cardImageSrc(view) {
   const sources = ownedArtSources(view);
   return sources.length ? sources[0] : null;

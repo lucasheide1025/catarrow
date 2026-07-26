@@ -1,5 +1,5 @@
 // src/components/member/cards/CardMiniCell.jsx
-// 極簡小卡：<button type="button">。已取得→圖片(lazy+fallback鏈,缺圖=SVG佔位);未取得→暗化 SVG 剪影(零請求)。
+// 極簡小卡：<button type="button">。實圖走 lazy + fallback；未取得卡顯示灰階暗化圖。
 // 列表只顯示必要資訊（圖/名/星/角標），詳細內容在 CardDetailSheet。
 
 import CardArtImage from "./CardArt";

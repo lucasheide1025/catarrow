@@ -1,7 +1,7 @@
 // src/components/member/cards/CardArt.jsx
-// 卡面圖層：實圖（lazy + fallback 鏈）→ 缺圖時改用「確定性 SVG 佔位卡面」（零網路請求）。
+// 卡面圖層：實圖（lazy + fallback 鏈）→ 缺圖時改用「確定性 SVG 佔位卡面」。
 // 依專案慣例（怪物/徽章走 SVG）：族系配色+徽記、Tier 光芒與圓點、小王/大王王冠角標。
-// 未取得卡由呼叫端以 dim 呈現（灰暗剪影,不設任何真實圖片 src）。
+// 未取得卡仍顯示真實卡圖，但套灰階暗化以保留收藏輪廓。
 
 import { useState } from "react";
 import { ownedArtSources } from "./cardCatalog";
@@ -71,20 +71,26 @@ export function CardArtSVG({ view, dim = false }) {
   );
 }
 
-// 統一卡面：已取得→實圖(lazy+有限fallback,終端=SVG佔位);未取得→暗化 SVG(零請求)
+// 統一卡面：實圖(lazy+有限fallback,終端=SVG佔位)；未取得時套灰階暗化。
 export default function CardArtImage({ view }) {
-  const sources = ownedArtSources(view); // 未取得回 []
+  const sources = ownedArtSources(view);
   const [index, setIndex] = useState(0);
-  if (view.owned && index < sources.length) {
+  if (index < sources.length) {
     return (
       <img
         src={sources[index]}
-        alt={view.name}
+        alt={view.owned ? view.name : "未取得卡片"}
         loading="lazy"
         decoding="async"
         draggable="false"
         onError={() => setIndex(n => n + 1)}
-        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+        style={{
+          width: "100%",
+          height: "100%",
+          objectFit: "cover",
+          filter: view.owned ? undefined : "grayscale(1) brightness(.42) contrast(.9)",
+          opacity: view.owned ? 1 : 0.78,
+        }}
       />
     );
   }

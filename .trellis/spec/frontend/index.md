@@ -36,6 +36,7 @@ This directory contains guidelines for frontend development. Fill in each file w
 
 | [Marketplace Security](./marketplace-security.md) | Atomic card-market escrow, payment, cancellation, and proceeds contracts enforced with Firestore `getAfter()` | Active |
 | [Bundle Boundaries](./bundle-boundaries.md) | Measured route-level lazy loading and the final-static-import rule for real initial-bundle reductions | Active |
+| [Card Collection System](./card-collection-system.md) | Owned/unowned art visibility, finite image fallbacks, locked information, and card/battle asset path contracts | Active |
 
 ---
 

@@ -38,12 +38,16 @@ describe("cardCatalog 衍生正確性", () => {
     }
   });
 
-  test("未取得卡片不產生任何圖片 URL", () => {
+  test("未取得卡片仍提供有限圖片鏈，供 UI 顯示灰階卡圖", () => {
     const entry = CARD_CATALOG[0];
     const view = mergeOwned(entry, { cards: {} }); // 未取得
     expect(view.owned).toBe(false);
-    expect(ownedArtSources(view)).toEqual([]);
-    expect(cardImageSrc(view)).toBeNull();
+    expect(ownedArtSources(view)).toEqual([
+      `/cards/monsters/${entry.artKey}.webp`,
+      `/monsters-battle/${entry.monsterId}.webp`,
+      `/monsters/${entry.monsterId}.webp`,
+    ]);
+    expect(cardImageSrc(view)).toBe(`/cards/monsters/${entry.artKey}.webp`);
   });
 
   test("已取得卡片：有限 fallback 鏈（3 段,不無限重試）+ 主 URL", () => {

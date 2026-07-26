@@ -140,7 +140,7 @@ export default function CardCollectionPrototype({ memberId, collection = {}, col
   }, [worldbossMode, family, tier, l1, collection, passExtra]);
 
   // 全族/全 Tier（未選定單一分組）：單一大網格顯示全部符合篩選的卡（含未取得剪影）。
-  // 未取得一律 SVG 剪影（零網路請求）;實圖只有已取得會載,DOM 上限 252 格可接受。
+  // 未取得卡以 lazy-loaded 灰階實圖顯示；完整彩圖與資訊仍只在取得後解鎖。
   const aggregateCards = useMemo(() => {
     if (worldbossMode || groupChosen) return [];
     return CARD_CATALOG
