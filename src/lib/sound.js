@@ -49,6 +49,9 @@ function sample(name, volume, fallback, vib) {
 }
 
 // 進 App 時先把樣本抓下來，第一次觸發才不會有延遲
+// ⚠️ 只列「已經放進 public/sounds/ 的檔案」。新增音檔**不需要改這裡**——
+//    沒被預載只是第一次觸發稍慢一點，`sample()` 照樣會找到並播放。
+//    列一堆還不存在的檔名反而會在開 App 時打出一串 404。
 const SAMPLE_NAMES = ["normal_atk", "crit", "monster_atk", "monster_crit", "miss", "level_up", "open_chest", "victory"];
 let _preloaded = false;
 function preloadSamples() {
@@ -385,6 +388,10 @@ function notes(list, opts = {}) {
 // ── UI 音效 ──────────────────────────────────────────────────
 
 export function sfxTap() {
+  sample("ui_tap", 0.55, sfxTapSynth, 8);
+}
+
+function sfxTapSynth() {
   // 分層：短 pluck 當「點」＋一絲 air 當「亮」。比單顆 sine 有質感又不吵。
   pluck({ freq: 880, dur: 0.075, gain: 0.13, cut0: 6000, cut1: 1400, send: 0.06 });
   air({ dur: 0.05, gain: 0.05, hp: 5000, send: 0.05 });
@@ -392,6 +399,10 @@ export function sfxTap() {
 }
 
 export function sfxNotify() {
+  sample("ui_notify", 0.7, sfxNotifySynth, [0, 30, 60, 30]);
+}
+
+function sfxNotifySynth() {
   tone(880,  0.1,  "triangle", 0.22, 0);
   tone(1100, 0.16, "triangle", 0.2,  0.13);
   tone(1320, 0.12, "triangle", 0.16, 0.26);
@@ -423,6 +434,10 @@ export function sfxNextHourAlert() {
 
 // tab / 開關切換 — 短促雙音（比 sfxTap 更輕）
 export function sfxSwitch() {
+  sample("ui_switch", 0.5, sfxSwitchSynth, 6);
+}
+
+function sfxSwitchSynth() {
   pluck({ freq: 1180, dur: 0.06, gain: 0.11, cut0: 7000, cut1: 2000, send: 0.05 });
   punch({ freq: 240, drop: 0.7, dur: 0.05, gain: 0.06, send: 0 });
   vibrate(6);
@@ -430,6 +445,10 @@ export function sfxSwitch() {
 
 // 彈窗開啟 — 上滑感
 export function sfxOpen() {
+  sample("ui_open", 0.6, sfxOpenSynth, 12);
+}
+
+function sfxOpenSynth() {
   swell({ up: true, dur: 0.26, gain: 0.13, send: 0.2 });
   pluck({ freq: 640, dur: 0.16, gain: 0.12, cut0: 4200, cut1: 1400, delay: 0.06, send: 0.18 });
   vibrate(12);
@@ -437,6 +456,10 @@ export function sfxOpen() {
 
 // 彈窗關閉 — 下滑感
 export function sfxClose() {
+  sample("ui_close", 0.55, sfxCloseSynth, 10);
+}
+
+function sfxCloseSynth() {
   swell({ up: false, dur: 0.22, gain: 0.12, send: 0.14 });
   punch({ freq: 300, drop: 0.5, dur: 0.12, gain: 0.14, delay: 0.03, send: 0.08 });
   vibrate(10);
@@ -444,6 +467,10 @@ export function sfxClose() {
 
 // 錯誤/不可行操作 — 低音雙頓
 export function sfxError() {
+  sample("ui_error", 0.7, sfxErrorSynth, [0, 40, 50, 40]);
+}
+
+function sfxErrorSynth() {
   // 兩顆下行的失諧 punch：不用刺耳的高頻也能讓人知道「不行」
   punch({ freq: 300, drop: 0.55, dur: 0.14, gain: 0.24, type: 'triangle', pan: -0.12, send: 0.1 });
   punch({ freq: 224, drop: 0.55, dur: 0.2, gain: 0.22, type: 'triangle', pan: 0.12, delay: 0.09, send: 0.14 });
@@ -484,6 +511,10 @@ function sfxCritBoomSynth() {
 
 // 器官/要害命中 — 低沉厚重
 export function sfxOrganHit() {
+  sample("cat_assist", 0.8, sfxOrganHitSynth, 14);
+}
+
+function sfxOrganHitSynth() {
   // 貓貓助攻/軟命中：比箭輕、比較「肉」，高頻少一點
   impact({ dur: 0.16, cut0: 3000, cut1: 400, gain: 0.22, send: 0.12 });
   punch({ freq: 340, drop: 0.5, dur: 0.1, gain: 0.12, type: 'triangle', send: 0.08 });
@@ -505,6 +536,10 @@ function sfxSoftFailSynth() {
 
 // 射箭弓弦聲
 export function sfxArrowShoot() {
+  sample("arrow_shoot", 0.8, sfxArrowShootSynth, 10);
+}
+
+function sfxArrowShootSynth() {
   // 弓弦：低頻 pluck（弦）＋ 往上掃的 air（箭離弦的颯）
   pluck({ freq: 196, dur: 0.09, gain: 0.16, detune: 26, cut0: 2600, cut1: 500, send: 0.06 });
   air({ dur: 0.16, gain: 0.14, hp: 2800, send: 0.12 });
@@ -542,6 +577,10 @@ function sfxCounterCritSynth() {
 
 // 怪物死亡 — 上行6音 + 最後爆炸
 export function sfxMonsterDead() {
+  sample("monster_dead", 0.85, sfxMonsterDeadSynth, [0, 30, 30, 50]);
+}
+
+function sfxMonsterDeadSynth() {
   // 擊倒：下行的失真吼叫 + 崩落的 impact 尾巴（多送殘響 → 有「散開」的感覺）
   punch({ freq: 260, drop: 0.22, dur: 0.34, gain: 0.2, type: 'sawtooth', send: 0.24 });
   impact({ dur: 0.4, cut0: 3400, cut1: 140, gain: 0.28, send: 0.28 });
@@ -551,6 +590,10 @@ export function sfxMonsterDead() {
 
 // 施法/結算開始 — 上行鋸齒5音
 export function sfxCast() {
+  sample("cast", 0.8, sfxCastSynth, [0, 20, 30, 30]);
+}
+
+function sfxCastSynth() {
   // 施法：往上掃的 swell + 失諧和聲，最後一顆停在五度（有「蓄力完成」的感覺）
   swell({ up: true, dur: 0.36, gain: 0.14, send: 0.32 });
   notes([[440, 0.1], [659.3, 0.22, 0.45]], { gain: 0.12, send: 0.4 });
@@ -559,6 +602,10 @@ export function sfxCast() {
 
 // Buff — 12 顆隨機閃光
 export function sfxBuff() {
+  sample("buff", 0.75, sfxBuffSynth, [0, 18, 30, 18]);
+}
+
+function sfxBuffSynth() {
   notes([[659.3, 0], [880, 0.08], [1108.7, 0.16, 0.42]], { gain: 0.12, send: 0.36, spread: true });
   air({ dur: 0.34, gain: 0.06, hp: 5000, delay: 0.1, send: 0.34 });
   vibrate([0, 18, 30, 18]);
@@ -566,6 +613,10 @@ export function sfxBuff() {
 
 // Debuff — 下行失諧失真
 export function sfxDebuff() {
+  sample("debuff", 0.75, sfxDebuffSynth, [0, 40, 60, 40]);
+}
+
+function sfxDebuffSynth() {
   distTone(280, 140, 0.4, 0.2, 0);
   tone(220, 0.12, "sawtooth", 0.18, 0);
   tone(175, 0.20, "sawtooth", 0.20, 0.1);
@@ -575,6 +626,10 @@ export function sfxDebuff() {
 
 // 復活 — 7音上行爆發
 export function sfxRevive() {
+  sample("revive", 0.8, sfxReviveSynth, [0, 50, 80, 50, 80, 100]);
+}
+
+function sfxReviveSynth() {
   const c = ctx(); if (!c) return;
   const t = c.currentTime;
   [440, 554, 659, 880, 1047, 1318, 1568].forEach((freq, i) => {
@@ -592,6 +647,10 @@ export function sfxRevive() {
 
 // 勝利/成功 — 3音上行
 export function sfxSuccess() {
+  sample("ui_success", 0.75, sfxSuccessSynth, [0, 25, 40, 25]);
+}
+
+function sfxSuccessSynth() {
   // 大三和弦上行琶音 + 空間感（送較多殘響 → 有「完成」的餘韻）
   notes([[659.3, 0], [830.6, 0.07], [987.8, 0.14, 0.42]], { gain: 0.13, send: 0.34, spread: true });
   air({ dur: 0.3, gain: 0.06, hp: 4200, delay: 0.14, send: 0.3 });
@@ -600,12 +659,20 @@ export function sfxSuccess() {
 
 // 回合結算 — 3音輕快確認
 export function sfxRoundEnd() {
+  sample("round_end", 0.7, sfxRoundEndSynth, 12);
+}
+
+function sfxRoundEndSynth() {
   notes([[523.3, 0], [659.3, 0.08, 0.34]], { gain: 0.11, send: 0.3 });
   vibrate(12);
 }
 
 // 喝藥水 — 泡泡上升5音
 export function sfxPotionDrink() {
+  sample("potion", 0.75, sfxPotionDrinkSynth, [0, 20, 30, 20]);
+}
+
+function sfxPotionDrinkSynth() {
   const c = ctx(); if (!c) return;
   const t = c.currentTime;
   [520, 620, 740, 880, 1040].forEach((freq, i) => {
@@ -640,6 +707,10 @@ function sfxVictoryFanfareSynth() {
 
 // 保底大招 — 8音上行旋律（方波+三角諧波）
 export function sfxEpic() {
+  sample("epic", 0.85, sfxEpicSynth, [0, 50, 60, 50, 60, 80]);
+}
+
+function sfxEpicSynth() {
   const c = ctx(); if (!c) return;
   const t = c.currentTime;
   [261, 329, 392, 523, 659, 784, 988, 1047].forEach((freq, i) => {
@@ -689,6 +760,10 @@ function sfxOpenChestSynth() {
 
 // 大勝利
 export function sfxVictory() {
+  sample("victory_small", 0.8, sfxVictorySynth, [0, 50, 60, 80, 100, 80]);
+}
+
+function sfxVictorySynth() {
   const c = ctx(); if (!c) return;
   const t = c.currentTime;
   [523, 659, 784, 1047, 1318].forEach((freq, i) => {
@@ -706,6 +781,10 @@ export function sfxVictory() {
 
 // 失敗/全滅 — 下行哀鳴 + 低頻衰退
 export function sfxDefeat() {
+  sample("defeat", 0.8, sfxDefeatSynth, [0, 90, 60, 140]);
+}
+
+function sfxDefeatSynth() {
   // 失敗：小三和弦下行 + 悶掉的 impact（cutoff 很低）＋長 sub → 沉下去的感覺
   notes([[392.0, 0], [311.1, 0.2], [261.6, 0.4], [196.0, 0.62, 0.7]], { gain: 0.14, send: 0.34 });
   impact({ dur: 0.5, cut0: 1400, cut1: 110, gain: 0.24, delay: 0.02, send: 0.26 });
@@ -715,6 +794,10 @@ export function sfxDefeat() {
 
 // 怪物嘶吼 — WaveShaper 失真低頻
 export function sfxZombieRoar() {
+  sample("zombie_roar", 0.85, sfxZombieRoarSynth, [0, 100, 50, 80, 30]);
+}
+
+function sfxZombieRoarSynth() {
   [0, 0.05, 0.1].forEach((d, i) => distTone(62 + i * 8, 40, 0.9, 0.3, d));
   noiseBurst(0, 0.6, 300, 0.5);
   vibrate([0, 100, 50, 80, 30]);
@@ -722,6 +805,10 @@ export function sfxZombieRoar() {
 
 // 金幣掉落 — 叮鈴叮鈴
 export function sfxCoinDrop() {
+  sample("coin", 0.75, sfxCoinDropSynth, [0, 12, 25, 12]);
+}
+
+function sfxCoinDropSynth() {
   // 金幣：五顆高頻 pluck 左右散開，模擬硬幣彈跳（有 pan 才像散落而不是一坨）
   [1568, 2093, 1760, 2349, 1976].forEach((f, i) => {
     pluck({ freq: f, dur: 0.09, gain: 0.1, detune: 6, cut0: 9000, cut1: 3000,
@@ -733,6 +820,10 @@ export function sfxCoinDrop() {
 
 // 商店購買 — 確認三音
 export function sfxShopBuy() {
+  sample("shop_buy", 0.75, sfxShopBuySynth, [0, 18, 30, 18]);
+}
+
+function sfxShopBuySynth() {
   // 購買：收銀機的「叮」＋紙袋感的短 impact
   pluck({ freq: 1318.5, dur: 0.1, gain: 0.12, cut0: 9000, cut1: 3500, send: 0.24 });
   pluck({ freq: 1760, dur: 0.14, gain: 0.1, delay: 0.06, cut0: 9000, cut1: 4000, send: 0.28 });
@@ -742,6 +833,10 @@ export function sfxShopBuy() {
 
 // 地下城開門 — 低頻嗡嗡 + 鏈條叮
 export function sfxDoorOpen() {
+  sample("door_open", 0.75, sfxDoorOpenSynth, [0, 30, 40, 60]);
+}
+
+function sfxDoorOpenSynth() {
   distTone(80, 55, 0.5, 0.22, 0);
   tone(1100, 0.06, "triangle", 0.15, 0.3);
   tone(880,  0.08, "triangle", 0.12, 0.36);
@@ -751,6 +846,10 @@ export function sfxDoorOpen() {
 
 // 路線確認 — 清脆雙音選擇
 export function sfxPathSelect() {
+  sample("ui_confirm", 0.7, sfxPathSelectSynth, [0, 20, 30]);
+}
+
+function sfxPathSelectSynth() {
   // 選定/接受：確認感來自「音高瞬降的 punch」，比單純的高音 beep 有份量
   punch({ freq: 520, drop: 0.62, dur: 0.14, gain: 0.2, type: 'triangle', send: 0.14 });
   pluck({ freq: 784, dur: 0.16, gain: 0.11, delay: 0.05, cut0: 6000, cut1: 1600, send: 0.22 });
@@ -759,6 +858,10 @@ export function sfxPathSelect() {
 
 // 進場戰鬥 — 緊張鼓點 + 張力上升（戰前氣氛）
 export function sfxBattleIntro() {
+  sample("battle_intro", 0.85, sfxBattleIntroSynth, [0, 60, 50, 60, 50, 100, 80, 200]);
+}
+
+function sfxBattleIntroSynth() {
   const c = ctx(); if (!c) return;
   const t = c.currentTime;
   // 三連低頻鼓擊
@@ -779,6 +882,10 @@ export function sfxBattleIntro() {
 
 // 世界王登場 — 震撼長音效（低頻轟炸 + 警報上升旋律 + 持續電流）
 export function sfxWorldBossAppear() {
+  sample("boss_appear", 0.9, sfxWorldBossAppearSynth, [0, 100, 80, 120, 80, 200, 100, 300]);
+}
+
+function sfxWorldBossAppearSynth() {
   const c = ctx(); if (!c) return;
   const t = c.currentTime;
   // 第一波：低頻震爆
@@ -808,6 +915,10 @@ export function sfxWorldBossAppear() {
 
 // 扭蛋機轉動（按下按鈕時）
 export function sfxGachaRoll() {
+  sample("gacha_roll", 0.8, sfxGachaRollSynth, [0, 30, 40, 30, 50]);
+}
+
+function sfxGachaRollSynth() {
   noiseBurst(0, 0.12, 900, 0.35);
   tone(180, 0.35, "sawtooth", 0.12, 0);
   tone(260, 0.25, "sawtooth", 0.10, 0.1);
@@ -818,6 +929,12 @@ export function sfxGachaRoll() {
 
 // 扭蛋結果揭曉（有新卡=閃耀，普通=輕快）
 export function sfxGachaReveal(isNew = false) {
+  // 新卡與重複卡是兩種情緒，各給一個檔（缺檔就退回合成版）
+  if (isNew) sample("gacha_reveal_new", 0.85, () => sfxGachaRevealSynth(true), [0, 50, 60, 80, 100]);
+  else sample("gacha_reveal", 0.8, () => sfxGachaRevealSynth(false), [0, 30, 50]);
+}
+
+function sfxGachaRevealSynth(isNew) {
   if (isNew) {
     noiseBurst(0, 0.15, 2000, 0.4);
     [523, 659, 784, 1047, 1318].forEach((f, i) => tone(f, 0.22, "triangle", 0.22, i * 0.08));
@@ -833,20 +950,36 @@ export function sfxGachaReveal(isNew = false) {
 
 // ── 議會廳採集音效 ──────────────────────────────────────────
 export function sfxGatherClick() {
+  sample("gather_click", 0.6, sfxGatherClickSynth);
+}
+
+function sfxGatherClickSynth() {
   noiseBurst(0, 0.07, 600, 0.22);
   tone(220, 0.10, "sine", 0.15, 0.04);
 }
 export function sfxGatherDefeat() {
+  sample("gather_defeat", 0.8, sfxGatherDefeatSynth);
+}
+
+function sfxGatherDefeatSynth() {
   tone(440, 0.14, "triangle", 0.22, 0);
   tone(554, 0.18, "triangle", 0.20, 0.10);
   tone(659, 0.22, "triangle", 0.18, 0.20);
 }
 export function sfxGatherFail() {
+  sample("gather_fail", 0.75, sfxGatherFailSynth);
+}
+
+function sfxGatherFailSynth() {
   tone(330, 0.18, "sine", 0.18, 0);
   tone(277, 0.22, "sine", 0.16, 0.15);
   tone(220, 0.30, "sine", 0.14, 0.35);
 }
 export function sfxGatherVictory() {
+  sample("gather_victory", 0.8, sfxGatherVictorySynth, [0, 40, 60, 80]);
+}
+
+function sfxGatherVictorySynth() {
   [523, 659, 784, 880, 1047].forEach((f, i) =>
     tone(f, 0.22, "triangle", 0.20, i * 0.09)
   );
@@ -888,6 +1021,14 @@ const COUNCIL_SFX = {
 };
 
 export function sfxCouncilWork(buildingId) {
+  // 六棟副本各有自己的工作聲。缺檔就退回原本的「隨機三種合成變體」——
+  // 那個隨機性其實是刻意的（連續採集才不會聽起來像壞掉的迴圈），
+  // 所以補檔時建議一棟準備 2~3 個變體檔名（council_mine / council_mine_2 …）由呼叫端輪替。
+  const key = COUNCIL_SFX[buildingId] ? buildingId : "mine";
+  sample(`council_${key}`, 0.7, () => sfxCouncilWorkSynth(buildingId), [0, 18]);
+}
+
+function sfxCouncilWorkSynth(buildingId) {
   const list = COUNCIL_SFX[buildingId] || COUNCIL_SFX.mine;
   const fn   = list[Math.floor(Math.random() * list.length)];
   fn();
@@ -896,6 +1037,10 @@ export function sfxCouncilWork(buildingId) {
 
 // ── 貓貓村 UI 音效 ───────────────────────────────────────────
 export function sfxVillageCollect() {
+  sample("village_collect", 0.75, sfxVillageCollectSynth, [0, 20, 30]);
+}
+
+function sfxVillageCollectSynth() {
   tone(659, 0.08, "triangle", 0.22, 0);
   tone(784, 0.10, "triangle", 0.20, 0.07);
   tone(1046, 0.14, "triangle", 0.18, 0.15);
@@ -903,12 +1048,20 @@ export function sfxVillageCollect() {
   vibrate([0, 20, 30]);
 }
 export function sfxVillageBuild() {
+  sample("village_build", 0.75, sfxVillageBuildSynth, [0, 15, 25]);
+}
+
+function sfxVillageBuildSynth() {
   noiseBurst(0, 0.06, 400, 0.28);
   tone(440, 0.10, "sawtooth", 0.16, 0.06);
   tone(554, 0.12, "triangle", 0.18, 0.14);
   vibrate([0, 15, 25]);
 }
 export function sfxVillageExchange() {
+  sample("village_exchange", 0.7, sfxVillageExchangeSynth, [0, 12]);
+}
+
+function sfxVillageExchangeSynth() {
   tone(523, 0.06, "triangle", 0.18, 0);
   tone(659, 0.08, "triangle", 0.16, 0.06);
   tone(523, 0.06, "triangle", 0.12, 0.14);
