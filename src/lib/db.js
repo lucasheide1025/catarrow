@@ -845,16 +845,43 @@ function reviveResult(d) {
 }
 
 // ─── Practice & Competitions ───────────────────────────────
-export function subscribePracticeLogs(memberId, callback, maxCount = 300) {
-  return onSnapshot(query(collection(db, C.practiceLogs), where("memberId", "==", memberId), orderBy("date", "desc"), limit(maxCount)), snap => {
-    const logs = snap.docs.map(d => {
-      const res = { id: d.id, ...d.data() };
-      if (res.roundsString && typeof res.roundsString === "string") { try { res.rounds = JSON.parse(res.roundsString); } catch (e) { res.rounds = []; } }
-      if (!Array.isArray(res.rounds)) res.rounds = [];
-      return res;
-    });
-    callback(logs);
+function mapPracticeDocs(snap) {
+  return snap.docs.map(d => {
+    const res = { id: d.id, ...d.data() };
+    if (res.roundsString && typeof res.roundsString === "string") { try { res.rounds = JSON.parse(res.roundsString); } catch (e) { res.rounds = []; } }
+    if (!Array.isArray(res.rounds)) res.rounds = [];
+    return res;
   });
+}
+
+export function subscribePracticeLogs(memberId, callback, maxCount = 300) {
+  return onSnapshot(
+    query(collection(db, C.practiceLogs), where("memberId", "==", memberId), orderBy("date", "desc"), limit(maxCount)),
+    snap => callback(mapPracticeDocs(snap)),
+  );
+}
+
+// 歷史紀錄「翻頁」用的 local-first 讀取（2026-07-26）。
+//
+// 為什麼可以放心用本地：練習紀錄是 **append-only 的不可變歷史**——寫完就不會再改，
+// 所以舊資料放本地永遠不會過期。真正需要新鮮度的只有「最近幾筆」，那條走即時監聽。
+//
+// ⚠️ 這裡刻意**不自己做 localStorage 鏡像**：`firebase.js` 已經開了 persistentLocalCache
+//    （IndexedDB），Firestore 自己就是那份本地快照。再疊一層只會多一份要維護的過期邏輯，
+//    而且 localStorage 只有 5MB。用 getDocsFromCache 直接命中那份既有快取，**計 0 次讀取**。
+export async function getPracticeLogsPage(memberId, maxCount = 120) {
+  const q = query(collection(db, C.practiceLogs), where("memberId", "==", memberId), orderBy("date", "desc"), limit(maxCount));
+  try {
+    const cached = await getDocsFromCache(q);
+    // 本地筆數已經夠 → 完全不打伺服器
+    if (cached.size >= maxCount) return { logs: mapPracticeDocs(cached), fromCache: true };
+    const fresh = await getDocs(q);
+    return { logs: mapPracticeDocs(fresh), fromCache: false };
+  } catch (e) {
+    console.warn("getPracticeLogsPage:", e?.message);
+    try { return { logs: mapPracticeDocs(await getDocs(q)), fromCache: false }; }
+    catch { return { logs: [], fromCache: false }; }
+  }
 }
 
 export async function addPracticeLog(memberId, data, operatorId) {

@@ -1,6 +1,6 @@
 // src/components/member/MemberPractice.jsx
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { addPracticeLog, subscribePracticeLogs, subscribeMonsterLogs, updateMember, grantArrowMilestoneRewards, addArrowdew, subscribeMyCheckin, addArcherXP, addRoundArrows, finalizePracticeShootingSession, getLocalTodayArrows } from "../../lib/db";
+import { addPracticeLog, subscribePracticeLogs, getPracticeLogsPage, subscribeMonsterLogs, updateMember, grantArrowMilestoneRewards, addArrowdew, subscribeMyCheckin, addArcherXP, addRoundArrows, finalizePracticeShootingSession, getLocalTodayArrows } from "../../lib/db";
 import { addCatXP } from "../../lib/catDb";
 import { PRACTICE_ARCHER_XP_PER_ARROW } from "../../lib/archerLevel";
 import { CAT_PRACTICE_XP } from "../../lib/catLevel";
@@ -1347,7 +1347,7 @@ function BattleContextSummary({ log }) {
   );
 }
 
-function HistoryTab({ logs, monsterLogs, canLoadMore = false, onLoadMore }) {
+function HistoryTab({ logs, monsterLogs, canLoadMore = false, busy = false, onLoadMore }) {
   const [expandLog,    setExpandLog]    = useState({});
   const [expandDist,   setExpandDist]   = useState({});
   const [sourceFilter, setSourceFilter] = useState("all");
@@ -1764,9 +1764,9 @@ function HistoryTab({ logs, monsterLogs, canLoadMore = false, onLoadMore }) {
 
       {/* 預設只載近期紀錄，更早的按需載入（省讀取量） */}
       {canLoadMore&&(
-        <button onClick={onLoadMore}
-          className="mx-auto mt-2 px-4 py-2 rounded-full text-xs font-bold bg-white/10 text-white/70 border border-white/20">
-          載入更早的紀錄
+        <button onClick={onLoadMore} disabled={busy}
+          className="mx-auto mt-2 px-4 py-2 rounded-full text-xs font-bold bg-white/10 text-white/70 border border-white/20 disabled:opacity-50">
+          {busy?"載入中…":"載入更早的紀錄"}
         </button>
       )}
     </div>
@@ -2218,13 +2218,44 @@ export default function MemberPractice({ profileOverride = null, isGuestMode = f
   const { profile: authProfile }=useAuth();
   const profile = profileOverride || authProfile;
   const { toast, ToastContainer }=useToast();
-  const [logs,        setLogs]        = useState([]);
+  // ── 歷史紀錄：local-first（2026-07-26 讀寫量稽核）─────────────────
+  // 舊版一進頁面就拉 300 筆練習 ＋ 50 筆打怪＝**350 次讀取**，而且預設分頁（記分）根本用不到。
+  // 現在分三層：
+  //   ① 記分分頁完全不訂閱（0 次讀取）——只有歷史/總覽/分析分頁才掛監聽
+  //   ② 掛上去也只要最近 10 筆（真正需要「新鮮」的就這些）
+  //   ③ 更早的按需翻頁，走 getPracticeLogsPage → 先撈 IndexedDB 快取，夠了就**完全不打伺服器**
+  //      （練習紀錄是 append-only 的不可變歷史，放本地永遠不會過期）
+  const [liveLogs,    setLiveLogs]    = useState([]);   // 最近 10 筆，即時
+  const [archiveLogs, setArchiveLogs] = useState([]);   // 翻頁載入的舊紀錄（多半來自本地快取）
   const [monsterLogs, setMonsterLogs] = useState([]);
-  // 歷史紀錄一次只載這麼多。舊值是預設的 300 筆＋50 筆打怪紀錄 → **光是開這一頁就 350 次讀取**，
-  // 而且大多數人只看最近幾次。要看更早的按「載入更多」再加載（2026-07-26 讀寫量稽核）。
-  const [logLimit, setLogLimit] = useState(60);
+  const [archiveSize, setArchiveSize] = useState(0);    // 已載入的歷史深度（0＝還沒翻頁）
+  const [archiveBusy, setArchiveBusy] = useState(false);
+  const [monsterLimit, setMonsterLimit] = useState(10);
+
+  const logs = useMemo(() => {
+    const byId = new Map();
+    for (const l of archiveLogs) byId.set(l.id, l);
+    for (const l of liveLogs) byId.set(l.id, l);   // 即時的覆蓋快取版本
+    return [...byId.values()].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  }, [liveLogs, archiveLogs]);
   const [loading, setLoading]=useState(true);
   const [tab,   setTab]  =useState("practice");
+  const needsLogs = tab === "history" || tab === "overview" || tab === "analysis";
+
+  // 翻頁：先問本地快取，不夠才打伺服器
+  const loadMoreLogs = async () => {
+    if (archiveBusy || !profile?.id) return;
+    setArchiveBusy(true);
+    const next = (archiveSize || 10) + 120;
+    try {
+      const { logs: page } = await getPracticeLogsPage(profile.id, next);
+      setArchiveLogs(page.filter(l => l.rounds?.length || l.totalArrows > 0));
+      setArchiveSize(next);
+      setMonsterLimit(n => Math.min(200, n + 40));
+    } finally {
+      setArchiveBusy(false);
+    }
+  };
   const [phase, setPhase]=useState("setup");
   const [saving, setSaving]=useState(false);
   const [finishedRounds, setFinishedRounds]=useState([]);
@@ -2316,15 +2347,17 @@ export default function MemberPractice({ profileOverride = null, isGuestMode = f
     }
   }, [form, profile?.id]);
 
+  // 只有真的要看紀錄的分頁才連線；停在記分分頁＝完全不讀資料庫
   useEffect(()=>{
     if (!profile?.id) return;
+    if (!needsLogs) { setLoading(false); return; }
     const unsubP=subscribePracticeLogs(profile.id, data=>{
-      setLogs(data.filter(l=>l.rounds?.length||l.totalArrows>0));
+      setLiveLogs(data.filter(l=>l.rounds?.length||l.totalArrows>0));
       setLoading(false);
-    }, logLimit);
-    const unsubM=subscribeMonsterLogs(profile.id, setMonsterLogs, Math.min(50, Math.round(logLimit / 2)));
+    }, 10);
+    const unsubM=subscribeMonsterLogs(profile.id, setMonsterLogs, monsterLimit);
     return ()=>{ unsubP?.(); unsubM?.(); };
-  },[profile?.id, logLimit]); // eslint-disable-line
+  },[profile?.id, needsLogs, monsterLimit]); // eslint-disable-line
 
   async function handleSave(){
     setSaving(true);
@@ -2466,8 +2499,7 @@ export default function MemberPractice({ profileOverride = null, isGuestMode = f
         }} saving={saving} />
       )}
       {tab==="history"  &&phase==="setup"&&<HistoryTab  logs={logs} monsterLogs={monsterLogs}
-        canLoadMore={logs.length + monsterLogs.length > 0 && logs.length >= logLimit}
-        onLoadMore={()=>setLogLimit(n=>n+120)} />}
+        canLoadMore={logs.length >= (archiveSize || 10)} busy={archiveBusy} onLoadMore={loadMoreLogs} />}
       {tab==="overview" &&phase==="setup"&&<OverviewTab logs={logs} monsterLogs={monsterLogs} />}
       {tab==="analysis" &&phase==="setup"&&<AnalysisTab logs={logs} profile={profile} />}
     </div>

@@ -1122,13 +1122,27 @@ export async function enterNonCombatRoom(roomId, roomType, extraData = {}) {
 
 // 成員確認完成非戰鬥房間
 // 可同時傳入該成員的選擇（休息選項/陷阱確認等）
+//
+// ⚠️ 自動重試（2026-07-26）：這支的五個呼叫點全都是 `await confirmNonCombatRoom(...)` 但**不看回傳值**，
+//    所以一次網路抖動 = 這個人的確認永遠沒寫進去 = 全隊卡住等他 = 房主只好按「強制推進」。
+//    （跟貓貓村探索地圖那個卡死 bug 同一類。）在資料層重試，五個呼叫點一次修好。
 export async function confirmNonCombatRoom(roomId, memberId, choice = null) {
-  try {
-    const upd = { [`roomConfirms.${memberId}`]: true };
-    if (choice !== null) upd[`roomChoices.${memberId}`] = choice;
-    await updateDoc(doc(db, D, roomId), upd);
-    return { ok:true };
-  } catch (e) { return { ok:false, reason:e.message }; }
+  const upd = { [`roomConfirms.${memberId}`]: true };
+  if (choice !== null) upd[`roomChoices.${memberId}`] = choice;
+  let lastErr = "";
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await updateDoc(doc(db, D, roomId), upd);
+      return { ok: true };
+    } catch (e) {
+      lastErr = e?.message || String(e);
+      // 權限/文件不存在這種重試也沒用的錯就直接放棄
+      if (/permission|not-found|invalid/i.test(lastErr)) break;
+      await new Promise(r => setTimeout(r, 400 * (attempt + 1)));
+    }
+  }
+  console.warn("confirmNonCombatRoom failed:", lastErr);
+  return { ok: false, reason: lastErr };
 }
 
 // 房主結算非戰鬥房間（全員確認或房主強制）→ 回地圖探索

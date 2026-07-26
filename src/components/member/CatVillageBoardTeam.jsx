@@ -357,7 +357,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
   // 🔄 卡住了？重新同步：不用重整頁面就能做到「重整」會做的事。
   // 卡住的往往是**自己這台的本地閘門**（動畫沒走完、claim 鎖住、卡片停在 waiting），
   // 房間文件本身是權威且正確的——所以這裡只重置本地狀態並重試自己的寫入。
-  const resync = useCallback(() => {
+  const resync = useCallback((opts = {}) => {
     const seq = room?.seq || 0;
     animatedSeqRef.current = seq;
     setAnimatedSeq(seq);
@@ -371,8 +371,31 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     setRetryNonce(n => n + 1);
     // ⚠️ 只有「全員都領完」才清 pending，否則會把還沒領的隊員的獎勵直接抹掉
     if (isHost && allPassed) clearRoomPending(roomId, myId).catch(() => {});
-    showToast("已重新同步");
+    if (!opts.silent) showToast("已重新同步");   // 自動同步不吵玩家
   }, [room, myId, isHost, allPassed, roomId]); // eslint-disable-line
+
+  // 🤖 自動同步看門狗（2026-07-26：不要再讓玩家自己按 🔄）
+  //
+  // ⚠️ 這裡**刻意不去輪詢 Firestore**：房間是 onSnapshot 推送的，資料一直都有進來，
+  //    每 3 秒撈一次不會更新鮮，只會讓每個人每分鐘多 20 次讀取（8 人房＝每分鐘 160 次）。
+  //    真正卡住的是**本機**：動畫閘門被背景分頁凍結、claim 寫入失敗沒重試。
+  //    所以看門狗只跑 resync 的本地邏輯 ＋ 重試自己的寫入 → **0 次額外讀取**。
+  const autoSyncedRef = useRef(0);
+  useEffect(() => {
+    const seq = room?.seq || 0;
+    const iClaimed = (room?.settleClaims?.[myId] || 0) >= seq || (room?.eventClaims?.[myId] || 0) >= seq;
+    const blocked = (!!room?.pendingShoot) || (hasPending && !allPassed) || animatedSeq < seq;
+    if (!blocked || autoSyncedRef.current >= seq) return;
+    const t = setTimeout(() => { autoSyncedRef.current = seq; if (!iClaimed) resync({ silent: true }); }, 6000);
+    return () => clearTimeout(t);
+  }, [room?.seq, room?.pendingShoot, hasPending, allPassed, animatedSeq, myId, resync]); // eslint-disable-line
+
+  // 從背景切回前景 → 立刻同步一次（手機鎖屏後最常見的卡住情境）
+  useEffect(() => {
+    const onVisible = () => { if (!document.hidden) resync({ silent: true }); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [resync]);
 
   // ── 大廳動作 ──
   async function create() {
@@ -645,7 +668,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
         <div className="text-amber-100 font-black text-sm">👥 房號 {room.code}・{memberCount}人</div>
         <div className="flex items-center gap-1.5">
           {/* 卡住時不用重整頁面的逃生門（重整會做的事，這顆按鈕都做） */}
-          <button onClick={resync} title="卡住了？重新同步" className="rounded-xl bg-black/40 border border-amber-400/30 px-2 py-1 text-amber-200/80 text-xs font-black active:scale-95">🔄</button>
+          <button onClick={() => resync()} title="卡住了？重新同步" className="rounded-xl bg-black/40 border border-amber-400/30 px-2 py-1 text-amber-200/80 text-xs font-black active:scale-95">🔄</button>
           <div className="rounded-xl bg-amber-500/20 border border-amber-400/40 px-2.5 py-1 text-amber-200 text-xs font-black">🎲 {room?.hostDiceLeft ?? hostDice}</div>
         </div>
       </div>
