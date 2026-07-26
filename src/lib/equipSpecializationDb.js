@@ -17,6 +17,7 @@ import {
   getSpecializationUpgradeCost, getSpecializationAttemptChance,
 } from "./equipmentSpecializationCatalog";
 import { EXPANSION_MONSTERS } from "./monsterExpansionCatalog";
+import { dropLocal } from "./localCache";
 
 const C_SPEC = "equipSpecializations";
 
@@ -106,6 +107,7 @@ function consumeKindMaterials(items, kind, quantity) {
 
 // 解鎖一條專精（10,000 金幣;同 slot 首條自動設為啟用）
 export async function unlockSpecializationTrack(memberId, trackId) {
+  dropLocal(`equip_spec.${memberId}`);   // 專精有變 → 讓「我的」的本地快取失效
   const track = trackById[trackId];
   if (!memberId || !track) return { ok: false, reason: "參數錯誤" };
   try {
@@ -129,6 +131,7 @@ export async function unlockSpecializationTrack(memberId, trackId) {
 
 // 切換 slot 啟用的專精（需已解鎖）
 export async function setActiveSpecialization(memberId, trackId) {
+  dropLocal(`equip_spec.${memberId}`);   // 專精有變 → 讓「我的」的本地快取失效
   const track = trackById[trackId];
   if (!memberId || !track) return { ok: false, reason: "參數錯誤" };
   try {
@@ -146,6 +149,7 @@ export async function setActiveSpecialization(memberId, trackId) {
 
 // 嘗試升級（成功/失敗都扣成本;pity 由 catalog 的 failCount 加成/保底規則決定）
 export async function attemptSpecializationUpgrade(memberId, trackId, { roll = Math.random() } = {}) {
+  dropLocal(`equip_spec.${memberId}`);   // 專精有變 → 讓「我的」的本地快取失效
   const track = trackById[trackId];
   if (!memberId || !track) return { ok: false, reason: "參數錯誤" };
   try {

@@ -1,5 +1,6 @@
 // src/components/member/MemberHome.jsx
 import { useState, useEffect } from "react";
+import { cachedFetch } from "../../lib/localCache";
 import { getMemberResults, subscribePendingBadgeLogs, submitMonthlyCardRequest, subscribeMyMonthlyRequests, checkExpireMonthlyCard, getCertRecords } from "../../lib/db";
 import { computeDexStats } from "../../lib/achievementDex";
 import { getCohort, cohortLabel } from "../../lib/cohort";
@@ -135,8 +136,12 @@ export default function MemberHome({
   useEffect(() => {
     if (!profile?.id) return;
     checkExpireMonthlyCard(profile.id).catch(() => {});
-    getMemberResults(profile.id, 5).then(r => setResults(r)).catch(() => {});   // 首頁只顯示最近 5 筆
-    getCertRecords(profile.id).then(setCertRecords).catch(() => {});
+    // 本地優先：檢定紀錄與比賽成績都是「教練偶爾才改一次」的資料，晚幾分鐘看到沒差，
+    // 但首頁是每次開 App 都會經過的地方 → 10 分鐘內重開就不再讀資料庫。
+    cachedFetch(`home_results.${profile.id}`, 10 * 60 * 1000, () => getMemberResults(profile.id, 5))
+      .then(r => setResults(r.value || [])).catch(() => {});
+    cachedFetch(`cert_records.${profile.id}`, 10 * 60 * 1000, () => getCertRecords(profile.id))
+      .then(r => setCertRecords(r.value || [])).catch(() => {});
     // 首頁只需要「待領取」的那幾筆，不必把歷來所有徽章紀錄都拉下來
     const unsub  = subscribePendingBadgeLogs(profile.id, setBadgeLogs);
     const unsub5 = subscribeMyMonthlyRequests(profile.id, setMonthlyReqs);

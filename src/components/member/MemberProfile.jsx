@@ -5,6 +5,7 @@ import { updateMember, getCertRecords, subscribeMaterials, upgradeEquipSlot } fr
 import { computeDexStats } from "../../lib/achievementDex";
 import { archerLevelFromXP, archerXPProgress, archerLevelBonus, MAX_ARCHER_LEVEL, TOTAL_XP_TO_MAX, getLevelStyle } from "../../lib/archerLevel";
 import { useGuildRank } from "../../guild/useGuildRank";
+import { cachedFetch } from "../../lib/localCache";
 import { getCohort, cohortLabel } from "../../lib/cohort";
 import { calcAge, formatArcherNo, BOW_TYPES, getCertLevel, certLevelStyle, EQUIP_SLOT_DEFS, EQUIP_GRADES, getEquipSlotBonus } from "../../lib/constants";
 import { KING_SEAL_BREAKTHROUGH_COST, EQUIP_UPGRADE_COST } from "../../lib/equipData";
@@ -113,8 +114,12 @@ export default function MemberProfile({
 
   useEffect(() => {
     if (profile?.id) {
-      getCertRecords(profile.id).then(setCertRecords).catch(() => {});
-      getEquipSpecializations(profile.id).then(setSpecializations).catch(() => {});
+      // 本地優先（與首頁共用同一份 cert_records 快取）：教練改檢定/專精的頻率很低，
+      // 但「我的」是常逛的分頁，每次進來都重讀很浪費。
+      cachedFetch(`cert_records.${profile.id}`, 10 * 60 * 1000, () => getCertRecords(profile.id))
+        .then(r => setCertRecords(r.value || [])).catch(() => {});
+      cachedFetch(`equip_spec.${profile.id}`, 10 * 60 * 1000, () => getEquipSpecializations(profile.id))
+        .then(r => setSpecializations(r.value ?? null)).catch(() => {});
       return subscribeMaterials(profile.id, setMatInv);
     }
   }, [profile?.id]);
