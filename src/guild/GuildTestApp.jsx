@@ -15,6 +15,7 @@ import { nextRankInfo, repToRank } from "./domain/guildRank";
 import { unlockAudio, sfxLevelUp, sfxCoinDrop, sfxOpenChest } from "../lib/sound";
 import { rollDailyContracts, contractsStateFor, todayKey } from "./domain/guildContracts";
 import { loadGuildProfile, saveGuildProfile, grantExpeditionRewards, buyGuildShopItem, sellGuildJunk } from "./db/guildDb";
+import { equipDisplayName, GRADE_META } from "./data/guildEquipCatalog";
 import GuildBattle from "./ui/GuildBattle";
 import { fieldBg, bgLayer, rankBadge, junkArt, ArtOrEmoji, HeroArt, CatArt } from "./ui/GuildArt";
 import GuildBoard from "./ui/GuildBoard";
@@ -241,7 +242,17 @@ export default function GuildTestApp({ onBack, onLegacy }) {
                 ))}
               </div>
             )}
-            {loot.equipDrops.length > 0 && <div style={{ color: "#f0abfc", fontWeight: 800 }}>⭐ 裝備掉落：{loot.equipDrops.map(e => `${e.grade} ${e.archetypeId}`).join("、")}</div>}
+            {/* 裝備掉落：用 equipDisplayName 顯示中文全名（含詞綴），別把 grade/archetypeId 這種內部 id 丟給玩家看 */}
+            {loot.equipDrops.length > 0 && (
+              <div style={{ display: "flex", alignItems: "baseline", gap: 5, flexWrap: "wrap" }}>
+                <span style={{ color: "#f0abfc", fontWeight: 800 }}>⭐ 裝備掉落：</span>
+                {loot.equipDrops.map((e, i) => (
+                  <span key={i} style={{ fontWeight: 900, color: GRADE_META[e.grade]?.color || "#f0abfc" }}>
+                    {equipDisplayName(e.archetypeId, e.grade, e)}
+                  </span>
+                ))}
+              </div>
+            )}
             {loot.materials.length === 0 && loot.junk.length === 0 && loot.equipDrops.length === 0 && <div style={{ color: "#64748b" }}>（這趟只拿到基礎報酬）</div>}
           </div>
         )}

@@ -64,12 +64,22 @@ function Bar({ cur, max, color = "#ef4444", h = 5 }) {
 }
 
 // 怪物在 2.5D 戰場上的位置（距離＝深度）。箭矢要飛去哪也用這個算，兩邊才對得準。
+// 怪物立繪基準尺寸。實際大小 = MOB_SIZE × posOf().scale（遠 0.8 ／ 貼臉 1.4）。
+// 62 太小（最遠只剩 46px 根本看不清楚），拉到 92 → 74~129px。
+const MOB_SIZE = 92;
+
+// 2.5D 站位：畫面**上方＝遠**、下方＝近（玩家在最下面）。
+// 🐛 舊版把 topPct 寫成 `8 + depth * 55`，depth 是「1=遠」→ 遠的怪反而被放在畫面下方、
+//    近的怪跑到最上面，逼近時看起來像在後退。正解是用 (1-depth)。
 function posOf(index, len, distance) {
-  const depth = Math.max(0, Math.min(MAX_DIST, distance)) / MAX_DIST; // 1=遠 0=近
+  const depth = Math.max(0, Math.min(MAX_DIST, distance)) / MAX_DIST; // 1=最遠 0=貼臉
+  const near = 1 - depth;                                            // 0=最遠 1=貼臉
+  // 橫向：以中央為基準展開，怪少就別站到邊邊；越遠越向中央收（近似透視消失點）
+  const halfSpan = Math.min(30, 11 * Math.max(1, len - 1)) * (0.62 + 0.38 * near);
   return {
-    topPct: 8 + depth * 55,
-    leftPct: len <= 1 ? 50 : 12 + (index / (len - 1)) * 76,
-    scale: 0.75 + (1 - depth) * 0.55,
+    topPct: 12 + near * 46,                       // 遠 12% → 近 58%（再往下會壓到玩家立繪）
+    leftPct: len <= 1 ? 50 : 50 - halfSpan + (index / (len - 1)) * halfSpan * 2,
+    scale: 0.8 + near * 0.6,                      // 遠 0.8 → 近 1.4
   };
 }
 const PLAYER_POS = { topPct: 88, leftPct: 50 };
@@ -272,7 +282,7 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
                 transition: "top .5s ease-out, left .5s ease-out, transform .5s ease-out",
                 animation: shaking ? "gb-shake .3s ease-in-out" : "none",
                 background: "none", border: "none", cursor: canAct ? "pointer" : "default", textAlign: "center", zIndex: Math.round(p.topPct) }}>
-              <MonsterArt monsterId={m.monsterId} icon={m.icon} size={62}
+              <MonsterArt monsterId={m.monsterId} icon={m.icon} size={MOB_SIZE}
                 style={{ filter: isSel ? "drop-shadow(0 0 8px #f59e0b)" : "drop-shadow(0 3px 6px rgba(0,0,0,.6))" }} />
               <div style={{ fontSize: 9, fontWeight: 800, color: "#fecaca", whiteSpace: "nowrap", textShadow: "0 1px 3px #000" }}>{m.name}</div>
               <div style={{ width: 54, margin: "1px auto" }}><Bar cur={visualHp(m)} max={m.maxHp} /></div>
@@ -288,7 +298,7 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
         {dying.map(d => (
           <div key={d.id} style={{ position: "absolute", top: `${d.pos.topPct}%`, left: `${d.pos.leftPct}%`, "--s": d.pos.scale,
             transform: `translate(-50%,-50%) scale(${d.pos.scale})`, animation: "gb-poof .82s ease-out forwards", pointerEvents: "none", zIndex: 80 }}>
-            <MonsterArt monsterId={d.monsterId} icon={d.icon} size={62} />
+            <MonsterArt monsterId={d.monsterId} icon={d.icon} size={MOB_SIZE} />
           </div>
         ))}
 
