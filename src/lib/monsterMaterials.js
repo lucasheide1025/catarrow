@@ -22,12 +22,13 @@ export const MATERIALS = [
   { id:"ghost_m6", name:"幽府判令", icon:"⚖️", family:"ghost", tier:"mythic",    rarity:"legendary", desc:"幽府判令姬掌管魂路的法令，能裁定亡魂去向。", upgradesTo:null, upgradeCount:0 },
 
   // ════ 山林族材料鏈 ════
-  { id:"mountain_m1", name:"山豬獠牙",   icon:"🐗", family:"mountain", tier:"common",    rarity:"common",    desc:"山豬的獠牙，堅硬無比。",               upgradesTo:"mountain_m2", upgradeCount:5 },
-  { id:"mountain_m2", name:"百步蛇毒囊", icon:"🐍", family:"mountain", tier:"rare",      rarity:"uncommon",  desc:"劇毒濃縮，一滴可讓人昏迷三天。",       upgradesTo:"mountain_m3", upgradeCount:5 },
-  { id:"mountain_m3", name:"山魈幻影石", icon:"🦊", family:"mountain", tier:"elite",     rarity:"rare",      desc:"山魈幻化的殘留靈石，帶著迷幻光芒。",   upgradesTo:"mountain_m4", upgradeCount:5 },
-  { id:"mountain_m4", name:"霧社巨石",   icon:"🗿", family:"mountain", tier:"fierce",    rarity:"epic",      desc:"巨人踩過的山石，蘊含大地之力。",       upgradesTo:"mountain_m5", upgradeCount:5 },
-  { id:"mountain_m5", name:"巨熊利爪",   icon:"🐻", family:"mountain", tier:"boss",      rarity:"legendary", desc:"食人巨熊的利爪，一掌能劈裂百年巨木。",     upgradesTo:"mountain_m6", upgradeCount:5 },
-  { id:"mountain_m6", name:"惡蛟逆鱗",   icon:"🐲", family:"mountain", tier:"mythic",    rarity:"legendary", desc:"深山惡蛟的逆鱗，蘊含呼風喚雨的水之神力。", upgradesTo:null,          upgradeCount:0 },
+  // 竹徑採露女→青簍藥獵→鹿鈴祝女→紫晶峰衛→金茸靈獸使→星瀑司雨姬
+  { id:"mountain_m1", name:"竹節露瓶", icon:"🎋", family:"mountain", tier:"common",    rarity:"common",    desc:"竹徑採露女盛裝晨露的竹節小瓶。",       upgradesTo:"mountain_m2", upgradeCount:5 },
+  { id:"mountain_m2", name:"青簍藥藤", icon:"🌿", family:"mountain", tier:"rare",      rarity:"uncommon",  desc:"青簍藥獵整理過的麻痺藥藤。",           upgradesTo:"mountain_m3", upgradeCount:5 },
+  { id:"mountain_m3", name:"祝女鹿鈴", icon:"🔔", family:"mountain", tier:"elite",     rarity:"rare",      desc:"鹿鈴祝女祈儀後留下的清越銅鈴。",       upgradesTo:"mountain_m4", upgradeCount:5 },
+  { id:"mountain_m4", name:"紫晶盾屑", icon:"💎", family:"mountain", tier:"fierce",    rarity:"epic",      desc:"紫晶峰衛長盾震落的堅硬晶屑。",         upgradesTo:"mountain_m5", upgradeCount:5 },
+  { id:"mountain_m5", name:"金茸契毛", icon:"🐾", family:"mountain", tier:"boss",      rarity:"legendary", desc:"金茸靈獸使與伙伴締約時留下的靈毛。",   upgradesTo:"mountain_m6", upgradeCount:5 },
+  { id:"mountain_m6", name:"星雨天綃", icon:"🌧️", family:"mountain", tier:"mythic",    rarity:"legendary", desc:"星瀑司雨姬引落天雨時凝成的神綃。",       upgradesTo:null,          upgradeCount:0 },
 
   // ════ 毒蟲族材料鏈 ════
   { id:"insect_m1", name:"蟑螂觸角",   icon:"🪳", family:"insect", tier:"common",    rarity:"common",    desc:"蟑螂的觸角，感知能力超強。",             upgradesTo:"insect_m2", upgradeCount:5 },

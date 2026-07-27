@@ -68,39 +68,39 @@ export const MONSTERS = [
   // ════ 山林族 ════
   {
     id:"mountain_1", family:"mountain", tier:"common",
-    name:"山豬精", icon:"🐗",
+    name:"竹徑採露女", icon:"🎋",
     hp:270, atk:18, def:15,
-    desc:"台灣山林的橫衝直撞王者，遇到就跑。",
+    desc:"穿行竹徑採集晨露的清秀女子，會以竹筒潑灑露水迎敵。",
   },
   {
     id:"mountain_2", family:"mountain", tier:"rare",
-    name:"百步蛇王", icon:"🐍",
+    name:"青簍藥獵", icon:"🌿",
     hp:432, atk:32, def:26,
-    desc:"劇毒無比，百步之內必取人命。",
+    desc:"背負青藤藥簍的山林藥師，以短弩射出麻痺藥矢。",
   },
   {
     id:"mountain_3", family:"mountain", tier:"elite",
-    name:"山魈", icon:"🦊",
+    name:"鹿鈴祝女", icon:"🔔",
     hp:702, atk:51, def:43,
-    desc:"山中精靈，能幻化人形，誘人深入山林。",
+    desc:"手持鹿鈴杖的古林祝女，以鈴音擾亂入林者的步伐。",
   },
   {
     id:"mountain_4", family:"mountain", tier:"fierce",
-    name:"霧社巨人", icon:"🗿",
+    name:"紫晶峰衛", icon:"🛡️",
     hp:1080, atk:75, def:73,
-    desc:"霧氣中現形的巨人，腳踩山嶺如履平地。",
+    desc:"駐守高山堡寨的紫晶重衛，能以長盾反震來襲攻勢。",
   },
   {
     id:"mountain_5", family:"mountain", tier:"boss",
-    name:"食人巨熊", icon:"🐻",
+    name:"金茸靈獸使", icon:"🐾",
     hp:1728, atk:115, def:113,
-    desc:"深山中的巨熊之王，曾吞食無數獵人，掌風能劈裂巨木。",
+    desc:"披著金茸的傳說馭獸使，與唯一的靈獸伙伴默契共擊。",
   },
   {
     id:"mountain_6", family:"mountain", tier:"mythic",
-    name:"深山惡蛟", icon:"🐲",
+    name:"星瀑司雨姬", icon:"🌧️",
     hp:2700, atk:161, def:167,
-    desc:"盤踞深山水潭的千年惡蛟，興風作浪，吞雲吐霧禍害山民。",
+    desc:"掌管天嶺星雨的神女，揮動長兵便能引落星瀑與風雨。",
   },
 
   // ════ 毒蟲族 ════
