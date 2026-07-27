@@ -32,7 +32,7 @@ async function fetchRank(memberId) {
   return {
     loading: false,
     rep,
-    ...nextRankInfo(rep),
+    ...nextRankInfo({ rep, rankId: d?.rankId }),
     // 沒有存檔＝還沒踏進公會，UI 可以據此顯示「尚未註冊」
     registered: !!d,
     expeditions: Math.max(0, Math.floor(Number(d?.expeditions?.total) || 0)),

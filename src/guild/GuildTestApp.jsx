@@ -8,14 +8,17 @@ import { rollExpedition } from "./domain/rollExpedition";
 import { calcGuildExpeditionStats, STAT_META } from "./domain/guildStats";
 import { settleExpedition } from "./domain/settleExpedition";
 import { normalizeGuildProfile } from "./domain/guildRewards";
+import { consumeExpeditionSupplies, refundExpeditionSupplies } from "./domain/guildSupplies";
+import { claimBuildingProduction, finishConstruction, startConstruction } from "./domain/guildBuildings";
 import { buildCatRoster, pickPartyCats, togglePartyCat } from "./domain/guildCats";
 import { subscribeMyCats } from "../lib/catDb";
 import { addRoundArrows } from "../lib/db";
-import { nextRankInfo, repToRank } from "./domain/guildRank";
+import { nextRankInfo } from "./domain/guildRank";
 import { unlockAudio, sfxLevelUp, sfxCoinDrop, sfxOpenChest } from "../lib/sound";
 import { rollDailyContracts, contractsStateFor, todayKey } from "./domain/guildContracts";
 import {
   createGuildTeamRoom, joinGuildTeamRoomById, setGuildTeamLoadout, unreadyGuildTeamMember,
+  setGuildTeamSettings,
   startGuildTeamExpedition, submitGuildTeamShots, commitGuildTeamRound,
   markGuildTeamClaimed, leaveGuildTeamRoom, subscribeGuildTeamRoom, subscribeOpenGuildTeamRooms,
   findReconnectableGuildTeamRoom,
@@ -36,6 +39,9 @@ import GuildStash from "./ui/GuildStash";
 import GuildShop from "./ui/GuildShop";
 import GuildVault from "./ui/GuildVault";
 import GuildLicense from "./ui/GuildLicense";
+import GuildTerritory from "./ui/GuildTerritory";
+import "./ui/guild-ui.css";
+import { availablePromotionTrial, completePromotionTrial } from "./domain/guildPromotion";
 
 const MOCK_MEMBER = { archerXP: 8000 };
 // 離線試玩（未登入直接開 ?guild）才用的假貓；登入後一律用 members/{id}/cats 的真貓
@@ -87,6 +93,7 @@ export default function GuildTestApp({ onBack, onLegacy }) {
   const [loot, setLoot] = useState(null);        // 只 roll 一次：顯示與入帳同一份
   const [grantMsg, setGrantMsg] = useState("");
   const [phase, setPhase] = useState("board");   // board | loadout | battle | stash | shop | vault | license
+  const [shopReturnPhase, setShopReturnPhase] = useState("board");
   const [supplies, setSupplies] = useState({ food: 6, water: 6 });
   const [catRoster, setCatRoster] = useState(MOCK_CATS);
   const [rankUp, setRankUp] = useState(null);    // 這趟升階了 → 顯示橫幅
@@ -147,9 +154,11 @@ export default function GuildTestApp({ onBack, onLegacy }) {
     setLoot(rolled);
     // 組隊時委託額度**只算房主那張**（鼓勵揪人）：隊員不傳 contractId，自己的每日委託不被消耗
     const inTeam = !!teamRoom?.battle;
+    const promotion = rolled.won && contract?.isPromotion ? completePromotionTrial(gp, contract.targetRankId) : null;
+    const rewardProfile = promotion?.ok ? promotion.profile : gp;
     grantExpeditionRewards(memberId, rolled, {
-      danger: contract?.danger || 1, profile: gp,
-      contractId: inTeam && !isTeamHost ? undefined : contract?.id, dateKey,   // 勝敗都把這張委託結案（當天不能重刷）
+      danger: contract?.danger || 1, profile: rewardProfile,
+      contractId: contract?.isPromotion || (inTeam && !isTeamHost) ? undefined : contract?.id, dateKey,
     }).then(res => {
       setGp(res.profile);
       if (res.offline) setGrantMsg("（未登入：離線試玩，未存檔）");
@@ -167,10 +176,10 @@ export default function GuildTestApp({ onBack, onLegacy }) {
       if (rolled.won) {
         setTimeout(() => sfxCoinDrop(), 500);
         if (rolled.equipDrops.length) setTimeout(() => sfxOpenChest(), 1000);
-        const before = repToRank(gp.rep).id;
-        const after = repToRank(res.profile.rep).id;
+        const before = gp.rankId;
+        const after = res.profile.rankId;
         if (before !== after) {
-          setRankUp(repToRank(res.profile.rep));
+          setRankUp(nextRankInfo(res.profile).current);
           setTimeout(() => sfxLevelUp(), 1500);
         }
       }
@@ -287,21 +296,34 @@ export default function GuildTestApp({ onBack, onLegacy }) {
   });
 
   // 備包完成：六維/貓/箭數直接沿用自己的存檔，只有食水是這一場現場決定的
-  const teamReady = sup => teamAct(() => setGuildTeamLoadout(teamRoomId, memberId, {
-    guildStats: teamStats,
-    supplies: { food: sup.food, water: sup.water },
-    cats: partyCats.map(c => ({ id: c.id, name: c.name, icon: c.icon || null, atk: c.atk, def: c.def })),
-    arrowsPerRound: gp.arrowsPerRound,
-    name: member?.nickname || member?.name || "隊員",
-  }));
+  const teamReady = () => teamAct(async () => {
+    const consumed = consumeExpeditionSupplies(gp);
+    if (!consumed.ok) return consumed;
+    changeProfile(consumed.profile);
+    const res = await setGuildTeamLoadout(teamRoomId, memberId, {
+      guildStats: teamStats,
+      supplies: consumed.supplies,
+      suppliesReserved: true,
+      cats: partyCats.map(c => ({ id: c.id, name: c.name, icon: c.icon || null, atk: c.atk, def: c.def })),
+      arrowsPerRound: teamRoom?.settings?.arrowsPerRound || gp.arrowsPerRound,
+      name: member?.nickname || member?.name || "隊員",
+    });
+    if (res?.ok === false) changeProfile(refundExpeditionSupplies(consumed.profile));
+    return res;
+  });
 
-  const teamUnready = () => teamAct(() => unreadyGuildTeamMember(teamRoomId, memberId));
+  const teamUnready = () => teamAct(async () => {
+    const reserved = !!teamRoom?.loadouts?.[memberId]?.suppliesReserved;
+    const res = await unreadyGuildTeamMember(teamRoomId, memberId);
+    if (res?.ok !== false && reserved) changeProfile(refundExpeditionSupplies(gp));
+    return res;
+  });
 
   const teamDepart = () => teamAct(async () => {
     const ids = Object.keys(teamRoom?.members || {});
     // ⚠️ 箭數**全隊跟房主**（作者要求）：不然每人不同箭數 → 補給消耗與清場速度全隊不一致，
     //    「6 箭清場快但補給加倍」這個取捨會變成各玩各的，回合節奏也對不起來。
-    const hostArrows = teamRoom.loadouts?.[teamRoom.hostId]?.arrowsPerRound || 3;
+    const hostArrows = teamRoom.settings?.arrowsPerRound || teamRoom.loadouts?.[teamRoom.hostId]?.arrowsPerRound || 3;
     const roster = ids.map(id => {
       const lo = teamRoom.loadouts?.[id] || {};
       return {
@@ -382,7 +404,10 @@ export default function GuildTestApp({ onBack, onLegacy }) {
   });
 
   const teamLeave = () => teamAct(async () => {
-    await leaveGuildTeamRoom(teamRoomId, memberId);
+    const reserved = teamRoom?.status === "waiting" && !!teamRoom?.loadouts?.[memberId]?.suppliesReserved;
+    const res = await leaveGuildTeamRoom(teamRoomId, memberId);
+    if (res.ok === false) return res;
+    if (reserved) changeProfile(refundExpeditionSupplies(gp));
     setTeamRoomId(null); setTeamRoom(null); setPhase("board");
     return { ok: true };
   });
@@ -415,16 +440,35 @@ export default function GuildTestApp({ onBack, onLegacy }) {
   };
 
   const buy = async itemId => {
-    const res = await buyGuildShopItem(memberId, gp, itemId);
+    const res = await buyGuildShopItem(memberId, gp, itemId, member?.coins || 0);
     if (res.ok) setGp(res.profile);
     return res;
+  };
+  const acceptPromotion = () => {
+    const trial = availablePromotionTrial(gp);
+    if (trial) acceptContract(trial);
+  };
+  const upgradeBuilding = buildingId => {
+    const res = startConstruction(gp, buildingId);
+    if (res.ok) changeProfile(res.profile);
+    return Promise.resolve(res);
+  };
+  const claimProduction = () => {
+    const res = claimBuildingProduction(gp);
+    if (res.ok) changeProfile(res.profile);
+    return Promise.resolve(res);
+  };
+  const finishBuilding = () => {
+    const res = finishConstruction(gp);
+    if (res.ok) changeProfile(res.profile);
+    return Promise.resolve(res);
   };
 
   if (loading || !gp) {
     return <div style={{ minHeight: "100dvh", display: "grid", placeItems: "center", background: "#0b1220", color: "#94a3b8", fontSize: 13 }}>載入公會存檔…</div>;
   }
 
-  const rankInfo = nextRankInfo(gp.rep);
+  const rankInfo = nextRankInfo(gp);
   const rank = rankInfo.current;
 
   const toggleCat = catId => changeProfile({ ...gp, partyCats: togglePartyCat(partyCatIds, catId) });
@@ -451,7 +495,10 @@ export default function GuildTestApp({ onBack, onLegacy }) {
       <GuildTeamLobby
         room={teamRoom} openRooms={openTeamRooms} myId={memberId} isHost={isTeamHost} contract={contract}
         stats={teamStats || {}} guildEquip={gp.equipped} partyCats={partyCats}
-        arrowsPerRound={teamRoom?.loadouts?.[teamRoom?.hostId]?.arrowsPerRound || gp.arrowsPerRound}
+        arrowsPerRound={teamRoom?.settings?.arrowsPerRound || gp.arrowsPerRound}
+        targetFormat={teamRoom?.settings?.targetFormat || "full_110"}
+        onChangeSettings={settings => teamAct(() => setGuildTeamSettings(teamRoomId, memberId, settings))}
+        supplyStock={gp.supplyStock} onNeedShop={() => { setShopReturnPhase("team"); setPhase("shop"); }}
         busy={teamBusy}
         onCreate={teamCreate} onJoinRoom={teamJoinRoom} onReady={teamReady} onUnready={teamUnready}
         onDepart={teamDepart} onLeave={teamLeave}
@@ -465,6 +512,7 @@ export default function GuildTestApp({ onBack, onLegacy }) {
       <GuildTeamBattle
         room={teamRoom} battle={teamRoom.battle} myId={memberId} isHost={isTeamHost}
         arrowsPerRound={teamRoom.battle.members?.[memberId]?.arrowsPerRound || gp.arrowsPerRound}
+        initialTargetFormat={teamRoom?.settings?.targetFormat || "full_110"}
         onSubmitShots={teamSubmit} onCommitRound={teamCommit} onLeave={teamLeave}
       />
     );
@@ -475,7 +523,13 @@ export default function GuildTestApp({ onBack, onLegacy }) {
   }
 
   if (phase === "shop") {
-    return <GuildShop profile={gp} onBuy={buy} onClose={closePanel} />;
+    return <GuildShop profile={gp} memberCoins={member?.coins || 0} onBuy={buy}
+      onClose={() => setPhase(shopReturnPhase)} />;
+  }
+  if (phase === "territory") {
+    return <GuildTerritory profile={gp} onStartConstruction={upgradeBuilding}
+      onFinishConstruction={finishBuilding} onClaimProduction={claimProduction}
+      onClose={() => setPhase("board")} />;
   }
 
   if (phase === "vault") {
@@ -493,7 +547,8 @@ export default function GuildTestApp({ onBack, onLegacy }) {
     return (
       <>
         <GuildBoard profile={gp} contracts={dailyContracts} doneIds={doneIds}
-          onOpen={setSheet} onOpenStash={() => setPhase("stash")} onOpenShop={() => setPhase("shop")}
+          onOpen={setSheet} onOpenStash={() => setPhase("stash")} onOpenShop={() => { setShopReturnPhase("board"); setPhase("shop"); }}
+          onOpenTerritory={() => setPhase("territory")} onPromotion={acceptPromotion}
           onOpenVault={() => setPhase("vault")} onOpenLicense={() => setPhase("license")}
           onOpenTeam={() => { setContract(null); setTeamRoomId(null); setPhase("team"); }}
           resume={resumeBanner} onBack={onBack} onLegacy={onLegacy} />
@@ -585,7 +640,7 @@ export default function GuildTestApp({ onBack, onLegacy }) {
         <div style={{ width: "100%", maxWidth: 340 }}>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
             <span style={{ color: rank.color, fontWeight: 900 }}>{rank.icon} {rank.name}</span>
-            <span style={{ color: "#94a3b8" }}>🏅 {gp.rep}{rankInfo.next ? `　距 ${rankInfo.next.name} 還差 ${rankInfo.need}` : "　已達頂階"}</span>
+            <span style={{ color: "#94a3b8" }}>🏅 {gp.rep}{rankInfo.next ? (rankInfo.trialAvailable ? `　${rankInfo.next.name}試煉已解鎖` : `　距 ${rankInfo.next.name} 還差 ${rankInfo.need}`) : "　已達頂階"}</span>
           </div>
           <div style={{ height: 6, background: "rgba(255,255,255,.08)", borderRadius: 3, overflow: "hidden" }}>
             <div style={{ height: "100%", width: `${rankInfo.progressPct}%`, background: "linear-gradient(90deg,#fbbf24,#f59e0b)" }} />
@@ -598,7 +653,7 @@ export default function GuildTestApp({ onBack, onLegacy }) {
         </button>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
           <button onClick={() => { setResult(null); setContract(null); setRun(null); setPhase("stash"); }} style={{ padding: "8px 14px", borderRadius: 10, fontWeight: 900, fontSize: 12, color: "#fff", border: "none", background: "#334155", cursor: "pointer" }}>🎒 倉庫</button>
-          <button onClick={() => { setResult(null); setContract(null); setRun(null); setPhase("shop"); }} style={{ padding: "8px 14px", borderRadius: 10, fontWeight: 900, fontSize: 12, color: "#fff", border: "none", background: "#4c1d95", cursor: "pointer" }}>🏪 商店</button>
+          <button onClick={() => { setResult(null); setContract(null); setRun(null); setShopReturnPhase("board"); setPhase("shop"); }} style={{ padding: "8px 14px", borderRadius: 10, fontWeight: 900, fontSize: 12, color: "#fff", border: "none", background: "#4c1d95", cursor: "pointer" }}>🏪 商店</button>
         </div>
       </div>
     );
@@ -611,7 +666,7 @@ export default function GuildTestApp({ onBack, onLegacy }) {
           <span style={{ color: rank.color }}>{rank.icon} {rank.name}　🐾 {gp.catCoins}　🏅 {gp.rep}{memberId ? "" : "（離線試玩）"}</span>
           <span style={{ display: "flex", gap: 6 }}>
             <button type="button" onClick={() => setPhase("stash")} style={{ padding: "4px 10px", borderRadius: 7, border: "none", background: "#334155", color: "#fff", fontSize: 11, fontWeight: 800, cursor: "pointer" }}>🎒 倉庫</button>
-            <button type="button" onClick={() => setPhase("shop")} style={{ padding: "4px 10px", borderRadius: 7, border: "none", background: "#4c1d95", color: "#fff", fontSize: 11, fontWeight: 800, cursor: "pointer" }}>🏪 商店</button>
+            <button type="button" onClick={() => { setShopReturnPhase("loadout"); setPhase("shop"); }} style={{ padding: "4px 10px", borderRadius: 7, border: "none", background: "#4c1d95", color: "#fff", fontSize: 11, fontWeight: 800, cursor: "pointer" }}>🏪 商店</button>
           </span>
         </div>
         {/* 接下的委託：出發前隨時可以放棄回委託板（還沒出發就不算結案）*/}
@@ -622,9 +677,16 @@ export default function GuildTestApp({ onBack, onLegacy }) {
           </span>
           <button type="button" onClick={backToBoard} style={{ padding: "4px 10px", borderRadius: 7, border: "none", background: "#334155", color: "#cbd5e1", fontSize: 11, fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>放棄</button>
         </div>
-        <GuildLoadout member={member} guildEquip={gp.equipped} catRoster={catRoster} partyCatIds={partyCatIds} onToggleCat={toggleCat}
+        <GuildLoadout member={member} guildEquip={gp.equipped} profile={gp} catRoster={catRoster} partyCatIds={partyCatIds} onToggleCat={toggleCat}
           arrowsPerRound={gp.arrowsPerRound} onChangeArrows={n => changeProfile({ ...gp, arrowsPerRound: n })}
-          onDepart={sup => { setSupplies(sup); setPhase("battle"); }} />
+          onNeedShop={() => { setShopReturnPhase("loadout"); setPhase("shop"); }}
+          onDepart={() => {
+            const consumed = consumeExpeditionSupplies(gp);
+            if (!consumed.ok) { setShopReturnPhase("loadout"); setPhase("shop"); return; }
+            changeProfile(consumed.profile);
+            setSupplies(consumed.supplies);
+            setPhase("battle");
+          }} />
       </div>
     );
   }
@@ -633,7 +695,8 @@ export default function GuildTestApp({ onBack, onLegacy }) {
   if (!run || !contract) {
     return (
       <GuildBoard profile={gp} contracts={dailyContracts} doneIds={doneIds}
-        onOpen={setSheet} onOpenStash={() => setPhase("stash")} onOpenShop={() => setPhase("shop")}
+        onOpen={setSheet} onOpenStash={() => setPhase("stash")} onOpenShop={() => { setShopReturnPhase("board"); setPhase("shop"); }}
+        onOpenTerritory={() => setPhase("territory")} onPromotion={acceptPromotion}
         onOpenVault={() => setPhase("vault")} onOpenLicense={() => setPhase("license")}
           onOpenTeam={() => { setContract(null); setTeamRoomId(null); setPhase("team"); }}
           resume={resumeBanner} onBack={onBack} onLegacy={onLegacy} />

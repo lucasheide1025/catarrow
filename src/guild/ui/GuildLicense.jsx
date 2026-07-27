@@ -17,7 +17,7 @@ export default function GuildLicense({ profile, memberName, onChange, onClose })
   const [tab, setTab] = useState("titles");   // titles | dex
   const [showCard, setShowCard] = useState(false);   // 分享圖（html2canvas 產 PNG）
   const [msg, setMsg] = useState("");
-  const rankInfo = nextRankInfo(profile.rep);
+  const rankInfo = nextRankInfo(profile);
   const rank = rankInfo.current;
   const titles = evaluateTitles(profile);
   const worn = currentTitle(profile);
@@ -34,7 +34,7 @@ export default function GuildLicense({ profile, memberName, onChange, onClose })
   };
 
   return (
-    <div style={{ minHeight: "100dvh", ...bgLayer(hallBg(), { overlay: "rgba(8,6,3,.8)" }), backgroundAttachment: "fixed", color: "#f1e7d5", padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+    <div className="guild-panel-page" style={{ minHeight: "100dvh", ...bgLayer(hallBg(), { overlay: "rgba(8,6,3,.8)" }), backgroundAttachment: "fixed", color: "#f1e7d5", padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ fontSize: 18, fontWeight: 900, color: "#fbbf24" }}>🎫 冒險者證</div>
         <button type="button" onClick={() => { sfxClose(); onClose(); }} style={{ padding: "7px 14px", borderRadius: 9, border: "none", background: "#334155", color: "#fff", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>返回</button>

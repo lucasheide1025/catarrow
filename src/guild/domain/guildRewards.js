@@ -49,6 +49,11 @@ export function emptyGuildProfile() {
     stash: [],
     partyCats: null,      // 出戰貓（catId 陣列）。null = 還沒設定過→自動帶最強的；[] = 刻意不帶貓
     arrowsPerRound: 3,     // 一回合射幾箭（3 或 6，備包可改；6 箭補給消耗加倍）
+    supplyStock: { food: 0, water: 0 }, // 商店購入的遠征補給；出發時自動裝滿並扣庫存
+    rankId: "apprentice",
+    buildings: { warehouse: 0, farm: 0, waterStation: 0 },
+    production: { lastAt: 0, food: 0, water: 0 },
+    construction: null,
     shards: 0,             // 公會裝碎片：分解重複裝備取得，用來強化主力裝（見 guildEnhance）
     title: null,           // 配戴中的稱號 id（純名譽，零戰力加成，見 guildTitles）
     salvagedCount: 0,      // 累計分解過幾件裝備（稱號用；分解本身不留紀錄就算不出來）
@@ -95,6 +100,29 @@ export function normalizeGuildProfile(raw) {
     catEarned: Math.max(0, Math.floor(Number(raw.catEarned) || 0)),
     partyCats: Array.isArray(raw.partyCats) ? raw.partyCats.filter(id => typeof id === "string") : null,
     arrowsPerRound: Number(raw.arrowsPerRound) === 6 ? 6 : 3,
+    supplyStock: {
+      food: Math.max(0, Math.floor(Number(raw.supplyStock?.food) || 0)),
+      water: Math.max(0, Math.floor(Number(raw.supplyStock?.water) || 0)),
+    },
+    buildings: {
+      warehouse: Math.max(0, Math.min(20, Math.floor(Number(raw.buildings?.warehouse) || 0))),
+      farm: Math.max(0, Math.min(20, Math.floor(Number(raw.buildings?.farm) || 0))),
+      waterStation: Math.max(0, Math.min(20, Math.floor(Number(raw.buildings?.waterStation) || 0))),
+    },
+    rankId: ["apprentice", "bronze", "silver", "gold", "platinum", "legend"].includes(raw.rankId) ? raw.rankId : "apprentice",
+    production: {
+      lastAt: Math.max(0, Number(raw.production?.lastAt) || 0),
+      food: Math.max(0, Number(raw.production?.food) || 0),
+      water: Math.max(0, Number(raw.production?.water) || 0),
+    },
+    construction: raw.construction?.buildingId && Number(raw.construction?.finishesAt) > 0
+      ? {
+          buildingId: raw.construction.buildingId,
+          targetLevel: Math.max(1, Math.min(20, Math.floor(Number(raw.construction.targetLevel) || 1))),
+          startedAt: Math.max(0, Number(raw.construction.startedAt) || 0),
+          finishesAt: Math.max(0, Number(raw.construction.finishesAt) || 0),
+        }
+      : null,
     contracts: raw.contracts?.dateKey
       ? { dateKey: raw.contracts.dateKey, done: Array.isArray(raw.contracts.done) ? raw.contracts.done.filter(x => typeof x === "string") : [] }
       : null,

@@ -56,6 +56,47 @@ export function createExpeditionState(expedition, guildStats, supplies = { food:
   };
 }
 
+const TRAVEL_EVENTS = Object.freeze([
+  { id: "lost_trail", label: "迷失山徑", food: -1, water: -0.5, hpPct: 0 },
+  { id: "bad_weather", label: "惡劣天候", food: -0.5, water: -1.5, hpPct: 0 },
+  { id: "hidden_trap", label: "誤觸陷阱", food: 0, water: 0, hpPct: -0.08 },
+  { id: "rest_spring", label: "發現休息泉", food: 0, water: 1, hpPct: 0.08 },
+]);
+
+export function pickTravelEvent(rand = Math.random) {
+  return TRAVEL_EVENTS[Math.min(TRAVEL_EVENTS.length - 1, Math.floor(rand() * TRAVEL_EVENTS.length))];
+}
+
+// 清波後的旅途事件。獨立傳入 rand，避免事件抽選改變爆擊／閃避的亂數序列。
+export function resolveTravelEvent(state, rand = Math.random, selectedEvent = null) {
+  const event = selectedEvent || pickTravelEvent(rand);
+  const next = {
+    ...state,
+    supplies: { ...state.supplies },
+    log: [...(state.log || [])],
+  };
+  next.supplies.food = Math.max(0, Math.round((next.supplies.food + event.food) * 100) / 100);
+  next.supplies.water = Math.max(0, Math.round((next.supplies.water + event.water) * 100) / 100);
+  const hpDelta = Math.round(next.maxHp * event.hpPct);
+  next.hp = Math.max(0, Math.min(next.maxHp, next.hp + hpDelta));
+  next.log.push({
+    type: "travelEvent",
+    id: event.id,
+    label: event.label,
+    food: event.food,
+    water: event.water,
+    hp: hpDelta,
+  });
+  if (next.supplies.food <= 0 && next.supplies.water <= 0) {
+    next.status = "lost";
+    next.lostReason = "糧食與飲水完全耗盡，強迫撤退";
+  } else if (next.hp <= 0) {
+    next.status = "lost";
+    next.lostReason = "途中受創過重，強迫撤退";
+  }
+  return next;
+}
+
 // shots: [{ targetInstanceId, score }]（一回合射出的箭）
 export function processRound(state, shots = [], opts = {}) {
   if (state.status !== "fighting") return state;
@@ -107,6 +148,9 @@ export function processRound(state, shots = [], opts = {}) {
     s.monsters = cloneWaveMonsters(s.expedition.waves[s.waveIndex]);
     s.log.push({ type: "waveClear", nextWave: s.waveIndex });
     clearedWave = true;
+    const afterEvent = resolveTravelEvent(s, opts.eventRand || rand);
+    Object.assign(s, afterEvent);
+    if (s.status !== "fighting") return s;
   }
 
   // 3. 存活怪推進 + 距離歸零攻擊（清波回合跳過）

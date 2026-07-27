@@ -53,7 +53,7 @@ export default function GuildStash({ member, profile, onChange, onClose }) {
   const [filterSlot, setFilterSlot] = useState("all");
   const [showFilterCfg, setShowFilterCfg] = useState(false);
   const stats = calcGuildExpeditionStats(member, profile.equipped);
-  const rankInfo = nextRankInfo(profile.rep);
+  const rankInfo = nextRankInfo(profile);
   const rank = rankInfo.current;
 
   const doEnhance = target => {
@@ -101,7 +101,7 @@ export default function GuildStash({ member, profile, onChange, onClose }) {
   };
 
   return (
-    <div style={{ minHeight: "100dvh", ...bgLayer(hallBg(), { overlay: "rgba(8,6,3,.76)" }), backgroundAttachment: "fixed", color: "#e2e8f0", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+    <div className="guild-panel-page" style={{ minHeight: "100dvh", ...bgLayer(hallBg(), { overlay: "rgba(8,6,3,.76)" }), backgroundAttachment: "fixed", color: "#e2e8f0", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ fontSize: 18, fontWeight: 900, color: "#fbbf24" }}>🎒 公會倉庫</div>
         <button type="button" onClick={() => { sfxClose(); onClose(); }} style={{ padding: "7px 14px", borderRadius: 9, border: "none", background: "#334155", color: "#fff", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>返回</button>

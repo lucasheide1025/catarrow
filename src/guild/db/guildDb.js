@@ -11,12 +11,13 @@
 // ⚠️ 一律只寫自己的（memberId = profile.id，不是 auth uid），不幫別人請領。
 // ⚠️ 新集合要貼 firestore.rules 到 Console，否則 permission-denied。
 // ─────────────────────────────────────────────────────────────
-import { doc, getDoc, setDoc, updateDoc, onSnapshot, increment, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc, onSnapshot, increment, serverTimestamp, runTransaction } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import { addMaterials } from "../../lib/db";
 import { normalizeGuildProfile, applyLootToProfile, expandLootMaterials, expandExpansionMaterials, sellJunkFromStock } from "../domain/guildRewards";
 import { purchaseFromShop } from "../domain/guildShopPurchase";
 import { markContractDone } from "../domain/guildContracts";
+import { shopItemById } from "../data/guildShop";
 
 const C_GUILD = "guildProfiles";
 
@@ -26,10 +27,15 @@ const ref = memberId => doc(db, C_GUILD, memberId);
 const toDoc = p => ({
   catCoins: p.catCoins,
   rep: p.rep,
+  rankId: p.rankId,
   equipped: p.equipped,
   stash: p.stash,
   partyCats: p.partyCats,
   arrowsPerRound: p.arrowsPerRound,
+  supplyStock: p.supplyStock,
+  buildings: p.buildings,
+  production: p.production,
+  construction: p.construction,
   shards: p.shards,
   title: p.title,
   salvagedCount: p.salvagedCount,
@@ -114,12 +120,32 @@ export function saveGuildProfileDebounced(memberId, profile, delay = 1500) {
 
 // 公會商店購買：驗證全在 domain（階級/CAT幣/倉庫），這裡只寫。
 // 材料類商品的材料寫進主線 materialInventory（回饋打怪/貓村經濟）。
-export async function buyGuildShopItem(memberId, profile, itemId) {
-  const res = purchaseFromShop(profile, itemId);
+export async function buyGuildShopItem(memberId, profile, itemId, memberCoins = 0) {
+  const item = shopItemById(itemId);
+  const res = purchaseFromShop(profile, itemId, { coins: memberCoins });
   if (!res.ok) return res;
   if (!memberId) return { ...res, offline: true };   // 離線試玩：算得出結果但不存
   cancelGuildSave();   // 下面會整份寫，排隊中的舊快照要作廢
   try {
+    // 日常補給用主線金幣：會員餘額與公會庫存必須同一筆 transaction，
+    // 否則中途斷線會出現只扣錢或只拿到補給。
+    if (item?.kind === "supply") {
+      let bought = null;
+      await runTransaction(db, async tx => {
+        const memberRef = doc(db, "members", memberId);
+        const [memberSnap, guildSnap] = await Promise.all([tx.get(memberRef), tx.get(ref(memberId))]);
+        if (!memberSnap.exists()) throw new Error("找不到會員資料");
+        bought = purchaseFromShop(
+          normalizeGuildProfile(guildSnap.exists() ? guildSnap.data() : profile),
+          itemId,
+          { coins: memberSnap.data().coins },
+        );
+        if (!bought.ok) throw new Error(bought.reason);
+        tx.set(ref(memberId), toDoc(bought.profile), { merge: true });
+        tx.update(memberRef, { coins: increment(-bought.coinsSpent), updatedAt: serverTimestamp() });
+      });
+      return { ...bought, offline: false };
+    }
     await setDoc(ref(memberId), toDoc(res.profile), { merge: true });
     if (res.materials.length) await addMaterials(memberId, res.materials);
     return { ...res, offline: false };

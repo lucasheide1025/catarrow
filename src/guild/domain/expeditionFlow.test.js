@@ -1,5 +1,5 @@
 // src/guild/domain/expeditionFlow.test.js
-import { createExpeditionState, processRound, normalizeArrowsPerRound, GUILD_ARROWS_OPTIONS, DEFAULT_GUILD_ARROWS } from "./expeditionFlow";
+import { createExpeditionState, processRound, resolveTravelEvent, normalizeArrowsPerRound, GUILD_ARROWS_OPTIONS, DEFAULT_GUILD_ARROWS } from "./expeditionFlow";
 
 const NO_LUCK = { rand: () => 0.99 }; // 不爆擊、不閃避（機率都很小）
 
@@ -16,6 +16,37 @@ describe("expeditionFlow — 戰鬥核心狀態機", () => {
     expect(s.status).toBe("fighting");
     expect(s.waveIndex).toBe(1);
     expect(s.monsters[0].instanceId).toBe("b");
+    expect(s.log.some(l => l.type === "travelEvent")).toBe(true);
+  });
+
+  test("清波旅途事件會消耗補給或改變 HP", () => {
+    const exp = { totalWaves: 2, waves: [{ monsters: [mon("a")] }, { monsters: [mon("b")] }] };
+    let s = createExpeditionState(exp, STATS, { food: 6, water: 6 });
+    s = processRound(s, [{ targetInstanceId: "a", score: 11 }], { ...NO_LUCK, eventRand: () => 0 });
+    expect(s.supplies).toEqual({ food: 4, water: 4.5 });
+    expect(s.log).toContainEqual(expect.objectContaining({ type: "travelEvent", id: "lost_trail" }));
+  });
+
+  test("糧食與飲水在事件後同時耗盡會立即強制撤退", () => {
+    const state = createExpeditionState(
+      { totalWaves: 1, waves: [{ monsters: [mon("a")] }] },
+      STATS,
+      { food: 0.5, water: 0.5 },
+    );
+    const next = resolveTravelEvent(state, () => 0);
+    expect(next.status).toBe("lost");
+    expect(next.lostReason).toContain("強迫撤退");
+  });
+
+  test("休息泉可補水並治療，但不超過上限", () => {
+    const state = { ...createExpeditionState(
+      { totalWaves: 1, waves: [{ monsters: [mon("a")] }] },
+      STATS,
+      { food: 3, water: 2 },
+    ), hp: 98 };
+    const next = resolveTravelEvent(state, () => 0.99);
+    expect(next.supplies.water).toBe(3);
+    expect(next.hp).toBe(100);
   });
 
   test("清光最後一波 → 勝利", () => {

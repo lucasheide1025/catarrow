@@ -12,21 +12,15 @@
 // ─────────────────────────────────────────────────────────────
 import { useEffect, useRef, useState } from "react";
 import { createExpeditionState, processRound, aliveTargets } from "../domain/expeditionFlow";
+import { vibrate } from "../../lib/sound";
+import { guildBattleSound as sound } from "./guildBattleSound";
 import {
-  sfxTap, sfxArrowShoot, sfxArrowHit, sfxCritBoom, sfxMonsterDead, sfxCounter,
-  sfxOrganHit, sfxSoftFail, sfxRoundEnd, sfxVictoryFanfare, sfxDefeat, vibrate,
-} from "../../lib/sound";
+  GUILD_TARGET_FACE_OPTIONS,
+  guildScoreButtons,
+  initialGuildTargetFace,
+  rememberGuildTargetFace,
+} from "./guildTargetFace";
 import { MonsterArt, CatArt, HeroArt, fieldBg, bgLayer } from "./GuildArt";
-
-const SCORE_BUTTONS = [
-  { label: "X", score: 11, color: "#fbbf24" },
-  { label: "10", score: 10, color: "#ef4444" },
-  { label: "9", score: 9, color: "#ef4444" },
-  { label: "8", score: 8, color: "#3b82f6" },
-  { label: "7", score: 7, color: "#3b82f6" },
-  { label: "6", score: 6, color: "#64748b" },
-  { label: "M", score: 0, color: "#334155" },
-];
 const MAX_DIST = 6;
 
 // 演出節奏（毫秒）——調快慢改這裡就好。
@@ -39,6 +33,7 @@ const T = {
   dodgeStep: 300,
   monHitStep: 560,  // 怪物反擊之間（紅閃要有喘息）
   starveStep: 520,
+  eventStep: 700,
   endPause: 700,    // 結果橫幅 → 跳結算頁
   floater: 1300,    // 浮動數字存在時間
   poof: 820,        // 死亡殘影
@@ -92,6 +87,8 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
   const ARROWS_PER_ROUND = state.arrowsPerRound || arrowsPerRound;
   const [target, setTarget] = useState(null);
   const [shots, setShots] = useState([]);
+  const [targetFormat, setTargetFormat] = useState(initialGuildTargetFace);
+  const scoreButtons = guildScoreButtons(targetFormat);
   const [flash, setFlash] = useState(null);        // 回合摘要橫幅
   const [animating, setAnimating] = useState(false);
   const [arrows, setArrows] = useState([]);        // 飛行中的箭 [{id, from, to, at}]
@@ -123,15 +120,15 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
     later(() => setShakeIds(s => s.filter(x => x !== instanceId)), 420);
   };
 
-  const selectTarget = id => { if (!animating) { setTarget(id); sfxTap(); } };
+  const selectTarget = id => { if (!animating) { setTarget(id); sound.tap(); } };
 
-  const shoot = score => {
+  const shoot = scoreButton => {
     if (animating || !target || shots.length >= ARROWS_PER_ROUND || state.status !== "fighting") return;
     if (!targets.find(t => t.instanceId === target)) return;
-    setShots(s => [...s, { targetInstanceId: target, score }]);
+    setShots(s => [...s, { targetInstanceId: target, score: scoreButton.score, rawScore: scoreButton.rawScore, scoreLabel: scoreButton.label, targetFormat }]);
     setBowPull(true);
     later(() => setBowPull(false), 320);
-    sfxArrowShoot();
+    sound.shoot();
   };
 
   // ── 一回合的演出時間軸 ──
@@ -157,6 +154,7 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
     const dodges = next.log.filter(l => l.type === "dodge");
     const starve = next.log.find(l => l.type === "starve");
     const waveClear = next.log.find(l => l.type === "waveClear");
+    const travelEvent = next.log.find(l => l.type === "travelEvent");
 
     // ① 箭矢逐發飛出 → 命中 → 傷害數字 → 擊殺殘影
     for (const lg of arrowLogs) {
@@ -169,7 +167,7 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
         later(() => setArrows(a => a.filter(x => x.id !== id)), T.arrowFly + 90);
       }, at);
       later(() => {
-        if (lg.crit) { sfxCritBoom(); vibrate(40); } else sfxArrowHit();
+        if (lg.crit) { sound.critical(); vibrate(40); } else sound.hit();
         setHitMap(h => ({ ...h, [lg.target]: (h[lg.target] || 0) + lg.dmg }));
         shakeOnce(lg.target);
         addFloater(p, `${lg.crit ? "💥" : ""}-${lg.dmg}`, lg.crit ? "#fbbf24" : "#fca5a5");
@@ -177,7 +175,7 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
           const gid = uid();
           setDying(d => [...d, { id: gid, pos: p, icon: p.icon, monsterId: p.monsterId }]);
           later(() => setDying(d => d.filter(x => x.id !== gid)), T.poof);
-          sfxMonsterDead();
+          sound.monsterDown();
         }
       }, at + T.arrowFly);
       t = at + T.arrowStep;
@@ -191,7 +189,7 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
       later(() => {
         setPouncing(p2 => [...p2, lg.cat]);
         later(() => setPouncing(p2 => p2.filter(x => x !== lg.cat)), 520);
-        sfxCounter();
+        sound.enemyAttack();
         setHitMap(h => ({ ...h, [lg.target]: (h[lg.target] || 0) + lg.dmg }));
         shakeOnce(lg.target);
         addFloater(p, `🐾-${lg.dmg}`, "#fcd34d");
@@ -199,7 +197,7 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
           const gid = uid();
           setDying(d => [...d, { id: gid, pos: p, icon: p.icon, monsterId: p.monsterId }]);
           later(() => setDying(d => d.filter(x => x.id !== gid)), T.poof);
-          sfxMonsterDead();
+          sound.monsterDown();
         }
       }, at);
       t = at + T.catStep;
@@ -214,7 +212,7 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
     for (const lg of monHits) {
       const at = t;
       later(() => {
-        sfxOrganHit(); vibrate(60);
+        sound.catAssist(); vibrate(60);
         setHurt(true);
         later(() => setHurt(false), 520);
         addFloater({ topPct: PLAYER_POS.topPct - 10, leftPct: PLAYER_POS.leftPct }, `-${lg.dmg}`, "#ef4444");
@@ -225,21 +223,36 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
     // ④ 補給耗盡的力竭傷害
     if (starve) {
       const at = t;
-      later(() => { sfxSoftFail(); addFloater({ topPct: PLAYER_POS.topPct - 18, leftPct: PLAYER_POS.leftPct }, `🍖💧 力竭 -${starve.dmg}`, "#f87171"); }, at);
+      later(() => { sound.hazard(); addFloater({ topPct: PLAYER_POS.topPct - 18, leftPct: PLAYER_POS.leftPct }, `🍖💧 力竭 -${starve.dmg}`, "#f87171"); }, at);
       t = at + T.starveStep;
     }
 
-    // ⑤ 收尾：套用真實狀態、清掉暫時的視覺傷害，再報結果
+    // ⑤ 清波後旅途事件：補給／HP 的變化要讓玩家看得見，否則像是資源憑空消失。
+    if (travelEvent) {
+      const at = t;
+      const deltas = [
+        travelEvent.food ? `🍖${travelEvent.food > 0 ? "+" : ""}${travelEvent.food}` : "",
+        travelEvent.water ? `💧${travelEvent.water > 0 ? "+" : ""}${travelEvent.water}` : "",
+        travelEvent.hp ? `❤️${travelEvent.hp > 0 ? "+" : ""}${travelEvent.hp}` : "",
+      ].filter(Boolean).join(" ");
+      later(() => {
+        travelEvent.hp < 0 ? sound.hazard() : sound.waveClear();
+        setFlash(`🧭 ${travelEvent.label}${deltas ? `　${deltas}` : ""}`);
+      }, at);
+      t = at + T.eventStep;
+    }
+
+    // ⑥ 收尾：套用真實狀態、清掉暫時的視覺傷害，再報結果
     later(() => {
       setHitMap({});
       setState(next);
       onPersist?.(next);          // 每回合落地一次：關掉 App 再回來能從這一回合續戰
       setAnimating(false);
       const kills = next.log.filter(l => (l.type === "arrow" || l.type === "catAttack") && l.killed).length;
-      if (next.status === "won") { setFlash("🎉 討伐成功，凱旋歸來！"); sfxVictoryFanfare(); }
-      else if (next.status === "lost") { setFlash(`💀 ${next.lostReason}`); sfxDefeat(); }
+      if (next.status === "won") { setFlash("🎉 討伐成功，凱旋歸來！"); sound.victory(); }
+      else if (next.status === "lost") { setFlash(`💀 ${next.lostReason}`); sound.defeat(); }
       else {
-        if (waveClear) { setFlash(`✅ 清空一波！第 ${waveClear.nextWave + 1} 波來了`); sfxRoundEnd(); }
+        if (waveClear && !travelEvent) { setFlash(`✅ 清空一波！第 ${waveClear.nextWave + 1} 波來了`); sound.waveClear(); }
         else setFlash(`本回合擊殺 ${kills} 隻${catLogs.length ? "（貓貓助攻）" : ""}${monHits.length ? "，你受到攻擊！" : ""}`);
       }
       if (next.status !== "fighting") later(() => onEnd && onEnd(next), T.endPause + 1200);
@@ -346,17 +359,35 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
 
       {/* 操作區 */}
       <div style={{ padding: "10px 12px", background: "rgba(0,0,0,.5)", borderTop: "1px solid rgba(255,255,255,.1)" }}>
-        <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 6 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 9, color: "#64748b", marginBottom: 2 }}>本回合靶紙</div>
+            <select value={targetFormat} disabled={animating} onChange={event => {
+              const next = event.target.value;
+              setTargetFormat(next);
+              setShots([]);
+              rememberGuildTargetFace(next);
+              sound.tap();
+            }} style={{ width: "100%", minHeight: 36, borderRadius: 9, border: "1px solid rgba(255,255,255,.15)", background: "#1e293b", color: "#f8fafc", padding: "0 9px", fontWeight: 800 }}>
+              {GUILD_TARGET_FACE_OPTIONS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+            </select>
+          </div>
+          <div style={{ padding: "7px 9px", borderRadius: 10, background: "rgba(255,255,255,.06)", textAlign: "center" }}>
+            <div style={{ color: "#fcd34d", fontSize: 14, fontWeight: 900 }}>{shots.length}/{ARROWS_PER_ROUND}</div>
+            <div style={{ color: "#64748b", fontSize: 8 }}>箭數</div>
+          </div>
+        </div>
+        <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 7 }}>
           {state.status !== "fighting" ? "戰鬥結束"
             : animating ? "⚔️ 戰鬥進行中…"
             : target ? `已鎖定目標 · 已射 ${shots.length}/${ARROWS_PER_ROUND} 箭`
             : "點怪物選擇目標，再點分數射箭"}
         </div>
-        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 8 }}>
-          {SCORE_BUTTONS.map(b => {
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(42px,1fr))", gap: 5, marginBottom: 9 }}>
+          {scoreButtons.map(b => {
             const off = !canAct || !target || shots.length >= ARROWS_PER_ROUND;
             return (
-              <button key={b.label} type="button" onClick={() => shoot(b.score)} disabled={off}
+              <button key={b.label} type="button" onClick={() => shoot(b)} disabled={off}
                 style={{ flex: 1, minWidth: 40, padding: "8px 0", borderRadius: 8, fontWeight: 900, color: "#fff", border: "none",
                   background: b.color, opacity: off ? 0.4 : 1, cursor: off ? "not-allowed" : "pointer", transition: "opacity .2s" }}>
                 {b.label}

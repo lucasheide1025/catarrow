@@ -41,7 +41,7 @@ export default function GuildLicenseCard({ profile, memberName, onClose }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
 
-  const rankInfo = nextRankInfo(profile.rep);
+  const rankInfo = nextRankInfo(profile);
   const rank = rankInfo.current;
   const worn = currentTitle(profile);
   const stats = buildTitleStats(profile);
@@ -77,7 +77,7 @@ export default function GuildLicenseCard({ profile, memberName, onClose }) {
   }
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 320, background: "rgba(0,0,0,.82)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", padding: 14, overflowY: "auto" }}
+    <div className="guild-modal" style={{ position: "fixed", inset: 0, zIndex: 320, background: "rgba(0,0,0,.82)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", padding: 14, overflowY: "auto" }}
       onClick={() => { sfxClose(); onClose(); }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 10, margin: "auto 0" }} onClick={e => e.stopPropagation()}>
 

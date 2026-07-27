@@ -5,14 +5,34 @@ import { MATERIALS } from "../../lib/monsterMaterials";
 import { shopItemById, SHOP_MATERIAL_BY_ID } from "../data/guildShop";
 import { rankUnlocks } from "./guildRank";
 import { normalizeGuildProfile, GUILD_STASH_LIMIT } from "./guildRewards";
+import { supplyCapacity } from "./guildBuildings";
 
 export function purchaseFromShop(profile, itemId, opts = {}) {
   const p = normalizeGuildProfile(profile);
   const item = shopItemById(itemId);
   if (!item) return { ok: false, reason: "沒有這件商品", profile: p, materials: [] };
 
-  const { shopTier } = rankUnlocks(p.rep);
+  const { shopTier } = rankUnlocks(p);
   if (item.tier > shopTier) return { ok: false, reason: `階級不足（需 ${item.tier} 級貨架）`, profile: p, materials: [] };
+  if (item.kind === "supply") {
+    const coins = Math.max(0, Math.floor(Number(opts.coins) || 0));
+    if (coins < item.costCoins) return { ok: false, reason: `金幣不足（需 ${item.costCoins}）`, profile: p, materials: [] };
+    const cap = supplyCapacity(p);
+    if (p.supplyStock[item.supplyId] + item.qty > cap) return { ok: false, reason: `補給倉庫容量不足（上限 ${cap}）`, profile: p, materials: [] };
+    return {
+      ok: true,
+      coinsSpent: item.costCoins,
+      profile: {
+        ...p,
+        supplyStock: {
+          ...p.supplyStock,
+          [item.supplyId]: p.supplyStock[item.supplyId] + item.qty,
+        },
+      },
+      materials: [],
+    };
+  }
+
   if (p.catCoins < item.costCat) return { ok: false, reason: `CAT幣不足（需 ${item.costCat}）`, profile: p, materials: [] };
 
   if (item.kind === "equip") {

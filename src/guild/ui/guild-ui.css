@@ -1,0 +1,75 @@
+.guild-panel-page {
+  box-sizing: border-box;
+  padding: clamp(12px, 3vw, 22px) !important;
+  gap: 11px !important;
+}
+
+.guild-panel-page > * {
+  box-sizing: border-box;
+  width: min(100%, 860px);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.guild-panel-page button {
+  min-height: 38px;
+  line-height: 1.25;
+  transition: transform 120ms ease, filter 120ms ease, opacity 120ms ease;
+}
+
+.guild-panel-page button:not(:disabled):active {
+  transform: scale(.98);
+}
+
+.guild-panel-page button:focus-visible {
+  outline: 2px solid #fbbf24;
+  outline-offset: 2px;
+}
+
+.guild-panel-page img {
+  max-width: 100%;
+}
+
+.guild-modal {
+  box-sizing: border-box;
+  padding: clamp(10px, 3vw, 22px) !important;
+  backdrop-filter: blur(5px);
+}
+
+.guild-modal > * {
+  box-sizing: border-box;
+  width: min(100%, 680px) !important;
+  max-height: calc(100dvh - 20px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.guild-modal button {
+  min-height: 40px;
+}
+
+@media (max-width: 560px) {
+  .guild-panel-page {
+    padding: 11px !important;
+    gap: 9px !important;
+  }
+
+  .guild-panel-page button {
+    min-height: 42px;
+  }
+
+  .guild-modal {
+    padding: 8px !important;
+  }
+
+  .guild-modal > * {
+    max-height: calc(100dvh - 8px);
+    border-radius: 16px 16px 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .guild-panel-page button {
+    transition: none;
+  }
+}

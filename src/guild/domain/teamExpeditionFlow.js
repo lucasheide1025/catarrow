@@ -18,7 +18,13 @@
 // ⚠️ 隔離鐵律照舊：只用公會六維（guildStats），永不碰主線戰力。
 // ─────────────────────────────────────────────────────────────
 import { deriveGuildCombat } from "./guildStats";
-import { arrowDamage, normalizeArrowsPerRound, MAX_ARROW_SCORE } from "./expeditionFlow";
+import {
+  arrowDamage,
+  normalizeArrowsPerRound,
+  MAX_ARROW_SCORE,
+  pickTravelEvent,
+  resolveTravelEvent,
+} from "./expeditionFlow";
 
 export const MAX_TEAM_SIZE = 4;          // 遠征是精銳小隊；人越多怪也越硬（見 partyHpScale）
 const BASE_ARROWS = 3;
@@ -186,6 +192,29 @@ export function processTeamRound(state, shotsByMember = {}, opts = {}) {
     s.monsters = cloneWaveMonsters(s.expedition.waves[s.waveIndex]);
     s.log.push({ type: "waveClear", nextWave: s.waveIndex });
     clearedWave = true;
+
+    // 全隊共同遭遇同一個旅途事件，但依各自補給與 HP 套用結果。
+    const event = pickTravelEvent(opts.eventRand || rand);
+    for (const memberId of aliveMemberIds(s)) {
+      const me = s.members[memberId];
+      const resolved = resolveTravelEvent({
+        supplies: me.supplies,
+        hp: me.hp,
+        maxHp: me.maxHp,
+        status: "fighting",
+        lostReason: null,
+        log: [],
+      }, opts.eventRand || rand, event);
+      me.supplies = resolved.supplies;
+      me.hp = resolved.hp;
+      if (resolved.status === "lost") me.status = "down";
+      s.log.push({ ...resolved.log[0], by: memberId, byName: me.name });
+    }
+    if (!aliveMemberIds(s).length) {
+      s.status = "lost";
+      s.lostReason = "全隊補給耗盡，強迫撤退";
+      return s;
+    }
   }
 
   // 4. 怪物推進 → 距離歸零時隨機挑一個還活著的隊員打（用該員的閃避/減傷）

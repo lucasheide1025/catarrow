@@ -9,8 +9,8 @@ import { paperBg, MonsterArt } from "./GuildArt";
 const chip = { fontSize: 10, fontWeight: 800, borderRadius: 6, padding: "3px 7px", whiteSpace: "nowrap" };
 
 export default function GuildContractSheet({ contract: c, profile, done, onAccept, onTeam, onClose }) {
-  const locked = !canAcceptDanger(profile.rep, c.danger);
-  const need = repNeededForDanger(profile.rep, c.danger);
+  const locked = !canAcceptDanger(profile, c.danger);
+  const need = repNeededForDanger(profile, c.danger);
   const rw = contractRewardPreview(c);
   const pool = contractMonsterPreview(c);
   // 最後一波的壓陣首領（危險度 3+ 才有）——跟雜兵分開列，玩家才知道最後會遇到什麼
@@ -18,7 +18,7 @@ export default function GuildContractSheet({ contract: c, profile, done, onAccep
   const tiers = c.tiers || [];
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,.72)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+    <div className="guild-modal" style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,.72)", display: "flex", alignItems: "flex-end", justifyContent: "center" }}
       onClick={() => { sfxClose(); onClose(); }}>
       <div onClick={e => e.stopPropagation()}
         style={{ width: "100%", maxWidth: 460, maxHeight: "92dvh", overflowY: "auto", borderRadius: "18px 18px 0 0",
@@ -113,7 +113,7 @@ export default function GuildContractSheet({ contract: c, profile, done, onAccep
           style={{ marginTop: 14, width: "100%", padding: "13px 0", borderRadius: 10, fontWeight: 900, fontSize: 15, color: "#fff", border: "none",
             background: done ? "#57534e" : locked ? "#6b6b6b" : "linear-gradient(135deg,#b45309,#7c2d12)",
             cursor: locked || done ? "not-allowed" : "pointer", boxShadow: locked || done ? "none" : "0 4px 12px rgba(0,0,0,.4)" }}>
-          {done ? "✓ 今日已結案" : locked ? `🔒 階級不足（還差 ${need} 聲望）` : "📝 一個人去（單人）"}
+          {done ? "✓ 今日已結案" : locked ? (need === "trial" ? "🔒 請先完成晉階試煉" : `🔒 階級不足（還差 ${need} 聲望）`) : "📝 一個人去（單人）"}
         </button>
 
         {/* 組隊：帶同一張委託開房，最多 4 人。委託額度只算房主這張 */}

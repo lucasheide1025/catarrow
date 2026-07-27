@@ -71,6 +71,7 @@ export async function createGuildTeamRoom({ hostId, hostName, contract }) {
       status: "waiting",
       contract: prune(contract),
       battle: null, submits: {}, claims: {}, seq: 0,
+      settings: { arrowsPerRound: 3, targetFormat: "full_110" },
       loadouts: {},
       members: { [hostId]: { name: hostName || "房主", ready: false, joinedAt: serverTimestamp() } },
       createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
@@ -113,6 +114,28 @@ export function unreadyGuildTeamMember(roomId, memberId) {
     [`members.${memberId}.ready`]: false,
     updatedAt: serverTimestamp(),
   }), "unreadyGuildTeamMember");
+}
+
+export async function setGuildTeamSettings(roomId, hostId, settings) {
+  try {
+    await runTransaction(db, async tx => {
+      const snapshot = await tx.get(roomRef(roomId));
+      if (!snapshot.exists()) throw new Error("找不到組隊房間");
+      const room = snapshot.data();
+      if (room.hostId !== hostId) throw new Error("只有房主可以調整戰鬥設定");
+      if (room.status !== "waiting") throw new Error("遠征開始後不能更改設定");
+      tx.update(roomRef(roomId), {
+        settings: prune({
+          arrowsPerRound: Number(settings?.arrowsPerRound) === 6 ? 6 : 3,
+          targetFormat: settings?.targetFormat || "full_110",
+        }),
+        updatedAt: serverTimestamp(),
+      });
+    });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, reason: error?.message };
+  }
 }
 
 // 房主出發：把 domain 算好的初始 battle 狀態寫進房間

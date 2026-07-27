@@ -1,30 +1,16 @@
 // src/guild/ui/GuildLoadout.jsx
 // 出發前「備包」畫面：顯示六維、裝備、並在「背包容量」限制下抉擇帶多少食/水。
 // 核心張力：裝備佔重、補給也佔重；容量 = 基礎 + VIT 加成。帶太多裝就帶不了糧。
-import { useState } from "react";
 import { calcGuildExpeditionStats, deriveGuildCombat, STAT_META, BASE_CAPACITY, SUPPLY_WEIGHT } from "../domain/guildStats";
 import { GUILD_SLOTS, SLOT_META, resolveEquipWeight, equipDisplayName, GRADE_META } from "../data/guildEquipCatalog";
 import { MAX_PARTY_CATS } from "../domain/guildCats";
 import { sfxTap, sfxSwitch, sfxCast } from "../../lib/sound";
 import { hallBg, bgLayer, CatArt, HeroArt } from "./GuildArt";
+import { EXPEDITION_SUPPLY_LOAD, supplyShortage } from "../domain/guildSupplies";
 
 // 負重常數已搬到 domain/guildStats（組隊等待室也要用同一組，見 carryStatus）
 
-function Stepper({ label, icon, value, set, min = 0, max = 20 }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-      <span style={{ fontSize: 13, fontWeight: 800 }}>{icon} {label}</span>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <button type="button" onClick={() => { sfxTap(); set(Math.max(min, value - 1)); }} style={btn}>−</button>
-        <span style={{ minWidth: 24, textAlign: "center", fontWeight: 900 }}>{value}</span>
-        <button type="button" onClick={() => { sfxTap(); set(Math.min(max, value + 1)); }} style={btn}>＋</button>
-      </div>
-    </div>
-  );
-}
-const btn = { width: 30, height: 30, borderRadius: 8, border: "none", background: "#334155", color: "#fff", fontWeight: 900, fontSize: 16, cursor: "pointer" };
-
-export default function GuildLoadout({ member, guildEquip, onDepart, catRoster = [], partyCatIds = [], onToggleCat, arrowsPerRound = 3, onChangeArrows }) {
+export default function GuildLoadout({ member, guildEquip, profile, onDepart, onNeedShop, catRoster = [], partyCatIds = [], onToggleCat, arrowsPerRound = 3, onChangeArrows }) {
   const stats = calcGuildExpeditionStats(member, guildEquip);
   const derived = deriveGuildCombat(stats);
   const capacity = Math.round((BASE_CAPACITY + derived.carryBonus) * 10) / 10;
@@ -34,15 +20,16 @@ export default function GuildLoadout({ member, guildEquip, onDepart, catRoster =
   }, 0) * 10) / 10;
 
   const party = partyCatIds; // 已由上層解析成「實際出戰」的 id（空選單時上層會自動填最強的）
-  const [food, setFood] = useState(6);
-  const [water, setWater] = useState(6);
+  const { food, water } = EXPEDITION_SUPPLY_LOAD;
+  const missing = supplyShortage(profile);
+  const lacksStock = missing.food > 0 || missing.water > 0;
   const supplyWeight = (food + water) * SUPPLY_WEIGHT;
   const used = Math.round((gearWeight + supplyWeight) * 10) / 10;
   const over = used > capacity;
   const pct = Math.min(100, (used / capacity) * 100);
 
   return (
-    <div style={{ minHeight: "100dvh", ...bgLayer(hallBg(), { overlay: "rgba(8,6,3,.74)" }), backgroundAttachment: "fixed", color: "#e2e8f0", padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+    <div className="guild-panel-page" style={{ minHeight: "100dvh", ...bgLayer(hallBg(), { overlay: "rgba(8,6,3,.74)" }), backgroundAttachment: "fixed", color: "#e2e8f0", padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
       <div style={{ fontSize: 18, fontWeight: 900, color: "#fbbf24" }}>🎒 出發前備包</div>
 
       {/* 六維（旁邊放射手本人，出發前看得到自己的角色）*/}
@@ -130,8 +117,11 @@ export default function GuildLoadout({ member, guildEquip, onDepart, catRoster =
       {/* 補給 + 容量 */}
       <div style={{ background: "rgba(0,0,0,.3)", borderRadius: 12, padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ fontSize: 12, fontWeight: 900, color: "#c7d2fe" }}>補給（每回合消耗，撐不住強迫撤退）</div>
-        <Stepper label="食物" icon="🍖" value={food} set={setFood} />
-        <Stepper label="飲水" icon="💧" value={water} set={setWater} />
+        <div style={{ fontSize: 12, lineHeight: 1.8 }}>
+          系統自動裝入　🍖 食物 <b>{food}</b>　💧 飲水 <b>{water}</b><br />
+          倉庫庫存　🍖 {profile.supplyStock.food}　💧 {profile.supplyStock.water}
+        </div>
+        {lacksStock && <div style={{ fontSize: 11, color: "#f87171" }}>補給不足：還缺{missing.food ? ` 食物 ${missing.food}` : ""}{missing.water ? ` 飲水 ${missing.water}` : ""}</div>}
         <div style={{ marginTop: 4 }}>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 3 }}>
             <span>背包負重</span>
@@ -144,10 +134,10 @@ export default function GuildLoadout({ member, guildEquip, onDepart, catRoster =
         </div>
       </div>
 
-      <button type="button" disabled={over} onClick={() => { sfxCast(); onDepart({ food, water }); }}
+      <button type="button" disabled={over} onClick={() => { if (lacksStock) { sfxTap(); onNeedShop?.(); } else { sfxCast(); onDepart(); } }}
         style={{ marginTop: "auto", padding: "13px 0", borderRadius: 12, fontWeight: 900, fontSize: 15, color: "#fff", border: "none",
-          background: over ? "#475569" : "linear-gradient(135deg,#f59e0b,#b45309)", cursor: over ? "not-allowed" : "pointer" }}>
-        {over ? "超重，減少補給或卸裝" : "🚩 出發討伐"}
+          background: over ? "#475569" : lacksStock ? "linear-gradient(135deg,#7c3aed,#4c1d95)" : "linear-gradient(135deg,#f59e0b,#b45309)", cursor: over ? "not-allowed" : "pointer" }}>
+        {over ? "超重，請卸下或更換較輕裝備" : lacksStock ? "🏪 補給不足，前往購買" : "🚩 自動補滿並出發"}
       </button>
     </div>
   );

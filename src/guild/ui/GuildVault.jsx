@@ -38,7 +38,7 @@ export default function GuildVault({ member, profile, onSell, onClose }) {
   };
 
   return (
-    <div style={{ minHeight: "100dvh", ...bgLayer(hallBg(), { overlay: "rgba(8,6,3,.78)" }), backgroundAttachment: "fixed", color: "#f1e7d5", padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+    <div className="guild-panel-page" style={{ minHeight: "100dvh", ...bgLayer(hallBg(), { overlay: "rgba(8,6,3,.78)" }), backgroundAttachment: "fixed", color: "#f1e7d5", padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ fontSize: 18, fontWeight: 900, color: "#fbbf24" }}>🧺 雜貨倉庫</div>
         <button type="button" onClick={() => { sfxClose(); onClose(); }} style={{ padding: "7px 14px", borderRadius: 9, border: "none", background: "#334155", color: "#fff", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>返回</button>

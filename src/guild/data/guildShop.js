@@ -16,6 +16,7 @@ import { EXPANSION_MATERIALS } from "../../lib/monsterExpansionCatalog";
 // ── 分店（2026-07-26 作者要求）────────────────────────────
 // 商品太多了，一條長列表捲不完 → 分成三家店，各自再有自己的分頁。
 export const SHOP_SECTIONS = Object.freeze([
+  { id: "supply", label: "補給與建設", icon: "🍖", hint: "金幣購買日常補給・CAT幣升級離線生產建築" },
   { id: "weapon", label: "武器商店", icon: "🏹", hint: "弓與箭・靠打出來的高階款這裡沒有" },
   { id: "armor", label: "防具商店", icon: "🛡️", hint: "護具・箭袋・藥水袋" },
   { id: "material", label: "材料商店", icon: "📦", hint: "七大族素材・不限量・打怪缺什麼就補什麼" },
@@ -102,7 +103,12 @@ const equipItems = [
   ...ADVANCED_STYLE.map(id => equipItem(id, "rare", 3)),     // 貨架3：進階款・精良（商店天花板）
 ];
 
-export const GUILD_SHOP_ITEMS = Object.freeze([...equipItems, ...materialItems]);
+const supplyItems = [
+  { id: "supply_food_x6", kind: "supply", section: "supply", tier: 1, supplyId: "food", name: "旅行乾糧", icon: "🍖", qty: 6, costCoins: 120 },
+  { id: "supply_water_x6", kind: "supply", section: "supply", tier: 1, supplyId: "water", name: "飲用水", icon: "💧", qty: 6, costCoins: 120 },
+];
+
+export const GUILD_SHOP_ITEMS = Object.freeze([...supplyItems, ...equipItems, ...materialItems]);
 
 export function shopItemById(id) {
   return GUILD_SHOP_ITEMS.find(i => i.id === id) || null;

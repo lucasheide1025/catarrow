@@ -69,6 +69,23 @@ describe("公會商店購買", () => {
     expect(profile.stash).toEqual([{ uid: "u1", archetypeId: "wood_bow", grade: "common", at: 1 }]);
   });
 
+  test("買補給：扣主線金幣額度、不扣 CAT幣，並累積到公會倉庫", () => {
+    const before = { ...rich(0), supplyStock: { food: 3, water: 1 } };
+    const food = purchaseFromShop(before, "supply_food_x6", { coins: 500 });
+    expect(food.ok).toBe(true);
+    expect(food.profile.supplyStock).toEqual({ food: 9, water: 1 });
+    expect(food.profile.catCoins).toBe(1000);
+    expect(food.coinsSpent).toBe(shopItemById("supply_food_x6").costCoins);
+    const water = purchaseFromShop(food.profile, "supply_water_x6", { coins: 500 });
+    expect(water.profile.supplyStock).toEqual({ food: 9, water: 7 });
+  });
+
+  test("補給金幣不足或超過倉庫容量時不能購買", () => {
+    expect(purchaseFromShop(rich(0), "supply_food_x6", { coins: 0 }).ok).toBe(false);
+    const full = { ...rich(0), supplyStock: { food: 36, water: 0 } };
+    expect(purchaseFromShop(full, "supply_food_x6", { coins: 999 }).reason).toMatch(/容量/);
+  });
+
   test("商店買不到高階裝備（elite 以上只能靠打）", () => {
     expect(validateGuildShop().ok).toBe(true);
     for (const item of GUILD_SHOP_ITEMS.filter(i => i.kind === "equip")) {

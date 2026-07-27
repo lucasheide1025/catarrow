@@ -117,6 +117,28 @@ describe("組隊回合處理", () => {
     expect(next.status).toBe("won");
   });
 
+  test("清波後全隊遭遇同一旅途事件，各自扣除補給", () => {
+    const st = createTeamState(expedition(), members(2), { alreadyScaled: true });
+    st.monsters = [{ ...st.monsters[0], hp: 1, def: 0 }];
+    const next = processTeamRound(st, {
+      p1: [{ targetInstanceId: "m1", score: 11 }],
+    }, { rand: () => 0.99, eventRand: () => 0 });
+    expect(next.log.filter(l => l.type === "travelEvent")).toHaveLength(2);
+    expect(next.members.p1.supplies.food).toBe(4.1);
+    expect(next.members.p2.supplies.food).toBe(4.1);
+  });
+
+  test("清波事件讓全隊補給同時耗盡會強迫撤退", () => {
+    const roster = members(2).map(m => ({ ...m, supplies: { food: 0.5, water: 0.5 } }));
+    const st = createTeamState(expedition(), roster, { alreadyScaled: true });
+    st.monsters = [{ ...st.monsters[0], hp: 1, def: 0 }];
+    const next = processTeamRound(st, {
+      p1: [{ targetInstanceId: "m1", score: 11 }],
+    }, { rand: () => 0.99, eventRand: () => 0 });
+    expect(next.status).toBe("lost");
+    expect(next.lostReason).toMatch(/強迫撤退/);
+  });
+
   test("純函數：不修改傳入的狀態", () => {
     const st = createTeamState(expedition(), members(2));
     const before = JSON.stringify(st);

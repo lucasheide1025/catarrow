@@ -19,12 +19,19 @@ import { getSoundEnabled, getVibrationEnabled } from "./fxSettings";
 const _sfxCache = {};
 const _sfxBroken = {};     // 載入失敗的檔名 → 之後直接走合成，不再重試
 
+// ⚠️ 音檔快取策略（2026-07-27 作者提問：「會重複發生的部分，何必一直放在我們這裡」）
+//    ——完全同意。`vercel.json` 已把 `/sounds/*` 設成 `max-age=31536000, immutable`，
+//    所以每個音檔**第一次下載後就永久留在使用者裝置上**，之後 0 個請求。
+//    但 immutable 有個代價：換了同名檔案，舊裝置永遠不會知道。
+//    解法＝網址帶版本號。**換掉任何音檔後把 SFX_VERSION +1**，網址一變就會自動抓新的。
+const SFX_VERSION = 1;
+
 function playAudio(name, volume = 1) {
   if (!getSoundEnabled()) return false;
   if (_sfxBroken[name]) return false;
   try {
     if (!_sfxCache[name]) {
-      const el = new Audio(`/sounds/${name}.mp3`);
+      const el = new Audio(`/sounds/${name}.mp3?v=${SFX_VERSION}`);
       el.preload = "auto";
       el.addEventListener("error", () => { _sfxBroken[name] = true; }, { once: true });
       _sfxCache[name] = el;
@@ -49,17 +56,24 @@ function sample(name, volume, fallback, vib) {
 }
 
 // 進 App 時先把樣本抓下來，第一次觸發才不會有延遲
-// ⚠️ 只列「已經放進 public/sounds/ 的檔案」。新增音檔**不需要改這裡**——
-//    沒被預載只是第一次觸發稍慢一點，`sample()` 照樣會找到並播放。
-//    列一堆還不存在的檔名反而會在開 App 時打出一串 404。
-const SAMPLE_NAMES = ["normal_atk", "crit", "monster_atk", "monster_crit", "miss", "level_up", "open_chest", "victory"];
+// 預載清單：**只放「高頻＋短」的音效**（2026-07-27）。
+// 為什麼不是全部：public/sounds/ 現在有 2.4MB，光三個 boss_appear 就佔 1.55MB，
+// 而它們一場活動只響一次、登場畫面前面還有 600ms 震動鋪陳 —— 預載它們等於讓每個學生
+// 開 App 就先吃 1.5MB 流量換一個聽不出來的差別。
+// 沒被預載的檔案照樣會播，只是**第一次觸發**要等它下載（40~80KB 在 4G 上約 100ms，
+// 而那些都是有動畫鋪陳的大場面，感覺不出來）。
+const SAMPLE_NAMES = [
+  "ui_tap", "ui_switch", "ui_success",              // 介面：每天按幾百次
+  "normal_atk", "crit", "monster_atk", "monster_crit", "miss",   // 戰鬥：每回合都響
+  "round_end", "coin",                              // 回合/獎勵：頻繁
+];
 let _preloaded = false;
 function preloadSamples() {
   if (_preloaded || typeof window === "undefined") return;
   _preloaded = true;
   for (const n of SAMPLE_NAMES) {
     try {
-      const el = new Audio(`/sounds/${n}.mp3`);
+      const el = new Audio(`/sounds/${n}.mp3?v=${SFX_VERSION}`);
       el.preload = "auto";
       el.addEventListener("error", () => { _sfxBroken[n] = true; }, { once: true });
       _sfxCache[n] = el;
@@ -1075,4 +1089,74 @@ function sfxVillageExchangeSynth() {
   tone(659, 0.08, "triangle", 0.16, 0.06);
   tone(523, 0.06, "triangle", 0.12, 0.14);
   vibrate([0, 12]);
+}
+
+// ── 地下城專用結算與寶藏室音效 ───────────────────────────────
+export function sfxDungeonClearResult() {
+  sample("MONSboss1", 0.85, sfxVictoryFanfareSynth, [0, 60, 60, 60, 60, 120]);
+}
+
+export function sfxDungeonTreasureRoom() {
+  sample("monsw1", 0.8, sfxOpenChestSynth, [0, 25, 40, 60]);
+}
+
+// ── 冒險者公會戰鬥專用音色 ──────────────────────────────────────
+// 刻意不經過 sample()/主線 MP3 映射，避免主線換檔時連帶改變公會戰鬥。
+export function sfxGuildTap() {
+  tone(720, 0.045, "triangle", 0.09);
+}
+
+export function sfxGuildArrowShoot() {
+  pluck({ freq: 174, dur: 0.075, gain: 0.13, detune: 18, cut0: 2200, cut1: 480, send: 0.04 });
+  air({ dur: 0.11, gain: 0.09, hp: 3200, send: 0.08 });
+}
+
+export function sfxGuildArrowHit() {
+  impact({ dur: 0.13, cut0: 3600, cut1: 380, gain: 0.22, send: 0.1 });
+  sub({ freq: 92, dur: 0.09, gain: 0.2 });
+}
+
+export function sfxGuildCritical() {
+  impact({ dur: 0.24, cut0: 5600, cut1: 220, gain: 0.34, send: 0.18 });
+  sub({ freq: 68, dur: 0.2, gain: 0.42 });
+  tone(880, 0.08, "triangle", 0.1, 0.035);
+}
+
+export function sfxGuildMonsterDown() {
+  punch({ freq: 220, drop: 0.3, dur: 0.22, gain: 0.15, type: "sawtooth", send: 0.14 });
+  impact({ dur: 0.24, cut0: 2200, cut1: 160, gain: 0.2, send: 0.16 });
+}
+
+export function sfxGuildEnemyAttack() {
+  impact({ dur: 0.19, cut0: 1900, cut1: 190, gain: 0.27, send: 0.08 });
+  sub({ freq: 62, dur: 0.16, gain: 0.34 });
+}
+
+export function sfxGuildCatAssist() {
+  notes([[784, 0], [1046.5, 0.055, 0.2]], { gain: 0.09, send: 0.2, spread: true });
+  impact({ dur: 0.1, cut0: 2800, cut1: 500, gain: 0.12, delay: 0.035 });
+}
+
+export function sfxGuildHazard() {
+  air({ dur: 0.12, gain: 0.08, hp: 2600, send: 0.1 });
+  tone(260, 0.12, "triangle", 0.11);
+}
+
+export function sfxGuildWaveClear() {
+  notes([[523.3, 0], [659.3, 0.065], [784, 0.13, 0.26]], { gain: 0.1, send: 0.24 });
+}
+
+export function sfxGuildVictory() {
+  notes([[392, 0], [523.3, 0.09], [659.3, 0.18], [784, 0.3, 0.55]], { gain: 0.13, send: 0.3, spread: true });
+}
+
+export function sfxGuildDefeat() {
+  tone(293.7, 0.15, "triangle", 0.13);
+  tone(246.9, 0.18, "triangle", 0.13, 0.11);
+  tone(196, 0.28, "sine", 0.15, 0.23);
+}
+
+export function sfxGuildError() {
+  tone(310, 0.1, "triangle", 0.14);
+  tone(232, 0.16, "triangle", 0.14, 0.08);
 }

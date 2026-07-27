@@ -13,7 +13,7 @@
 //
 // 每隻怪帶 `distance`（距離倒數）：每回合 −1，歸零發動攻擊（見 2.5D 戰鬥設計）。
 // ─────────────────────────────────────────────────────────────
-import { EXPANSION_MONSTERS } from "../../lib/monsterExpansionCatalog";
+import { EXPANSION_MONSTERS, EXPANSION_MONSTER_BY_ID } from "../../lib/monsterExpansionCatalog";
 import { toLegacyBattleMonster } from "../../lib/monsterExpansionAdapter";
 
 export const DANGER = Object.freeze({ T1: 1, T2: 2, T3: 3, T4: 4, T5: 5, T6: 6 });
@@ -93,6 +93,20 @@ export function rollExpedition(contract = {}, opts = {}) {
   const meta = DANGER_META[danger];
   const ri = (min, max) => Math.floor(rand() * (max - min + 1)) + min;
   const pick = arr => arr[Math.floor(rand() * arr.length)];
+
+  if (Array.isArray(contract.fixedWaves)) {
+    let inst = 0;
+    const waves = contract.fixedWaves.map((ids, waveIndex) => ({
+      waveIndex,
+      monsters: ids.map(id => EXPANSION_MONSTER_BY_ID[id]).filter(Boolean)
+        .map(raw => toGuildMonster(raw, danger, `g${inst++}`, ri(meta.initDist[0], meta.initDist[1]))),
+    }));
+    return {
+      contractId: contract.id || null, danger, family: contract.family || null,
+      families: contract.families || (contract.family ? [contract.family] : []),
+      totalWaves: waves.length, waves, isPromotion: !!contract.isPromotion, targetRankId: contract.targetRankId || null,
+    };
+  }
 
   const pool = expeditionMonsterPool({ ...contract, danger });
   const leaderPool = meta.leader ? expeditionMonsterPool({ ...contract, danger }, { encounter: meta.leader }) : [];

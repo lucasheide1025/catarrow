@@ -45,11 +45,16 @@ describe("normalizeGuildProfile — 舊/壞資料一律補成完整形狀", () =
     expect(p.rep).toBe(0);
     expect(p.equipped.bow.archetypeId).toBe("wood_bow");
     expect(p.stash).toEqual([]);
+    expect(p.supplyStock).toEqual({ food: 0, water: 0 });
+    expect(p.buildings).toEqual({ warehouse: 0, farm: 0, waterStation: 0 });
   });
   test("過濾不存在的裝備 id", () => {
     const p = normalizeGuildProfile({ equipped: { bow: { archetypeId: "ghost_bow", grade: "mythic" } }, stash: [{ uid: "x", archetypeId: "nope" }] });
     expect(p.stash).toHaveLength(0);
     expect(p.equipped.bow.archetypeId).toBe("wood_bow"); // 回退起手裝
+  });
+  test("補給倉庫只保留非負整數", () => {
+    expect(normalizeGuildProfile({ supplyStock: { food: 8.9, water: -2 } }).supplyStock).toEqual({ food: 8, water: 0 });
   });
 });
 
