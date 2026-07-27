@@ -13,13 +13,13 @@ export const RARITY_CONFIG = {
 export const MATERIALS = [
 
   // ════ 鬼怪族材料鏈 ════
-  // 好兄弟→魔神仔→林投姐→城隍爺→十八王公→地獄閻羅
-  { id:"ghost_m1", name:"路邊供品",   icon:"🍌", family:"ghost", tier:"common",    rarity:"common",    desc:"好兄弟最愛的供品，隨便撿的。",         upgradesTo:"ghost_m2", upgradeCount:5 },
-  { id:"ghost_m2", name:"魔神仔迷霧", icon:"🌀", family:"ghost", tier:"rare",      rarity:"uncommon",  desc:"讓人迷路的靈氣，濃縮成一團。",         upgradesTo:"ghost_m3", upgradeCount:5 },
-  { id:"ghost_m3", name:"林投葉",     icon:"🌿", family:"ghost", tier:"elite",     rarity:"rare",      desc:"林投姐親自摘下的樹葉，仍帶著怨氣。",   upgradesTo:"ghost_m4", upgradeCount:5 },
-  { id:"ghost_m4", name:"生死簿碎頁", icon:"📖", family:"ghost", tier:"fierce",    rarity:"epic",      desc:"城隍爺的生死簿，記載著無數命運。",     upgradesTo:"ghost_m5", upgradeCount:5 },
-  { id:"ghost_m5", name:"義犬魂魄",   icon:"🐺", family:"ghost", tier:"boss",      rarity:"legendary", desc:"十八王公義犬凝聚的靈魂，充滿忠義之氣。", upgradesTo:"ghost_m6", upgradeCount:5 },
-  { id:"ghost_m6", name:"閻羅令牌",   icon:"⚖️", family:"ghost", tier:"mythic",    rarity:"legendary", desc:"地獄閻羅的最高權杖，掌管生死輪迴。",   upgradesTo:null,       upgradeCount:0 },
+  // 鏡幕幽姬→霧徑幻姬→林投守姬→幽城女判→海誓靈姬→幽府判令姬
+  { id:"ghost_m1", name:"幽鏡薄片", icon:"🪞", family:"ghost", tier:"common",    rarity:"common",    desc:"鏡幕幽姬留下的霧銀薄片，映著微弱魂光。", upgradesTo:"ghost_m2", upgradeCount:5 },
+  { id:"ghost_m2", name:"幻霧髮帶", icon:"🌀", family:"ghost", tier:"rare",      rarity:"uncommon",  desc:"霧徑幻姬束髮的殘帶，仍會擾亂方向。", upgradesTo:"ghost_m3", upgradeCount:5 },
+  { id:"ghost_m3", name:"林投護葉", icon:"🌿", family:"ghost", tier:"elite",     rarity:"rare",      desc:"林投守姬淬鍊過的護葉，邊緣鋒利如刃。", upgradesTo:"ghost_m4", upgradeCount:5 },
+  { id:"ghost_m4", name:"幽城判牒", icon:"📖", family:"ghost", tier:"fierce",    rarity:"epic",      desc:"幽城女判簽發的判牒，記錄未結幽案。", upgradesTo:"ghost_m5", upgradeCount:5 },
+  { id:"ghost_m5", name:"海誓鈴墜", icon:"🔔", family:"ghost", tier:"boss",      rarity:"legendary", desc:"海誓靈姬的古鈴墜，封存長明誓火。", upgradesTo:"ghost_m6", upgradeCount:5 },
+  { id:"ghost_m6", name:"幽府判令", icon:"⚖️", family:"ghost", tier:"mythic",    rarity:"legendary", desc:"幽府判令姬掌管魂路的法令，能裁定亡魂去向。", upgradesTo:null, upgradeCount:0 },
 
   // ════ 山林族材料鏈 ════
   { id:"mountain_m1", name:"山豬獠牙",   icon:"🐗", family:"mountain", tier:"common",    rarity:"common",    desc:"山豬的獠牙，堅硬無比。",               upgradesTo:"mountain_m2", upgradeCount:5 },

@@ -9,7 +9,7 @@ import { EXPANSION_MONSTER_BY_ID } from "./monsterExpansionCatalog";
 describe("monster expansion legacy adapter", () => {
   test("preserves existing ids and exposes the fields used by battle UI", () => {
     expect(toLegacyBattleMonster(EXPANSION_MONSTER_BY_ID.ghost_1)).toMatchObject({
-      id: "ghost_1", name: "好兄弟", materialId: "ghost_m1", cardId: "ghost_1", encounter: "normal", expansionVersion: 1,
+      id: "ghost_1", name: "鏡幕幽姬", materialId: "ghost_m1", cardId: "ghost_1", encounter: "normal", expansionVersion: 1,
     });
   });
 

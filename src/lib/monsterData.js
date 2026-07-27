@@ -30,39 +30,39 @@ export const MONSTERS = [
   // ════ 鬼怪族 ════
   {
     id:"ghost_1", family:"ghost", tier:"common",
-    name:"好兄弟", icon:"👻",
+    name:"鏡幕幽姬", icon:"👻",
     hp:250, atk:20, def:14,
-    desc:"在路邊徘徊的無名鬼魂，看到食物就停下來。",
+    desc:"以薄霧幽鏡護身的初階靈姬，安靜守望陰陽交界。",
   },
   {
     id:"ghost_2", family:"ghost", tier:"rare",
-    name:"魔神仔", icon:"🌀",
+    name:"霧徑幻姬", icon:"🌀",
     hp:400, atk:35, def:24,
-    desc:"會把人帶到奇怪的地方，找不到回家的路。",
+    desc:"穿行霧徑的幻術使，會悄悄扭轉旅人的方向。",
   },
   {
     id:"ghost_3", family:"ghost", tier:"elite",
-    name:"林投姐", icon:"🌿",
+    name:"林投守姬", icon:"🌿",
     hp:650, atk:55, def:40,
-    desc:"在林投樹下等待復仇，長髮遮面令人膽寒。",
+    desc:"持鐮守護林投幽境的靈姬，能號令葉影迎敵。",
   },
   {
     id:"ghost_4", family:"ghost", tier:"fierce",
-    name:"城隍爺", icon:"⚖️",
+    name:"幽城女判", icon:"⚖️",
     hp:1000, atk:82, def:68,
-    desc:"掌管生死簿，善惡到頭終有報。",
+    desc:"執掌幽城判牒與裁決短刃，追索所有未結之案。",
   },
   {
     id:"ghost_5", family:"ghost", tier:"boss",
-    name:"十八王公", icon:"🐺",
+    name:"海誓靈姬", icon:"🐺",
     hp:1600, atk:125, def:105,
-    desc:"義犬成神，靈力無邊，香火鼎盛。",
+    desc:"守望海崖古祠的誓約靈姬，以鈴聲維繫不滅誓火。",
   },
   {
     id:"ghost_6", family:"ghost", tier:"mythic",
-    name:"地獄閻羅", icon:"👹",
+    name:"幽府判令姬", icon:"👹",
     hp:2500, atk:175, def:155,
-    desc:"陰間最高審判者，生死輪迴皆在一念之間。",
+    desc:"手持魂鑰與判令的幽府使者，能將亡魂送回既定之路。",
   },
 
   // ════ 山林族 ════

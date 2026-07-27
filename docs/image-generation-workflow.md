@@ -2,6 +2,11 @@
 
 Character artwork is an explicitly approved, manual GPT escalation workflow. It is not a product runtime API and is not an automatic fallback from local generation.
 
+Before writing prompts or generating a monster batch, read and apply
+[`monster-art-progression.md`](./monster-art-progression.md). Tier progression,
+encounter hierarchy, independent cross-tier identities, and female character
+appeal are mandatory product rules rather than per-batch prompt preferences.
+
 ## Boundary
 
 - A user approves the exact character or batch before GPT image generation.
@@ -27,6 +32,10 @@ The manifest records provenance; it does not grant permission to promote an imag
 ```powershell
 node scripts/validate-gpt-image-staging.mjs .staging/image-generation/<batch>/manifest.json
 ```
+
+For a new family or a major family redesign, the first manifest must be a
+non-product `T1/T3/T6 × normal/miniboss/boss` calibration batch. Production
+monster IDs may only be generated after both visual axes are approved.
 
 ## Safety invariants
 
