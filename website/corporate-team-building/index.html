@@ -398,6 +398,17 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
 .faq-list details summary .qline{position:absolute;left:4px;right:4px;bottom:0;height:2px;background:var(--orange);transform:scaleX(0);transform-origin:left;transition:transform .45s cubic-bezier(.22,.8,.3,1)}
 .faq-list details[open] summary .qline{transform:scaleX(1)}
 
+
+/* ── 情境頁圖文故事 ── */
+.story-layout{display:grid;grid-template-columns:minmax(0,1.02fr) minmax(320px,.98fr);gap:clamp(28px,5vw,72px);align-items:center;margin-top:28px}
+.story-copy h2{margin-top:0}.story-copy p{max-width:680px}
+.story-visual{margin:0;position:relative;border-radius:26px;overflow:hidden;background:#fff;border:1.5px solid var(--line);box-shadow:0 22px 54px rgba(43,41,38,.12)}
+.story-visual::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35);pointer-events:none}
+.story-visual img{display:block;width:100%;height:auto;aspect-ratio:4/3;object-fit:cover;transition:transform .7s cubic-bezier(.2,.75,.25,1)}
+.story-visual:hover img{transform:scale(1.035)}
+.story-visual figcaption{position:absolute;left:14px;right:14px;bottom:14px;padding:11px 14px;border-radius:13px;background:rgba(250,246,239,.92);backdrop-filter:blur(10px);color:var(--ink);font-size:12.5px;font-weight:700;line-height:1.45}
+.story-layout.media-first .story-visual{order:-1}
+
 /* ── RWD ── */
 @media (max-width:960px){
   .nav{gap:12px}
@@ -424,6 +435,12 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
   .page-hero{padding:128px 0 48px}
 }
 @media (max-width:560px){
+  .story-layout{grid-template-columns:1fr;gap:22px;margin-top:20px}
+  .story-layout.media-first .story-visual{order:initial}
+  .story-visual{border-radius:20px}
+  .story-visual img{aspect-ratio:4/3}
+  .story-visual figcaption{position:static;border-radius:0;background:#fff;padding:13px 16px}
+
   .cards3,.bow-grid,.modes,.coaches,.info-grid,.scen-grid{grid-template-columns:1fr}
   .bcard img{height:170px}
   .group-cta{justify-content:center;text-align:center}
@@ -486,25 +503,34 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
 <section class="page-sec" id="why-team">
   <div class="wrap">
     <div class="sec-head rv"><span class="sec-num">01</span><span class="sec-en">Team Building · 企業團康</span></div>
-    <h2 class="rv">台南企業團康、部門活動怎麼選</h2>
-      <p class="rv">企業團康最怕選到門檻太高、只有部分人玩得起來的活動。射箭的動作幅度小、不吃體能，不管平常有沒有運動習慣都能一起參加。</p>
+    <div class="story-layout">
+      <div class="story-copy"><h2 class="rv">台南企業團康、部門活動怎麼選</h2>
+      <p class="rv">企業團康最怕選到門檻太高、只有部分人玩得起來的活動。射箭的動作幅度小、不吃體能，不管平常有沒有運動習慣都能一起參加。</p></div>
+      <figure class="story-visual rv"><img src="../assets/images/archery/real/02_團康活動與朋友體驗/AAA00008_.webp" alt="企業團隊一起參與室內射箭活動" width="1600" height="1067" loading="lazy" decoding="async"><figcaption>不需要運動背景，每個人都能找到參與方式</figcaption></figure>
+    </div>
   </div>
 </section>
 
 <section class="page-sec" id="low-barrier">
   <div class="wrap">
     <div class="sec-head rv"><span class="sec-num">02</span><span class="sec-en">Low Barrier · 低門檻高互動</span></div>
-    <h2 class="rv">射箭作為團建活動的優點：低門檻、有互動</h2>
+    <div class="story-layout media-first">
+      <div class="story-copy"><h2 class="rv">射箭作為團建活動的優點：低門檻、有互動</h2>
       <p class="rv">現場可以安排個人挑戰賽，也可以分組競賽累積團隊總分，兼顧個人表現與團隊合作，很適合部門聚會或小型團建活動。</p>
-      <p class="rv">過程需要專注與耐心，也是換個方式讓同事彼此多一點互動與話題的機會。</p>
+      <p class="rv">過程需要專注與耐心，也是換個方式讓同事彼此多一點互動與話題的機會。</p></div>
+      <figure class="story-visual rv"><img src="../assets/images/archery/real/02_團康活動與朋友體驗/AAA00009.webp" alt="教練向團體成員說明射箭操作" width="1600" height="1067" loading="lazy" decoding="async"><figcaption>先建立共同安全規則，再進入挑戰與合作</figcaption></figure>
+    </div>
   </div>
 </section>
 
 <section class="page-sec" id="scale">
   <div class="wrap">
     <div class="sec-head rv"><span class="sec-num">03</span><span class="sec-en">Scale & Contact · 規模與洽詢</span></div>
-    <h2 class="rv">人數規模、場地與洽詢方式</h2>
-      <p class="rv">8～16 人採包場方案，該時段不安排其他一般訪客。可以依需求安排自由體驗、個人挑戰、分組競賽或合作打怪，教練也能協助活動流程。</p>
+    <div class="story-layout">
+      <div class="story-copy"><h2 class="rv">人數規模、場地與洽詢方式</h2>
+      <p class="rv">8～16 人採包場方案，該時段不安排其他一般訪客。可以依需求安排自由體驗、個人挑戰、分組競賽或合作打怪，教練也能協助活動流程。</p></div>
+      <figure class="story-visual rv"><img src="../assets/images/archery/real/02_團康活動與朋友體驗/AAA00021-2.webp" alt="團體成員完成射箭活動後一起合照" width="1600" height="1067" loading="lazy" decoding="async"><figcaption>八人以上包場，活動節奏可依團隊需求調整</figcaption></figure>
+    </div>
   </div>
 </section>
 

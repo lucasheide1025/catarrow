@@ -398,6 +398,17 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
 .faq-list details summary .qline{position:absolute;left:4px;right:4px;bottom:0;height:2px;background:var(--orange);transform:scaleX(0);transform-origin:left;transition:transform .45s cubic-bezier(.22,.8,.3,1)}
 .faq-list details[open] summary .qline{transform:scaleX(1)}
 
+
+/* ── 情境頁圖文故事 ── */
+.story-layout{display:grid;grid-template-columns:minmax(0,1.02fr) minmax(320px,.98fr);gap:clamp(28px,5vw,72px);align-items:center;margin-top:28px}
+.story-copy h2{margin-top:0}.story-copy p{max-width:680px}
+.story-visual{margin:0;position:relative;border-radius:26px;overflow:hidden;background:#fff;border:1.5px solid var(--line);box-shadow:0 22px 54px rgba(43,41,38,.12)}
+.story-visual::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35);pointer-events:none}
+.story-visual img{display:block;width:100%;height:auto;aspect-ratio:4/3;object-fit:cover;transition:transform .7s cubic-bezier(.2,.75,.25,1)}
+.story-visual:hover img{transform:scale(1.035)}
+.story-visual figcaption{position:absolute;left:14px;right:14px;bottom:14px;padding:11px 14px;border-radius:13px;background:rgba(250,246,239,.92);backdrop-filter:blur(10px);color:var(--ink);font-size:12.5px;font-weight:700;line-height:1.45}
+.story-layout.media-first .story-visual{order:-1}
+
 /* ── RWD ── */
 @media (max-width:960px){
   .nav{gap:12px}
@@ -424,6 +435,12 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
   .page-hero{padding:128px 0 48px}
 }
 @media (max-width:560px){
+  .story-layout{grid-template-columns:1fr;gap:22px;margin-top:20px}
+  .story-layout.media-first .story-visual{order:initial}
+  .story-visual{border-radius:20px}
+  .story-visual img{aspect-ratio:4/3}
+  .story-visual figcaption{position:static;border-radius:0;background:#fff;padding:13px 16px}
+
   .cards3,.bow-grid,.modes,.coaches,.info-grid,.scen-grid{grid-template-columns:1fr}
   .bcard img{height:170px}
   .group-cta{justify-content:center;text-align:center}
@@ -485,24 +502,33 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
 <section class="page-sec" id="solo-options">
   <div class="wrap">
     <div class="sec-head rv"><span class="sec-num">01</span><span class="sec-en">Solo Friendly · 一個人可以去哪</span></div>
-    <h2 class="rv">台南一個人可以去哪：I 人友善活動怎麼找</h2>
-      <p class="rv">很多活動預設要有伴才好玩，但其實一個人也有很多值得花時間的選擇。找一個不需要臨場互動、能自己專注投入的活動，反而更容易真正放鬆。</p>
+    <div class="story-layout">
+      <div class="story-copy"><h2 class="rv">台南一個人可以去哪：I 人友善活動怎麼找</h2>
+      <p class="rv">很多活動預設要有伴才好玩，但其實一個人也有很多值得花時間的選擇。找一個不需要臨場互動、能自己專注投入的活動，反而更容易真正放鬆。</p></div>
+      <figure class="story-visual rv"><img src="../assets/images/archery/real/04_熟生練箭與長期練習/AAA00003-2.webp" alt="一位學員在室內射道獨自專注瞄準" width="1600" height="1067" loading="lazy" decoding="async"><figcaption>不必揪團，一個人也能自在開始</figcaption></figure>
+    </div>
   </div>
 </section>
 
 <section class="page-sec" id="no-pressure">
   <div class="wrap">
     <div class="sec-head rv"><span class="sec-num">02</span><span class="sec-en">No Pressure · 不用組隊</span></div>
-    <h2 class="rv">單人體驗不尷尬：不用組隊、不用社交壓力</h2>
-      <p class="rv">貓小隊的單人體驗完全不需要配對或組隊，教練會協助安排你的射道與時段，很多客人本來就是自己一個人來，不會有格格不入的感覺。</p>
+    <div class="story-layout media-first">
+      <div class="story-copy"><h2 class="rv">單人體驗不尷尬：不用組隊、不用社交壓力</h2>
+      <p class="rv">貓小隊的單人體驗完全不需要配對或組隊，教練會協助安排你的射道與時段，很多客人本來就是自己一個人來，不會有格格不入的感覺。</p></div>
+      <figure class="story-visual rv"><img src="../assets/images/archery/real/04_熟生練箭與長期練習/AAA00008.webp" alt="單人學員安靜練習射箭" width="1600" height="1067" loading="lazy" decoding="async"><figcaption>照自己的速度練習，不必配合別人的進度</figcaption></figure>
+    </div>
   </div>
 </section>
 
 <section class="page-sec" id="unwind">
   <div class="wrap">
     <div class="sec-head rv"><span class="sec-num">03</span><span class="sec-en">Unwind · 專注與呼吸</span></div>
-    <h2 class="rv">射箭的專注與呼吸節奏，適合下班後放鬆（休閒用途，非醫療）</h2>
-      <p class="rv">射箭的節奏偏安靜，重點在站穩、控制呼吸再放箭，過程會讓人自然而然把注意力收回到當下。很多人拿來當作下班後轉換心情的休閒活動，但這並非醫療用途，若有情緒或心理方面的困擾，建議尋求專業協助。</p>
+    <div class="story-layout">
+      <div class="story-copy"><h2 class="rv">射箭的專注與呼吸節奏，適合下班後放鬆（休閒用途，非醫療）</h2>
+      <p class="rv">射箭的節奏偏安靜，重點在站穩、控制呼吸再放箭，過程會讓人自然而然把注意力收回到當下。很多人拿來當作下班後轉換心情的休閒活動，但這並非醫療用途，若有情緒或心理方面的困擾，建議尋求專業協助。</p></div>
+      <figure class="story-visual rv"><img src="../assets/images/archery/real/11_活動紀錄相簿候選/AAA00012.webp" alt="學員在室內射箭場享受專注時刻" width="1600" height="1067" loading="lazy" decoding="async"><figcaption>把注意力留給眼前這一箭</figcaption></figure>
+    </div>
   </div>
 </section>
 
