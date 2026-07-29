@@ -9,37 +9,32 @@
 import { collection, query, where, getDocs, documentId } from "firebase/firestore";
 import { db } from "./firebase";
 import { LANE_CAPACITY } from "./bookingDb";
+import {
+  BOOKING_DURATIONS,
+  BOOKING_PLAN_TYPES,
+  BOOKING_PRICES,
+  bookingTotalPrice,
+  normalizeParticipantBreakdown,
+} from "./bookingPricing";
 
 const SLOT_COUNTS = "bookingSlotCounts";
 
 // 方案類別（design.md 資料模型章節）
-export const PLAN_TYPES = [
-  { id: "general",       label: "單人一般" },
-  { id: "discount",      label: "兒童／學生／敬老" },
-  { id: "own_equipment", label: "自備器材" },
-];
+export const PLAN_TYPES = BOOKING_PLAN_TYPES;
 
 // 時數選項（07-10-booking-multihour-and-stats + 後續加2小時）
-export const DURATION_OPTIONS = [
-  { value: 1, label: "1小時" },
-  { value: 2, label: "2小時" },
-  { value: 3, label: "3小時（2送1）" },
-];
+export const DURATION_OPTIONS = BOOKING_DURATIONS;
 
 // 方案類別 × 時數 → 價格（NT$）。2小時刻意「收費不變」＝直接是1小時的2倍，沒有折扣
 // （3小時「2送1」才是折扣價）。這份數字要跟 BillingSystem.jsx 的 PLANS 常數保持一致——
 // 那邊是給「結帳寫進會計系統」用的方案代碼+價格，這邊是給「預約當下顯示金額」用的純價格表，
 // 兩處各自獨立維護但數字必須對得上，之後改價記得兩邊都要改。
-export const PLAN_PRICE = {
-  general:       { 1: 300, 2: 600, 3: 600 },
-  discount:      { 1: 200, 2: 400, 3: 400 },
-  own_equipment: { 1: 200, 2: 400, 3: 400 },
-};
+export const PLAN_PRICE = BOOKING_PRICES;
 
 // 單價 × 人數＝總金額（07-10-booking-ui-polish-headcount：確認預約畫面要顯示自動加總的金額）
 export function totalPrice(planType, durationHours, participantCount = 1) {
-  const unit = PLAN_PRICE[planType]?.[durationHours] ?? 0;
-  return unit * Math.max(1, participantCount);
+  const breakdown = normalizeParticipantBreakdown(null, { planType, participantCount });
+  return bookingTotalPrice(breakdown, durationHours);
 }
 
 // 方案類別 × 時數 攤平成一份「組合選單」，前台三個入口共用同一份，不要各自重刻選單邏輯。

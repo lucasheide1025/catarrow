@@ -20,15 +20,23 @@ import {
   slotsForDate, isBusinessDay, todayStr, addDays, startOfWeek,
   fetchSlotCountsForRange, PLAN_TYPES, durationLabel, totalPrice, computeEndTime,
 } from "../../lib/bookingSchedule";
-import { getMembers, addBillingRecord, getRecentCheckinMembers } from "../../lib/db";
+import {
+  bookingTotalPrice,
+  firstReturningCounts,
+  legacyPlanTypeFor,
+  normalizeParticipantBreakdown,
+  participantBreakdownLabel,
+  participantTotal,
+} from "../../lib/bookingPricing";
+import { getMember, getMembers, addBillingRecord, getRecentCheckinMembers } from "../../lib/db";
 import { fmtDT } from "../../lib/constants";
 import DateSlotPicker from "../booking/DateSlotPicker";
 import PlanDurationPicker from "../booking/PlanDurationPicker";
-import ParticipantCountPicker from "../booking/ParticipantCountPicker";
+import ParticipantBreakdownPicker from "../booking/ParticipantBreakdownPicker";
 import BookingScheduleCard from "../booking/BookingScheduleCard";
 import BookingEmailSettings from "./BookingEmailSettings";
 import { Card, Btn, Inp, Modal, Spinner, Empty, useToast } from "../shared/UI";
-import { PLANS as BILLING_PLANS, PAY_METHODS, EARLY_BIRD_DISC } from "./BillingSystem";
+import { PAY_METHODS, EARLY_BIRD_DISC, EARLY_BIRD_MAX } from "./BillingSystem";
 
 const DOW_LABEL = ["日", "一", "二", "三", "四", "五", "六"];
 const PAYMENT_LABEL = { cash: "💵 現金", transfer: "🏦 轉帳", monthly: "💳 月卡" };
@@ -683,9 +691,14 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
 
 function EditBookingModal({ booking, onClose, onDone, toast }) {
   const [startTime, setStartTime] = useState(booking.startTime || "10:00");
-  const [planType, setPlanType] = useState(booking.planType || "general");
   const [durationHours, setDurationHours] = useState(booking.durationHours || 1);
-  const [participantCount, setParticipantCount] = useState(booking.participantCount || 1);
+  const [participantBreakdown, setParticipantBreakdown] = useState(
+    () => normalizeParticipantBreakdown(booking.participantBreakdown, booking)
+  );
+  const participantCount = participantTotal(participantBreakdown);
+  const [firstTimeCount, setFirstTimeCount] = useState(
+    () => firstReturningCounts(booking).firstTimeCount
+  );
   const [busy, setBusy] = useState(false);
 
   const AVAILABLE_TIMES = Array.from({ length: 12 }, (_, i) => `${String(10 + i).padStart(2, "0")}:00`);
@@ -697,7 +710,15 @@ function EditBookingModal({ booking, onClose, onDone, toast }) {
     setBusy(true);
     const res = await updateBooking(
       booking.id,
-      { startTime, planType, durationHours, endTime: newEndTime, participantCount },
+      {
+        startTime,
+        planType: legacyPlanTypeFor(participantBreakdown),
+        durationHours,
+        endTime: newEndTime,
+        participantCount,
+        participantBreakdown,
+        firstTimeCount,
+      },
       { force: true }
     );
     setBusy(false);
@@ -756,23 +777,21 @@ function EditBookingModal({ booking, onClose, onDone, toast }) {
           </div>
         </div>
 
-        <div>
-          <div className="text-slate-400 text-xs font-bold mb-1.5">預約方案</div>
-          <PlanDurationPicker planType={planType} durationHours={durationHours}
-            onChange={({ planType: pt, durationHours: dh }) => {
-              setPlanType(pt);
-              setDurationHours(dh);
-            }} />
-        </div>
-
-        <div>
-          <div className="text-slate-400 text-xs font-bold mb-1.5">人數</div>
-          <ParticipantCountPicker value={participantCount} onChange={setParticipantCount} />
-        </div>
+        <ParticipantBreakdownPicker value={participantBreakdown} onChange={next => {
+          const nextTotal = participantTotal(next);
+          setParticipantBreakdown(next);
+          setFirstTimeCount(current => Math.min(current, nextTotal));
+        }} />
+        <label className="text-slate-300 text-sm font-bold">
+          第一次來的人數
+          <input type="number" min="0" max={participantCount} value={firstTimeCount}
+            onChange={event => setFirstTimeCount(Math.max(0, Math.min(participantCount, Number(event.target.value) || 0)))}
+            className="ml-3 w-16 rounded-lg border border-white/15 bg-slate-950 px-2 py-2 text-center text-white" />
+        </label>
 
         <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-400/20 rounded-xl px-4 py-3">
           <span className="text-emerald-300 text-sm font-bold">修改後總計金額</span>
-          <span className="text-white text-xl font-black">NT$ {totalPrice(planType, durationHours, participantCount)}</span>
+          <span className="text-white text-xl font-black">NT$ {bookingTotalPrice(participantBreakdown, durationHours)}</span>
         </div>
 
         <Btn v="primary" onClick={handleSubmit} disabled={busy}>
@@ -787,6 +806,10 @@ function CheckoutModal({ booking, onClose, onDone, toast }) {
   const defaultPlan = BOOKING_TO_BILLING_PLAN[booking.planType]?.[booking.durationHours || 1] || "單一";
   const [plan, setPlan]           = useState(defaultPlan);
   const [discount, setDiscount]   = useState(false);
+  const [discountResolved, setDiscountResolved] = useState(!booking.memberId);
+  const [checkoutBreakdown, setCheckoutBreakdown] = useState(
+    () => normalizeParticipantBreakdown(booking.participantBreakdown, booking)
+  );
   const [payMethod, setPayMethod] = useState("現金");
   const [date, setDate]           = useState(booking.date);
   const [note, setNote]           = useState("");
@@ -795,10 +818,23 @@ function CheckoutModal({ booking, onClose, onDone, toast }) {
   const [createdBillingId, setCreatedBillingId] = useState(null);
   const [priceOverride, setPriceOverride] = useState(null);
 
-  const participantCount = booking.participantCount || 1;
-  const basePrice  = (BILLING_PLANS.find(p => p.id === plan)?.price ?? 0) * participantCount;
+  const participantCount = participantTotal(checkoutBreakdown);
+  const basePrice  = bookingTotalPrice(checkoutBreakdown, booking.durationHours || 1);
   const autoFinal  = payMethod === "月卡" ? 0 : Math.max(0, basePrice - (discount ? EARLY_BIRD_DISC : 0));
   const finalPrice = priceOverride != null ? priceOverride : autoFinal;
+
+  useEffect(() => {
+    let active = true;
+    if (!booking.memberId) return undefined;
+    getMember(booking.memberId)
+      .then(member => {
+        if (!active) return;
+        setDiscount(!!member?.archerNo && Number(member.archerNo) <= EARLY_BIRD_MAX);
+        setDiscountResolved(true);
+      })
+      .catch(() => { if (active) setDiscountResolved(true); });
+    return () => { active = false; };
+  }, [booking.memberId]);
 
   async function handleSubmit() {
     if (submitting) return;
@@ -810,6 +846,12 @@ function CheckoutModal({ booking, onClose, onDone, toast }) {
         const ref = await addBillingRecord({
           memberName: booking.memberName || "顧客", memberId:booking.memberId ?? null,
           plan, basePrice, discount:discount ? EARLY_BIRD_DISC : 0, finalPrice, paymentMethod:payMethod,
+          bookingBreakdown: normalizeParticipantBreakdown(booking.participantBreakdown, booking),
+          checkoutBreakdown,
+          checkoutParticipantCount: participantCount,
+          priceItems: Object.entries(checkoutBreakdown).map(([planType, count]) => ({
+            planType, count, durationHours: booking.durationHours || 1,
+          })).filter(item => item.count > 0),
           year:y, month:m, day:d, date,
           note:note.trim() || `${isForce ? "線上約課【強制結帳】" : "線上約課結帳"}（預約 ${booking.id}）`,
           createdBy:"", createdByName:isForce ? "教練（強制結帳）" : "教練（線上約課結帳）",
@@ -826,11 +868,22 @@ function CheckoutModal({ booking, onClose, onDone, toast }) {
           status: "completed",
           completedAt: serverTimestamp(),
           completionSource: "forced_checkout",
+          checkoutBreakdown,
+          checkoutParticipantCount: participantCount,
+          checkoutBasePrice: basePrice,
+          checkoutFinalPrice: finalPrice,
           updatedAt: serverTimestamp(),
         });
         toast(`⚡ 已強制完成結帳 ${booking.memberName || "顧客"} · ${plan} NT$${finalPrice}`);
       } else {
-        await updateDoc(doc(db, "bookings", booking.id), { paymentMethod: PAY_METHOD_CODE[payMethod] || "cash", updatedAt:serverTimestamp() });
+        await updateDoc(doc(db, "bookings", booking.id), {
+          paymentMethod: PAY_METHOD_CODE[payMethod] || "cash",
+          checkoutBreakdown,
+          checkoutParticipantCount: participantCount,
+          checkoutBasePrice: basePrice,
+          checkoutFinalPrice: finalPrice,
+          updatedAt:serverTimestamp(),
+        });
         const linked = await completeBookingFromCheckin(booking.id, booking.checkinId || null, billingId);
         if (!linked.ok) throw new Error(`帳務已建立，但預約連動失敗：${linked.reason || "未知錯誤"}`);
         toast(`✓ 已結帳 ${booking.memberName || "顧客"} · ${plan} NT$${finalPrice}`);
@@ -847,22 +900,17 @@ function CheckoutModal({ booking, onClose, onDone, toast }) {
       <div className="flex flex-col gap-4">
         <div className="text-slate-400 text-xs">
           原預約：{booking.date} {booking.startTime}-{booking.endTime}
-          ・{PLAN_TYPES.find(p => p.id === booking.planType)?.label || booking.planType}
+          ・{participantBreakdownLabel(normalizeParticipantBreakdown(booking.participantBreakdown, booking))}
           {booking.billingRecordId && <span className="text-amber-400 ml-2">⚠ 這筆先前已結過帳，送出會再新增一筆記錄</span>}
         </div>
 
-        <div>
-          <div className="text-slate-400 text-xs font-bold mb-1.5">方案（已依預約自動帶入，可修改）</div>
-          <div className="grid grid-cols-3 gap-2">
-            {BILLING_PLANS.map(p => (
-              <button key={p.id} onClick={() => setPlan(p.id)}
-                className={`rounded-xl px-2 py-2 text-center border ${plan === p.id ? "border-blue-500 bg-blue-500/10" : "border-white/10 bg-white/5"}`}>
-                <div className={`font-black text-sm ${plan === p.id ? "text-blue-300" : "text-white"}`}>{p.id}</div>
-                <div className="text-slate-400 text-[11px]">NT${p.price}</div>
-              </button>
-            ))}
-          </div>
-        </div>
+        <ParticipantBreakdownPicker value={checkoutBreakdown}
+          onChange={next => {
+            setCheckoutBreakdown(next);
+            setPlan(BOOKING_TO_BILLING_PLAN[legacyPlanTypeFor(next)]?.[booking.durationHours || 1] || "單一");
+            setPriceOverride(null);
+          }} />
+        <p className="text-xs text-slate-400">現場可依實際參與身分調整；學生請看學生證，敬老請看身分證。總人數仍不可超過 8 人。</p>
 
         <div className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-3">
           <div>
@@ -879,8 +927,8 @@ function CheckoutModal({ booking, onClose, onDone, toast }) {
                 className="w-24 bg-transparent text-white text-2xl font-black outline-none border-b border-white/20 focus:border-blue-400" />
             </div>
           </div>
-          <Btn v={discount ? "warn" : "secondary"} size="sm" onClick={() => setDiscount(d => !d)}>
-            {discount ? `✓ 早鳥 -$${EARLY_BIRD_DISC}` : "早鳥折扣"}
+          <Btn v={discount ? "warn" : "secondary"} size="sm" onClick={() => setDiscount(d => !d)} disabled={!discountResolved}>
+            {!discountResolved ? "確認射手編號…" : discount ? `✓ 射手 1～123 -$${EARLY_BIRD_DISC}` : "無射手編號優惠"}
           </Btn>
         </div>
 
@@ -940,16 +988,17 @@ function CreateBookingModal({ initialSlot, onClose, onDone, toast }) {
   const [recentVisits, setRecentVisits] = useState([]);
   const [walkInPhone, setWalkInPhone] = useState("");
   const [walkInNote, setWalkInNote] = useState("");
-  const [planType, setPlanType] = useState("general");
   const [durationHours, setDurationHours] = useState(1);
-  const [participantCount, setParticipantCount] = useState(1);
-  const [isNewStudent, setIsNewStudent] = useState(true);
+  const [participantBreakdown, setParticipantBreakdown] = useState({ general: 1, discount: 0, own_equipment: 0 });
+  const participantCount = participantTotal(participantBreakdown);
+  const planType = legacyPlanTypeFor(participantBreakdown);
+  const [firstTimeCount, setFirstTimeCount] = useState(1);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
   // 選定顧客後，用該顧客的 bookingStats 帶出「是否為第一次來體驗」預設值，教練仍可自己改
   useEffect(() => {
-    if (selectedMember) setIsNewStudent(!(selectedMember.bookingStats?.totalBookings > 0));
+    if (selectedMember) setFirstTimeCount(selectedMember.bookingStats?.totalBookings > 0 ? 0 : participantCount);
   }, [selectedMember]);
 
   useEffect(() => {
@@ -991,9 +1040,9 @@ function CreateBookingModal({ initialSlot, onClose, onDone, toast }) {
     const res = await createBooking(
       selectedMember.id, selectedMember.name,
       { email: selectedMember.email || "", phone: selectedMember.isWalkIn ? walkInPhone.trim() : (selectedMember.phone || "") },
-      planType, durationHours, participantCount, isNewStudent,
+      planType, durationHours, participantCount, firstTimeCount === participantCount,
       initialSlot.date, initialSlot.startTime, computeEndTime(initialSlot.startTime, durationHours), selectedMember.isWalkIn ? "walk_in" : "phone", selectedMember.isWalkIn ? walkInNote.trim() : "", null,
-      { bypassLeadTime:true },
+      { bypassLeadTime:true, participantBreakdown, firstTimeCount },
     );
     setBusy(false);
     if (!res.ok) { setErr(res.reason || "建立失敗"); return; }
@@ -1053,10 +1102,21 @@ function CreateBookingModal({ initialSlot, onClose, onDone, toast }) {
               <span>顧客：{selectedMember.name}（{selectedMember.email || selectedMember.phone || "—"}）</span>
               <button type="button" onClick={() => setSelectedMember(null)} className="text-xs underline text-blue-400 flex-shrink-0">重選</button>
             </div>
-            <PlanDurationPicker planType={planType} durationHours={durationHours}
-              onChange={({ planType: pt, durationHours: dh }) => { setPlanType(pt); setDurationHours(dh); }} />
-            <ParticipantCountPicker value={participantCount}
-              onChange={setParticipantCount} />
+            <ParticipantBreakdownPicker value={participantBreakdown}
+              onChange={next => {
+                const nextTotal = participantTotal(next);
+                setParticipantBreakdown(next);
+                setFirstTimeCount(current => Math.min(current, nextTotal));
+              }} />
+            <PlanDurationPicker durationHours={durationHours} participantBreakdown={participantBreakdown}
+              onChange={({ durationHours: dh }) => setDurationHours(dh)} />
+            <label className="text-slate-300 text-sm font-bold">
+              同行中第一次來的人數
+              <input type="number" inputMode="numeric" min="0" max={participantCount} value={firstTimeCount}
+                onChange={event => setFirstTimeCount(Math.max(0, Math.min(participantCount, Number(event.target.value) || 0)))}
+                className="ml-3 w-16 rounded-lg border border-white/15 bg-slate-950 px-2 py-2 text-center text-white" />
+              <span className="ml-2 text-xs text-slate-500">回訪 {participantCount - firstTimeCount} 人</span>
+            </label>
             {selectedMember.isWalkIn && <>
               <Inp label="預約電話" value={walkInPhone} onChange={e => setWalkInPhone(e.target.value)} placeholder="手動輸入聯絡電話" />
               <Inp label="備註" value={walkInNote} onChange={e => setWalkInNote(e.target.value)} placeholder="臨時訪客備註（選填）" />
@@ -1066,7 +1126,7 @@ function CreateBookingModal({ initialSlot, onClose, onDone, toast }) {
             </div>
             <div className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-2.5">
               <span className="text-slate-400 text-sm">總金額</span>
-              <span className="text-white text-xl font-black">NT$ {totalPrice(planType, durationHours, participantCount)}</span>
+              <span className="text-white text-xl font-black">NT$ {bookingTotalPrice(participantBreakdown, durationHours)}</span>
             </div>
             {err && <div className="text-red-400 text-sm">{err}</div>}
             <Btn v="primary" onClick={handleSubmit} disabled={busy}>{busy ? "送出中…" : "確認建立預約"}</Btn>

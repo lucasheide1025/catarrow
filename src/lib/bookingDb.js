@@ -20,6 +20,12 @@ import {
   serverTimestamp, increment, runTransaction, writeBatch,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import {
+  firstReturningCounts,
+  legacyPlanTypeFor,
+  normalizeParticipantBreakdown,
+  participantTotal,
+} from "./bookingPricing";
 
 const BOOKINGS    = "bookings";
 const SLOT_COUNTS = "bookingSlotCounts";
@@ -97,7 +103,20 @@ export async function createBooking(memberId, memberName, contact, planType, dur
   if (source === "online_public" && (!contact?.email || !contact?.phone)) {
     return { ok: false, reason: "Email 與電話為必填" };
   }
-  const count = Math.max(1, Math.min(LANE_CAPACITY, participantCount || 1));
+  const participantBreakdown = normalizeParticipantBreakdown(
+    options.participantBreakdown,
+    { planType, participantCount },
+  );
+  const count = Math.max(1, Math.min(LANE_CAPACITY, participantTotal(participantBreakdown)));
+  if (participantTotal(participantBreakdown) !== count) {
+    return { ok: false, reason: `同行總人數需為 1～${LANE_CAPACITY} 人` };
+  }
+  const visitCounts = firstReturningCounts({
+    firstTimeCount: options.firstTimeCount,
+    participantCount: count,
+    isNewStudent,
+  });
+  const compatiblePlanType = legacyPlanTypeFor(participantBreakdown);
 
   if (!options.bypassLeadTime) {
     const leadErr = checkLeadTime(date, startTime);
@@ -134,16 +153,19 @@ export async function createBooking(memberId, memberName, contact, planType, dur
         tx.set(ref, {
           count: c.count + count,
           blocked: c.blocked,
-          newCount:       c.newCount       + (isNewStudent ? count : 0),
-          returningCount: c.returningCount + (isNewStudent ? 0 : count),
+          newCount:       c.newCount       + visitCounts.firstTimeCount,
+          returningCount: c.returningCount + visitCounts.returningCount,
         }, { merge: true });
       });
 
       tx.set(bookingRef, {
         memberId, memberName,
         contactEmail: contact?.email || "", contactPhone: contact?.phone || "",
-        planType, participantCount: count,
-        durationHours, isNewStudent: !!isNewStudent,
+        planType: compatiblePlanType, participantCount: count,
+        participantBreakdown,
+        firstTimeCount: visitCounts.firstTimeCount,
+        returningCount: visitCounts.returningCount,
+        durationHours, isNewStudent: visitCounts.firstTimeCount === count,
         date, startTime, endTime,
         slotKeys, slotKey: slotKeys[0], // slotKey（單數）保留＝slotKeys[0]，向後相容舊讀取程式碼
         instructorId: null,
@@ -212,8 +234,12 @@ export async function cancelBooking(bookingId, options = {}) {
       const slotKeys    = (booking.slotKeys && booking.slotKeys.length) ? booking.slotKeys : [booking.slotKey];
       const counterRefs = slotKeys.map(k => doc(db, SLOT_COUNTS, k));
       const memberRef   = booking.memberId ? doc(db, "members", booking.memberId) : null;
-      const isNew       = !!booking.isNewStudent;
       const count       = booking.participantCount || 1; // 07-10-booking-ui-polish-headcount：釋放跟建立時同樣的人數
+      const visitCounts = firstReturningCounts({
+        firstTimeCount: booking.firstTimeCount,
+        participantCount: count,
+        isNewStudent: booking.isNewStudent,
+      });
 
       // ── 讀取先於寫入（這筆預約牽涉到的全部時段格 + 會員文件）──
       const counterSnaps = wasHolding ? await Promise.all(counterRefs.map(ref => tx.get(ref))) : [];
@@ -229,8 +255,8 @@ export async function cancelBooking(bookingId, options = {}) {
           tx.set(ref, {
             count: Math.max(0, c.count - count),
             blocked: c.blocked,
-            newCount:       Math.max(0, c.newCount       - (isNew ? count : 0)),
-            returningCount: Math.max(0, c.returningCount - (isNew ? 0 : count)),
+            newCount:       Math.max(0, c.newCount       - visitCounts.firstTimeCount),
+            returningCount: Math.max(0, c.returningCount - visitCounts.returningCount),
           }, { merge: true });
         });
       }
@@ -289,7 +315,11 @@ export async function rescheduleBooking(bookingId, newDate, newStartTime, newEnd
       const durationHours = options.durationHours ?? (old.durationHours || 1); // 教練可改時數/方案
       const planType      = options.planType ?? old.planType;
       const participantCount = old.participantCount || 1; // 改期沿用同樣人數，不開放連人數一起改
-      const isNew          = !!old.isNewStudent;
+      const visitCounts = firstReturningCounts({
+        firstTimeCount: old.firstTimeCount,
+        participantCount,
+        isNewStudent: old.isNewStudent,
+      });
       const oldSlotKeys     = (old.slotKeys && old.slotKeys.length) ? old.slotKeys : [old.slotKey];
       const newSlotKeys     = slotKeysFor(newDate, newStartTime, durationHours);
 
@@ -328,8 +358,8 @@ export async function rescheduleBooking(bookingId, newDate, newStartTime, newEnd
         tx.set(refByKey[k], {
           count: Math.max(0, c.count + delta),
           blocked: c.blocked,
-          newCount:       Math.max(0, c.newCount       + (isNew ? delta : 0)),
-          returningCount: Math.max(0, c.returningCount + (isNew ? 0 : delta)),
+          newCount:       Math.max(0, c.newCount       + (inNew ? visitCounts.firstTimeCount : -visitCounts.firstTimeCount)),
+          returningCount: Math.max(0, c.returningCount + (inNew ? visitCounts.returningCount : -visitCounts.returningCount)),
         }, { merge: true });
       });
 
@@ -348,7 +378,10 @@ export async function rescheduleBooking(bookingId, newDate, newStartTime, newEnd
         contactPhone: old.contactPhone,
         planType,
         participantCount: old.participantCount || 1,
-        durationHours, isNewStudent: isNew,
+        participantBreakdown: normalizeParticipantBreakdown(old.participantBreakdown, old),
+        firstTimeCount: visitCounts.firstTimeCount,
+        returningCount: visitCounts.returningCount,
+        durationHours, isNewStudent: visitCounts.firstTimeCount === participantCount,
         date: newDate, startTime: newStartTime, endTime: newEndTime,
         slotKeys: newSlotKeys, slotKey: newSlotKeys[0],
         instructorId: old.instructorId ?? null,
@@ -385,7 +418,7 @@ export async function rescheduleBooking(bookingId, newDate, newStartTime, newEnd
 
 // ─── 修改預約（教練後台，可調整開始時間/方案/時數/結束時間/人數）─────────────────
 export async function updateBooking(bookingId, updates, options = {}) {
-  const { startTime, planType, durationHours, endTime, participantCount } = updates;
+  const { startTime, planType, durationHours, endTime, participantCount, participantBreakdown, firstTimeCount } = updates;
   const bookingRef = doc(db, BOOKINGS, bookingId);
 
   try {
@@ -397,8 +430,13 @@ export async function updateBooking(bookingId, updates, options = {}) {
 
       const newStartTime = startTime ?? old.startTime;
       const newDuration = durationHours ?? (old.durationHours || 1);
-      const newPlan = planType ?? old.planType;
-      const newCount = participantCount ?? (old.participantCount || 1);
+      const newBreakdown = normalizeParticipantBreakdown(
+        participantBreakdown,
+        { planType: planType ?? old.planType, participantCount: participantCount ?? old.participantCount },
+      );
+      const newPlan = legacyPlanTypeFor(newBreakdown);
+      const newCount = participantTotal(newBreakdown);
+      if (newCount < 1 || newCount > LANE_CAPACITY) throw new Error("INVALID_PARTICIPANT_COUNT");
       const [startH, startM] = newStartTime.split(":").map(Number);
       const endH = startH + newDuration;
       const mm = startM === 0 ? "00" : String(startM).padStart(2, "0");
@@ -408,7 +446,16 @@ export async function updateBooking(bookingId, updates, options = {}) {
       const oldSlotKeys = (old.slotKeys && old.slotKeys.length) ? old.slotKeys : slotKeysFor(old.date, old.startTime, old.durationHours || 1);
       const newSlotKeys = slotKeysFor(old.date, newStartTime, newDuration);
       const oldCount = old.participantCount || 1;
-      const isNew = !!old.isNewStudent;
+      const oldVisits = firstReturningCounts({
+        firstTimeCount: old.firstTimeCount,
+        participantCount: oldCount,
+        isNewStudent: old.isNewStudent,
+      });
+      const newVisits = firstReturningCounts({
+        firstTimeCount: firstTimeCount ?? oldVisits.firstTimeCount,
+        participantCount: newCount,
+        isNewStudent: old.isNewStudent,
+      });
 
       const allKeys = Array.from(new Set([...oldSlotKeys, ...newSlotKeys]));
       const refByKey = {};
@@ -426,9 +473,9 @@ export async function updateBooking(bookingId, updates, options = {}) {
         const newContrib = inNew ? newCount : 0;
         const delta = newContrib - oldContrib;
 
-        if (delta > 0 && !options.force) {
+        if (delta > 0) {
           const c = counterByKey[k];
-          if (c.blocked) throw new Error(`SLOT_BLOCKED:${k}`);
+          if (!options.force && c.blocked) throw new Error(`SLOT_BLOCKED:${k}`);
           if (c.count + delta > LANE_CAPACITY) throw new Error(`SLOT_FULL:${k}`);
         }
       });
@@ -439,15 +486,17 @@ export async function updateBooking(bookingId, updates, options = {}) {
         const inNew = newSlotKeys.includes(k);
         const oldContrib = inOld ? oldCount : 0;
         const newContrib = inNew ? newCount : 0;
-        const delta = newContrib - oldContrib;
+        const countDelta = newContrib - oldContrib;
+        const firstDelta = (inNew ? newVisits.firstTimeCount : 0) - (inOld ? oldVisits.firstTimeCount : 0);
+        const returningDelta = (inNew ? newVisits.returningCount : 0) - (inOld ? oldVisits.returningCount : 0);
 
-        if (delta !== 0) {
+        if (countDelta !== 0 || firstDelta !== 0 || returningDelta !== 0) {
           const c = counterByKey[k];
           tx.set(refByKey[k], {
-            count: Math.max(0, c.count + delta),
+            count: Math.max(0, c.count + countDelta),
             blocked: c.blocked,
-            newCount: Math.max(0, c.newCount + (isNew ? delta : 0)),
-            returningCount: Math.max(0, c.returningCount + (isNew ? 0 : delta)),
+            newCount: Math.max(0, c.newCount + firstDelta),
+            returningCount: Math.max(0, c.returningCount + returningDelta),
           }, { merge: true });
         }
       });
@@ -455,6 +504,10 @@ export async function updateBooking(bookingId, updates, options = {}) {
       tx.update(bookingRef, {
         startTime: newStartTime,
         planType: newPlan,
+        participantBreakdown: newBreakdown,
+        firstTimeCount: newVisits.firstTimeCount,
+        returningCount: newVisits.returningCount,
+        isNewStudent: newVisits.firstTimeCount === newCount,
         durationHours: newDuration,
         endTime: newEndTime,
         participantCount: newCount,
@@ -468,6 +521,7 @@ export async function updateBooking(bookingId, updates, options = {}) {
     const msg = e.message || "";
     if (msg.startsWith("SLOT_FULL")) return { ok: false, reason: "修改後的時段/人數已超過容量上限" };
     if (msg.startsWith("SLOT_BLOCKED")) return { ok: false, reason: "修改後的時段教練暫停預約" };
+    if (msg === "INVALID_PARTICIPANT_COUNT") return { ok: false, reason: `同行總人數需為 1～${LANE_CAPACITY} 人` };
     if (msg === "BOOKING_NOT_FOUND") return { ok: false, reason: "找不到這筆預約" };
     if (msg === "BOOKING_CANCELLED") return { ok: false, reason: "該預約已取消，無法修改" };
     console.error("[updateBooking]", e);
