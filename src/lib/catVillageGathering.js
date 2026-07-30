@@ -1,4 +1,5 @@
 import { getBuildingStage, getResourceKey } from "./villageData";
+import { EXPANSION_MONSTERS } from "./monsterExpansionCatalog";
 
 export const GATHERING_ROUNDS = 3;
 export const GATHERING_ARROWS_PER_ROUND = 6;
@@ -87,9 +88,91 @@ export const GATHERING_SITES = [
     palette: ["#312e81", "#6d28d9", "#f0abfc"],
     flavor: "射開封存箱與標籤鎖，整理神殿族素材與罐頭。",
   },
+  // 第七族（寶箱族）。開放原因：裝備專精與升級需要大量寶箱族素材，但寶箱族原本只在
+  // 隱藏地下城出現，通用材料箱也刻意不含它（itemData.js 的 SIX_FAMILIES），取得管道太窄。
+  // 這個採集點的 id 必須是 "archery"——採集點的等級判定是 buildings[site.id]，
+  // 所以 id 對齊建築 id 才會吃到練箭場等級（CouncilHall.jsx 的 GATHERING_SITES.map）。
+  {
+    id: "archery",
+    name: "藏金靶場",
+    buildingName: "練箭場",
+    icon: "🎯",
+    race: "treasure",
+    raceName: "寶箱族",
+    resource: "archer",
+    resourceName: "貓貓射手",
+    palette: ["#422006", "#b45309", "#fde047"],
+    flavor: "射中靶心觸發藏金機關，取回寶箱族素材並帶動貓貓射手訓練。",
+  },
 ];
 
 export const GATHERING_SITE_MAP = Object.fromEntries(GATHERING_SITES.map(site => [site.id, site]));
+
+// ── 採集素材池（擴充圖鑑）────────────────────────────────────────────────
+// 採集發的是擴充圖鑑的素材（`mat_*`），寫進 materialInventory——跟裝備專精消耗的是
+// 同一個 collection（equipSpecializationDb 的 MATERIAL_META 只認得 mat_* id），
+// 所以採到的素材可以直接拿去升級。舊的 `{族}_m{階}` 表不含寶箱族，也不被專精認得。
+//
+// 只收 encounter === "normal" 的素材：小王與大王素材保留給實際打王，採集拿不到。
+// 每族每階固定 3 件一般素材，因此 T{n} 的池是 3n 件。
+const GATHERING_MATERIAL_POOL = (() => {
+  const pool = {};
+  for (const monster of EXPANSION_MONSTERS) {
+    if (monster.encounter !== "normal") continue;
+    const byFamily = pool[monster.family] || (pool[monster.family] = {});
+    const list = byFamily[monster.tierIndex] || (byFamily[monster.tierIndex] = []);
+    list.push({
+      materialId: monster.material.id,
+      name: monster.material.name,
+      icon: monster.material.icon,
+      tierIndex: monster.tierIndex,
+    });
+  }
+  return pool;
+})();
+
+// T{n} 採集可取得 T1～T{n} 的素材（累積，不是只有該階）
+export function getGatheringMaterialPool(race, tierNo) {
+  const byTier = GATHERING_MATERIAL_POOL[race] || {};
+  const maxTier = Math.max(1, Math.min(6, Math.round(Number(tierNo) || 1)));
+  const out = [];
+  for (let tier = 1; tier <= maxTier; tier += 1) out.push(...(byTier[tier] || []));
+  return out;
+}
+
+// 把總數量隨機分配到 T1～T{n} 的素材上。低階權重較高（T1 最常見），高階較稀少，
+// 但總數固定等於 totalCount，不會因為隨機而膨脹或縮水。
+export function rollGatheringMaterials({ race, tierNo, totalCount, random = Math.random }) {
+  const pool = getGatheringMaterialPool(race, tierNo);
+  const total = Math.max(0, Math.round(Number(totalCount) || 0));
+  if (!pool.length || total <= 0) return [];
+
+  const maxTier = Math.max(1, Math.min(6, Math.round(Number(tierNo) || 1)));
+  const weights = pool.map(item => Math.max(1, maxTier - item.tierIndex + 1));
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+
+  const counts = new Map();
+  for (let i = 0; i < total; i += 1) {
+    let roll = random() * totalWeight;
+    let index = 0;
+    while (index < pool.length - 1 && roll >= weights[index]) {
+      roll -= weights[index];
+      index += 1;
+    }
+    const id = pool[index].materialId;
+    counts.set(id, (counts.get(id) || 0) + 1);
+  }
+
+  return pool
+    .filter(item => counts.has(item.materialId))
+    .map(item => ({
+      materialId: item.materialId,
+      name: item.name,
+      icon: item.icon,
+      tierIndex: item.tierIndex,
+      count: counts.get(item.materialId),
+    }));
+}
 
 const SCORE_PROGRESS = {
   X: 30,
@@ -174,12 +257,19 @@ function makeRareRewards({ site, tierNo, completion, xCount }) {
   }
 
   if (completion.key === "great" && tierNo >= 4) {
-    rewards.push({
-      type: "material",
-      materialId: `${site.race}_m${Math.min(6, tierNo + 1)}`,
-      name: "高階怪物素材",
-      count: 1,
-    });
+    // 大豐收額外給「高一階」的一般素材；沿用同一個擴充素材池，不用舊的 {族}_m{階} id
+    const bonusTier = Math.min(6, tierNo + 1);
+    const bonusPool = getGatheringMaterialPool(site.race, bonusTier)
+      .filter(item => item.tierIndex === bonusTier);
+    const bonus = bonusPool[Math.floor(Math.random() * bonusPool.length)] || null;
+    if (bonus) {
+      rewards.push({
+        type: "material",
+        materialId: bonus.materialId,
+        name: bonus.name,
+        count: 1,
+      });
+    }
   }
 
   if (completion.key === "great" && xCount >= 5) {
@@ -224,13 +314,22 @@ export function calculateGatheringRewards({ contract, rounds, partySize = 1 }) {
   const bondBase = GATHERING_TIER_META[contract.tier]?.bond || 1;
   const catBond = Math.max(1, Math.round(bondBase * CAT_BOND_BOOST * (progressPct >= 180 ? 1.35 : progressPct >= 130 ? 1.15 : 1)) + partyBonus.bondBonus);
 
+  // T{n} 可取得 T1～T{n} 的一般素材，數量隨機分配但總數固定。
+  // materialId／materialName／materialCount 保留給既有的顯示、協力房統計與村目標比對用：
+  // materialId 取清單中階級最高的那筆當代表，materialCount 是全部素材的總數。
+  const materials = rollGatheringMaterials({ race: site.race, tierNo, totalCount: materialCount });
+  const primary = materials.length
+    ? materials.reduce((best, item) => (item.tierIndex > best.tierIndex ? item : best), materials[0])
+    : null;
+
   const rewards = {
     progressPct,
     totalScore,
     xCount,
     completion,
-    materialId: `${site.race}_m${Math.min(6, tierNo)}`,
-    materialName: `${site.raceName} T${tierNo}素材`,
+    materials,
+    materialId: primary?.materialId || "",
+    materialName: primary?.name || `${site.raceName} T${tierNo}素材`,
     materialCount,
     villageResources: {
       [getResourceKey(site.resource, Math.min(5, tierNo))]: villageCount,

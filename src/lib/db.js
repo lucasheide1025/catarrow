@@ -5507,7 +5507,20 @@ export async function completeCouncilSession(memberId, {
     const rewards = gatheringRewards || {};
     const materialCount = Math.max(0, Math.min(80, Math.round(Number(rewards.materialCount) || 0)));
     const goalVillageResources = { ...(rewards.villageResources || {}) };
-    if (rewards.materialId && materialCount > 0) {
+    // rewards.materials＝T1～T{n} 隨機分配的素材清單（catVillageGathering.rollGatheringMaterials）。
+    // 舊版結算只有單一 materialId，這裡保留 fallback 讓舊資料/舊前端送上來的結果仍能發放。
+    // 兩者只會走其中一條，不會重複發。總量一律受 materialCount 上限 80 保護。
+    const materialList = Array.isArray(rewards.materials) ? rewards.materials : [];
+    if (materialList.length) {
+      const grants = [];
+      for (const item of materialList) {
+        const id = String(item?.materialId || "");
+        const count = Math.max(0, Math.round(Number(item?.count) || 0));
+        if (!id || count <= 0) continue;
+        for (let i = 0; i < count && grants.length < 80; i += 1) grants.push({ id });
+      }
+      if (grants.length) promises.push(addMaterials(memberId, grants));
+    } else if (rewards.materialId && materialCount > 0) {
       promises.push(addMaterials(memberId, Array(materialCount).fill({ id: rewards.materialId })));
     }
 

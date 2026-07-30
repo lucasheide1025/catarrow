@@ -20,9 +20,14 @@ import {
   vibrate,
 } from "../../lib/sound";
 import { MATERIALS } from "../../lib/monsterMaterials";
+import { EXPANSION_MATERIALS } from "../../lib/monsterExpansionCatalog";
 
 const SCORE_LABELS = ["X", "10", "9", "8", "7", "6", "5", "4", "3", "2", "1", "M"];
-const MATERIAL_MAP = Object.fromEntries(MATERIALS.map(item => [item.id, item]));
+// 採集現在發的是擴充圖鑑素材（mat_*），舊的 MATERIALS 表查不到，兩張表都要收
+const MATERIAL_MAP = {
+  ...Object.fromEntries(EXPANSION_MATERIALS.map(item => [item.id, item])),
+  ...Object.fromEntries(MATERIALS.map(item => [item.id, item])),
+};
 
 const RESULT_COLOR = {
   comfort: "#94a3b8",
@@ -638,7 +643,18 @@ export default function GatheringRun({
         </section>
 
         <section style={{ marginTop: 12, display: "grid", gap: 8 }}>
-          <RewardLine icon={materialDisplay.icon} label={materialDisplay.name} value={`×${result.materialCount}`} />
+          {/* T{n} 會拿到 T1～T{n} 的素材，逐筆列出；舊資料只有單一素材時退回原本的單行顯示 */}
+          {Array.isArray(result.materials) && result.materials.length
+            ? result.materials.map(item => {
+                const display = materialRewardDisplay(item.materialId, item.name);
+                return (
+                  <RewardLine key={item.materialId}
+                    icon={display.icon || item.icon || "🧩"}
+                    label={`${display.name || item.name}（T${item.tierIndex}）`}
+                    value={`×${item.count}`} />
+                );
+              })
+            : <RewardLine icon={materialDisplay.icon} label={materialDisplay.name} value={`×${result.materialCount}`} />}
           {Object.values(result.villageResources).map((count, index) => (
             <RewardLine key={index} icon={site.icon} label={result.villageResourceName} value={`×${count}`} />
           ))}
