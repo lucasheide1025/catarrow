@@ -1,5 +1,5 @@
 import { getBuildingStage, getResourceKey } from "./villageData";
-import { EXPANSION_MONSTERS } from "./monsterExpansionCatalog";
+import { getNormalMaterialPool } from "./monsterEconomyCatalog";
 
 export const GATHERING_ROUNDS = 3;
 export const GATHERING_ARROWS_PER_ROUND = 6;
@@ -113,31 +113,22 @@ export const GATHERING_SITE_MAP = Object.fromEntries(GATHERING_SITES.map(site =>
 // 同一個 collection（equipSpecializationDb 的 MATERIAL_META 只認得 mat_* id），
 // 所以採到的素材可以直接拿去升級。舊的 `{族}_m{階}` 表不含寶箱族，也不被專精認得。
 //
-// 只收 encounter === "normal" 的素材：小王與大王素材保留給實際打王，採集拿不到。
-// 每族每階固定 3 件一般素材，因此 T{n} 的池是 3n 件。
-const GATHERING_MATERIAL_POOL = (() => {
-  const pool = {};
-  for (const monster of EXPANSION_MONSTERS) {
-    if (monster.encounter !== "normal") continue;
-    const byFamily = pool[monster.family] || (pool[monster.family] = {});
-    const list = byFamily[monster.tierIndex] || (byFamily[monster.tierIndex] = []);
-    list.push({
-      materialId: monster.material.id,
-      name: monster.material.name,
-      icon: monster.material.icon,
-      tierIndex: monster.tierIndex,
-    });
-  }
-  return pool;
-})();
-
+// 素材池直接用 monsterEconomyCatalog 的 getNormalMaterialPool，不自己再建一份——
+// NORMAL_MATERIALS 已經是「只有一般怪」的 126 件（7 族 × 6 階 × 3 件），
+// 小王與大王素材天生就被排除，保留給實際打王。
+//
 // T{n} 採集可取得 T1～T{n} 的素材（累積，不是只有該階）
 export function getGatheringMaterialPool(race, tierNo) {
-  const byTier = GATHERING_MATERIAL_POOL[race] || {};
+  if (!race) return [];
   const maxTier = Math.max(1, Math.min(6, Math.round(Number(tierNo) || 1)));
-  const out = [];
-  for (let tier = 1; tier <= maxTier; tier += 1) out.push(...(byTier[tier] || []));
-  return out;
+  return getNormalMaterialPool({ family: race, maxTier })
+    .map(item => ({
+      materialId: item.id,
+      name: item.name,
+      icon: item.icon,
+      tierIndex: item.tierIndex,
+    }))
+    .sort((a, b) => a.tierIndex - b.tierIndex || a.materialId.localeCompare(b.materialId));
 }
 
 // 把總數量隨機分配到 T1～T{n} 的素材上。低階權重較高（T1 最常見），高階較稀少，

@@ -1,4 +1,6 @@
 import { EXPANSION_MONSTERS } from "./monsterExpansionCatalog";
+import { getNormalMaterialPool } from "./monsterEconomyCatalog";
+import { BOARD_MODES } from "./boardData";
 import {
   GATHERING_SITES,
   GATHERING_SITE_MAP,
@@ -97,4 +99,18 @@ test("數量為 0 或族系不存在時回空陣列，不丟例外", () => {
   expect(rollGatheringMaterials({ race: "treasure", tierNo: 3, totalCount: 0 })).toEqual([]);
   expect(rollGatheringMaterials({ race: "不存在", tierNo: 3, totalCount: 5 })).toEqual([]);
   expect(getGatheringMaterialPool("不存在", 3)).toEqual([]);
+});
+
+// BOARD_MODES 是從 GATHERING_SITES 衍生的（boardData.js），新增第七族後大富翁也會多一個模式。
+// villageBoardDb 原本組舊表 id `${family}_m${tier}`，舊表沒有寶箱族，會發出不存在的素材。
+test("大富翁模式與採集點一致，且每個模式的族系都取得到一般素材", () => {
+  expect(BOARD_MODES).toHaveLength(GATHERING_SITES.length);
+  expect(BOARD_MODES.map(m => m.id)).toEqual(GATHERING_SITES.map(s => s.id));
+  for (const mode of BOARD_MODES) {
+    for (let tier = 1; tier <= 6; tier += 1) {
+      const pool = getNormalMaterialPool({ family: mode.family, exactTier: tier });
+      expect(pool).toHaveLength(3);
+      for (const item of pool) expect(item.kind).toBe("normal");
+    }
+  }
 });

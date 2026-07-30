@@ -8,6 +8,7 @@ import { addCoins, addArrowdew, addGachaCoins, addMaterials, addChests, addPotio
 import { addCatXP, addCatBond } from "./catDb";
 import { CARRY_POTIONS, makeFamilyMaterialChest } from "./itemData";
 import { BOARD_LAYOUT, BOARD_SIZE, BOARD_MODE_MAP, getModeTierCap, rollTileReward } from "./boardData";
+import { getNormalMaterialPool } from "./monsterEconomyCatalog";
 
 export const DAILY_DICE = 15;   // 每日補滿至 15（上限 15、不囤積）
 
@@ -221,7 +222,14 @@ async function applyGainLose(memberId, mode, resource, amount, tierCap, catId, s
     if (sign > 0) {
       const reward = { familyMaterials: {} };
       const tier = Math.min(6, Math.max(1, Math.ceil(Math.random() * tierCap)));
-      reward.familyMaterials[`${mode.family}_m${tier}`] = amount;
+      // 原本組舊表 id `${family}_m${tier}`，但舊表（monsterMaterials.js）只有六族、沒有寶箱族，
+      // 而 BOARD_MODES 是從 GATHERING_SITES 衍生的，新增第七族後這裡會發出不存在的
+      // treasure_m{tier}。改用 getNormalMaterialPool 從該族該階的 3 種一般素材隨機取一種
+      // （與 boardData.js 射箭格同一套來源），寶箱族因此也能正常給素材。
+      const pool = getNormalMaterialPool({ family: mode.family, exactTier: tier });
+      const picked = pool[Math.floor(Math.random() * pool.length)];
+      if (!picked) return null;
+      reward.familyMaterials[picked.id] = amount;
       return applyBoardReward(memberId, reward, {});
     }
     return null;

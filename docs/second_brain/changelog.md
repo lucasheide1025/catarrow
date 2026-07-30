@@ -5,6 +5,67 @@
 
 ---
 
+## 2026-07-30（貓貓村採集：新增第七族寶箱族，素材改用擴充圖鑑）
+
+作者：「探索地圖 新增第七族 寶箱族可以對應射箭場的建築物等級」＋「目前太多升級材料需要寶箱族了」。
+
+**新增採集點「藏金靶場」🎯，`id: "archery"`。** 這個 id **必須**等於建築 id——採集點的等級判定是
+`buildings[site.id]`（`CouncilHall.jsx` 的 `GATHERING_SITES.map()`），id 對齊才會吃到練箭場等級。
+因此 UI、解鎖條件、tier 開放全部自動沿用既有邏輯，**不需要改任何元件**。
+村資源給 `archer`（貓貓射手），正是練箭場自己的產出。練箭場需轉蛋屋 3 級才解鎖。
+
+**踩坑：專案有兩套並行的材料經濟。**
+- 舊：`{族}_m{1-6}`（`monsterMaterials.js`，只有六族，**沒有寶箱族**）
+- 新：`mat_*`（`src/data/monsterExpansionCatalog.json`，**7 族 × 6 階 × 6 隻 = 252**）
+
+`equipSpecializationDb` 的 `MATERIAL_META` 由 `EXPANSION_MONSTERS` 建立，**只認得 `mat_*`**。
+而採集原本發舊表 id → **採到的素材其實無法用於裝備專精升級**（既有問題，本次一併修好）。
+現在採集一律發擴充素材，寫入 `materialInventory`（與專精消耗同一個 collection）。
+
+**素材規則**（`rollGatheringMaterials`）：
+- T{n} 可取得 **T1～T{n}** 累積池，每階 3 件（T6 池 18 件）
+- **排除小王與大王素材**：每族每階固定 3 normal + 2 miniBoss + 1 boss，只收 normal
+- 數量隨機但**總數守恆**＝原本的 `materialCount`，不因隨機膨脹
+- 低階權重較高（`weight = maxTier - tierIndex + 1`），T1 最常見
+
+**找資料時的教訓**：確認「某族有沒有材料」不能只 grep `monsterMaterials.js`——
+擴充材料在 **JSON** 裡、id 前綴是 `mat_`，用 `treasure_m` 這種舊命名去搜會得到錯誤結論。
+
+**未變動**：`getUnlockedGatheringTiers` 仍封頂 stage 5，T6 依既有規格保留為不由建築等級開放。
+
+---
+
+## 2026-07-30（地下城首次通關：修好顯示不出來，舊制徽章移除）
+
+**三個 bug 都源自同一件事——難度值有字串與數字兩種形式，被多個函式各自用 `Number()` 解讀。**
+
+地圖難度是字串（`normal`/`advanced`/`hard`/`hell`），遠征是數字 1-6。`Number("advanced")` → `NaN`
+→ 退回 1，於是：
+1. `buildDungeonFirstClearKey`：四種難度全算成 `_t1`。寫入端 `DungeonBattleRoom` 另有一份內嵌
+   對映 `{normal:1, advanced:3, hard:4, hell:5}`，所以打完進階寫 `t3`、面板查 `t1` → 顯示「尚未取得」；
+   打完普通則四種難度全顯示「已完成」。
+2. `getExpeditionFirstClearTrophy`：同樣問題，四種難度都拿到 T1 紀念章，**36 張圖只有 T1 那 6 張會出現**。
+3. `getDungeonFirstClearState`：把「沒有 `dungeonFirstClears` 欄位」當成資料未載入，
+   但沒通關過的射手本來就沒這欄位 → 永遠停在「首次通關資料讀取中」。
+
+修法：對映集中成 `DUNGEON_DIFFICULTY_TIERS`（`dungeonFirstClear.js`）單一來源，字串與數字都吃；
+沿用原本數字（1/3/4/5）所以既有紀錄不失效。
+
+**圖鑑另有兩套並存的紀念品**：舊制 24 件 `{族}_{難度字串}_trophy`（只有 emoji）、新制 36 件
+`{族}_t{1-6}_trophy`（有 webp）。`DungeonDex` 查的是舊制 id，所以新制**從未出現在圖鑑裡**；
+`MuseumTile` 也只畫 `item.icon` 不畫 `item.image`。依作者決定**舊制已整批移除**，
+`COLLECTIBLE_MAP` 因此少 24 件，收藏總數分母（`MemberHome`／`MemberProfile`／`achievementDex`／
+`leaderboardData`）會自動跟著變小。已擁有舊制的 9 名會員留下孤兒 key，刻意不做破壞性清理。
+
+**清掉兩筆壞資料**：`dungeonFirstClear/exam_undefined`、`mountain_undefined`（舊路徑傳了 undefined
+難度）。產生它們的 `trySetDungeonFirstClear`／`checkDungeonFirstClear`／`getDungeonFirstClearStats`
+已無任何呼叫端，是死碼。
+
+**驗證時的教訓**：build 產物把中文轉成 `\uXXXX` 逸出，直接 grep 中文會**誤判成「程式碼沒部署」**。
+要驗證線上 bundle 有沒有某段程式，得先還原逸出再比對。
+
+---
+
 ## 2026-07-26（音效架構定案：全面樣本優先，合成降為保底）
 
 作者：「我自己安裝的好多了，所以我希望透過這個路線去處理剩下的音效」＋「我比較希望你去處理完整的音效」。
