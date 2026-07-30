@@ -10,6 +10,7 @@ import {
   findReconnectableBoardRoom, startBoardRoom, roomRollAndMove,
   roomApplyBoardEffect, claimBoardSettle, claimBoardEvent, partyMultOf, subscribeOpenBoardRooms,
   submitBoardShootScore, finalizeBoardShoot, clearRoomPending, kickBoardMember, forceAdvanceRoom,
+  ackBoardStep,
 } from "../../lib/villageBoardTeamDb";
 import { ensureDailyDice, applyEventEffect, DAILY_DICE, applyBoardReward } from "../../lib/villageBoardDb";
 import { BOARD_LAYOUT, BOARD_SIZE, TILE_TYPES, BOARD_MODES, getModeTierCap, rollTileReward } from "../../lib/boardData";
@@ -19,7 +20,10 @@ import { RESOURCE_NAMES } from "../../lib/villageData";
 import { calculateGatheringRound } from "../../lib/catVillageGathering";
 import { addRoundArrows, addVillageLap } from "../../lib/db";
 import { getCatSpeech } from "../cat/catSpeeches";
-import { sfxTap, sfxSuccess, sfxCast } from "../../lib/sound";
+import {
+  sfxTap, sfxSuccess, sfxCast,
+  sfxBoardDiceRoll, sfxBoardDiceLand, sfxBoardStep, sfxBoardLand, sfxBoardLap,
+} from "../../lib/sound";
 import BoardRewardPopup from "./BoardRewardPopup";
 import CatVillageNavArt from "./CatVillageNavArt";
 
@@ -127,24 +131,46 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
   // 兩個 effect，而 setAnimating(true) 在同一個 commit 內還沒生效，同步 effect 讀到的
   // animating 仍是舊值 false → 立刻把棋子設到終點，骰子還沒定格棋子就先走完了。
   const animatingRef = useRef(false);
+  const ackedSeqRef = useRef(0);          // 已送出 ack 的 seq（避免重複寫）
   const [pendingEventMsg, setPendingEventMsg] = useState(null); // 事件結果訊息，等全員確認後才跳
   const [confirmExit, setConfirmExit] = useState(false); // 返回鍵確認（房主按下去＝解散全房，不能手滑）
   const [stuckLong, setStuckLong] = useState(false);     // 卡同一步超過 15 秒 → 才給房主解卡工具（避免動不動就踢人）
 
   const showToast = t => { setToast(t); setTimeout(() => setToast(null), 2400); };
 
+  // 送出「我看完這一步了」。沒有東西可看的步驟要立刻 ack，否則全隊會互等。
+  // 失敗就排重試——少一筆 ack 房主就永遠推不動（跟 settleClaims 同一個教訓）。
+  const ackStep = useCallback((seq) => {
+    const n = Math.max(0, Math.floor(Number(seq) || 0));
+    if (!roomId || !myId || n <= 0) return;
+    if (ackedSeqRef.current >= n) return;
+    ackedSeqRef.current = n;
+    ackBoardStep(roomId, myId, n).then(res => {
+      if (!res?.ok) { ackedSeqRef.current = n - 1; bumpRetry(); }
+    });
+  }, [roomId, myId, bumpRetry]);
+
   // ── allPassed 等全域閘門變數（需在 useEffect 前計算，避免 TDZ）──
   const activeMems = room ? Object.entries(room.members || {}).filter(([, mm]) => mm) : [];
   const memberCount = room ? Object.values(room.members || {}).filter(Boolean).length : 0;
   const curSeq = room?.seq || 0;
-  const passedStep = mid => (room?.settleClaims?.[mid] || 0) >= curSeq || (room?.eventClaims?.[mid] || 0) >= curSeq;
+  // 推進閘門＝「領取過」且「按過收下」。領取是動畫追上就自動寫入（保獎勵不丟），
+  // ack 才代表人真的看完演出——房主因此不會在隊員還在看獎勵時就骰下一步。
+  const claimedStep = mid => (room?.settleClaims?.[mid] || 0) >= curSeq || (room?.eventClaims?.[mid] || 0) >= curSeq;
+  const ackedStep = mid => (room?.ackClaims?.[mid] || 0) >= curSeq;
+  const passedStep = mid => claimedStep(mid) && ackedStep(mid);
   const hasPending = curSeq > 0 && ((room?.pendingSettle?.seq === curSeq) || (room?.pendingEvent?.seq === curSeq));
   const claimedN = activeMems.filter(([id]) => passedStep(id)).length;
   // forcedSeq＝房主按過「強制推進」：這一步不再等任何人（斷線的人就是沒領到）
   const forced = (room?.forcedSeq || 0) >= curSeq && curSeq > 0;
   const allPassed = !hasPending || forced || activeMems.every(([id]) => passedStep(id));
   // 還沒領取/OK 的人名單（讓大家知道是誰卡住）
-  const waitingNames = hasPending ? activeMems.filter(([id]) => !passedStep(id)).map(([id]) => room?.members?.[id]?.name || "隊員") : [];
+  // 分開顯示「還在結算」與「還沒按收下」，房主才知道是網路慢還是有人在看獎勵沒按
+  const nameOf = id => room?.members?.[id]?.name || "隊員";
+  const waitingNames = hasPending ? activeMems.filter(([id]) => !passedStep(id)).map(([id]) => nameOf(id)) : [];
+  const waitingAckNames = hasPending
+    ? activeMems.filter(([id]) => claimedStep(id) && !ackedStep(id)).map(([id]) => nameOf(id))
+    : [];
 
   // 重連（僅在使用者尚未主動建立/加入房間時才自動重連）
   useEffect(() => {
@@ -212,12 +238,24 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
         }
       }
     };
+    // 骰子在 roomRollAndMove 寫入後由 lastMove 驅動：這裡先播滾動音，定格再播落定音
+    sfxBoardDiceRoll();
+    const totalSteps = ((lm.to - lm.from) % BOARD_SIZE + BOARD_SIZE) % BOARD_SIZE || BOARD_SIZE;
+    let stepIdx = 0;
     const startT = setTimeout(() => {
+      sfxBoardDiceLand();
       stepIv = setInterval(() => {
         cur = (cur + 1) % BOARD_SIZE;
         setDisplayPos(cur);
-        sfxTap();
-        if (cur === lm.to) { clearInterval(stepIv); stepIv = null; sfxSuccess(); landT = setTimeout(finish, 700); }
+        if (cur === lm.to) {
+          clearInterval(stepIv); stepIv = null;
+          sfxBoardLand();
+          if (lm.lapped) sfxBoardLap();
+          landT = setTimeout(finish, 700);
+        } else {
+          sfxBoardStep(stepIdx, totalSteps);
+        }
+        stepIdx += 1;
       }, 240);
     }, 700);
     return () => { clearTimeout(startT); if (stepIv) clearInterval(stepIv); if (landT) clearTimeout(landT); };
@@ -277,11 +315,12 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
         bumpRetry();
         return;
       }
-      if (!(res?.ok && res.reward)) return;
+      if (!(res?.ok && res.reward)) { ackStep(seq); return; }
       sfxSuccess();
       // 貓貓羈絆格：讓裝備中的陪練貓出來說句話 + 顯示經驗/羈絆
       if (isCatBond && catId) {
         setCatBondPop({
+          seq,
           catId,
           name: profile?.equippedCat?.name || "貓貓",
           speech: getCatSpeech(catId, "encourage"),
@@ -289,10 +328,13 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
           catBond: res.reward.catBond || 0,
         });
       } else {
-        setReward({ items: describeReward(res.reward), band: res.reward.band, tileType: room.pendingSettle.tileType });
+        const items = describeReward(res.reward);
+        // 清單為空（例如只加了看不見的統計）就沒有演出可看，直接 ack
+        if (items.length) setReward({ items, band: res.reward.band, tileType: room.pendingSettle.tileType, seq });
+        else ackStep(seq);
       }
     });
-  }, [room?.pendingSettle?.seq, room?.settleClaims, myId, roomId, catId, profile, animatedSeq, retryNonce]); // eslint-disable-line
+  }, [room?.pendingSettle?.seq, room?.settleClaims, myId, roomId, catId, profile, animatedSeq, retryNonce, ackStep]); // eslint-disable-line
 
   // 命運/機會事件卡：顯示 + 成員 claim（房主另處理共享棋效果）
   useEffect(() => {
@@ -518,6 +560,8 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
       else if (res.kind === "dice")   msg = res.delta > 0 ? `🎲 骰子 +${res.delta}` : "😴 暫停一回合";
       else                            msg = `😸 ${ev.text?.length > 14 ? "會心一笑" : ev.text}`;
       setPendingEventMsg(msg);
+      // 按下確認就是「我看完了」，事件卡沒有另一個關閉動作
+      ackStep(room?.pendingEvent?.seq || curSeq);
     }
     if (isHost) {
       const r = await applyEventEffect(myId, ev, { villageBuildings, catId });
@@ -525,7 +569,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
       else if (r.kind === "teleport") { for (let d = 1; d <= BOARD_SIZE; d++) { const idx = (room.boardPos + d) % BOARD_SIZE; if (BOARD_LAYOUT[idx] === r.tile) { await roomApplyBoardEffect(roomId, myId, { pos: idx }); break; } } }
       else if (r.kind === "dice") await roomApplyBoardEffect(roomId, myId, { diceDelta: r.delta });
     }
-  }, [card, roomId, myId, isHost, room, catId]);
+  }, [card, roomId, myId, isHost, room, catId, ackStep, curSeq]);
 
   // 全員確認後才關卡片 + 跳事件結果通知（不能先跑，要等大家都通過）
   useEffect(() => {
@@ -768,12 +812,20 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
                     <button onClick={hostRoll} disabled={!canRoll} className="mt-3 px-6 py-2.5 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-900 font-black text-sm shadow-lg disabled:opacity-40 active:scale-95">
                       {rolling ? "🎲 前進中…" : hostDice <= 0 ? "骰子用完了" : !allPassed ? `⏳ 等隊員領取 ${claimedN}/${memberCount}` : "🎲 房主擲骰"}
                     </button>
-                    {!allPassed && waitingNames.length > 0 && <div className="mt-1 text-amber-100/60 text-[10px]">還沒 OK：{waitingNames.join("、")}</div>}
+                    {!allPassed && waitingNames.length > 0 && (
+                      <div className="mt-1 text-amber-100/60 text-[10px]">
+                        {waitingAckNames.length === waitingNames.length ? "還在看獎勵：" : "還沒 OK："}{waitingNames.join("、")}
+                      </div>
+                    )}
                   </>
                 ) : (
                   <>
                     <div className="mt-3 text-amber-200/70 text-xs">{hasPending && !passedStep(myId) ? "領取你的獎勵…" : "等待房主擲骰…"}</div>
-                    {!allPassed && waitingNames.length > 0 && <div className="mt-1 text-amber-100/60 text-[10px]">還沒 OK：{waitingNames.join("、")}</div>}
+                    {!allPassed && waitingNames.length > 0 && (
+                      <div className="mt-1 text-amber-100/60 text-[10px]">
+                        {waitingAckNames.length === waitingNames.length ? "還在看獎勵：" : "還沒 OK："}{waitingNames.join("、")}
+                      </div>
+                    )}
                   </>
                 )}
               </div>
@@ -808,12 +860,12 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
       <BoardRewardPopup
         reward={reward}
         tileType={reward?.tileType}
-        onClose={() => setReward(null)}
+        onClose={() => { ackStep(reward?.seq || curSeq); setReward(null); }}
         zIndex={215}
       />
 
       {catBondPop && (
-        <div className="fixed inset-0 z-[218] bg-black/75 flex items-center justify-center p-4" onClick={() => setCatBondPop(null)}>
+        <div className="fixed inset-0 z-[218] bg-black/75 flex items-center justify-center p-4" onClick={() => { ackStep(catBondPop?.seq || curSeq); setCatBondPop(null); }}>
           <div className="bg-gradient-to-b from-fuchsia-950/90 to-slate-900 border-2 border-fuchsia-400/50 rounded-3xl p-5 w-full max-w-xs text-center animate-[fx-pop-in_0.35s_cubic-bezier(.34,1.56,.64,1)]" onClick={e => e.stopPropagation()}>
             <img src={`/cats/portraits/${catBondPop.catId}.webp`} alt={catBondPop.name}
               className="w-24 h-24 rounded-2xl object-cover mx-auto border-2 border-fuchsia-300/40 shadow-lg"
@@ -824,7 +876,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
               {catBondPop.catXP > 0 && <div className="rounded-xl bg-black/30 px-3 py-1.5 text-amber-200 text-sm font-black">✨ 經驗 +{catBondPop.catXP}</div>}
               {catBondPop.catBond > 0 && <div className="rounded-xl bg-black/30 px-3 py-1.5 text-fuchsia-200 text-sm font-black">💖 羈絆 +{catBondPop.catBond}</div>}
             </div>
-            <button onClick={() => setCatBondPop(null)} className="w-full py-2.5 rounded-xl bg-fuchsia-400 text-slate-900 font-black active:scale-95">摸摸貓！</button>
+            <button onClick={() => { ackStep(catBondPop?.seq || curSeq); setCatBondPop(null); }} className="w-full py-2.5 rounded-xl bg-fuchsia-400 text-slate-900 font-black active:scale-95">摸摸貓！</button>
           </div>
         </div>
       )}

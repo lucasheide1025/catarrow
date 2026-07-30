@@ -9,7 +9,10 @@ import {
 import { useAuth } from "../../hooks/useAuth";
 import { BOARD_LAYOUT, BOARD_SIZE, TILE_TYPES, BOARD_MODES, getModeTierCap } from "../../lib/boardData";
 import { drawBoardEvent } from "../../lib/boardEvents";
-import { sfxTap, sfxSuccess, sfxCast } from "../../lib/sound";
+import {
+  sfxTap, sfxSuccess, sfxCast,
+  sfxBoardDiceRoll, sfxBoardDiceLand, sfxBoardStep, sfxBoardLand, sfxBoardLap,
+} from "../../lib/sound";
 import BoardRewardPopup from "./BoardRewardPopup";
 import { MATERIALS } from "../../lib/monsterMaterials";
 import { NORMAL_MATERIALS } from "../../lib/monsterEconomyCatalog";
@@ -162,7 +165,7 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
   // 骰 → 逐格動畫 → 落點結算
   const handleRoll = useCallback(async () => {
     if (rolling || busyRef.current || !board || (board.dice || 0) <= 0) return;
-    setBusyBoth(true); setRolling(true); sfxCast();
+    setBusyBoth(true); setRolling(true); sfxCast(); sfxBoardDiceRoll();
     const res = await rollAndMove(myId);
     if (!res?.ok) { showToast(res?.reason || "無法擲骰"); setRolling(false); setBusyBoth(false); return; }
     pendingSummaryRef.current = (res.diceLeft ?? 0) <= 0;
@@ -171,7 +174,7 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
     await new Promise(resolve => {
       const end = Date.now() + 800;
       const iv = setInterval(() => {
-        if (Date.now() >= end) { clearInterval(iv); setDiceAnim(res.roll); sfxSuccess(); resolve(); }
+        if (Date.now() >= end) { clearInterval(iv); setDiceAnim(res.roll); sfxBoardDiceLand(); resolve(); }
         else setDiceAnim(1 + Math.floor(Math.random() * 6));
       }, 80);
     });
@@ -182,12 +185,14 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
     for (let s = 0; s < res.roll; s++) {
       cur = (cur + 1) % BOARD_SIZE;
       setDisplayPos(cur);
-      sfxTap();
+      // 音高隨步數遞增，走 6 格有上行感（原本 6 步都同一顆 tap，像在按鍵盤）
+      if (s === res.roll - 1) sfxBoardLand();
+      else sfxBoardStep(s, res.roll);
       // eslint-disable-next-line no-await-in-loop
       await new Promise(r => setTimeout(r, 230));
     }
     setRolling(false);
-    if (res.lapped) showToast("🏁 繞完一圈！");
+    if (res.lapped) { sfxBoardLap(); showToast("🏁 繞完一圈！"); }
     // 落點停頓：讓「踩到格子上」看得清楚，才觸發事件/結算（避免一瞬間就過去）
     await new Promise(r => setTimeout(r, 750));
     await settle(res.tile);

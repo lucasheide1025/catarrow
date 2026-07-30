@@ -1160,3 +1160,101 @@ export function sfxGuildError() {
   tone(310, 0.1, "triangle", 0.14);
   tone(232, 0.16, "triangle", 0.14, 0.08);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 貓貓村大富翁專屬（2026-07-30）。取向：手遊爽度——骰子有重量、走格有上行感、
+// 開獎有鋪陳、大獎要炸。全部走 sample() 樣本優先，檔案放 public/sounds/ 即生效：
+//   board_dice_roll / board_dice_land / board_step / board_land
+//   board_reveal / board_reveal_item / board_jackpot / board_lap
+// 沒放檔案就跑下面的合成保底，不會無聲。
+// ─────────────────────────────────────────────────────────────────────────────
+
+// 骰子翻滾：連續不規則的木頭撞擊，末段變密（要有「還在滾」的焦慮感）
+export function sfxBoardDiceRoll() {
+  sample("board_dice_roll", 0.6, sfxBoardDiceRollSynth, [0, 10, 40, 10, 40, 10]);
+}
+function sfxBoardDiceRollSynth() {
+  [0, 0.075, 0.14, 0.195, 0.24, 0.28, 0.315, 0.345].forEach((d, i) => {
+    impact({ dur: 0.05, cut0: 4200 - i * 120, cut1: 900, gain: 0.13 + i * 0.008,
+      q: 1.1, delay: d, pan: (i % 2 ? 1 : -1) * 0.28, send: 0.1 });
+  });
+  vibrate([0, 10, 40, 10, 40, 10]);
+}
+
+// 骰子定格：一記帶低頻的落定，數字在這一刻出現
+export function sfxBoardDiceLand() {
+  sample("board_dice_land", 0.8, sfxBoardDiceLandSynth, [0, 45]);
+}
+function sfxBoardDiceLandSynth() {
+  impact({ dur: 0.12, cut0: 5200, cut1: 420, gain: 0.34, q: 0.9, send: 0.18 });
+  sub({ freq: 96, dur: 0.2, gain: 0.42 });
+  pluck({ freq: 1318, dur: 0.1, gain: 0.1, cut0: 9000, cut1: 3200, delay: 0.03, send: 0.24 });
+  vibrate([0, 45]);
+}
+
+// 棋子每一步。step 由呼叫端傳入（第幾步／共幾步）→ 音高遞增，走 6 格會有上行感。
+// 原本 6 格都用同一顆 sfxTap，聽起來像在按鍵盤而不是在前進。
+export function sfxBoardStep(step = 0, total = 1) {
+  const ratio = total > 1 ? Math.min(1, step / (total - 1)) : 0;
+  // 大三和弦往上疊：C→E→G→C，音階感比線性 freq 好聽
+  const scale = [523.3, 587.3, 659.3, 784, 880, 1046.5];
+  const freq = scale[Math.min(scale.length - 1, Math.round(ratio * (scale.length - 1)))];
+  if (playAudio("board_step", 0.5)) { vibrate(6); return; }
+  pluck({ freq, dur: 0.085, gain: 0.11, detune: 8, cut0: 7200, cut1: 1400, send: 0.16 });
+  impact({ dur: 0.045, cut0: 2600, cut1: 700, gain: 0.1, q: 1.2, send: 0.08 });
+  vibrate(6);
+}
+
+// 踩定落點：比單步更重，讓「停在這一格」有實感
+export function sfxBoardLand() {
+  sample("board_land", 0.75, sfxBoardLandSynth, [0, 18, 30, 18]);
+}
+function sfxBoardLandSynth() {
+  impact({ dur: 0.16, cut0: 4600, cut1: 380, gain: 0.3, q: 0.85, send: 0.2 });
+  sub({ freq: 84, dur: 0.22, gain: 0.36 });
+  air({ dur: 0.18, gain: 0.06, hp: 5200, delay: 0.04, send: 0.28 });
+  vibrate([0, 18, 30, 18]);
+}
+
+// 開獎鋪陳：往上的懸念 swell（前置動畫那 0.95 秒）
+export function sfxBoardReveal() {
+  sample("board_reveal", 0.6, sfxBoardRevealSynth, [0, 12, 60, 12, 60, 20]);
+}
+function sfxBoardRevealSynth() {
+  swell({ up: true, dur: 0.75, gain: 0.15, send: 0.3 });
+  [0, 0.18, 0.36, 0.54].forEach((d, i) => {
+    pluck({ freq: 659.3 + i * 110, dur: 0.09, gain: 0.07, cut0: 8000, cut1: 2600, delay: d, send: 0.26 });
+  });
+  vibrate([0, 12, 60, 12, 60, 20]);
+}
+
+// 每一項獎勵跳出來。index 遞增音高，連續掉 5 項會有「叮叮叮叮叮」的爽感。
+export function sfxBoardRevealItem(index = 0) {
+  const scale = [784, 880, 987.8, 1046.5, 1174.7, 1318.5, 1396.9];
+  const freq = scale[Math.min(scale.length - 1, Math.max(0, Math.floor(index)))];
+  if (playAudio("board_reveal_item", 0.55)) { vibrate(8); return; }
+  pluck({ freq, dur: 0.11, gain: 0.12, detune: 6, cut0: 9500, cut1: 3000, send: 0.3 });
+  vibrate(8);
+}
+
+// 大獎：寶箱抽到 4~5 箱、繞圈、或高階素材。要炸。
+export function sfxBoardJackpot() {
+  sample("board_jackpot", 0.85, sfxBoardJackpotSynth, [0, 40, 60, 40, 60, 90]);
+}
+function sfxBoardJackpotSynth() {
+  sub({ freq: 110, dur: 0.34, gain: 0.44 });
+  impact({ dur: 0.3, cut0: 9000, cut1: 500, gain: 0.3, q: 0.7, send: 0.3 });
+  notes([[523.3, 0.02], [659.3, 0.1], [784, 0.18], [1046.5, 0.28, 0.5]], { gain: 0.15, send: 0.34 });
+  air({ dur: 0.5, gain: 0.08, hp: 4200, delay: 0.1, send: 0.4 });
+  vibrate([0, 40, 60, 40, 60, 90]);
+}
+
+// 繞完一圈
+export function sfxBoardLap() {
+  sample("board_lap", 0.8, sfxBoardLapSynth, [0, 30, 40, 30]);
+}
+function sfxBoardLapSynth() {
+  notes([[392, 0], [523.3, 0.08], [659.3, 0.16], [880, 0.26, 0.42]], { gain: 0.14, send: 0.32 });
+  sub({ freq: 98, dur: 0.26, gain: 0.34, delay: 0.02 });
+  vibrate([0, 30, 40, 30]);
+}

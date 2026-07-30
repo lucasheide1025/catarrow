@@ -34,7 +34,7 @@ export async function createBoardRoom({ hostId, hostName, mode, tier, accountTyp
       status: "waiting", mode, tier: tier || 1,
       boardPos: 0, lapCount: 0,
       seq: 0, pendingSettle: null, pendingEvent: null,
-      settleClaims: {}, eventClaims: {},
+      settleClaims: {}, eventClaims: {}, ackClaims: {},
       members: { [hostId]: { name: hostName || "房主", accountType: accountType || "official", avatarId: avatarId || null, joinedAt: serverTimestamp() } },
       createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
     });
@@ -92,6 +92,23 @@ export async function clearRoomPending(roomId, hostId) {
     const s = await getDoc(doc(db, R, roomId));
     if (!s.exists() || s.data().hostId !== hostId) return { ok: false };
     await updateDoc(doc(db, R, roomId), { pendingEvent: null, pendingSettle: null, updatedAt: serverTimestamp() });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+// 隊員按下「收下！」＝確認看完這一步的演出。
+// 與 settleClaims（領取）刻意分開：領取是動畫追上就自動寫入，確保獎勵不會因為沒按而丟失；
+// ack 才是「人看完了」。房主的推進閘門吃 ack，所以不會在隊員還在看獎勵時就骰下一步。
+// 沒有獎勵可看的步驟（清單為空、或事件只跳 toast）由前端立即 ack，避免全隊互等。
+export async function ackBoardStep(roomId, memberId, seq) {
+  try {
+    const n = Math.max(0, Math.floor(Number(seq) || 0));
+    if (!roomId || !memberId || n <= 0) return { ok: false, reason: "參數不足" };
+    const ref = doc(db, R, roomId);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) return { ok: false, reason: "房間不存在" };
+    if ((snap.data().ackClaims?.[memberId] || 0) >= n) return { ok: true, already: true };
+    await updateDoc(ref, { [`ackClaims.${memberId}`]: n, updatedAt: serverTimestamp() });
     return { ok: true };
   } catch (e) { return { ok: false, reason: e?.message }; }
 }

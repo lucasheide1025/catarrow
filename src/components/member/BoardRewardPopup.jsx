@@ -5,7 +5,8 @@
 // 原本是踩到格子就直接把清單整份攤出來，缺少「開獎」的期待感；使用者要求補上演出。
 // 格子類型決定前置動畫的圖示與台詞（素材格是採集、寶箱格是開箱…）。
 import { useEffect, useRef, useState } from "react";
-import { sfxTap, sfxSuccess, sfxCast } from "../../lib/sound";
+import Confetti from "../shared/Confetti";
+import { sfxTap, sfxBoardReveal, sfxBoardRevealItem, sfxBoardJackpot } from "../../lib/sound";
 
 // 前置動畫時間。夠長才有期待感，但不能久到讓連續擲骰變拖沓。
 const SUSPENSE_MS = 950;
@@ -25,20 +26,34 @@ const DEFAULT_INTRO = { icon: "🎁", verb: "獲得獎勵", hint: "整理收穫�
 
 export default function BoardRewardPopup({ reward, tileType, onClose, zIndex = 140 }) {
   const [revealed, setRevealed] = useState(false);
+  const [showConfetti, setShowConfetti] = useState(false);
   const timerRef = useRef(null);
+
+  // 大獎判定：獎勵項目多（例如寶箱抽到 4~5 箱）或單項數量很大就算「炸」的時刻。
+  // 手遊取向：日常格子溫潤，大獎才灑紙花。
+  const items = Array.isArray(reward?.items) ? reward.items : [];
+  const isJackpot = items.length >= 5 || items.some(item => Number(item.amount) >= 300);
 
   // 每次換一份獎勵就重播一次演出
   useEffect(() => {
     if (!reward) return undefined;
     setRevealed(false);
-    sfxCast();
-    timerRef.current = setTimeout(() => { setRevealed(true); sfxSuccess(); }, SUSPENSE_MS);
+    setShowConfetti(false);
+    sfxBoardReveal();
+    timerRef.current = setTimeout(() => {
+      setRevealed(true);
+      // 逐項叮聲：跟畫面的 70ms stagger 對齊，聽起來像「叮叮叮叮」而不是一聲
+      items.forEach((_, index) => {
+        setTimeout(() => sfxBoardRevealItem(index), Math.min(index, 8) * 70);
+      });
+      if (isJackpot) { sfxBoardJackpot(); setShowConfetti(true); }
+    }, SUSPENSE_MS);
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-  }, [reward]);
+    // 只在 reward 換人時重播；items/isJackpot 由同一份 reward 衍生，不需要進依賴
+  }, [reward]); // eslint-disable-line
 
   if (!reward) return null;
   const intro = TILE_INTRO[tileType] || DEFAULT_INTRO;
-  const items = Array.isArray(reward.items) ? reward.items : [];
 
   // 前置動畫期間點背景不關閉，避免手滑跳過演出又看不到拿了什麼
   const handleBackdrop = () => { if (revealed) onClose?.(); };
@@ -47,6 +62,7 @@ export default function BoardRewardPopup({ reward, tileType, onClose, zIndex = 1
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4"
       style={{ zIndex }} onClick={handleBackdrop}>
       <style>{BOARD_REWARD_CSS}</style>
+      {showConfetti && <Confetti pieces={90} duration={2200} onDone={() => setShowConfetti(false)} />}
       <div className="bg-slate-900 border-2 border-amber-400/50 rounded-3xl p-5 w-full max-w-xs brp-card"
         onClick={event => event.stopPropagation()}>
 
