@@ -322,3 +322,77 @@ body {
     animation-delay:    0s !important;
   }
 }
+
+/*
+ ─── 貓貓村大富翁專屬（2026-07-30）─────────────────────────
+ 手遊取向：骰子有重量、棋子會跳、落格有反應。
+ 前綴 board-；`.no-anim` 已在上面全域抑制，這裡不必各自處理 reduced-motion。
+ ──────────────────────────────────────────────────────── */
+
+/* 骰子：從上方翻滾進場（不是原地 bounce），最後由 settle 收尾 */
+@keyframes board-dice-tumble {
+  0%   { transform: translateY(-42vh) rotate(-220deg) scale(0.7); opacity: 0; }
+  55%  { transform: translateY(6px) rotate(18deg) scale(1.06); opacity: 1; }
+  75%  { transform: translateY(-10px) rotate(-8deg) scale(0.98); }
+  100% { transform: translateY(0) rotate(0) scale(1); opacity: 1; }
+}
+/* 定格：彈一下 + 光暈擴張，數字在這一刻「敲定」 */
+@keyframes board-dice-settle {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.22); }
+  100% { transform: scale(1); }
+}
+@keyframes board-dice-ring {
+  0%   { box-shadow: 0 0 0 0 rgba(251,191,36,.85), 0 0 52px rgba(251,146,60,.9); }
+  100% { box-shadow: 0 0 0 34px rgba(251,191,36,0), 0 0 52px rgba(251,146,60,.35); }
+}
+.board-dice-tumble { animation: board-dice-tumble .8s cubic-bezier(.22,1.2,.36,1) both; }
+.board-dice-settle { animation: board-dice-settle .34s cubic-bezier(.34,1.56,.64,1) both,
+                                board-dice-ring .55s ease-out both; }
+
+/* 棋子每走一格跳一下（原本是直接位移，沒有前進感） */
+@keyframes board-hop {
+  0%   { transform: translateY(0) scale(1); }
+  40%  { transform: translateY(-9px) scale(1.14); }
+  70%  { transform: translateY(1px) scale(.94); }
+  100% { transform: translateY(0) scale(1); }
+}
+.board-hop { animation: board-hop .22s ease-out both; }
+
+/* 落格反應：格子脈衝一下（顏色由 inline style 的 --board-fx 決定） */
+@keyframes board-land-flash {
+  0%   { box-shadow: 0 0 0 0 var(--board-fx, rgba(251,191,36,.9)); transform: scale(1); }
+  40%  { transform: scale(1.14); }
+  100% { box-shadow: 0 0 0 22px transparent; transform: scale(1); }
+}
+.board-land-flash { animation: board-land-flash .62s ease-out both; }
+
+/* 落格爆散：從格子中心擴散的環（寶箱/金幣這種「開出東西」的格子用） */
+@keyframes board-burst {
+  0%   { opacity: .95; transform: scale(.25); }
+  100% { opacity: 0; transform: scale(2.6); }
+}
+.board-burst {
+  position: absolute; inset: 0; border-radius: .5rem; pointer-events: none;
+  background: radial-gradient(circle, var(--board-fx, rgba(251,191,36,.9)) 0%, transparent 68%);
+  animation: board-burst .68s ease-out both;
+}
+
+/* 寶箱格：晃三下再開（配合開箱音） */
+@keyframes board-chest-shake {
+  0%, 100% { transform: rotate(0); }
+  15% { transform: rotate(-11deg); }
+  30% { transform: rotate(11deg); }
+  45% { transform: rotate(-8deg); }
+  60% { transform: rotate(8deg); }
+  75% { transform: rotate(-4deg) scale(1.12); }
+}
+.board-chest-shake { animation: board-chest-shake .62s ease-in-out both; }
+
+/* 命運/機會卡：卡背從遠處旋轉飛入（翻牌本身用 rotateY transition，不在這裡） */
+@keyframes board-card-fly-in {
+  0%   { opacity: 0; transform: translate3d(0, 46vh, -420px) rotate(-24deg) scale(.55); }
+  60%  { opacity: 1; transform: translate3d(0, -12px, 0) rotate(6deg) scale(1.04); }
+  100% { opacity: 1; transform: translate3d(0, 0, 0) rotate(0) scale(1); }
+}
+.board-card-fly-in { animation: board-card-fly-in .5s cubic-bezier(.22,1.15,.36,1) both; }

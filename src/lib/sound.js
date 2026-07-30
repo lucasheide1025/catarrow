@@ -1258,3 +1258,19 @@ function sfxBoardLapSynth() {
   sub({ freq: 98, dur: 0.26, gain: 0.34, delay: 0.02 });
   vibrate([0, 30, 40, 30]);
 }
+
+// 格子類型 → 落地音。用現成音效對應語意，不另做檔案；找不到就回 null 由呼叫端退回通用音。
+export function sfxBoardTile(tileType) {
+  switch (tileType) {
+    case "coins":    return sfxCoinDrop();
+    case "chest":    return sfxOpenChest();
+    case "gacha":    return sfxGachaReveal();
+    case "potion":   return sfxPotionDrink();
+    case "material": return sfxVillageCollect();
+    case "mining":   return sfxCouncilWork();
+    case "arrowdew": return sfxVillageExchange();
+    case "monster":  return sfxMonsterDead();
+    case "start":    return sfxLevelUp();
+    default:         return sfxSuccess();
+  }
+}

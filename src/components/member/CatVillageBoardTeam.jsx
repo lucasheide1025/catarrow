@@ -23,6 +23,7 @@ import { getCatSpeech } from "../cat/catSpeeches";
 import {
   sfxTap, sfxSuccess, sfxCast,
   sfxBoardDiceRoll, sfxBoardDiceLand, sfxBoardStep, sfxBoardLand, sfxBoardLap,
+  sfxGachaRoll, sfxGachaReveal, sfxBoardTile,
 } from "../../lib/sound";
 import BoardRewardPopup from "./BoardRewardPopup";
 import CatVillageNavArt from "./CatVillageNavArt";
@@ -34,6 +35,15 @@ const RES_ICON = { ore:"⛏️", melon:"🍈", fish:"🐟", meat:"🍖", driedfi
 const SCORE_PAD = [["X",10],["10",10],["9",9],["8",8],["7",7],["6",6],["5",5],["3",3],["M",0]];
 // 藥水品質
 const POTION_QUALITY = { 1: "初級", 2: "中級", 3: "高級" };
+
+// 落格特效顏色與爆散格子（與單機版 CatVillageBoard 同一套；動畫定義在 index.css 的 board-*）
+const TILE_FX_COLOR = {
+  start:"rgba(251,191,36,.9)", material:"rgba(74,222,128,.9)", mining:"rgba(148,163,184,.9)",
+  monster:"rgba(248,113,113,.9)", arrowdew:"rgba(103,232,249,.9)", coins:"rgba(250,204,21,.95)",
+  gacha:"rgba(232,121,249,.9)", potion:"rgba(129,140,248,.9)", chest:"rgba(251,146,60,.95)",
+  catbond:"rgba(244,114,182,.9)", fate:"rgba(192,132,252,.9)", opp:"rgba(192,132,252,.9)",
+};
+const BURST_TILES = new Set(["chest", "coins", "material", "gacha", "arrowdew"]);
 
 function gridPos(i) {
   if (i < 8) return { row: 1, col: i + 1 };
@@ -109,6 +119,9 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
   const [rolling, setRolling] = useState(false);
   const [animating, setAnimating] = useState(false); // 棋子動畫進行中（所有客戶端同步）
   const [diceAnim, setDiceAnim] = useState(null);
+  const [diceLocked, setDiceLocked] = useState(false);
+  const [landFx, setLandFx] = useState(null);
+  const [hopNonce, setHopNonce] = useState(0);
   const [shoot, setShoot] = useState(null);   // 房主射箭 { type }
   const [arrows, setArrows] = useState([]);   // 6 箭標籤（"X","10","9"...）
   const [shootResult, setShootResult] = useState(null); // { type, scoreRatio, threshold, passed, band, progressPct }
@@ -240,16 +253,20 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     };
     // 骰子在 roomRollAndMove 寫入後由 lastMove 驅動：這裡先播滾動音，定格再播落定音
     sfxBoardDiceRoll();
+    setDiceLocked(false);
     const totalSteps = ((lm.to - lm.from) % BOARD_SIZE + BOARD_SIZE) % BOARD_SIZE || BOARD_SIZE;
     let stepIdx = 0;
     const startT = setTimeout(() => {
       sfxBoardDiceLand();
+      setDiceLocked(true);
       stepIv = setInterval(() => {
         cur = (cur + 1) % BOARD_SIZE;
         setDisplayPos(cur);
+        setHopNonce(n => n + 1);
         if (cur === lm.to) {
           clearInterval(stepIv); stepIv = null;
           sfxBoardLand();
+          setLandFx({ index: cur, type: BOARD_LAYOUT[cur], nonce: Date.now() });
           if (lm.lapped) sfxBoardLap();
           landT = setTimeout(finish, 700);
         } else {
@@ -260,6 +277,13 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     }, 700);
     return () => { clearTimeout(startT); if (stepIv) clearInterval(stepIv); if (landT) clearTimeout(landT); };
   }, [room?.lastMove?.seq]); // eslint-disable-line
+
+  // 落格特效播完就清掉，否則再次踩到同一格時 class 沒變化、動畫不會重播
+  useEffect(() => {
+    if (!landFx) return undefined;
+    const t = setTimeout(() => setLandFx(null), 700);
+    return () => clearTimeout(t);
+  }, [landFx]);
 
   // 被房主移出房間 → 立刻退回大廳（不然會一直看著一個自己已不在其中的房間）
   useEffect(() => {
@@ -316,7 +340,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
         return;
       }
       if (!(res?.ok && res.reward)) { ackStep(seq); return; }
-      sfxSuccess();
+      sfxBoardTile(room.pendingSettle.tileType);   // 每個格子有自己的聲音
       // 貓貓羈絆格：讓裝備中的陪練貓出來說句話 + 顯示經驗/羈絆
       if (isCatBond && catId) {
         setCatBondPop({
@@ -344,7 +368,11 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     if (lastEventRef.current >= seq) return;
     lastEventRef.current = seq;
     setCard({ event: room.pendingEvent.event, flipped: false });
-    setTimeout(() => setCard(c => c && { ...c, flipped: true }), 550);
+    sfxGachaRoll();                         // 卡背飛入
+    setTimeout(() => {
+      setCard(c => c && { ...c, flipped: true });
+      sfxGachaReveal();                     // 翻面瞬間
+    }, 550);
   }, [room?.pendingEvent?.seq, myId, animatedSeq]);
 
   // 射箭格：被隨機指派的射手開射擊介面；交分後收起。非射手只會看到「射箭中」等待。
@@ -833,12 +861,17 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
             {BOARD_LAYOUT.map((type, i) => {
               const { row, col } = gridPos(i);
               const here = displayPos === i;
+              const landed = landFx?.index === i;
               return (
-                <div key={i} style={{ gridColumn:col, gridRow:row }} className={`relative rounded-lg flex items-center justify-center border ${here ? "ring-2 ring-yellow-300 scale-105 z-10" : "border-amber-500/20"}`}>
+                <div key={i} style={{ gridColumn:col, gridRow:row, "--board-fx": TILE_FX_COLOR[type] || "rgba(251,191,36,.9)" }}
+                  className={`relative rounded-lg flex items-center justify-center border ${here ? "ring-2 ring-yellow-300 scale-105 z-10" : "border-amber-500/20"} ${landed ? "board-land-flash" : ""}`}>
                   <div className={`w-full h-full rounded-lg flex items-center justify-center ${tileBg(type)}`}>
-                    <TileIcon type={type} size={24} />
-                    {here && <div className="absolute -top-1 -right-1 text-base">🐱</div>}
+                    <span className={landed && type === "chest" ? "board-chest-shake" : undefined}>
+                      <TileIcon type={type} size={24} />
+                    </span>
+                    {here && <div key={hopNonce} className="absolute -top-1 -right-1 text-base board-hop">🐱</div>}
                   </div>
+                  {landed && BURST_TILES.has(type) && <span key={landFx.nonce} className="board-burst" />}
                 </div>
               );
             })}
@@ -850,7 +883,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
 
       {diceAnim != null && (
         <div className="fixed inset-0 z-[215] flex items-center justify-center pointer-events-none">
-          <div className="w-32 h-32 rounded-3xl bg-gradient-to-br from-amber-50 to-amber-200 border-4 border-amber-400 flex items-center justify-center shadow-2xl animate-bounce" style={{ boxShadow:"0 0 52px rgba(251,146,60,.9)" }}>
+          <div className={`w-32 h-32 rounded-3xl bg-gradient-to-br from-amber-50 to-amber-200 border-4 border-amber-400 flex items-center justify-center shadow-2xl ${diceLocked ? "board-dice-settle" : "board-dice-tumble"}`} style={{ boxShadow:"0 0 52px rgba(251,146,60,.9)" }}>
             <span className="text-7xl font-black" style={{ color:"#c2410c" }}>{diceAnim}</span>
           </div>
         </div>
@@ -971,7 +1004,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
               <div className="text-amber-200/60 text-xs mt-4">{claimedN}/{memberCount} 已確認</div>
             </div>
           ) : (
-            <div className="[perspective:1000px]">
+            <div className="[perspective:1000px] board-card-fly-in">
               <div className="relative w-64 h-96 transition-transform duration-500" style={{ transformStyle:"preserve-3d", transform: card.flipped ? "rotateY(180deg)" : "rotateY(0deg)" }}>
                 <div className="absolute inset-0 rounded-3xl border-4 flex items-center justify-center [backface-visibility:hidden]" style={{ borderColor: card.event.deck==="fate"?"#f59e0b":"#38bdf8", backgroundColor: card.event.deck==="fate"?"#431407":"#0c4a6e", backgroundImage:`url(${ASSET}/card_${card.event.deck}_back.webp)`, backgroundSize:"cover", backgroundPosition:"center" }}><div className="text-3xl font-black" style={{ color: card.event.deck==="fate"?"#fcd34d":"#7dd3fc" }}>{card.event.deck==="fate"?"命運":"機會"}</div></div>
                 <div className="absolute inset-0 rounded-3xl border-4 flex flex-col items-center justify-center p-6 text-center [backface-visibility:hidden]" style={{ transform:"rotateY(180deg)", borderColor: card.event.deck==="fate"?"#f59e0b":"#38bdf8", backgroundColor: card.event.deck==="fate"?"#fde8cf":"#d4f0fe", backgroundImage:`url(${ASSET}/card_${card.event.deck}.webp)`, backgroundSize:"cover", backgroundPosition:"center" }}>

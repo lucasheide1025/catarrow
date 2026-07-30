@@ -12,6 +12,7 @@ import { drawBoardEvent } from "../../lib/boardEvents";
 import {
   sfxTap, sfxSuccess, sfxCast,
   sfxBoardDiceRoll, sfxBoardDiceLand, sfxBoardStep, sfxBoardLand, sfxBoardLap,
+  sfxGachaRoll, sfxGachaReveal, sfxBoardTile,
 } from "../../lib/sound";
 import BoardRewardPopup from "./BoardRewardPopup";
 import { MATERIALS } from "../../lib/monsterMaterials";
@@ -76,6 +77,25 @@ function TileIcon({ type, size = 30 }) {
   return <span style={{ fontSize: size * 0.8, lineHeight: 1 }}>{meta.icon || "❔"}</span>;
 }
 
+// 落格特效顏色（board-land-flash / board-burst 的 --board-fx）。
+// 依格子語意配色：素材綠、金幣金、寶箱橘、事件紫…
+const TILE_FX_COLOR = {
+  start:    "rgba(251,191,36,.9)",
+  material: "rgba(74,222,128,.9)",
+  mining:   "rgba(148,163,184,.9)",
+  monster:  "rgba(248,113,113,.9)",
+  arrowdew: "rgba(103,232,249,.9)",
+  coins:    "rgba(250,204,21,.95)",
+  gacha:    "rgba(232,121,249,.9)",
+  potion:   "rgba(129,140,248,.9)",
+  chest:    "rgba(251,146,60,.95)",
+  catbond:  "rgba(244,114,182,.9)",
+  fate:     "rgba(192,132,252,.9)",
+  opp:      "rgba(192,132,252,.9)",
+};
+// 會「開出東西」的格子多放一層爆散環
+const BURST_TILES = new Set(["chest", "coins", "material", "gacha", "arrowdew"]);
+
 const SCORE_PAD = [["X", 10], ["10", 10], ["9", 9], ["8", 8], ["7", 7], ["6", 6], ["5", 5], ["3", 3], ["M", 0]];
 
 export default function CatVillageBoard({ profile, onClose, onTeam }) {
@@ -96,6 +116,9 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
   const [arrows, setArrows] = useState([]);
   const [eventCard, setEventCard] = useState(null);      // { event, flipped }
   const [diceAnim, setDiceAnim] = useState(null);        // 擲骰動畫顯示的數字
+  const [diceLocked, setDiceLocked] = useState(false);   // 骰子已定格（換成 settle 動畫）
+  const [landFx, setLandFx] = useState(null);            // { index, type, nonce } 落格反應
+  const [hopNonce, setHopNonce] = useState(0);           // 每走一格 +1，讓棋子重播跳動
   const [rewardPopup, setRewardPopup] = useState(null);  // { items:[{icon,name,amount}], band }
   const [catBondPop, setCatBondPop] = useState(null);    // 貓貓羈絆格：{ catId, name, speech, catXP, catBond }
   const [showSummary, setShowSummary] = useState(false); // 骰子用完的總結算
@@ -125,6 +148,13 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
   // 否則 rollAndMove 一寫入 boardPos，棋子會在骰子還沒出數字前就瞬移到終點。
   useEffect(() => { if (board && !busyRef.current) setDisplayPos(board.boardPos || 0); }, [board?.boardPos]);
 
+  // 落格特效播完就清掉，否則再次踩到同一格時 class 沒變化、動畫不會重播
+  useEffect(() => {
+    if (!landFx) return undefined;
+    const t = setTimeout(() => setLandFx(null), 700);
+    return () => clearTimeout(t);
+  }, [landFx]);
+
   const showToast = (t) => { setToast(t); setTimeout(() => setToast(null), 2600); };
 
   const pendingSummaryRef = useRef(false);
@@ -138,12 +168,16 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
     if (tileType === "fate" || tileType === "opp") {
       const ev = drawBoardEvent(tileType);
       setEventCard({ event: ev, flipped: false });
-      setTimeout(() => setEventCard(c => c && { ...c, flipped: true }), 550);
+      sfxGachaRoll();                       // 卡背飛入
+      setTimeout(() => {
+        setEventCard(c => c && { ...c, flipped: true });
+        sfxGachaReveal();                   // 翻面瞬間
+      }, 550);
       return;
     }
     const res = await settleBoardTile(myId, tileType, { villageBuildings, catId });
     if (res?.ok) {
-      sfxSuccess();
+      sfxBoardTile(tileType);   // 每個格子有自己的聲音，不再一律通用音
       // 貓貓羈絆格：讓裝備中的陪練貓出來說句話 + 顯示取得的經驗/羈絆
       if (tileType === "catbond" && catId) {
         sessionRef.current = mergeRewards(sessionRef.current, res.reward);
@@ -170,11 +204,11 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
     if (!res?.ok) { showToast(res?.reason || "無法擲骰"); setRolling(false); setBusyBoth(false); return; }
     pendingSummaryRef.current = (res.diceLeft ?? 0) <= 0;
     // 擲骰動畫：快速跳數字 ~0.8s 定格在 res.roll
-    setDiceAnim(1);
+    setDiceAnim(1); setDiceLocked(false);
     await new Promise(resolve => {
       const end = Date.now() + 800;
       const iv = setInterval(() => {
-        if (Date.now() >= end) { clearInterval(iv); setDiceAnim(res.roll); sfxBoardDiceLand(); resolve(); }
+        if (Date.now() >= end) { clearInterval(iv); setDiceAnim(res.roll); setDiceLocked(true); sfxBoardDiceLand(); resolve(); }
         else setDiceAnim(1 + Math.floor(Math.random() * 6));
       }, 80);
     });
@@ -186,8 +220,11 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
       cur = (cur + 1) % BOARD_SIZE;
       setDisplayPos(cur);
       // 音高隨步數遞增，走 6 格有上行感（原本 6 步都同一顆 tap，像在按鍵盤）
-      if (s === res.roll - 1) sfxBoardLand();
-      else sfxBoardStep(s, res.roll);
+      setHopNonce(n => n + 1);
+      if (s === res.roll - 1) {
+        sfxBoardLand();
+        setLandFx({ index: cur, type: BOARD_LAYOUT[cur], nonce: Date.now() });
+      } else sfxBoardStep(s, res.roll);
       // eslint-disable-next-line no-await-in-loop
       await new Promise(r => setTimeout(r, 230));
     }
@@ -364,15 +401,21 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
           {BOARD_LAYOUT.map((type, i) => {
             const { row, col } = gridPos(i);
             const here = displayPos === i;
+            const landed = landFx?.index === i;
             const meta = TILE_TYPES[type];
             return (
-              <div key={i} style={{ gridColumn: col, gridRow: row }}
-                className={`relative rounded-lg flex items-center justify-center border ${here ? "ring-2 ring-yellow-300 scale-105 z-10" : "border-amber-500/20"}`}
+              <div key={i} style={{ gridColumn: col, gridRow: row, "--board-fx": TILE_FX_COLOR[type] || "rgba(251,191,36,.9)" }}
+                className={`relative rounded-lg flex items-center justify-center border ${here ? "ring-2 ring-yellow-300 scale-105 z-10" : "border-amber-500/20"} ${landed ? "board-land-flash" : ""}`}
                 >
                 <div className={`w-full h-full rounded-lg flex items-center justify-center ${tileBg(type)}`}>
-                  <TileIcon type={type} size={26} />
-                  {here && <div className="absolute -top-1 -right-1 text-base">🐱</div>}
+                  {/* 寶箱格落格時晃三下再開 */}
+                  <span className={landed && type === "chest" ? "board-chest-shake" : undefined}>
+                    <TileIcon type={type} size={26} />
+                  </span>
+                  {here && <div key={hopNonce} className="absolute -top-1 -right-1 text-base board-hop">🐱</div>}
                 </div>
+                {/* 會開出東西的格子多一層爆散環 */}
+                {landed && BURST_TILES.has(type) && <span key={landFx.nonce} className="board-burst" />}
                 {i === 0 && <span className="absolute bottom-0 text-[7px] text-amber-200 font-black">起</span>}
               </div>
             );
@@ -387,7 +430,7 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
       {/* 擲骰動畫 */}
       {diceAnim != null && (
         <div className="fixed inset-0 z-[140] flex items-center justify-center pointer-events-none">
-          <div className="w-32 h-32 rounded-3xl bg-gradient-to-br from-amber-50 to-amber-200 border-4 border-amber-400 flex flex-col items-center justify-center shadow-2xl animate-bounce"
+          <div className={`w-32 h-32 rounded-3xl bg-gradient-to-br from-amber-50 to-amber-200 border-4 border-amber-400 flex flex-col items-center justify-center shadow-2xl ${diceLocked ? "board-dice-settle" : "board-dice-tumble"}`}
             style={{ boxShadow: "0 0 52px rgba(251,146,60,.9)" }}>
             <span className="text-7xl leading-none font-black" style={{ color: "#c2410c" }}>{diceAnim}</span>
           </div>
@@ -472,7 +515,7 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
       {/* 命運/機會 抽卡翻牌 */}
       {eventCard && (
         <div className="fixed inset-0 z-[135] bg-black/85 flex items-center justify-center p-4" onClick={applyEvent}>
-          <div className="[perspective:1000px]">
+          <div className="[perspective:1000px] board-card-fly-in">
             <div className="relative w-64 h-96 transition-transform duration-500"
               style={{ transformStyle: "preserve-3d", transform: eventCard.flipped ? "rotateY(180deg)" : "rotateY(0deg)" }}>
               {/* 卡背 */}
