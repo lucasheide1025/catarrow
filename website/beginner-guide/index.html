@@ -4,14 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>台南新手射箭體驗指南｜第一次射箭也不怕｜貓小隊</title>
-<meta name="description" content="完全沒射過箭也能參加。貓小隊室內射箭場新手友善，教練從安全規則、站姿到瞄準逐步教學，不綁約、不推銷課程，器材全包免教練費，台南新手第一次射箭首選。">
+<meta name="description" content="完全沒射過箭也能參加。貓小隊室內射箭場由中華民國射箭協會 C 級教練依個人狀態教學，從安全操作、轉臂、安卡到撒放逐步推進，不綁約、不推銷課程。">
 <link rel="canonical" href="https://archery.catgroup.com.tw/beginner-guide/">
 <link rel="icon" type="image/png" href="../assets/logo.png">
 <meta property="og:type" content="website">
 <meta property="og:locale" content="zh_TW">
 <meta property="og:site_name" content="貓小隊室內射箭場 CAT ARCHERY">
 <meta property="og:title" content="台南新手射箭體驗指南｜第一次射箭也不怕｜貓小隊">
-<meta property="og:description" content="完全沒射過箭也能參加。貓小隊室內射箭場新手友善，教練從安全規則、站姿到瞄準逐步教學，不綁約、不推銷課程，器材全包免教練費，台南新手第一次射箭首選。">
+<meta property="og:description" content="完全沒射過箭也能參加。由中華民國射箭協會 C 級教練依個人狀態，從安全操作到完整射箭動作逐步教學。">
 <meta property="og:url" content="https://archery.catgroup.com.tw/beginner-guide/">
 <meta property="og:image" content="https://archery.catgroup.com.tw/assets/005.png">
 <meta name="twitter:card" content="summary_large_image">
@@ -398,6 +398,17 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
 .faq-list details summary .qline{position:absolute;left:4px;right:4px;bottom:0;height:2px;background:var(--orange);transform:scaleX(0);transform-origin:left;transition:transform .45s cubic-bezier(.22,.8,.3,1)}
 .faq-list details[open] summary .qline{transform:scaleX(1)}
 
+
+/* ── 情境頁圖文故事 ── */
+.story-layout{display:grid;grid-template-columns:minmax(0,1.02fr) minmax(320px,.98fr);gap:clamp(28px,5vw,72px);align-items:center;margin-top:28px}
+.story-copy h2{margin-top:0}.story-copy p{max-width:680px}
+.story-visual{margin:0;position:relative;border-radius:26px;overflow:hidden;background:#fff;border:1.5px solid var(--line);box-shadow:0 22px 54px rgba(43,41,38,.12)}
+.story-visual::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35);pointer-events:none}
+.story-visual img{display:block;width:100%;height:auto;aspect-ratio:4/3;object-fit:cover;transition:transform .7s cubic-bezier(.2,.75,.25,1)}
+.story-visual:hover img{transform:scale(1.035)}
+.story-visual figcaption{position:absolute;left:14px;right:14px;bottom:14px;padding:11px 14px;border-radius:13px;background:rgba(250,246,239,.92);backdrop-filter:blur(10px);color:var(--ink);font-size:12.5px;font-weight:700;line-height:1.45}
+.story-layout.media-first .story-visual{order:-1}
+
 /* ── RWD ── */
 @media (max-width:960px){
   .nav{gap:12px}
@@ -424,6 +435,12 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
   .page-hero{padding:128px 0 48px}
 }
 @media (max-width:560px){
+  .story-layout{grid-template-columns:1fr;gap:22px;margin-top:20px}
+  .story-layout.media-first .story-visual{order:initial}
+  .story-visual{border-radius:20px}
+  .story-visual img{aspect-ratio:4/3}
+  .story-visual figcaption{position:static;border-radius:0;background:#fff;padding:13px 16px}
+
   .cards3,.bow-grid,.modes,.coaches,.info-grid,.scen-grid{grid-template-columns:1fr}
   .bcard img{height:170px}
   .group-cta{justify-content:center;text-align:center}
@@ -441,11 +458,11 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
       貓小隊<span class="accent">射箭場</span>
     </a>
     <nav class="nav-links" id="primary-navigation" aria-label="主選單">
-      <a href="/#why">特色</a>
+      <a href="/#features">特色</a>
       <a href="/#bows">弓種</a>
-      <a href="/#price">價目表</a>
+      <a href="/#pricing">價目表</a>
       <a href="/#training">訓練系統</a>
-      <a href="/#group">團體活動</a>
+      <a href="/#groups">團體活動</a>
       <a href="/#faq">常見問題</a>
       <a href="/#visit">交通資訊</a>
     <div class="mobile-nav-actions" aria-label="預約與會員服務">
@@ -472,13 +489,7 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
     <p class="sec-lead rv">完全沒經驗、不知道從哪裡開始也沒關係。貓小隊主打新手友善，教練會從最基本的安全規則開始，一步步帶你完成人生第一次放箭。</p>
     <div class="hero-cta rv">
       <a class="btn" href="https://catarrow.vercel.app/?bk=3345b3d554e6" target="_blank" rel="noopener noreferrer">立即預約體驗 <span class="arr">➔</span></a>
-      <a class="btn-ghost" href="/#scenarios">看看還有哪些情境適合來</a>
-    </div>
-    <div class="rv" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:30px">
-      <img src="../assets/images/archery/real/01_新手教學與首頁主視覺/AAA00001-2.webp" alt="新手學員在教練陪同下練習持弓站姿" width="1600" height="1067" loading="lazy" style="width:100%;height:190px;object-fit:cover;border-radius:16px;border:1.5px solid var(--line)">
-      <img src="../assets/images/archery/real/01_新手教學與首頁主視覺/AAA00004-2.webp" alt="學員第一次拉弓瞄準的真實畫面" width="1600" height="1067" loading="lazy" style="width:100%;height:190px;object-fit:cover;border-radius:16px;border:1.5px solid var(--line)">
-      <img src="../assets/images/archery/real/01_新手教學與首頁主視覺/AAA00006.webp" alt="教練示範正確持弓手勢給新手參考" width="1600" height="1067" loading="lazy" style="width:100%;height:190px;object-fit:cover;border-radius:16px;border:1.5px solid var(--line)">
-      <img src="../assets/images/archery/real/01_新手教學與首頁主視覺/AAA00005_.webp" alt="新手學員專注放箭的瞬間" width="1600" height="1067" loading="lazy" style="width:100%;height:190px;object-fit:cover;border-radius:16px;border:1.5px solid var(--line)">
+      <a class="btn-ghost" href="/#for-who">看看還有哪些情境適合來</a>
     </div>
   </div>
 </section>
@@ -486,25 +497,35 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
 <section class="page-sec" id="no-experience">
   <div class="wrap">
     <div class="sec-head rv"><span class="sec-num">01</span><span class="sec-en">No Experience Needed · 完全沒經驗</span></div>
-    <h2 class="rv">完全沒經驗可以參加嗎</h2>
-      <p class="rv">可以，而且是貓小隊最常見的客群。不需要任何運動背景或先備知識，教練會依每個人的狀況調整教學節奏，慢慢來也沒關係。</p>
+    <div class="story-layout">
+      <div class="story-copy"><h2 class="rv">完全沒經驗可以參加嗎</h2>
+      <p class="rv">可以，而且是貓小隊最常見的客群。不需要任何運動背景或先備知識，教練會依每個人的狀況調整教學節奏，慢慢來也沒關係。</p></div>
+      <figure class="story-visual rv"><img src="../assets/images/archery/real/01_新手教學與首頁主視覺/AAA00005_.webp" alt="第一次接觸射箭的學員在教練陪同下練習" width="1600" height="1067" loading="lazy" decoding="async"><figcaption>第一次來不用先會，安全操作會從頭帶領</figcaption></figure>
+    </div>
   </div>
 </section>
 
 <section class="page-sec" id="flow">
   <div class="wrap">
     <div class="sec-head rv"><span class="sec-num">02</span><span class="sec-en">The Flow · 體驗流程</span></div>
-    <h2 class="rv">新手體驗會怎麼進行：從安全規則到放箭</h2>
-      <p class="rv">現場會先講解射箭安全規則，接著教握弓、站姿、拉弓、瞄準到放箭的基本動作，並依臂力挑選合適磅數的弓，全程有教練在旁指導。</p>
-      <p class="rv">一次體驗大約 1 小時，時間內可以反覆練習、慢慢抓到手感，不用擔心「教一次就沒了」。</p>
+    <div class="story-layout media-first">
+      <div class="story-copy"><h2 class="rv">不是套公式，而是按照你的身體逐步學會</h2>
+      <p class="rv">每個人的骨架、拉距、身體參數與理解方式都不同。第一堂先建立射箭安全知識與保護新手的操作方式，再依當下狀態逐步學習轉臂、安卡（固定靠位）、起弓、引弦、正式撒放與動作餘姿，過程中才慢慢升磅。</p>
+      <p class="rv">學完轉臂、準備升磅時，教練會依手套或指套的選擇，引導體感派（直覺）或瞄準派（走弦式）兩條路徑；想兩種都學也可以。傳統弓與美式獵弓可短時間體驗，但新手通常先用競技反曲弓建立安全動作。</p></div>
+      <figure class="story-visual rv"><img src="../assets/images/archery/real/01_新手教學與首頁主視覺/AAA00006.webp" alt="教練在射道旁示範新手射箭動作" width="1600" height="1067" loading="lazy" decoding="async"><figcaption>從站姿、持弓到完成第一箭，一步一步推進</figcaption></figure>
+    </div>
   </div>
 </section>
 
 <section class="page-sec" id="no-contract">
   <div class="wrap">
     <div class="sec-head rv"><span class="sec-num">03</span><span class="sec-en">No Contract · 不綁約</span></div>
-    <h2 class="rv">不綁約、不推銷課程是什麼意思</h2>
-      <p class="rv">貓小隊的收費方式是射一次付一次，1 小時 NT$300 已包含器材與教練指導，不會被要求綁約或購買整套課程包，體驗完想不想再來完全自己決定。</p>
+    <div class="story-layout">
+      <div class="story-copy"><h2 class="rv">沒有賣課程、沒有另收教練費，不代表不專業</h2>
+      <p class="rv">一般體驗 1 小時 NT$350，已包含器材、護具與教練指導，射一次付一次，不綁約也不推銷課程。教練施聖凱具中華民國射箭協會 C 級教練資格（核准字號：體總輔字第1150001139號），會依每位射手的狀態一一推進。</p>
+      <p class="rv">手臂被弦打到不是「新手正常現象」，通常代表站姿、轉臂、握弓或弓具設定需要調整。我們重視的是先把觀念與安全做對，再讓每個人按照自己的節奏享受射箭。</p></div>
+      <figure class="story-visual rv"><img src="../assets/images/archery/real/04_熟生練箭與長期練習/AAA00014.webp" alt="學員依自己的節奏在室內射道練習" width="1600" height="1067" loading="lazy" decoding="async"><figcaption>體驗一次或慢慢練下去，都由你決定</figcaption></figure>
+    </div>
   </div>
 </section>
 
@@ -728,5 +749,6 @@ document.querySelectorAll('.bcard').forEach(card => {
 });
 
 </script>
+<script src="../assets/cms-runtime.js"></script>
 </body>
 </html>

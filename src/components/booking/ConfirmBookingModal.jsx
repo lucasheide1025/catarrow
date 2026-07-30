@@ -4,19 +4,29 @@
 // 完整資訊（日期時間/方案/時數/人數/總金額）攤開來給使用者按確認前先看清楚。
 // 純顯示用元件，不呼叫 bookingDb.js，實際送出/下一步交給呼叫端的 onConfirm。
 import { PLAN_TYPES, durationLabel, totalPrice } from "../../lib/bookingSchedule";
+import {
+  bookingTotalPrice,
+  participantBreakdownLabel,
+  participantTotal,
+} from "../../lib/bookingPricing";
 import { Modal, Btn } from "../shared/UI";
 
-export default function ConfirmBookingModal({ slot, planType, durationHours, participantCount, onConfirm, onCancel, confirmLabel = "確認", busy = false }) {
+export default function ConfirmBookingModal({ slot, planType, durationHours, participantCount, participantBreakdown, firstTimeCount, onConfirm, onCancel, confirmLabel = "確認", busy = false }) {
   if (!slot) return null;
   const planLabel = PLAN_TYPES.find(p => p.id === planType)?.label || planType;
-  const price = totalPrice(planType, durationHours, participantCount);
+  const mixed = participantBreakdown && participantTotal(participantBreakdown) > 0;
+  const price = mixed
+    ? bookingTotalPrice(participantBreakdown, durationHours)
+    : totalPrice(planType, durationHours, participantCount);
 
   return (
     <Modal open onClose={onCancel} title="確認預約時段">
       <div className="flex flex-col gap-3">
         <Row label="日期時間" value={`${slot.date}　${slot.startTime}-${slot.endTime}`} />
-        <Row label="方案" value={`${planLabel}・${durationLabel(durationHours)}`} />
-        <Row label="人數" value={`${participantCount} 人`} />
+        <Row label="方案" value={mixed ? participantBreakdownLabel(participantBreakdown) : planLabel} />
+        <Row label="時數" value={durationLabel(durationHours)} />
+        <Row label="人數" value={`${mixed ? participantTotal(participantBreakdown) : participantCount} 人`} />
+        {firstTimeCount != null && <Row label="第一次來" value={`${firstTimeCount} 人`} />}
         <div className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-3 mt-1">
           <span className="text-slate-400 text-sm">總金額</span>
           <span className="text-white text-2xl font-black">NT$ {price}</span>

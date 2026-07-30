@@ -398,6 +398,17 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
 .faq-list details summary .qline{position:absolute;left:4px;right:4px;bottom:0;height:2px;background:var(--orange);transform:scaleX(0);transform-origin:left;transition:transform .45s cubic-bezier(.22,.8,.3,1)}
 .faq-list details[open] summary .qline{transform:scaleX(1)}
 
+
+/* ── 情境頁圖文故事 ── */
+.story-layout{display:grid;grid-template-columns:minmax(0,1.02fr) minmax(320px,.98fr);gap:clamp(28px,5vw,72px);align-items:center;margin-top:28px}
+.story-copy h2{margin-top:0}.story-copy p{max-width:680px}
+.story-visual{margin:0;position:relative;border-radius:26px;overflow:hidden;background:#fff;border:1.5px solid var(--line);box-shadow:0 22px 54px rgba(43,41,38,.12)}
+.story-visual::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35);pointer-events:none}
+.story-visual img{display:block;width:100%;height:auto;aspect-ratio:4/3;object-fit:cover;transition:transform .7s cubic-bezier(.2,.75,.25,1)}
+.story-visual:hover img{transform:scale(1.035)}
+.story-visual figcaption{position:absolute;left:14px;right:14px;bottom:14px;padding:11px 14px;border-radius:13px;background:rgba(250,246,239,.92);backdrop-filter:blur(10px);color:var(--ink);font-size:12.5px;font-weight:700;line-height:1.45}
+.story-layout.media-first .story-visual{order:-1}
+
 /* ── RWD ── */
 @media (max-width:960px){
   .nav{gap:12px}
@@ -424,6 +435,12 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
   .page-hero{padding:128px 0 48px}
 }
 @media (max-width:560px){
+  .story-layout{grid-template-columns:1fr;gap:22px;margin-top:20px}
+  .story-layout.media-first .story-visual{order:initial}
+  .story-visual{border-radius:20px}
+  .story-visual img{aspect-ratio:4/3}
+  .story-visual figcaption{position:static;border-radius:0;background:#fff;padding:13px 16px}
+
   .cards3,.bow-grid,.modes,.coaches,.info-grid,.scen-grid{grid-template-columns:1fr}
   .bcard img{height:170px}
   .group-cta{justify-content:center;text-align:center}
@@ -441,11 +458,11 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
       貓小隊<span class="accent">射箭場</span>
     </a>
     <nav class="nav-links" id="primary-navigation" aria-label="主選單">
-      <a href="/#why">特色</a>
+      <a href="/#features">特色</a>
       <a href="/#bows">弓種</a>
-      <a href="/#price">價目表</a>
+      <a href="/#pricing">價目表</a>
       <a href="/#training">訓練系統</a>
-      <a href="/#group">團體活動</a>
+      <a href="/#groups">團體活動</a>
       <a href="/#faq">常見問題</a>
       <a href="/#visit">交通資訊</a>
     <div class="mobile-nav-actions" aria-label="預約與會員服務">
@@ -474,38 +491,41 @@ footer{background:#211f1d;color:rgba(250,246,239,.6);padding:44px 0;font-size:13
       <a class="btn" href="https://catarrow.vercel.app/?bk=3345b3d554e6" target="_blank" rel="noopener noreferrer">立即預約體驗 <span class="arr">➔</span></a>
       <a class="btn-ghost" href="/family/">看親子暑假活動推薦</a>
     </div>
-    <div class="rv" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:30px">
-      <img src="../assets/images/archery/real/11_活動紀錄相簿候選/AAA00023.webp" alt="學員在室內冷氣射箭場開心體驗" width="1600" height="1067" loading="lazy" style="width:100%;height:190px;object-fit:cover;border-radius:16px;border:1.5px solid var(--line)">
-      <img src="../assets/images/archery/real/11_活動紀錄相簿候選/AAA00033.webp" alt="室內活動花絮，夏天避暑好選擇" width="1600" height="1067" loading="lazy" style="width:100%;height:190px;object-fit:cover;border-radius:16px;border:1.5px solid var(--line)">
-      <img src="../assets/images/archery/real/11_活動紀錄相簿候選/AAA00039.webp" alt="團體在室內場地一起體驗射箭" width="1600" height="1067" loading="lazy" style="width:100%;height:190px;object-fit:cover;border-radius:16px;border:1.5px solid var(--line)">
-      <img src="../assets/images/archery/real/02_團康活動與朋友體驗/AAA00009.webp" alt="室內冷氣場地全程舒適不怕曬" width="1600" height="1067" loading="lazy" style="width:100%;height:190px;object-fit:cover;border-radius:16px;border:1.5px solid var(--line)">
-    </div>
   </div>
 </section>
 
 <section class="page-sec" id="hot-summer">
   <div class="wrap">
     <div class="sec-head rv"><span class="sec-num">01</span><span class="sec-en">Sunny Day · 避暑去哪</span></div>
-    <h2 class="rv">台南夏天太熱，室內活動怎麼選</h2>
-      <p class="rv">台南夏天中午到下午常常曬得讓人不想出門，找活動的第一個條件常常是「有沒有冷氣」。比起純逛街，找一個能動一動、又不用曬太陽的室內活動，會更有玩到的感覺。</p>
+    <div class="story-layout">
+      <div class="story-copy"><h2 class="rv">台南夏天太熱，室內活動怎麼選</h2>
+      <p class="rv">台南夏天中午到下午常常曬得讓人不想出門，找活動的第一個條件常常是「有沒有冷氣」。比起純逛街，找一個能動一動、又不用曬太陽的室內活動，會更有玩到的感覺。</p></div>
+      <figure class="story-visual rv"><img src="../assets/images/archery/real/11_活動紀錄相簿候選/AAA00033.webp" alt="學員在室內冷氣射箭場避暑體驗" width="1600" height="1067" loading="lazy" decoding="async"><figcaption>避開烈日，也不必放棄想動一動的行程</figcaption></figure>
+    </div>
   </div>
 </section>
 
 <section class="page-sec" id="ac-indoor">
   <div class="wrap">
     <div class="sec-head rv"><span class="sec-num">02</span><span class="sec-en">Stay Cool · 全程冷氣</span></div>
-    <h2 class="rv">全程室內冷氣，不曬太陽也能運動</h2>
+    <div class="story-layout media-first">
+      <div class="story-copy"><h2 class="rv">全程室內冷氣，不曬太陽也能運動</h2>
       <p class="rv">場地全程室內、有空調，不管外面幾度，射道裡都維持涼爽，不用擔心曬傷或流汗狼狽地拉弓。</p>
-      <p class="rv">射箭本身動作幅度不大、不需要跑跳，即使不是運動咖也不會覺得太喘，很適合怕熱又想動一動的人。</p>
+      <p class="rv">射箭本身動作幅度不大、不需要跑跳，即使不是運動咖也不會覺得太喘，很適合怕熱又想動一動的人。</p></div>
+      <figure class="story-visual rv"><img src="../assets/images/archery/real/11_活動紀錄相簿候選/AAA00039.webp" alt="多人在室內空調場地一起射箭" width="1600" height="1067" loading="lazy" decoding="async"><figcaption>全程室內有空調，不必曬太陽</figcaption></figure>
+    </div>
   </div>
 </section>
 
 <section class="page-sec" id="flow-timing">
   <div class="wrap">
     <div class="sec-head rv"><span class="sec-num">03</span><span class="sec-en">Timing · 現場流程與時段</span></div>
-    <h2 class="rv">現場流程與適合的時段</h2>
+    <div class="story-layout">
+      <div class="story-copy"><h2 class="rv">現場流程與適合的時段</h2>
       <p class="rv">現場提供全套器材，教練會依人數與經驗安排時段與教學節奏。夏天午後、傍晚都是熱門時段，建議先線上預約選好時間，避免現場久候。</p>
-      <p class="rv">若是第一次來，可以直接參加新手體驗，教練會從基礎動作教起。</p>
+      <p class="rv">若是第一次來，可以直接參加新手體驗，教練會從基礎動作教起。</p></div>
+      <figure class="story-visual rv"><img src="../assets/images/archery/real/11_活動紀錄相簿候選/AAA00023.webp" alt="學員在舒適的室內場地進行射箭活動" width="1600" height="1067" loading="lazy" decoding="async"><figcaption>先選好時段，到場後由教練安排器材與流程</figcaption></figure>
+    </div>
   </div>
 </section>
 
@@ -729,5 +749,6 @@ document.querySelectorAll('.bcard').forEach(card => {
 });
 
 </script>
+<script src="../assets/cms-runtime.js"></script>
 </body>
 </html>

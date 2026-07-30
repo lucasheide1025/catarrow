@@ -4,9 +4,16 @@ import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { createBooking, cancelBooking, rescheduleBooking, getBookingsForMember, bookingHasStarted } from "../../lib/bookingDb";
 import { PLAN_TYPES, durationLabel, totalPrice } from "../../lib/bookingSchedule";
+import {
+  bookingTotalPrice,
+  legacyPlanTypeFor,
+  normalizeParticipantBreakdown,
+  participantBreakdownLabel,
+  participantTotal,
+} from "../../lib/bookingPricing";
 import DateSlotPicker from "../booking/DateSlotPicker";
 import PlanDurationPicker from "../booking/PlanDurationPicker";
-import ParticipantCountPicker from "../booking/ParticipantCountPicker";
+import ParticipantBreakdownPicker from "../booking/ParticipantBreakdownPicker";
 import ConfirmBookingModal from "../booking/ConfirmBookingModal";
 import { Card, Btn, Modal, Spinner, Empty, ConfirmModal, useToast } from "../shared/UI";
 
@@ -16,12 +23,11 @@ export default function MemberBooking() {
   const [tab, setTab] = useState("new"); // "new" | "mine"
 
   const [selectedSlot, setSelectedSlot] = useState(null);
-  const [planType, setPlanType] = useState("general");
   const [durationHours, setDurationHours] = useState(1);
-  const [participantCount, setParticipantCount] = useState(1);
-  // 學籍會員（能進到這個分頁的都已有學籍）一律算「舊生」，不再讓他們自己勾「是否第一次體驗」。
-  // 新生統計只在教練後台代建（AdminBooking）與訪客自助（PublicBookingApp）才需要區分。
-  const isNewStudent = false;
+  const [participantBreakdown, setParticipantBreakdown] = useState({ general: 1, discount: 0, own_equipment: 0 });
+  const participantCount = participantTotal(participantBreakdown);
+  const planType = legacyPlanTypeFor(participantBreakdown);
+  const [firstTimeCount, setFirstTimeCount] = useState(0);
   const [confirming, setConfirming] = useState(false); // 07-10-booking-ui-polish-headcount：選完時段先看確認畫面
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState("");
@@ -54,9 +60,9 @@ export default function MemberBooking() {
     const res = await createBooking(
       profile.id, profile.nickname || profile.name,
       { email: profile.email || "", phone: profile.phone || "" },
-      planType, durationHours, participantCount, isNewStudent,
+      planType, durationHours, participantCount, firstTimeCount === participantCount,
       selectedSlot.date, selectedSlot.startTime, selectedSlot.endTime,
-      "online",
+      "online", "", null, { participantBreakdown, firstTimeCount },
     );
     setSubmitting(false);
     if (!res.ok) { setErr(res.reason || "預約失敗，請稍後再試"); setConfirming(false); return; }
@@ -98,10 +104,23 @@ export default function MemberBooking() {
 
       {tab === "new" && (
         <Card className="p-4 flex flex-col gap-4">
-          <PlanDurationPicker planType={planType} durationHours={durationHours}
-            onChange={({ planType: pt, durationHours: dh }) => { setPlanType(pt); setDurationHours(dh); setSelectedSlot(null); }} />
-          <ParticipantCountPicker value={participantCount}
-            onChange={n => { setParticipantCount(n); setSelectedSlot(null); }} />
+          <ParticipantBreakdownPicker value={participantBreakdown}
+            onChange={next => {
+              const nextTotal = participantTotal(next);
+              setParticipantBreakdown(next);
+              setFirstTimeCount(current => Math.min(current, nextTotal));
+              setSelectedSlot(null);
+            }} />
+          <PlanDurationPicker durationHours={durationHours} participantBreakdown={participantBreakdown}
+            onChange={({ durationHours: dh }) => { setDurationHours(dh); setSelectedSlot(null); }} />
+          <label className="text-slate-300 text-sm font-bold">
+            同行中第一次來的人數
+            <input type="number" inputMode="numeric" min="0" max={participantCount} value={firstTimeCount}
+              onChange={event => setFirstTimeCount(Math.max(0, Math.min(participantCount, Number(event.target.value) || 0)))}
+              className="ml-3 w-16 rounded-lg border border-white/15 bg-slate-950 px-2 py-2 text-center text-white" />
+            <span className="ml-2 text-xs text-slate-500">回訪 {participantCount - firstTimeCount} 人</span>
+          </label>
+          {participantBreakdown.discount > 0 && <p className="text-amber-300 text-xs">學生請帶學生證；敬老優惠請帶身分證，到場確認資格。</p>}
           <DateSlotPicker selected={selectedSlot} onSelect={s => { setSelectedSlot(s); setErr(""); setConfirming(true); }}
             durationHours={durationHours} participantCount={participantCount} />
           {err && <div className="text-red-400 text-sm">{err}</div>}
@@ -110,7 +129,7 @@ export default function MemberBooking() {
 
       {confirming && (
         <ConfirmBookingModal slot={selectedSlot} planType={planType} durationHours={durationHours}
-          participantCount={participantCount} busy={submitting}
+          participantCount={participantCount} participantBreakdown={participantBreakdown} firstTimeCount={firstTimeCount} busy={submitting}
           onConfirm={handleSubmit}
           onCancel={() => { setConfirming(false); setSelectedSlot(null); }} />
       )}
@@ -129,9 +148,13 @@ export default function MemberBooking() {
                   <div className="min-w-0">
                     <div className="text-white font-bold text-sm">{b.date}　{b.startTime}-{b.endTime}</div>
                     <div className="text-slate-400 text-xs mt-0.5">
-                      {PLAN_TYPES.find(p => p.id === b.planType)?.label || b.planType}
+                      {b.participantBreakdown
+                        ? participantBreakdownLabel(normalizeParticipantBreakdown(b.participantBreakdown, b))
+                        : (PLAN_TYPES.find(p => p.id === b.planType)?.label || b.planType)}
                       ・{durationLabel(b.durationHours || 1)}・{b.participantCount || 1}人
-                      ・NT$ {totalPrice(b.planType, b.durationHours || 1, b.participantCount || 1)}
+                      ・NT$ {b.participantBreakdown
+                        ? bookingTotalPrice(normalizeParticipantBreakdown(b.participantBreakdown, b), b.durationHours || 1)
+                        : totalPrice(b.planType, b.durationHours || 1, b.participantCount || 1)}
                     </div>
                     <div className={`text-xs mt-1 font-bold ${completed ? "text-emerald-400" : started ? "text-amber-400" : "text-blue-400"}`}>
                       {completed ? "✓ 已完成課程" : started ? "上課時間已到" : "已預約"}

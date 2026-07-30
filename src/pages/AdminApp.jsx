@@ -43,6 +43,7 @@ const AdminBattleTest   = lazy(() => import("../components/admin/AdminBattleTest
 const AdminKidMode       = lazy(() => import("../components/admin/AdminKidMode"));
 const AdminGuestAccounts = lazy(() => import("../components/admin/AdminGuestAccounts"));
 const AdminTierPermissions = lazy(() => import("../components/admin/AdminTierPermissions"));
+const AdminWebsiteCms    = lazy(() => import("../components/admin/AdminWebsiteCms"));
 const EquipmentPage      = lazy(() => import("../components/member/EquipmentPage"));
 const CoinShop           = lazy(() => import("../components/member/CoinShop"));
 const MemberComps        = lazy(() => import("../components/member/MemberComps"));
@@ -113,6 +114,7 @@ const ADMIN_NAV_PRELOADS = {
     import("../components/admin/AdminTierPermissions");
     import("../components/admin/AdminArchery");
     import("../components/admin/AdminResetCenter");
+    import("../components/admin/AdminWebsiteCms");
   },
 };
 
@@ -160,7 +162,7 @@ export default function AdminApp() {
   const [dailySub,  setDailySub]  = useState("booking"); // "booking" | "review" | "monthlycard"
   const [mfSub,     setMfSub]     = useState("members"); // "members" | "guests" | "kidmode" | "learn" | "messages"
   const [eventsSub, setEventsSub] = useState("villagegoal"); // "villagegoal" | "worldboss" | "items" | "village" | "story"
-  const [sysSub,    setSysSub]    = useState("givetool");// "givetool" | "tierperms" | "archery" | "reset" | "testing"
+  const [sysSub,    setSysSub]    = useState("givetool");// "givetool" | "tierperms" | "archery" | "reset" | "website" | "testing"
 
   const [archerMode, setArcherMode] = useState(() => sessionStorage.getItem("admin_archerMode") === "1");
   const [questCtx, setQuestCtx]     = useState(null);
@@ -848,6 +850,10 @@ const adminNav = [
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${sysSub === "reset" ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md" : "bg-slate-800/80 text-slate-400 hover:text-slate-200 border border-slate-700/50"}`}>
               🔄 重置中心
             </button>
+            <button onClick={() => setSysSub("website")}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${sysSub === "website" ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md" : "bg-slate-800/80 text-slate-400 hover:text-slate-200 border border-slate-700/50"}`}>
+              🌐 官網內容
+            </button>
             <button onClick={() => setSysSub("testing")}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${sysSub === "testing" ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md" : "bg-slate-800/80 text-slate-400 hover:text-slate-200 border border-slate-700/50"}`}>
               🧪 測試工具
@@ -884,6 +890,7 @@ const adminNav = [
         {page === "system-tools" && sysSub === "tierperms"  && <AdminTierPermissions />}
         {page === "system-tools" && sysSub === "archery"    && <AdminArchery />}
         {page === "system-tools" && sysSub === "reset"      && <AdminResetCenter />}
+        {page === "system-tools" && sysSub === "website"    && <AdminWebsiteCms />}
         {page === "system-tools" && sysSub === "testing"    && (
           <div className="p-4 flex flex-col gap-4">
             <div className="text-white font-bold text-base">🧪 系統測試工具</div>

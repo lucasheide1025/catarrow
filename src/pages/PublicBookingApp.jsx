@@ -17,9 +17,16 @@ import { useState, useEffect } from "react";
 import { registerGuestWithPassword, loginGuestWithPassword, signInWithGoogle, saveGuestFromSocial, getGuestProfile, updateGuestProfile, changeGuestPassword, sendGuestPasswordReset } from "../lib/guestAuth";
 import { createBooking, getBookingsForMember, cancelBooking, rescheduleBooking } from "../lib/bookingDb";
 import { PLAN_TYPES, durationLabel, totalPrice } from "../lib/bookingSchedule";
+import {
+  bookingTotalPrice,
+  legacyPlanTypeFor,
+  normalizeParticipantBreakdown,
+  participantBreakdownLabel,
+  participantTotal,
+} from "../lib/bookingPricing";
 import DateSlotPicker from "../components/booking/DateSlotPicker";
 import PlanDurationPicker from "../components/booking/PlanDurationPicker";
-import ParticipantCountPicker from "../components/booking/ParticipantCountPicker";
+import ParticipantBreakdownPicker from "../components/booking/ParticipantBreakdownPicker";
 import "./PublicBookingApp.css";
 
 
@@ -49,10 +56,11 @@ export default function PublicBookingApp() {
 
   // ① 方案/人數/時段選擇（不用登入就能選）
   const [selectedSlot, setSelectedSlot] = useState(null);
-  const [planType, setPlanType] = useState("general");
   const [durationHours, setDurationHours] = useState(1);
-  const [participantCount, setParticipantCount] = useState(1);
-  const [isNewStudent, setIsNewStudent] = useState(true); // 這個入口大多是新客，預設勾選，回訪舊客可自己取消
+  const [participantBreakdown, setParticipantBreakdown] = useState({ general: 1, discount: 0, own_equipment: 0 });
+  const participantCount = participantTotal(participantBreakdown);
+  const planType = legacyPlanTypeFor(participantBreakdown);
+  const [firstTimeCount, setFirstTimeCount] = useState(1);
 
   // ② 確認預約
   const [slotConfirmed, setSlotConfirmed] = useState(false);
@@ -155,7 +163,7 @@ export default function PublicBookingApp() {
     setProfile(profileObj);
     setShowLogin(false);
     // 找回舊記錄且已經有預約紀錄 → 預設取消勾選「第一次來體驗」，仍可自己改
-    setIsNewStudent(!(res.bookingStats?.totalBookings > 0));
+    setFirstTimeCount(res.bookingStats?.totalBookings > 0 ? 0 : participantCount);
   }
 
   // 按「用 Google 登入」→ 跳 Google 視窗，拿到 email/姓名/uid（還沒存檔，因為要補電話）
@@ -300,9 +308,10 @@ export default function PublicBookingApp() {
     const res = await createBooking(
       prof.id, prof.name,
       { email: prof.email, phone: prof.phone },
-      planType, durationHours, participantCount, isNewStudent,
+      planType, durationHours, participantCount, firstTimeCount === participantCount,
       selectedSlot.date, selectedSlot.startTime, selectedSlot.endTime,
       "online_public", "", intake,
+      { participantBreakdown, firstTimeCount },
     );
     setSubmitting(false);
     if (!res.ok) { setSubmitErr(res.reason || "預約失敗，請稍後再試"); return; }
@@ -666,9 +675,14 @@ export default function PublicBookingApp() {
         <section id="booking-form" className="public-booking-grid">
           <div className="public-booking-main">
             <div className="public-booking-card"><span className="public-booking-step">01</span><h2>選擇課程方案</h2>
-              <PlanDurationPicker planType={planType} durationHours={durationHours}
-                onChange={({ planType: pt, durationHours: dh }) => { setPlanType(pt); setDurationHours(dh); setSelectedSlot(null); }} />
-              <ParticipantCountPicker value={participantCount} onChange={n => { setParticipantCount(n); setSelectedSlot(null); }} />
+              <ParticipantBreakdownPicker value={participantBreakdown} onChange={next => {
+                const nextTotal = participantTotal(next);
+                setParticipantBreakdown(next);
+                setFirstTimeCount(current => Math.min(current, nextTotal));
+                setSelectedSlot(null);
+              }} />
+              <PlanDurationPicker durationHours={durationHours} participantBreakdown={participantBreakdown}
+                onChange={({ durationHours: dh }) => { setDurationHours(dh); setSelectedSlot(null); }} />
             </div>
             <div className="public-booking-card"><span className="public-booking-step">02</span><h2>選擇日期與時段</h2>
               <DateSlotPicker selected={selectedSlot} onSelect={s => setSelectedSlot(s)} durationHours={durationHours}
@@ -678,23 +692,30 @@ export default function PublicBookingApp() {
           <aside className="public-booking-summary">
             <span className="public-booking-step">03</span><h2>確認預約內容</h2>
             <dl>
-              <div><dt>方案</dt><dd>{PLAN_TYPES.find(p => p.id === planType)?.label || planType}</dd></div>
+              <div><dt>同行方案</dt><dd>{participantBreakdownLabel(participantBreakdown) || "請選擇人數"}</dd></div>
               <div><dt>時數</dt><dd>{durationLabel(durationHours)}</dd></div><div><dt>人數</dt><dd>{participantCount} 人</dd></div>
               <div><dt>日期</dt><dd>{selectedSlot?.date || "尚未選擇"}</dd></div>
               <div><dt>時間</dt><dd>{selectedSlot ? `${selectedSlot.startTime}－${selectedSlot.endTime}` : "尚未選擇"}</dd></div>
-              <div className="public-booking-total"><dt>總金額</dt><dd>NT$ {totalPrice(planType, durationHours, participantCount)}</dd></div>
+              <div><dt>第一次來</dt><dd>{firstTimeCount} 人</dd></div>
+              <div className="public-booking-total"><dt>總金額</dt><dd>NT$ {bookingTotalPrice(participantBreakdown, durationHours)}</dd></div>
             </dl>
-            <button onClick={handleSubmitOrAuth} disabled={!selectedSlot || submitting} className="public-booking-submit">
+            <button onClick={handleSubmitOrAuth} disabled={!selectedSlot || !participantCount || submitting} className="public-booking-submit">
               {submitting ? "送出中…" : profile ? "送出預約" : "登入並完成預約"}
             </button>
           </aside>
         </section>
 
         <label className="public-booking-first-visit">
-          <input type="checkbox" checked={isNewStudent} onChange={e => setIsNewStudent(e.target.checked)}
-            style={{ width: 16, height: 16 }} />
-          是否為第一次來體驗
+          同行中第一次來的人數
+          <input type="number" inputMode="numeric" min="0" max={participantCount}
+            value={firstTimeCount}
+            onChange={event => setFirstTimeCount(Math.max(0, Math.min(participantCount, Number(event.target.value) || 0)))}
+            style={{ width: 64, marginLeft: 10, padding: "7px 8px", borderRadius: 8, border: "1px solid rgba(255,255,255,.25)", background: "rgba(15,23,42,.85)", color: "white", fontWeight: 800 }} />
+          <span style={{ marginLeft: 8, color: "rgba(255,255,255,.55)" }}>回訪 {participantCount - firstTimeCount} 人</span>
         </label>
+        {participantBreakdown.discount > 0 && (
+          <p className="public-booking-first-visit">學生請攜帶學生證；敬老優惠請攜帶身分證，到場確認資格。</p>
+        )}
 
         {/* ── 提醒 ── */}
         <div className="public-booking-safety">
@@ -785,7 +806,12 @@ function renderBookingCard(b, showActions, callbacks) {
           )}
         </div>
         <div style={{ color: "rgba(255,255,255,.5)", fontSize: 11, marginTop: 2 }}>
-          {PLAN_TYPES.find(p => p.id === b.planType)?.label || b.planType}・{durationLabel(b.durationHours || 1)}・{b.participantCount || 1}人・NT$ {totalPrice(b.planType, b.durationHours || 1, b.participantCount || 1)}
+          {b.participantBreakdown
+            ? participantBreakdownLabel(normalizeParticipantBreakdown(b.participantBreakdown, b))
+            : (PLAN_TYPES.find(p => p.id === b.planType)?.label || b.planType)}
+          ・{durationLabel(b.durationHours || 1)}・{b.participantCount || 1}人・NT$ {b.participantBreakdown
+            ? bookingTotalPrice(normalizeParticipantBreakdown(b.participantBreakdown, b), b.durationHours || 1)
+            : totalPrice(b.planType, b.durationHours || 1, b.participantCount || 1)}
         </div>
       </div>
       {showActions && b.status === "confirmed" && (
