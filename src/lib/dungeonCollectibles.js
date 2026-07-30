@@ -1,5 +1,6 @@
 // src/lib/dungeonCollectibles.js — 地下城收藏品資料與掉落邏輯
 // 6族系 × (20普通 + 10稀有 + 5首領 + 1超稀有) = 216件 + 24首殺限定
+import { normalizeDungeonDifficultyTier } from "./dungeonFirstClear";
 
 export const FAMILY_COLLECTIBLES = {
   ghost: {
@@ -403,8 +404,11 @@ export function getFirstClearTrophy(dungeonId) {
 
 // 新遠征使用 1~4 的難度編號；首通紀念章則沿用圖鑑的文字難度鍵。
 // 集中轉換，避免結算流程寫出 expedition_ghost_4 這類沒有對應收藏品的 id。
+// difficultyTier 可能是遠征的數字（1～6）或地下城地圖的難度字串（normal／advanced／hard／hell）。
+// 原本只做 Number()，字串會得到 NaN 而退回 1，四種難度全部拿到 T1 紀念章（圖也全是 T1 那張）。
+// 一律走 normalizeDungeonDifficultyTier，與首次通關鍵用同一套對映。
 export function getExpeditionFirstClearTrophy(family, difficultyTier) {
-  const id = `${family}_t${Math.min(6, Math.max(1, Number(difficultyTier) || 1))}_trophy`;
+  const id = `${family}_t${normalizeDungeonDifficultyTier(difficultyTier)}_trophy`;
   return COLLECTIBLE_MAP[id] ? { itemId:id } : null;
 }
 

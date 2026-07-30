@@ -7,6 +7,8 @@ import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import { removeSavedDungeon, MAX_SAVED_DUNGEONS } from "../../lib/dungeonExcavation";
 import { getExcavationDifficulty } from "../../lib/dungeonData";
+import { getDungeonFirstClearState } from "../../lib/dungeonFirstClear";
+import { COLLECTIBLE_MAP, getExpeditionFirstClearTrophy } from "../../lib/dungeonCollectibles";
 
 const FAMILY_LABEL = {
   ghost:     { emoji:"👻", label:"幽冥系", bg:"rgba(168,85,247,0.18)", border:"rgba(168,85,247,0.35)" },
@@ -18,8 +20,15 @@ const FAMILY_LABEL = {
   treasure:  { emoji:"📦", label:"寶箱族", bg:"rgba(251,191,36,0.18)",  border:"rgba(251,191,36,0.35)"  },
 };
 
-function SavedCard({ d, onSelect, onRemove, removing }) {
+function SavedCard({ d, profile, onSelect, onRemove, removing }) {
   const diff = getExcavationDifficulty(d.difficulty);
+  // 首次通關狀態：還沒拿過的要明顯提醒（發光邊框＋獎勵徽章），拿過的改成低調的已完成樣式。
+  // 寶藏地下城不列入六族首次通關，firstClear.eligible 會是 false，兩種樣式都不顯示。
+  const firstClear = getDungeonFirstClearState(profile, d);
+  const trophyId = getExpeditionFirstClearTrophy(d.family, d.difficulty)?.itemId;
+  const trophy = trophyId ? COLLECTIBLE_MAP[trophyId] : null;
+  const showFirstClearHint = firstClear.eligible && firstClear.known && !firstClear.completed;
+  const showFirstClearDone = firstClear.eligible && firstClear.known && firstClear.completed;
   const family = FAMILY_LABEL[d.family] || { emoji:"🏰", label:"未知", bg:"rgba(148,163,184,0.15)", border:"rgba(148,163,184,0.3)" };
   // 封面優先用「該族該階」專屬圖，缺圖退回「該族」通用圖，再缺退回 emoji
   const coverChain = [
@@ -35,7 +44,14 @@ function SavedCard({ d, onSelect, onRemove, removing }) {
   };
   return (
     <div className="rounded-2xl border overflow-hidden transition-all active:scale-[0.98]"
-      style={{ background:"#0b1220", borderColor:family.border, boxShadow:`0 10px 22px rgba(0,0,0,.28)` }}>
+      style={{
+        background:"#0b1220",
+        // 未首殺：用琥珀色發光邊框把卡片挑出來；已首殺：維持原本的族系顏色
+        borderColor: showFirstClearHint ? "rgba(251,191,36,0.75)" : family.border,
+        boxShadow: showFirstClearHint
+          ? "0 0 0 1px rgba(251,191,36,0.35), 0 0 18px rgba(251,191,36,0.28), 0 10px 22px rgba(0,0,0,.28)"
+          : "0 10px 22px rgba(0,0,0,.28)",
+      }}>
       <button onClick={() => onSelect(d)} className="block w-full text-left">
         <div className="relative w-full" style={{ aspectRatio:"2 / 1" }}>
           {!imgFailed ? (
@@ -60,6 +76,24 @@ function SavedCard({ d, onSelect, onRemove, removing }) {
           {d.fromWorldBoss && (
             <span className="absolute top-8 left-1.5 text-[8px] px-1.5 py-0.5 rounded-full font-black"
               style={{ background:"rgba(251,146,60,0.9)", color:"#3b1a00" }}>🌍 世界王</span>
+          )}
+          {/* 首次通關提醒：未拿過→琥珀色徽章＋紀念章縮圖；已拿過→綠色已完成標記 */}
+          {showFirstClearHint && (
+            <span className="absolute bottom-8 left-2 flex items-center gap-1 pl-1 pr-1.5 py-0.5 rounded-full font-black text-[8px]"
+              style={{ background:"rgba(251,191,36,0.92)", color:"#3b2500" }}>
+              {trophy?.image
+                ? <img src={trophy.image} alt="" width={14} height={14} loading="lazy"
+                    className="rounded-full object-cover" style={{ width:14, height:14 }}
+                    onError={event => { event.currentTarget.style.display = "none"; }} />
+                : <span>🏅</span>}
+              首殺獎勵未取得
+            </span>
+          )}
+          {showFirstClearDone && (
+            <span className="absolute bottom-8 left-2 px-1.5 py-0.5 rounded-full font-black text-[8px]"
+              style={{ background:"rgba(34,197,94,0.85)", color:"#052e16" }}>
+              ✓ 已首殺
+            </span>
           )}
           {/* 名稱 + 階級 */}
           <div className="absolute bottom-1.5 left-2 right-2 flex items-end justify-between gap-1">
@@ -135,7 +169,7 @@ export default function DungeonStorageTab({ profile, onSelectDungeon }) {
             );
           }
           return (
-            <SavedCard key={d.id} d={d} onSelect={onSelectDungeon} onRemove={handleRemove} removing={removing} />
+            <SavedCard key={d.id} d={d} profile={profile} onSelect={onSelectDungeon} onRemove={handleRemove} removing={removing} />
           );
         })}
       </div>

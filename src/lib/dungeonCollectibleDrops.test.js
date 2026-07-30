@@ -1,5 +1,6 @@
 import {
   COLLECTIBLE_MAP,
+  getExpeditionFirstClearTrophy,
   rollFamilyDrop,
   rollBossDrops,
   rollTreasureRoomDrop,
@@ -45,3 +46,28 @@ function sequence(...values) {
   let index = 0;
   return () => values[Math.min(index++, values.length - 1)];
 }
+
+// getExpeditionFirstClearTrophy 原本只做 Number(difficultyTier)，地下城地圖傳進來的是字串
+// （normal／advanced／hard／hell），NaN 後退回 1，四種難度全部拿到 T1 紀念章與 T1 那張圖。
+test("紀念章依難度取到對應的 tier，字串與數字都正確", () => {
+  expect(getExpeditionFirstClearTrophy("ghost", "normal").itemId).toBe("ghost_t1_trophy");
+  expect(getExpeditionFirstClearTrophy("ghost", "advanced").itemId).toBe("ghost_t3_trophy");
+  expect(getExpeditionFirstClearTrophy("ghost", "hard").itemId).toBe("ghost_t4_trophy");
+  expect(getExpeditionFirstClearTrophy("ghost", "hell").itemId).toBe("ghost_t5_trophy");
+  // 遠征傳數字
+  expect(getExpeditionFirstClearTrophy("exam", 6).itemId).toBe("exam_t6_trophy");
+});
+
+test("每個紀念章都有對應的圖片路徑，且與 tier 一致", () => {
+  for (const family of ["ghost", "mountain", "insect", "workplace", "exam", "temple"]) {
+    for (let tier = 1; tier <= 6; tier += 1) {
+      const item = COLLECTIBLE_MAP[`${family}_t${tier}_trophy`];
+      expect(item).toBeTruthy();
+      expect(item.image).toBe(`/ui/dungeon/first-clear/${family}-t${tier}.webp`);
+    }
+  }
+});
+
+test("寶藏族沒有首次通關紀念章", () => {
+  expect(getExpeditionFirstClearTrophy("treasure", "normal")).toBeNull();
+});
