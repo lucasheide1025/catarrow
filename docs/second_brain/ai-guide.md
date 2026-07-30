@@ -10,7 +10,7 @@
 ## 0. 三十秒定位
 
 - **專案**：貓小隊射箭場積分系統（catarrow）——射箭道館管理 Web App ＋ 大量遊戲化系統（打怪/地下城/貓村/卡片/世界王/組隊/決鬥/訪客兒童模式）。
-- **技術棧**：React 18（CRA / react-scripts）、React Router v6、Firebase Auth + Firestore、Tailwind（CDN 版，注意偽類限制）。**純前端，沒有後端伺服器、沒有 Cloud Functions。**
+- **技術棧**：React 18（CRA / react-scripts）、React Router v6、Firebase Auth + Firestore、Tailwind（CDN 版，注意偽類限制）。**前端為主，但已有 Cloud Functions**（2026-07-30 更正：原文寫「沒有 Cloud Functions」已過時）。`functions/` 下有 17 個 asia-east1 函式——世界王生命週期（含排程）、訪客裝備、打怪／地下城王獎勵發放、成本訊號、預約信件與提醒。**`git push` 不會部署它們**，要另外 `firebase deploy --only functions`。
 - **部署**：主 App（`catarrow`）push 到 GitHub `main` → Vercel 自動部署，正式網址 `https://student.catgroup.com.tw/`。行銷官網（`website/`，`catarrow-archery` 專案）**要手動 `vercel deploy`**，正式網址 `https://archery.catgroup.com.tw/`。沒有 staging，main 就是 production。
 - **使用者**：道館教練（admin）＋ 學生（member）＋ 訪客/兒童（guest/kid），幾乎全是**手機瀏覽器**使用。
 - **老闆**：非工程師，用繁體中文溝通，重視「教學式說明」與「精簡回答」。
