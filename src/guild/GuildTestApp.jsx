@@ -659,7 +659,7 @@ export default function GuildTestApp({ onBack, onLegacy, onImmersiveChange }) {
   if (phase === "board" && !result) {
     return (
       <>
-        <GuildBoard profile={gp} contracts={dailyContracts} doneIds={doneIds}
+        <GuildBoard profile={gp} contracts={dailyContracts} doneIds={doneIds} archerLevel={teamStats?._archerLevel || 0}
           onOpen={setSheet} onOpenStash={() => setPhase("stash")} onOpenShop={() => { setShopReturnPhase("board"); setPhase("shop"); }}
           onOpenTerritory={() => setPhase("territory")} onPromotion={acceptPromotion}
           onOpenVault={() => setPhase("vault")} onOpenLicense={() => setPhase("license")}
@@ -913,7 +913,7 @@ export default function GuildTestApp({ onBack, onLegacy, onImmersiveChange }) {
   // 保險：沒有委託/沒 roll 到遠征就不該在戰鬥畫面（例如放棄後的殘留狀態）
   if (!run || !contract) {
     return (
-      <GuildBoard profile={gp} contracts={dailyContracts} doneIds={doneIds}
+      <GuildBoard profile={gp} contracts={dailyContracts} doneIds={doneIds} archerLevel={teamStats?._archerLevel || 0}
         onOpen={setSheet} onOpenStash={() => setPhase("stash")} onOpenShop={() => { setShopReturnPhase("board"); setPhase("shop"); }}
         onOpenTerritory={() => setPhase("territory")} onPromotion={acceptPromotion}
         onOpenVault={() => setPhase("vault")} onOpenLicense={() => setPhase("license")}

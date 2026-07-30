@@ -1,5 +1,15 @@
 // src/guild/domain/guildRank.test.js
-import { GUILD_RANKS, repToRank, nextRankInfo, rankUnlocks, canAcceptDanger, repNeededForDanger } from "./guildRank";
+import {
+  GUILD_RANKS,
+  archerDangerCap,
+  canAcceptDanger,
+  dangerUnlockSource,
+  effectiveMaxDanger,
+  nextRankInfo,
+  rankUnlocks,
+  repNeededForDanger,
+  repToRank,
+} from "./guildRank";
 import { purchaseFromShop } from "./guildShopPurchase";
 import { emptyGuildProfile, GUILD_STASH_LIMIT } from "./guildRewards";
 import { shopItemById, shopItemsForTier, GUILD_SHOP_ITEMS, validateGuildShop, SHOP_MATERIALS, MAT_FAMILIES } from "../data/guildShop";
@@ -166,4 +176,53 @@ describe("公會商店購買", () => {
     purchaseFromShop(before, "mat_ghost_m1");
     expect(before.catCoins).toBe(1000);
   });
+});
+
+describe("射手等級解鎖危險度（2026-07-30）", () => {
+  test("等級門檻：25/50/80/110 各開一階，未達門檻只有 T1", () => {
+    expect(archerDangerCap(0)).toBe(1);
+    expect(archerDangerCap(24)).toBe(1);
+    expect(archerDangerCap(25)).toBe(2);
+    expect(archerDangerCap(50)).toBe(3);
+    expect(archerDangerCap(80)).toBe(4);
+    expect(archerDangerCap(110)).toBe(5);
+    expect(archerDangerCap(200)).toBe(5);   // 封頂 5
+  });
+
+  test("☠️6 永遠不能靠射手等級解鎖，必須有公會資歷", () => {
+    expect(archerDangerCap(999)).toBeLessThan(6);
+    expect(canAcceptDanger({ rep: 0 }, 6, 999)).toBe(false);
+    expect(canAcceptDanger({ rankId: "legend" }, 6, 0)).toBe(true);
+  });
+
+  test("實際上限取公會階級與射手等級的高者", () => {
+    expect(effectiveMaxDanger({ rep: 0 }, 114)).toBe(5);      // 聲望 0 但老射手
+    expect(effectiveMaxDanger({ rankId: "legend" }, 1)).toBe(6);    // 傳說但新射手
+    expect(effectiveMaxDanger({ rankId: "silver" }, 25)).toBe(3);   // 銀牌 3 > 射手 2
+  });
+
+  test("老射手剛入會（聲望 0）可以直接接 T5，不必先輾 T1", () => {
+    expect(canAcceptDanger({ rep: 0 }, 5, 114)).toBe(true);
+    expect(canAcceptDanger({ rep: 0 }, 5, 20)).toBe(false);
+  });
+
+  test("已用射手等級解鎖時不再顯示「還差多少聲望」", () => {
+    expect(repNeededForDanger({ rep: 0 }, 5, 114)).toBeNull();
+    expect(repNeededForDanger({ rep: 0 }, 5, 10)).not.toBeNull();
+  });
+
+  test("解鎖來源分得出來（UI 要據此說明）", () => {
+    expect(dangerUnlockSource({ rep: 0 }, 5, 114)).toBe("archer");
+    expect(dangerUnlockSource({ rankId: "legend" }, 5, 1)).toBe("rank");
+    expect(dangerUnlockSource({ rankId: "legend" }, 5, 114)).toBe("both");
+    expect(dangerUnlockSource({ rep: 0 }, 6, 114)).toBeNull();
+  });
+});
+
+// ⚠️ currentRank 對「物件」是讀 rankId，對「數字」才走 repToRank——
+// 傳 { rep: 15000 } 會被當成沒有 rankId 而退回見習，很容易寫錯測試或呼叫端。
+test("階級判定：物件看 rankId、數字看聲望", () => {
+  expect(effectiveMaxDanger({ rankId: "legend" }, 0)).toBe(6);
+  expect(effectiveMaxDanger(15000, 0)).toBe(6);
+  expect(effectiveMaxDanger({ rep: 15000 }, 0)).toBe(1);   // 沒有 rankId → 見習
 });

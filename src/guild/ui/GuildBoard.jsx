@@ -1,4 +1,4 @@
-import { rankUnlocks, canAcceptDanger, repNeededForDanger, nextRankInfo } from "../domain/guildRank";
+import { rankUnlocks, canAcceptDanger, repNeededForDanger, nextRankInfo, effectiveMaxDanger, archerDangerCap } from "../domain/guildRank";
 import { currentTitle } from "../domain/guildTitles";
 import { sfxOpen } from "../../lib/sound";
 import { hallBg, paperBg, rankBadge, bgLayer, ArtOrEmoji } from "./GuildArt";
@@ -54,11 +54,15 @@ export default function GuildBoard({
   resume,
   onBack,
   onLegacy,
+  archerLevel = 0,
 }) {
   const rankInfo = nextRankInfo(profile);
   const rank = rankInfo.current;
-  const { maxDanger } = rankUnlocks(profile);
-  const openable = contracts.filter(contract => canAcceptDanger(profile, contract.danger));
+  const { maxDanger: rankMaxDanger } = rankUnlocks(profile);
+  // 實際上限＝公會階級與射手等級取高者（射手等級最高開到 ☠️5，☠️6 仍要公會資歷）
+  const maxDanger = effectiveMaxDanger(profile, archerLevel);
+  const archerCap = archerDangerCap(archerLevel);
+  const openable = contracts.filter(contract => canAcceptDanger(profile, contract.danger, archerLevel));
   const doneCount = openable.filter(contract => doneIds.includes(contract.id)).length;
   const junkCount = Object.values(profile.junkStock || {}).reduce((sum, count) => sum + count, 0);
   const wornTitle = currentTitle(profile);
@@ -115,6 +119,12 @@ export default function GuildBoard({
               <span>聲望 {profile.rep}</span>
               <span style={{ display: "flex", alignItems: "center", gap: 3 }}><GuildIcon name="catCoin" size={18} />CAT {profile.catCoins}</span>
               <span>可接 T1–T{maxDanger}</span>
+              {/* 射手等級開得比公會階級高時要講清楚，否則玩家不知道為何突然能接高危險度 */}
+              {archerCap > rankMaxDanger && (
+                <span style={{ color: "#7dd3fc" }}>
+                  🏹 射手 Lv{archerLevel} 額外開放 T{rankMaxDanger + 1}–T{archerCap}
+                </span>
+              )}
               <span>今日 {doneCount}/{openable.length}</span>
             </div>
           </div>
@@ -163,7 +173,7 @@ export default function GuildBoard({
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(155px,1fr))", gap: 8 }}>
             {contracts.map(contract => {
-              const locked = !canAcceptDanger(profile, contract.danger);
+              const locked = !canAcceptDanger(profile, contract.danger, archerLevel);
               const need = repNeededForDanger(profile, contract.danger);
               const done = doneIds.includes(contract.id);
               const tier = contract.tiers?.[0];
