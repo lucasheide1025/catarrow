@@ -1,8 +1,15 @@
 // src/guild/domain/guildContracts.test.js
 import {
-  rollDailyContracts, contractRewardPreview, contractMonsterPreview, todayKey,
-  contractsStateFor, isContractDone, markContractDone,
+  contractMonsterPreview,
+  contractRewardPreview,
+  contractsStateFor,
+  isContractDone,
+  markContractDone,
+  rollDailyContracts,
+  storiesFor,
+  todayKey,
 } from "./guildContracts";
+import { CONTRACT_STORIES } from "../data/guildContractPool";
 import { expeditionMonsterPool, LEADER_ODDS, MAX_DANGER, DANGER_META, GUILD_TIER_SCALE, rollExpedition, rollLeaderEncounter } from "./rollExpedition";
 import { EXPANSION_MONSTER_BY_ID } from "../../lib/monsterExpansionCatalog";
 import { emptyGuildProfile, normalizeGuildProfile } from "./guildRewards";
@@ -191,5 +198,63 @@ describe("委託結案紀錄", () => {
     const before = emptyGuildProfile();
     markContractDone(before, `${DAY}-0`, DAY);
     expect(before.contracts).toBeNull();
+  });
+});
+
+describe("委託故事依模式分組（2026-07-30）", () => {
+  const FAMILIES = Object.keys(CONTRACT_STORIES);
+  const MODES = ["exploration", "assault", "defense"];
+
+  test("六族 × 三模式都有故事，不會開天窗", () => {
+    expect(FAMILIES).toHaveLength(6);
+    for (const family of FAMILIES) {
+      for (const mode of MODES) {
+        const pool = storiesFor(family, mode);
+        expect(pool.length).toBeGreaterThan(0);
+        for (const s of pool) {
+          expect(typeof s.title).toBe("string");
+          expect(s.title.length).toBeGreaterThan(0);
+          expect(typeof s.story).toBe("string");
+          expect(s.story.length).toBeGreaterThan(10);
+        }
+      }
+    }
+  });
+
+  test("同族不同模式的故事不重複——這正是分組的目的", () => {
+    for (const family of FAMILIES) {
+      const titles = MODES.flatMap(m => storiesFor(family, m).map(s => s.title));
+      expect(new Set(titles).size).toBe(titles.length);
+    }
+  });
+
+  test("全庫標題不重複", () => {
+    const all = FAMILIES.flatMap(f => MODES.flatMap(m => storiesFor(f, m).map(s => s.title)));
+    expect(new Set(all).size).toBe(all.length);
+    expect(all.length).toBeGreaterThanOrEqual(54);
+  });
+
+  test("未知模式退回該族合併池，不會回空", () => {
+    expect(storiesFor("ghost", "不存在的模式").length).toBeGreaterThan(0);
+  });
+
+  test("未知族系回空陣列，不丟例外", () => {
+    expect(storiesFor("treasure", "assault")).toEqual([]);
+    expect(storiesFor(undefined, undefined)).toEqual([]);
+  });
+
+  test("向後相容：舊的「每族一個陣列」形狀仍取得到", () => {
+    const legacy = { ghost: [{ title: "舊", story: "舊格式的故事內容" }] };
+    const saved = CONTRACT_STORIES.ghost;
+    expect(Array.isArray(legacy.ghost)).toBe(true);
+    expect(Array.isArray(saved)).toBe(false);   // 現在是物件
+  });
+
+  test("每日委託的故事會貼合它的模式", () => {
+    const list = rollDailyContracts({ dateKey: "2026-07-30", memberId: "member-1" });
+    for (const contract of list) {
+      const pool = storiesFor(contract.family, contract.mode);
+      expect(pool.some(s => s.title === contract.title)).toBe(true);
+    }
   });
 });

@@ -12,6 +12,17 @@ import { CONTRACT_CLIENTS, CONTRACT_STORIES, DANGER_TONE, CONTRACTS_PER_DANGER }
 import { normalizeGuildProfile } from "./guildRewards";
 
 const FAMILY_IDS = Object.keys(CONTRACT_STORIES); // 六族（不含寶箱族）
+
+// 取某族某模式的故事池。舊資料是「每族一個陣列」、新資料是「每族 × 每模式」，
+// 兩種形狀都吃得下——避免改資料就得同步改邏輯。
+export function storiesFor(family, mode) {
+  const entry = CONTRACT_STORIES[family];
+  if (!entry) return [];
+  if (Array.isArray(entry)) return entry;                    // 舊形狀
+  const byMode = entry[mode];
+  if (Array.isArray(byMode) && byMode.length) return byMode;
+  return Object.values(entry).flat();                        // 該模式沒寫 → 全族合併
+}
 export const MISSION_MODE_META = Object.freeze({
   exploration: { label: "探索遠征", icon: "🗺️", description: "移動、事件、遭遇，最後完成遠征目標" },
   assault: { label: "連續進攻", icon: "⚔️", description: "連續擊破多批敵人，中途不返回地圖" },
@@ -70,7 +81,10 @@ export function rollDailyContracts({ dateKey = todayKey(), memberId = "guest" } 
       const extra = pick(FAMILY_IDS);
       if (!families.includes(extra)) families.push(extra);
     }
-    const story = pick(CONTRACT_STORIES[family]);
+    // 故事依模式取（2026-07-30）：探索/進攻/防守各有自己的語氣。
+    // 缺該模式時退回該族全部故事合併，確保永遠取得到、不會開天窗。
+    const storyPool = storiesFor(family, mode);
+    const story = pick(storyPool);
     const client = pick(CONTRACT_CLIENTS);
     out.push({
       id: `${dateKey}-${i}`,
