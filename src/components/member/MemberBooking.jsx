@@ -6,6 +6,7 @@ import { createBooking, cancelBooking, rescheduleBooking, getBookingsForMember, 
 import { PLAN_TYPES, durationLabel, totalPrice } from "../../lib/bookingSchedule";
 import {
   bookingTotalPrice,
+  defaultFirstTimeCount,
   legacyPlanTypeFor,
   normalizeParticipantBreakdown,
   participantBreakdownLabel,
@@ -28,6 +29,16 @@ export default function MemberBooking() {
   const participantCount = participantTotal(participantBreakdown);
   const planType = legacyPlanTypeFor(participantBreakdown);
   const [firstTimeCount, setFirstTimeCount] = useState(0);
+  // 預設值：學籍會員本人幾乎都預約過 → 本人算回訪、其餘同行者算第一次來。教練仍可請學員自行修改。
+  const [firstTimeTouched, setFirstTimeTouched] = useState(false);
+  const hasBookedBefore = !!profile?.bookingStats?.firstBookingAt;
+  useEffect(() => {
+    if (firstTimeTouched) return;
+    setFirstTimeCount(defaultFirstTimeCount(
+      hasBookedBefore ? { firstBookingAt: true } : null,
+      participantCount,
+    ));
+  }, [hasBookedBefore, participantCount, firstTimeTouched]);
   const [confirming, setConfirming] = useState(false); // 07-10-booking-ui-polish-headcount：選完時段先看確認畫面
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState("");
@@ -104,7 +115,7 @@ export default function MemberBooking() {
 
       {tab === "new" && (
         <Card className="p-4 flex flex-col gap-4">
-          <ParticipantBreakdownPicker value={participantBreakdown}
+          <ParticipantBreakdownPicker value={participantBreakdown} durationHours={durationHours}
             onChange={next => {
               const nextTotal = participantTotal(next);
               setParticipantBreakdown(next);
@@ -116,7 +127,10 @@ export default function MemberBooking() {
           <label className="text-slate-300 text-sm font-bold">
             同行中第一次來的人數
             <input type="number" inputMode="numeric" min="0" max={participantCount} value={firstTimeCount}
-              onChange={event => setFirstTimeCount(Math.max(0, Math.min(participantCount, Number(event.target.value) || 0)))}
+              onChange={event => {
+                setFirstTimeTouched(true);
+                setFirstTimeCount(Math.max(0, Math.min(participantCount, Number(event.target.value) || 0)));
+              }}
               className="ml-3 w-16 rounded-lg border border-white/15 bg-slate-950 px-2 py-2 text-center text-white" />
             <span className="ml-2 text-xs text-slate-500">回訪 {participantCount - firstTimeCount} 人</span>
           </label>

@@ -1,5 +1,10 @@
+// 全場固定 8 個靶位＝一般預約每時段上限。場地實際有 9 個靶位，第 9 個只給 8 人以上包場團康，
+// 一般線上預約不開放（PRD 已確認資料）。定義在這個沒有 firebase 相依的模組裡，讓純邏輯與測試
+// 都能取用；bookingDb.js 只是再匯出同一個值，不要另外寫一個 8。
+export const LANE_CAPACITY = 8;
+
 export const BOOKING_PLAN_TYPES = [
-  { id: "general", label: "一般體驗" },
+  { id: "general", label: "一般成人" },
   { id: "discount", label: "兒童／學生／敬老" },
   { id: "own_equipment", label: "自備器材" },
 ];
@@ -63,6 +68,19 @@ export function validatePartySize(breakdown, max) {
     return { ok: false, count, reason: `同行總人數需為 1～${max} 人` };
   }
   return { ok: true, count };
+}
+
+// 「同行中第一次來的人數」預設值：
+//   - 從沒預約過的帳號：整組都算第一次（含訂位者本人）。
+//   - 已經預約過的帳號：訂位者本人算回訪，其餘同行者預設為第一次來。
+// 判斷依據刻意用 bookingStats.firstBookingAt 而不是 totalBookings——totalBookings 會隨
+// 取消與結案遞減（bookingDb.js 的 cancelBooking／completeBooking），代表「目前有效預約數」，
+// 來過一次又結案的老客人會歸零，用它會把老客人重新判成新生。firstBookingAt 設定後永不清除。
+// 這只是預設值，使用者與教練都仍可自行修改。
+export function defaultFirstTimeCount(bookingStats, participantCount) {
+  const total = Math.max(0, Math.floor(Number(participantCount) || 0));
+  const hasBookedBefore = !!bookingStats?.firstBookingAt;
+  return hasBookedBefore ? Math.max(0, total - 1) : total;
 }
 
 export function bookingTotalPrice(breakdown, durationHours) {

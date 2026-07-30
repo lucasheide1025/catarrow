@@ -45,6 +45,8 @@ export default function DateSlotPicker({ selected, onSelect, daysAhead = 14, dur
 
   // 3 小時方案：起點 + durationHours 必須還在打烊時間（22:00）之前結束，否則這個起點根本不成立
   const slots = slotsForDate(date).filter(s => parseInt(s.startTime, 10) + durationHours <= CLOSING_HOUR);
+  // null＝容量查詢失敗，所有時段一律 disabled（slotState 內處理），這裡另外提示原因
+  const countsUnavailable = slotCounts === null;
 
   return (
     <div className="flex flex-col gap-3">
@@ -80,12 +82,19 @@ export default function DateSlotPicker({ selected, onSelect, daysAhead = 14, dur
         <div className="text-center text-slate-400 text-sm py-6">當天公休，請選其他日期</div>
       ) : (
         <div className="grid grid-cols-3 gap-2">
+          {countsUnavailable && (
+            <p className="col-span-3 rounded-xl border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-200">
+              目前無法查詢各時段剩餘名額，請重新整理或稍後再試。為避免預約到已額滿的時段，時段暫時無法選擇。
+            </p>
+          )}
           {slots.map(s => {
             const st = slotState(date, s.startTime, slotCounts, durationHours, participantCount);
             const localSlotKey = `${date}_${s.startTime}`;
-            const localInfo = slotCounts[localSlotKey] || {};
+            const localInfo = (slotCounts && slotCounts[localSlotKey]) || {};
             const crowded = !st.disabled && localInfo.count > 4;
-            const publicLabel = st.disabled ? (st.state === "full" ? "已額滿" : "不可預約") : (crowded ? "較為擁擠" : "可預約");
+            const publicLabel = st.disabled
+              ? (st.state === "full" ? "已額滿" : st.state === "counts_unavailable" ? "名額未知" : "不可預約")
+              : (crowded ? "較為擁擠" : "可預約");
             const stateLabel = availabilityDisplay === "public" ? publicLabel : (crowded ? "較為擁擠" : st.label);
             const isSel = selected?.date === date && selected?.startTime === s.startTime;
             return (

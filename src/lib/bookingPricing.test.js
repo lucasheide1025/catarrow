@@ -10,6 +10,7 @@ import {
   EARLY_BIRD_MAX,
   bookingTotalPrice,
   billingPlanPrice,
+  defaultFirstTimeCount,
   finalBillPrice,
   firstReturningCounts,
   isEarlyBirdArcher,
@@ -44,6 +45,25 @@ test("已確認的公開價目表", () => {
     discount:      { 1: 250, 2: 450, 3: 450 },
     own_equipment: { 1: 250, 2: 450, 3: 450 },
   });
+});
+
+test("三種身分的方案名稱互相區分得出來，不會兩個都叫「一般」", () => {
+  const labels = BOOKING_PLAN_TYPES.map(p => p.label);
+  expect(labels).toEqual(["一般成人", "兒童／學生／敬老", "自備器材"]);
+  expect(new Set(labels).size).toBe(labels.length);
+});
+
+// 預約畫面的身分卡會顯示「單價 × 人數＝小計」，三張卡的小計相加必須等於合計，
+// 否則訪客看到的分項與總金額會對不起來。
+test("各身分小計相加等於合計", () => {
+  const party = { general: 2, discount: 3, own_equipment: 1 };
+  for (const d of BOOKING_DURATIONS) {
+    const subtotals = BOOKING_PLAN_TYPES.map(
+      plan => (party[plan.id] || 0) * BOOKING_PRICES[plan.id][d.value],
+    );
+    const sum = subtotals.reduce((a, b) => a + b, 0);
+    expect(sum).toBe(bookingTotalPrice(party, d.value));
+  }
 });
 
 test("空的同行人數總價為 0，不會變成 NaN", () => {
@@ -205,6 +225,35 @@ test("不論輸入多離譜，firstTimeCount + returningCount 永遠等於總人
     expect(firstTimeCount).toBeGreaterThanOrEqual(0);
     expect(returningCount).toBeGreaterThanOrEqual(0);
   }
+});
+
+// ── 第一次來的人數預設值 ───────────────────────────────────────────────────
+test("全新帳號：整組都預設為第一次來", () => {
+  expect(defaultFirstTimeCount(undefined, 1)).toBe(1);
+  expect(defaultFirstTimeCount(null, 4)).toBe(4);
+  expect(defaultFirstTimeCount({}, 4)).toBe(4);
+  // totalBookings 有值但從沒有 firstBookingAt（理論上不該發生）也算新帳號
+  expect(defaultFirstTimeCount({ totalBookings: 0 }, 3)).toBe(3);
+});
+
+test("已預約過的帳號：本人算回訪，其餘同行者預設為第一次來", () => {
+  const booked = { firstBookingAt: { seconds: 1 } };
+  expect(defaultFirstTimeCount(booked, 1)).toBe(0); // 只有自己 → 全是回訪
+  expect(defaultFirstTimeCount(booked, 3)).toBe(2); // 帶 2 個新朋友
+  expect(defaultFirstTimeCount(booked, 8)).toBe(7);
+});
+
+test("老客人結案後 totalBookings 歸零，仍不可被誤判成新生", () => {
+  // 這是刻意不用 totalBookings 的原因：取消與結案都會把它減回 0
+  const veteran = { firstBookingAt: { seconds: 1 }, totalBookings: 0 };
+  expect(defaultFirstTimeCount(veteran, 2)).toBe(1);
+});
+
+test("人數為 0 或異常時不會回負數", () => {
+  const booked = { firstBookingAt: { seconds: 1 } };
+  expect(defaultFirstTimeCount(booked, 0)).toBe(0);
+  expect(defaultFirstTimeCount(booked, -5)).toBe(0);
+  expect(defaultFirstTimeCount(booked, undefined)).toBe(0);
 });
 
 // ── 舊資料相容 ─────────────────────────────────────────────────────────────

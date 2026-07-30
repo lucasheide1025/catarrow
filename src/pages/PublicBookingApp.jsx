@@ -19,6 +19,7 @@ import { createBooking, getBookingsForMember, cancelBooking, rescheduleBooking }
 import { PLAN_TYPES, durationLabel, totalPrice } from "../lib/bookingSchedule";
 import {
   bookingTotalPrice,
+  defaultFirstTimeCount,
   legacyPlanTypeFor,
   normalizeParticipantBreakdown,
   participantBreakdownLabel,
@@ -61,6 +62,17 @@ export default function PublicBookingApp() {
   const participantCount = participantTotal(participantBreakdown);
   const planType = legacyPlanTypeFor(participantBreakdown);
   const [firstTimeCount, setFirstTimeCount] = useState(1);
+  // 使用者是否自己動過「第一次來的人數」；沒動過就跟著人數與帳號紀錄自動帶入預設值
+  const [firstTimeTouched, setFirstTimeTouched] = useState(false);
+  // 訪客是先選人數才登入／註冊的，登入後才知道這個帳號有沒有預約過 → 重算一次預設值
+  const hasBookedBefore = !!profile?.bookingStats?.firstBookingAt;
+  useEffect(() => {
+    if (firstTimeTouched) return;
+    setFirstTimeCount(defaultFirstTimeCount(
+      hasBookedBefore ? { firstBookingAt: true } : null,
+      participantCount,
+    ));
+  }, [hasBookedBefore, participantCount, firstTimeTouched]);
 
   // ② 確認預約
   const [slotConfirmed, setSlotConfirmed] = useState(false);
@@ -255,6 +267,7 @@ export default function PublicBookingApp() {
     const prefKey = 'guest_prefill';
     try {
       sessionStorage.setItem(prefKey, JSON.stringify({
+        memberId: profile.id || '',
         email: profile.email || (memberDoc?.email) || '',
         name: profile.name || (memberDoc?.name) || '',
         phone: profile.phone || (memberDoc?.phone) || '',
@@ -675,9 +688,10 @@ export default function PublicBookingApp() {
         <section id="booking-form" className="public-booking-grid">
           <div className="public-booking-main">
             <div className="public-booking-card"><span className="public-booking-step">01</span><h2>選擇課程方案</h2>
-              <ParticipantBreakdownPicker value={participantBreakdown} onChange={next => {
+              <ParticipantBreakdownPicker value={participantBreakdown} durationHours={durationHours} onChange={next => {
                 const nextTotal = participantTotal(next);
                 setParticipantBreakdown(next);
+                // 沒動過的預設值由上方 useEffect 依帳號紀錄重算；動過就只夾上限，尊重使用者填的數字
                 setFirstTimeCount(current => Math.min(current, nextTotal));
                 setSelectedSlot(null);
               }} />
@@ -709,9 +723,17 @@ export default function PublicBookingApp() {
           同行中第一次來的人數
           <input type="number" inputMode="numeric" min="0" max={participantCount}
             value={firstTimeCount}
-            onChange={event => setFirstTimeCount(Math.max(0, Math.min(participantCount, Number(event.target.value) || 0)))}
+            onChange={event => {
+              setFirstTimeTouched(true);
+              setFirstTimeCount(Math.max(0, Math.min(participantCount, Number(event.target.value) || 0)));
+            }}
             style={{ width: 64, marginLeft: 10, padding: "7px 8px", borderRadius: 8, border: "1px solid rgba(255,255,255,.25)", background: "rgba(15,23,42,.85)", color: "white", fontWeight: 800 }} />
           <span style={{ marginLeft: 8, color: "rgba(255,255,255,.55)" }}>回訪 {participantCount - firstTimeCount} 人</span>
+          {!firstTimeTouched && (
+            <span style={{ marginLeft: 8, color: "rgba(255,255,255,.4)", fontSize: 12 }}>
+              {profile?.bookingStats?.firstBookingAt ? "（已自動帶入：你本人算回訪）" : "（已自動帶入：第一次預約）"}
+            </span>
+          )}
         </label>
         {participantBreakdown.discount > 0 && (
           <p className="public-booking-first-visit">學生請攜帶學生證；敬老優惠請攜帶身分證，到場確認資格。</p>

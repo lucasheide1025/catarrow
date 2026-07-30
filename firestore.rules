@@ -103,8 +103,8 @@ service cloud.firestore {
           "dailyQuestCount", "eventPoints", "coins", "lastDungeonDate", "equippedCat", "avatarId",
           "lastBattleDate", "monsterSessionsToday", "rpgEquip", "shareSlogan", "nickname",
           "adventurerXP", "archerXP", "arrowMilestoneDone", "promotionDone", "village", "bookingStats",
-          "gachaCoins", "catCards", "dungeonCollectibles", "dungeonClearLog", "dungeonFirstKills",
-          "dungeonScrollCount", "coinShopPurchases", "unlockedEquipItems", "coinShopRecycle",
+          "gachaCoins", "catCards", "villageCardAlbums", "dungeonCollectibles", "dungeonClearLog", "dungeonFirstKills", "dungeonFirstClears",
+          "dungeonScrollCount", "coinShopPurchases", "coinShopSpending", "specialItems", "unlockedEquipItems", "coinShopRecycle",
           "totalArrowsAllTime", "dungeonExcavation", "expeditionRecords", "lastCheckinDate", "kingSeals",
           "equipmentRuneFragments", "equipmentRuneInventory", "activeExpedition",
           "dungeonBossCardProgress", "expeditions", "starterCoinsGranted", "lastSessionSourceId",
@@ -120,8 +120,8 @@ service cloud.firestore {
           "dailyQuestCount", "eventPoints", "coins", "lastDungeonDate", "equippedCat", "avatarId",
           "lastBattleDate", "monsterSessionsToday", "rpgEquip", "shareSlogan", "nickname",
           "adventurerXP", "archerXP", "arrowMilestoneDone", "promotionDone", "village", "bookingStats",
-          "gachaCoins", "catCards", "dungeonCollectibles", "dungeonClearLog", "dungeonFirstKills",
-          "dungeonScrollCount", "coinShopPurchases", "unlockedEquipItems", "coinShopRecycle",
+          "gachaCoins", "catCards", "villageCardAlbums", "dungeonCollectibles", "dungeonClearLog", "dungeonFirstKills", "dungeonFirstClears",
+          "dungeonScrollCount", "coinShopPurchases", "coinShopSpending", "specialItems", "unlockedEquipItems", "coinShopRecycle",
           "totalArrowsAllTime", "dungeonExcavation", "expeditionRecords", "lastCheckinDate", "kingSeals",
           "equipmentRuneFragments", "equipmentRuneInventory", "activeExpedition",
           "dungeonBossCardProgress", "expeditions", "starterCoinsGranted", "lastSessionSourceId",
@@ -557,6 +557,15 @@ service cloud.firestore {
       allow read, write: if isLoggedIn();
     }
 
+    match /worldBossSpawnCycles/{docId} {
+      allow read: if isLoggedIn();
+      allow write: if false;
+    }
+
+    match /worldBossSpawnOps/{docId} {
+      allow read, write: if false;
+    }
+
     // guildTeamRooms：公會組隊遠征的房間（2026-07-26）。
     // 房間是共享的即時狀態——成員要能交箭、房主要能推進回合、任何人要能加入/離開，
     // 所以跟其他組隊房（partyRooms／villageBoardRooms）採同一套：登入者可讀寫。
@@ -830,8 +839,17 @@ service cloud.firestore {
     // bookingSlotCounts：容量計數器，slotKey = "YYYY-MM-DD_HH:mm"，不含個資，
     // 讀寫都只要求登入即可（跟訪客模式類似的寬鬆取捨），實際容量正確性由 bookingDb.js 的
     // runTransaction 保護，不是靠規則層擋。
+    // read 必須公開：訪客預約頁的設計是「先選時段人數、最後才登入註冊」
+    // （PublicBookingApp.jsx 開頭註解），登入前就要能判斷時段塞不塞得下。
+    // 原本要求 isLoggedIn 導致未登入訪客讀取被拒，fetchSlotCountsForRange 吞掉錯誤回傳空物件，
+    // 畫面把每個時段都當成 0 人 → 已額滿的時段照樣顯示「可預約」，要到送出才被 transaction 擋。
+    // 取捨：newCount／returningCount 因此可被直接查詢。裡面沒有姓名、聯絡方式等個資，
+    // 公開頁面也不顯示這兩個數字（availabilityDisplay="public" 只給「可預約／已額滿」）。
+    // 若之後要完全不外流新舊生統計，改法是另建只含 {count, blocked} 的公開鏡像文件。
+    // write 仍然要求登入，容量正確性一律由 bookingDb.js 的 runTransaction 保護。
     match /bookingSlotCounts/{slotKey} {
-      allow read, write: if isLoggedIn();
+      allow read:  if true;
+      allow write: if isLoggedIn();
     }
   }
 }

@@ -8,7 +8,6 @@
 // 實際寫入時 bookingDb.js 內部一定會再檢查一次，不能只靠這裡的顯示狀態當防線。
 import { collection, query, where, getDocs, documentId } from "firebase/firestore";
 import { db } from "./firebase";
-import { LANE_CAPACITY } from "./bookingDb";
 import {
   BOOKING_DURATIONS,
   BOOKING_PLAN_TYPES,
@@ -18,6 +17,10 @@ import {
 } from "./bookingPricing";
 
 const SLOT_COUNTS = "bookingSlotCounts";
+
+// slotState 已抽到 bookingSlotState.js（純邏輯、不含 firebase 相依，才測得到）。
+// 這裡再匯出，既有 import 路徑不用全部改。
+export { slotState } from "./bookingSlotState";
 
 // 方案類別（design.md 資料模型章節）
 export const PLAN_TYPES = BOOKING_PLAN_TYPES;
@@ -131,43 +134,11 @@ export async function fetchSlotCountsForRange(startDate, endDate) {
     return map;
   } catch (e) {
     console.error("[fetchSlotCountsForRange]", e);
-    return {};
+    // 讀不到容量時「回傳空物件」等於告訴畫面「每個時段都沒人」，未登入的訪客會看到全部
+    // 時段都可預約，選到已額滿的時段，直到最後送出才被 transaction 擋下來（實際發生過：
+    // bookingSlotCounts 規則要求 isLoggedIn，訪客在登入前就會踩到）。
+    // 用 null 明確表示「未知」，讓呼叫端顯示「無法查詢名額」而不是假裝有空位。
+    return null;
   }
 }
 
-// 判斷某時段目前該顯示的狀態（唯讀顯示用，不是唯一防線——後端 bookingDb.js 一定會再檢查一次）。
-// durationHours（07-10-booking-multihour-and-stats）：3小時方案要連續3格都能選。
-// participantCount（07-10-booking-ui-polish-headcount，預設1）：選N人＝檢查「這一格＋延伸出去的每一格」
-// 扣掉目前已佔用的，剩餘名額是否還能塞得下N人，塞不下要直接disabled，不是選了才在送出時失敗。
-// 顯示的統計數字（新X／舊X）仍然是這一格自己的即時人數，不是跨格加總。
-export function slotState(date, startTime, slotCounts, durationHours = 1, participantCount = 1) {
-  const slotStartMs = new Date(date + "T" + startTime + ":00+08:00").getTime();
-  if (slotStartMs - Date.now() < 30 * 60 * 1000) {
-    return { state: "too_soon", label: "已截止", disabled: true };
-  }
-
-  const localKey  = date + "_" + startTime;
-  const localInfo = slotCounts[localKey] || {};
-  const count          = localInfo.count || 0;
-  const newCount        = localInfo.newCount || 0;
-  const returningCount  = localInfo.returningCount || 0;
-  const countLabel = `新${newCount}／舊${returningCount}（共${count}/${LANE_CAPACITY}）`;
-
-  if (localInfo.blocked)                              return { state: "blocked", label: "教練暫停", disabled: true };
-  if (count + participantCount > LANE_CAPACITY)        return { state: "full", label: countLabel + "・人數超過剩餘名額", disabled: true };
-
-  // 多時段方案（1小時以上）：起點本身沒問題，但延伸出去的格子若有任一格容量不夠（含人數），這個起點也不能選
-  if (durationHours > 1) {
-    const [h, m] = startTime.split(":").map(Number);
-    const mm = m === 0 ? "00" : String(m).padStart(2, "0");
-    for (let i = 1; i < durationHours; i++) {
-      const key = `${date}_${String(h + i).padStart(2, "0")}:${mm}`;
-      const c = slotCounts[key] || {};
-      if (c.blocked || (c.count || 0) + participantCount > LANE_CAPACITY) {
-        return { state: "span_unavailable", label: countLabel + "・延伸時段名額不足", disabled: true };
-      }
-    }
-  }
-
-  return { state: "available", label: countLabel, disabled: false };
-}

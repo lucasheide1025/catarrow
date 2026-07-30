@@ -36,7 +36,7 @@ import ParticipantBreakdownPicker from "../booking/ParticipantBreakdownPicker";
 import BookingScheduleCard from "../booking/BookingScheduleCard";
 import BookingEmailSettings from "./BookingEmailSettings";
 import { Card, Btn, Inp, Modal, Spinner, Empty, useToast } from "../shared/UI";
-import { PAY_METHODS, EARLY_BIRD_DISC, EARLY_BIRD_MAX } from "../../lib/bookingPricing";
+import { PAY_METHODS, EARLY_BIRD_DISC, EARLY_BIRD_MAX, defaultFirstTimeCount } from "../../lib/bookingPricing";
 
 const DOW_LABEL = ["日", "一", "二", "三", "四", "五", "六"];
 const PAYMENT_LABEL = { cash: "💵 現金", transfer: "🏦 轉帳", monthly: "💳 月卡" };
@@ -230,7 +230,9 @@ function CalendarTab({ toast }) {
       return linked.ok ? { ...booking, status:"completed", billingRecordId:existing.id, checkinId } : booking;
     }));
     setBookings(visibleBookings);
-    setSlotCounts(cMap);
+    // fetchSlotCountsForRange 查詢失敗會回 null（見 bookingSchedule.js）；後台這邊只是顯示
+    // 統計數字，退回空物件即可，不需要像訪客端那樣擋住整個時段選擇。
+    setSlotCounts(cMap || {});
     setLoading(false);
   }, [range]);
 
@@ -778,7 +780,7 @@ function EditBookingModal({ booking, onClose, onDone, toast }) {
           </div>
         </div>
 
-        <ParticipantBreakdownPicker value={participantBreakdown} onChange={next => {
+        <ParticipantBreakdownPicker value={participantBreakdown} durationHours={durationHours} onChange={next => {
           const nextTotal = participantTotal(next);
           setParticipantBreakdown(next);
           setFirstTimeCount(current => Math.min(current, nextTotal));
@@ -905,7 +907,7 @@ function CheckoutModal({ booking, onClose, onDone, toast }) {
           {booking.billingRecordId && <span className="text-amber-400 ml-2">⚠ 這筆先前已結過帳，送出會再新增一筆記錄</span>}
         </div>
 
-        <ParticipantBreakdownPicker value={checkoutBreakdown}
+        <ParticipantBreakdownPicker value={checkoutBreakdown} durationHours={booking.durationHours || 1}
           onChange={next => {
             setCheckoutBreakdown(next);
             setPlan(BOOKING_TO_BILLING_PLAN[legacyPlanTypeFor(next)]?.[booking.durationHours || 1] || "單一");
@@ -997,10 +999,15 @@ function CreateBookingModal({ initialSlot, onClose, onDone, toast }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
-  // 選定顧客後，用該顧客的 bookingStats 帶出「是否為第一次來體驗」預設值，教練仍可自己改
+  // 選定顧客後，用該顧客的 bookingStats 帶出「第一次來的人數」預設值，教練仍可自己改。
+  // 原本判斷 totalBookings > 0，但那是「目前有效預約數」，取消或結案會減回 0，來過的老客人
+  // 會被重新判成新生；改用 defaultFirstTimeCount（看 firstBookingAt）。
+  // 帶多人時本人算回訪、其餘同行者算第一次來，所以人數變動也要重算。
   useEffect(() => {
-    if (selectedMember) setFirstTimeCount(selectedMember.bookingStats?.totalBookings > 0 ? 0 : participantCount);
-  }, [selectedMember]);
+    if (selectedMember) {
+      setFirstTimeCount(defaultFirstTimeCount(selectedMember.bookingStats, participantCount));
+    }
+  }, [selectedMember, participantCount]);
 
   useEffect(() => {
     // 電話進線的顧客可能還沒有正式學籍（accountType:"guest"），搜尋要涵蓋全部 members，
@@ -1103,7 +1110,7 @@ function CreateBookingModal({ initialSlot, onClose, onDone, toast }) {
               <span>顧客：{selectedMember.name}（{selectedMember.email || selectedMember.phone || "—"}）</span>
               <button type="button" onClick={() => setSelectedMember(null)} className="text-xs underline text-blue-400 flex-shrink-0">重選</button>
             </div>
-            <ParticipantBreakdownPicker value={participantBreakdown}
+            <ParticipantBreakdownPicker value={participantBreakdown} durationHours={durationHours}
               onChange={next => {
                 const nextTotal = participantTotal(next);
                 setParticipantBreakdown(next);

@@ -22,6 +22,7 @@ import {
 import { db } from "./firebase";
 import {
   firstReturningCounts,
+  LANE_CAPACITY,
   legacyPlanTypeFor,
   normalizeParticipantBreakdown,
   participantTotal,
@@ -31,7 +32,7 @@ import {
 const BOOKINGS    = "bookings";
 const SLOT_COUNTS = "bookingSlotCounts";
 
-export const LANE_CAPACITY   = 8;                 // 全場固定 8 個靶位
+export { LANE_CAPACITY };                          // 單一來源在 bookingPricing.js，這裡只再匯出
 const MIN_LEAD_MS            = 30 * 60 * 1000;     // 30 分鐘最短前置時間
 const VENUE_TZ_OFFSET        = "+08:00";           // 場地在台北，不能假設伺服器/瀏覽器時區一致
 
