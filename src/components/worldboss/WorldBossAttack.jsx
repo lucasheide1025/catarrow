@@ -2,7 +2,9 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
-import { attackWorldBoss, hireWorldBossBot, updateWorldBossHP, distributeWorldBossRewards } from "../../lib/worldBossDb";
+import { attackWorldBoss, hireWorldBossBot, distributeWorldBossRewards } from "../../lib/worldBossDb";
+import { shouldShowWorldBossVictory } from "../../lib/worldBossState";
+import { worldBossWeaponLabel } from "../../lib/worldBossPresentation";
 import { addPracticeLog, getCertRecords, subscribeCertification, subscribeCardCollection, addArcherXP, addAdventurerXP, addArrowdew, addGachaCoins, addRoundArrows, addCoins, recordGuestBattleStats, subscribePotions, usePotions, recordPotionUsed, finalizeGameShootingSession, subscribeLocalTodayArrows, initializeTodayArrows } from "../../lib/db";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_BOSS_XP } from "../../lib/catLevel";
@@ -225,7 +227,7 @@ const ARCHER_STYLES = ["baobao","daming","diandian","gege","haji","meimei","niun
 const TOTAL_ROUNDS = 5;
 const ARROWS_PER   = 6;
 
-export default function WorldBossAttack({ event, onBack, guestOverride, onComplete }) {
+export default function WorldBossAttack({ event, onBack, guestOverride, onComplete, sharedData }) {
   const { profile: authProfile } = useAuth();
   const profile = guestOverride || authProfile;
   const isGuest  = !!guestOverride || ["guest", "kid"].includes(profile?.accountType);
@@ -237,18 +239,40 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const [certification, setCertification] = useState(null);
   const [certReady,     setCertReady]     = useState(false);
   useEffect(() => {
+    if (sharedData?.certRecords !== undefined) setCertRecords(sharedData.certRecords);
+    if (sharedData?.certification !== undefined) setCertification(sharedData.certification);
+    if (sharedData?.certRecords !== undefined && sharedData?.certification !== undefined) setCertReady(true);
+  }, [sharedData?.certRecords, sharedData?.certification]);
+  useEffect(() => {
     if (isGuest || !profile?.id) { setCertReady(true); return; }
-    getCertRecords(profile.id).then(r => { setCertRecords(r); setCertReady(true); }).catch(() => setCertReady(true));
-    const unsub = subscribeCertification(profile.id, setCertification);
+    if (sharedData?.certRecords !== undefined && sharedData?.certification !== undefined) {
+      setCertReady(true);
+      return undefined;
+    }
+    if (sharedData?.certRecords === undefined) {
+      getCertRecords(profile.id).then(r => { setCertRecords(r); setCertReady(true); }).catch(() => setCertReady(true));
+    } else {
+      setCertReady(true);
+    }
+    const unsub = sharedData?.certification === undefined
+      ? subscribeCertification(profile.id, setCertification)
+      : null;
     return () => unsub?.();
-  }, [profile?.id]); // eslint-disable-line
+  }, [profile?.id, sharedData?.certRecords, sharedData?.certification]); // eslint-disable-line
 
   const [cardColl,  setCardColl]  = useState({ cards: {}, equipped: [] });
   const [cardReady, setCardReady] = useState(false);
   useEffect(() => {
+    if (sharedData?.cardData !== undefined) {
+      setCardColl(sharedData.cardData);
+      setCardReady(true);
+    }
+  }, [sharedData?.cardData]);
+  useEffect(() => {
     if (isGuest || !profile?.id) { setCardReady(true); return; }
+    if (sharedData?.cardData !== undefined) { setCardReady(true); return undefined; }
     return subscribeCardCollection(profile.id, c => { setCardColl(c); setCardReady(true); });
-  }, [profile?.id, isGuest]); // eslint-disable-line
+  }, [profile?.id, isGuest, sharedData?.cardData]); // eslint-disable-line
 
   const statsReady = certReady && cardReady;
 
@@ -437,6 +461,9 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const [showExitConfirm,   setShowExitConfirm]   = useState(false);
   const [showPrepExit,      setShowPrepExit]      = useState(false);
   const [todayArrows,       setTodayArrows]       = useState(0);
+  useEffect(() => {
+    if (sharedData?.todayArrows !== undefined) setTodayArrows(sharedData.todayArrows);
+  }, [sharedData?.todayArrows]);
   const [scoringReady,      setScoringReady]      = useState(false);
   const [showCatRound,      setShowCatRound]      = useState(false);
   const [catRoundCats,      setCatRoundCats]      = useState([]);
@@ -464,16 +491,17 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
   const myId   = guestOverride?.id   || profile?.id;
   const myName = guestOverride?.name || profile?.nickname || profile?.name || "射手";
-  const weapon = profile?.bowType || "複合弓";
+  const weapon = isGuest ? "訪客弓組" : worldBossWeaponLabel(profile, myId);
   const potionDef  = POTIONS.find(p => p.id === potion);
   const potionMult = potionDef?.mult || 1;
 
   // ── 今日箭數：從 localStorage 讀取（addRoundArrows 每回合累加），用於里程碑正確計算基線
   useEffect(() => {
     if (!myId) return;
+    if (sharedData?.todayArrows !== undefined) return undefined;
     initializeTodayArrows(myId).catch(() => {});
     return subscribeLocalTodayArrows(myId, setTodayArrows);
-  }, [myId]);
+  }, [myId, sharedData?.todayArrows]);
 
   // 清理所有 timer（離開時避免洩漏）
   useEffect(() => () => timerRef.current.forEach(clearTimeout), []);
@@ -771,8 +799,8 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     setAllRounds(nextRounds);
     setRoundSummary(roundData);
     sfxRoundEnd();
-    // 即時同步本回合傷害到 Firestore（讓大廳看到進度）
-    if (!isGuest) updateWorldBossHP(event.id, localBossHP).catch(() => {});
+    // 這裡只更新本機演出；全域 HP 會在 submitAttack 以交易一次扣除，
+    // 避免多人用進場時的舊 HP 互相覆寫，甚至把已歸零的王寫回有血。
     const bossKilledThisRound = localBossHP <= 0;
     setSubPhase("roundResult");
     setAnimBossCharge(true);
@@ -1910,8 +1938,8 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
             <div className="text-slate-400 text-sm animate-pulse">結算中…</div>
           ) : result?.ok ? (
             <>
-              {result?.defeated ? (
-                <BattleResultHeader emoji="💥" title="BOSS 擊殺！" subtitle={event.announcement || "全域廣播：FIRST KILL！"} color="amber" />
+              {shouldShowWorldBossVictory(result) ? (
+                <BattleResultHeader emoji="💥" title={result?.defeated ? "BOSS 擊殺！" : "BOSS 已被擊倒！"} subtitle={result?.defeated ? (event.announcement || "你的攻擊完成了最後一擊！") : "你出戰期間，其他射手完成了最後一擊。"} color="amber" />
               ) : result?.playerDied ? (
                 <BattleResultHeader emoji="💀" title="陣亡…" subtitle={`你倒在了第 ${allRounds.length} 回合的反擊中`} color="red" />
               ) : (
@@ -1953,7 +1981,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
               {result?.defeated && (
                 <div className="w-full bg-amber-500/10 border border-amber-400/30 rounded-2xl p-4 text-xs text-amber-200 leading-relaxed">
-                  {isGuest ? "世界王已被擊倒！體驗角色會保留參戰紀錄，但不領取正式擊殺大獎。" : "🎁 擊殺大獎已自動發放給所有參戰者！"}
+                  {isGuest ? "世界王已被擊倒！體驗角色會保留參戰紀錄，但不領取正式擊殺大獎。" : "🎁 世界王結算已開啟，請返回世界王大廳查看並領取完整獎勵。"}
                 </div>
               )}
               {result?.bossAlreadyDefeated && !result?.defeated && (

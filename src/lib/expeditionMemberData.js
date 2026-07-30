@@ -4,7 +4,6 @@
 import { calcArcherStats } from "./monsterData";
 import { archerLevelBonus, archerLevelFromXP } from "./archerLevel";
 import { calcCatFullStats } from "./expeditionData";
-import { getBondLevel, getCatStatMult } from "./catData";
 import { WB_CARDS } from "./worldBossCards";
 
 // cardBonus: calcEquippedBonus(resolveEquippedCards(cardCollection)) 的結果，未傳入視為 0 加成
@@ -21,12 +20,9 @@ export function buildExpeditionMemberData(profile, cardBonus = null, cardCollect
   const cb = cardBonus || { hp:0, atk:0, def:0, dmgBonusPct:0, dmgReducePct:0, healBonusPct:0 };
   const equippedCat = profile?.equippedCat;
   const catStats = equippedCat?.catId ? calcCatFullStats(equippedCat) : null;
-  // 與單人打怪／組隊戰鬥一致：已裝備貓咪的羈絆會加乘射手基礎戰鬥數值。
-  const catBondLevel = equippedCat?.catId ? getBondLevel(equippedCat.bond || 0) : 0;
-  const catStatMult = equippedCat?.catId
-    ? getCatStatMult(equippedCat.type || "allround", catBondLevel)
-    : 1;
-  const hp = Math.round(((base.hp || 0) + (level.hp || 0) + (cb.hp || 0)) * catStatMult);
+  // 射手面板值已包含正式養成加成；貓咪在地下城以 catAtk 獨立參戰，
+  // 不可再次用羈絆倍率放大射手 HP / ATK / DEF。
+  const hp = Math.round((base.hp || 0) + (level.hp || 0) + (cb.hp || 0));
   const topWorldBoss = (cardCollection?.equipped || [])
     .filter(entry => entry && typeof entry !== "string" && entry.source === "wb")
     .map(entry => ({ meta: WB_CARDS[entry.key], card: cardCollection?.wbCards?.[entry.key] || {} }))
@@ -44,8 +40,8 @@ export function buildExpeditionMemberData(profile, cardBonus = null, cardCollect
     level: archerLevel,
     hp,
     maxHP: hp,
-    atk: Math.round(((base.atk || 0) + (level.atk || 0) + (cb.atk || 0)) * catStatMult),
-    def: Math.round(((base.def || 0) + (level.def || 0) + (cb.def || 0)) * catStatMult),
+    atk: Math.round((base.atk || 0) + (level.atk || 0) + (cb.atk || 0)),
+    def: Math.round((base.def || 0) + (level.def || 0) + (cb.def || 0)),
     catId: equippedCat?.catId || "",
     catName: equippedCat?.name || "",
     catType: equippedCat?.type || "",
@@ -55,5 +51,43 @@ export function buildExpeditionMemberData(profile, cardBonus = null, cardCollect
     wbBonus: { dmgBonusPct: cb.dmgBonusPct || 0, dmgReducePct: cb.dmgReducePct || 0, healBonusPct: cb.healBonusPct || 0 },
     avatarId: profile?.avatarId || null,
     battleCosmetics,
+  };
+}
+
+// 建立「地圖進入戰鬥房」的玩家快照。基礎 ATK/DEF 與地下城途中加成分開保存，
+// 讓地圖狀態列、傷害公式與 BattleScreen 使用同一份來源。
+export function buildExpeditionBattleMemberSnapshot({ memberName, memberData = {} }) {
+  return {
+    name:memberName,
+    hp:memberData.hp ?? 500,
+    maxHP:memberData.maxHP ?? 500,
+    atk:memberData.atk ?? 10,
+    def:memberData.def ?? 10,
+    alive:true,
+    ready:false,
+    arrows:[],
+    contract:{ type:"standard", param:null },
+    buffs:{
+      atkMult:memberData.buffs?.atkMult ?? 1,
+      defMult:memberData.buffs?.defMult ?? 1,
+      dmgMult:memberData.buffs?.dmgMult ?? 1,
+      hasRevival:memberData.buffs?.hasRevival ?? false,
+    },
+    potionBuffs:memberData.potionBuffs || {},
+    restBonuses:memberData.restBonuses || { atkPct:0, defPct:0 },
+    merchantBonuses:memberData.merchantBonuses || { atkPct:0, defPct:0 },
+    revived:false,
+    role:"front",
+    displayGroup:"front",
+    rearChoice:null,
+    catId:memberData.catId || "",
+    catName:memberData.catName || "",
+    catType:memberData.catType || "",
+    catXP:memberData.catXP ?? 0,
+    catBond:memberData.catBond ?? 0,
+    archerStyle:memberData.archerStyle || "baobao",
+    catAtk:memberData.catAtk ?? 0,
+    wbBonus:memberData.wbBonus || null,
+    avatarId:memberData.avatarId || null,
   };
 }

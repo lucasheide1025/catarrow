@@ -7,6 +7,7 @@ const { onMessagePublished } = require("firebase-functions/v2/pubsub");
 const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
+const worldBossLifecycle = require("./worldBossLifecycle");
 const { parseCostSignal, shouldRaise } = require("./costSignal");
 const {
   classifyBookingEvent, buildBookingMessages, normalizeEmail, normalizeConfig, validateConfig,
@@ -24,6 +25,33 @@ const {
 } = require("./bookingDayBefore");
 
 initializeApp();
+
+exports.contributeWorldBossSpawnProgress = onCall({ region:"asia-east1" }, async request => {
+  return worldBossLifecycle.contribute(getFirestore(), request);
+});
+
+exports.ensureWorldBossLifecycle = onCall({ region:"asia-east1" }, async request => {
+  if (!request.auth?.uid) throw new HttpsError("unauthenticated", "login_required");
+  await worldBossLifecycle.ensureCycle(getFirestore());
+  return worldBossLifecycle.trySpawn(getFirestore());
+});
+
+exports.forceSpawnWorldBossFromCycle = onCall({ region:"asia-east1" }, async request => {
+  if (!request.auth?.uid || !(await getFirestore().doc(`admins/${request.auth.uid}`).get()).exists) {
+    throw new HttpsError("permission-denied", "admin_required");
+  }
+  return worldBossLifecycle.trySpawn(getFirestore(), "admin");
+});
+
+exports.worldBossLifecycleSchedule = onSchedule({
+  region:"asia-east1",
+  schedule:"every 15 minutes",
+  timeZone:"Asia/Taipei",
+  retryCount:1,
+}, async () => {
+  await worldBossLifecycle.ensureCycle(getFirestore());
+  await worldBossLifecycle.trySpawn(getFirestore()).catch(error => logger.error("worldBoss lifecycle", error));
+});
 
 exports.initializeGuestEquipment = onCall({ region:"asia-east1" }, async request => {
   if (!request.auth?.uid) throw new HttpsError("unauthenticated", "login_required");

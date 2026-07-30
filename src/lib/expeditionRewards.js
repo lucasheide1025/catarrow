@@ -1,11 +1,27 @@
 import { CHEST_TYPES } from "./itemData";
 import { COIN_CHEST_TIERS } from "./lootTable";
 
-// 原本固定 ×2，改成每次挖出寶箱時隨機 1~3 倍（金幣寶箱/材料寶箱用同一次擲骰，維持同步）
-export const EXPEDITION_DROP_MULTIPLIER_MIN = 1;
-export const EXPEDITION_DROP_MULTIPLIER_MAX = 3;
+// 地圖建立時鎖定 ×2～×5；金幣寶箱與材料寶箱使用同一倍率。
+export const EXPEDITION_DROP_MULTIPLIER_MIN = 2;
+export const EXPEDITION_DROP_MULTIPLIER_MAX = 5;
 function rollExpeditionDropMultiplier() {
   return EXPEDITION_DROP_MULTIPLIER_MIN + Math.floor(Math.random() * (EXPEDITION_DROP_MULTIPLIER_MAX - EXPEDITION_DROP_MULTIPLIER_MIN + 1));
+}
+
+export function normalizeExpeditionLootMultiplier(value, fallback = EXPEDITION_DROP_MULTIPLIER_MIN) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return fallback;
+  return Math.max(1, Math.min(EXPEDITION_DROP_MULTIPLIER_MAX, Math.round(numeric)));
+}
+
+// 已保存的倍率永遠優先；只有全新且沒有倍率的地下城才允許抽取一次。
+export function resolveExpeditionLootMultiplier(savedValue, random = Math.random) {
+  const numeric = Number(savedValue);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return normalizeExpeditionLootMultiplier(numeric);
+  }
+  return EXPEDITION_DROP_MULTIPLIER_MIN
+    + Math.floor(random() * (EXPEDITION_DROP_MULTIPLIER_MAX - EXPEDITION_DROP_MULTIPLIER_MIN + 1));
 }
 
 const MATERIAL_CHEST_BY_TIER = {
@@ -50,11 +66,11 @@ function makeExpeditionCoinChest(monster, index) {
   };
 }
 
-export function createExpeditionKillLoot(monster, lootMult) {
+export function createExpeditionKillLoot(monster, lootMult, options = {}) {
   if (!monster) return emptyExpeditionLoot();
-  // 出圖時決定的固定倍數（1~3;未傳則沿用每殺隨機,向後相容）
+  // 出圖時決定的固定倍數（2～5）；舊存檔未傳時才現場擲定。
   const dropCount = Number.isFinite(lootMult)
-    ? Math.max(1, Math.min(3, Math.round(lootMult)))
+    ? normalizeExpeditionLootMultiplier(lootMult)
     : rollExpeditionDropMultiplier();
   const materialChests = Array.from(
     { length: dropCount },
@@ -76,6 +92,10 @@ export function createExpeditionKillLoot(monster, lootMult) {
       family: monster.family,
       tier: monster.tier,
       variant: monster.variant || "normal",
+      roomType: options.roomType || (
+        monster.variant === "boss" ? "boss"
+          : monster.variant === "strong" ? "elite" : "monster"
+      ),
     }],
     treasure: [],
     bonusCoins: 0,

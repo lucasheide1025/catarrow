@@ -1,8 +1,8 @@
 // src/components/dungeon/DungeonEvent.jsx — 事件揭示（一般事件與特殊二選一事件 + 狀態變化動畫回饋）
 import { useState, useEffect } from "react";
-import { confirmNonCombatRoom, resolveNonCombatRoom } from "../../lib/dungeonDb";
+import { confirmNonCombatRoom } from "../../lib/dungeonDb";
 import { drawDungeonEvent } from "../../lib/dungeonData";
-import { sfxBuff, sfxDebuff, sfxSuccess, sfxTap } from "../../lib/sound";
+import { sfxBuff, sfxDebuff, sfxSuccess } from "../../lib/sound";
 import DungeonEventStage from "./DungeonEventStage";
 
 const TYPE_STYLE = {
@@ -34,7 +34,7 @@ function formatEffectBadges(effect, cost) {
 
 export default function DungeonEvent({
   roomId, room, memberId, isHost, event: propEvent,
-  localMode = false, onLocalEffect, onLocalDone, onSharedDone,
+  localMode = false, onLocalEffect, onLocalDone, onResolveEvent,
 }) {
   const [loading, setLoading] = useState(false);
   const [selectedChoiceIdx, setSelectedChoiceIdx] = useState(null);
@@ -45,11 +45,26 @@ export default function DungeonEvent({
   const rawEv = propEvent || room?.roomResolution || room?.currentEvent || room?.event || room?.pendingRoom?.event;
   const validEv = (rawEv?.desc ? rawEv : (rawEv?.event?.desc ? rawEv.event : null));
   const ev = validEv || drawDungeonEvent(room?.type === "event" ? "special" : "general");
+  const sharedResolution = room?.roomResolution?.kind === "team_event"
+    ? room.roomResolution
+    : null;
 
   // 揭示音效
   useEffect(() => {
     if (ev) (ev.type === "debuff" ? sfxDebuff() : sfxBuff());
   }, []); // eslint-disable-line
+
+  useEffect(() => {
+    if (!sharedResolution) return;
+    setResolved(true);
+    setActiveBadges((sharedResolution.badges || []).map(label => ({
+      type: "gain",
+      label,
+      color: label.includes("-")
+        ? "text-rose-300 bg-rose-950/80 border-rose-500/50"
+        : "text-emerald-300 bg-emerald-950/80 border-emerald-500/50",
+    })));
+  }, [sharedResolution]);
 
   if (!ev) return null;
 
@@ -79,8 +94,14 @@ export default function DungeonEvent({
         return;
       }
 
-      if (!localMode) {
-        // 僅紀錄選擇，不觸發已完成房間確認 (由 handleContinueNext / 按鈕推進時確認)
+      if (!isHost || !onResolveEvent) return;
+      const shared = await onResolveEvent(choice, idx);
+      if (shared?.badges) {
+        setActiveBadges(shared.badges.map(label => ({
+          type: "gain",
+          label,
+          color: "text-emerald-300 bg-emerald-950/80 border-emerald-500/50",
+        })));
       }
       setResolved(true);
     } finally {
@@ -99,6 +120,16 @@ export default function DungeonEvent({
     try {
       if (localMode) {
         onLocalEffect?.({ type: "event", event: ev });
+      } else {
+        if (!isHost || !onResolveEvent) return;
+        const shared = await onResolveEvent(null, null);
+        if (shared?.badges) {
+          setActiveBadges(shared.badges.map(label => ({
+            type: "gain",
+            label,
+            color: "text-emerald-300 bg-emerald-950/80 border-emerald-500/50",
+          })));
+        }
       }
       setResolved(true);
     } finally {
@@ -113,7 +144,6 @@ export default function DungeonEvent({
     }
     setConfirmedWait(true);
     await confirmNonCombatRoom(roomId, memberId, "acknowledged");
-    if (isHost && onSharedDone) await onSharedDone();
   }
 
   return (
@@ -133,7 +163,7 @@ export default function DungeonEvent({
           <div className="text-xs opacity-90 leading-relaxed mb-4 text-slate-200">{ev.desc}</div>
 
           {/* 若為特殊事件且尚未選擇，顯示選擇二選一 */}
-          {isSpecial && !resolved && (
+          {isSpecial && !resolved && isHost && (
             <div className="space-y-2.5 text-left pt-3 border-t border-white/15">
               <div className="text-xs font-black text-amber-300 mb-2">請選擇您的冒險決策：</div>
               {ev.choices.map((c, idx) => (
@@ -160,8 +190,14 @@ export default function DungeonEvent({
             </div>
           )}
 
+          {isSpecial && !resolved && !isHost && (
+            <div className="rounded-2xl border border-amber-400/30 bg-amber-950/30 p-4 text-sm font-bold text-amber-200">
+              等待房主選擇事件結果…
+            </div>
+          )}
+
           {/* 一般事件確認按鈕 */}
-          {!isSpecial && !resolved && (
+          {!isSpecial && !resolved && isHost && (
             <button
               type="button"
               onClick={handleGeneralConfirm}
@@ -170,6 +206,12 @@ export default function DungeonEvent({
             >
               {loading ? "套用效果中…" : "✨ 接受效果並查看狀態"}
             </button>
+          )}
+
+          {!isSpecial && !resolved && !isHost && (
+            <div className="rounded-2xl border border-emerald-400/30 bg-emerald-950/30 p-4 text-sm font-bold text-emerald-200">
+              等待房主揭示事件結果…
+            </div>
           )}
 
           {/* 狀態變化回饋面板 (已完成時顯示) */}

@@ -1,7 +1,8 @@
 // src/components/worldboss/WorldBossLobby.jsx — 世界大 Boss 主瀏覽頁
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { subscribeLatestWorldBoss, autoSpawnWorldBoss, getLatestWorldBossKill, claimWorldBossKillReward, previewWorldBossKillReward, getWorldBossAttackDateKeys } from "../../lib/worldBossDb";
+import { subscribeLatestWorldBoss, subscribeWorldBossSpawnCycle, ensureWorldBossLifecycle, getLatestWorldBossKill, getPendingWorldBossRewards, claimWorldBossKillReward, previewWorldBossKillReward, getWorldBossAttackDateKeys } from "../../lib/worldBossDb";
+import { normalizeWorldBossState } from "../../lib/worldBossState";
 import { WORLD_BOSSES, getBossPhase, PHASE_LABELS, getParticipantBonus } from "../../lib/worldBossData";
 import WorldBossSVG from "./WorldBossSVG";
 import WorldBossAttack from "./WorldBossAttack";
@@ -148,7 +149,7 @@ function KillScreen({ event, myReward, rewardPreview, onClose, onClaim, canClaim
   );
 }
 
-export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete }) {
+export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete, sharedData }) {
   const { profile } = useAuth();
   const activeProfile = guestOverride || profile;
   const isGuestMode = !!guestOverride || ["guest", "kid"].includes(activeProfile?.accountType);
@@ -188,19 +189,23 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
 
   const [myReward, setMyReward] = useState(null); // claimWorldBossKillReward 回傳結果
   const [rewardPreview, setRewardPreview] = useState(null);
+  const [spawnCycle, setSpawnCycle] = useState(null);
+
+  useEffect(() => subscribeWorldBossSpawnCycle(cycle => {
+    setSpawnCycle(cycle);
+    ensureWorldBossLifecycle().catch(() => {});
+  }), []);
 
   useEffect(() => {
-    // 載入時嘗試自動刷新（被擊殺隔天產生新 Boss）
-    autoSpawnWorldBoss().catch(() => {});
-
     const unsub = subscribeLatestWorldBoss(ev => {
-      setEvent(ev);
+      const normalized = normalizeWorldBossState(ev);
+      setEvent(normalized);
       setLoading(false);
-      if (ev?.status === "defeated") {
-        const key = `wb_kill_seen_${ev.id}`;
+      if (normalized?.status === "defeated") {
+        const key = `wb_kill_seen_${normalized.id}`;
         if (!sessionStorage.getItem(key)) {
           sessionStorage.setItem(key, "1");
-          setKillEvent(ev);       // 保存正確的 defeated boss
+          setKillEvent(normalized);
           setShowKillScreen(true);
         }
       } else {
@@ -224,6 +229,8 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
     // Fallback：歷史快照可能不存在（結算沒被任何瀏覽器觸發過），
     // 若目前最新事件本身就是 defeated，直接用事件文件判定可領，不依賴歷史。
     (async () => {
+      const pendingEvents = await getPendingWorldBossRewards(myId).catch(() => []);
+      if (pendingEvents.length > 0) return pendingEvents[0];
       const kill = await getLatestWorldBossKill().catch(() => null);
       let candidate = (kill?.eventId && kill.participants?.[myId] && !kill.participants[myId].claimed)
         ? kill : null;
@@ -287,6 +294,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
   if (inBattle && event) {
     return <WorldBossAttack event={event} onBack={() => setInBattle(false)}
       guestOverride={guestOverride}
+      sharedData={sharedData}
       onComplete={result => { setInBattle(false); onBattleComplete?.(result); }}
     />;
   }
@@ -304,7 +312,25 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
         <div className="flex-1 flex flex-col items-center justify-center gap-6 px-6 text-center">
           <div className="text-7xl opacity-40">👾</div>
           <div className="text-xl font-black text-slate-400">目前沒有活躍的大 Boss</div>
-          <div className="text-sm text-slate-500">教練開啟挑戰後會在這裡出現，並發送強制通知</div>
+          {spawnCycle ? (
+            <div className="w-full max-w-md rounded-2xl border border-violet-400/30 bg-violet-950/40 p-4 text-left">
+              <div className="font-black text-violet-200 mb-2">
+                {Date.now() < (spawnCycle.restEndsAtMs || 0) ? "🌌 異界正在沉寂" : "🌀 世界王降臨進度"}
+              </div>
+              {[
+                ["🏹 全體箭數","arrows"], ["🏰 六族地下城","dungeonClears"],
+                ["⚔️ 七族擊倒","monsterKills"], ["🎲 探索骰子","villageDice"],
+              ].map(([label,key]) => {
+                const value = spawnCycle.progress?.[key] || 0;
+                const target = spawnCycle.targets?.[key] || 1;
+                return <div key={key} className="mb-2">
+                  <div className="flex justify-between text-xs text-slate-300"><span>{label}</span><span>{value.toLocaleString()} / {target.toLocaleString()}</span></div>
+                  <div className="h-1.5 rounded-full bg-black/40 overflow-hidden"><div className="h-full bg-violet-400" style={{width:`${Math.min(100,value/target*100)}%`}}/></div>
+                </div>;
+              })}
+              <div className="text-[11px] text-slate-400 mt-2">任一條件達成即可開啟異界之門，最晚 48 小時後降臨。</div>
+            </div>
+          ) : <div className="text-sm text-slate-500">教練可從後台建立新的世界王挑戰</div>}
         </div>
       </div>
     );

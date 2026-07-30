@@ -20,6 +20,49 @@ export const EXPEDITION_MATERIAL_BOOST = 4;
 export const EXPEDITION_CATXP_CAP = 800;
 export const EXPEDITION_CATBOND_CAP = 15;
 
+const EXPEDITION_RESOURCE_META = Object.freeze({
+  ore: { name: "礦物", icon: "⛏️" },
+  melon: { name: "瓜瓜", icon: "🍈" },
+  fish: { name: "鮮魚", icon: "🐟" },
+  meat: { name: "動物肉", icon: "🍖" },
+  driedfish: { name: "小魚乾", icon: "🐠" },
+  can: { name: "貓罐頭", icon: "🥫" },
+  potion: { name: "貓薄荷藥水", icon: "🍵" },
+  fur: { name: "貓毛", icon: "🐾" },
+});
+
+const EXPEDITION_SPECIAL_REWARD_META = Object.freeze({
+  catXP: { name: "貓咪經驗", icon: "⭐" },
+  catBond: { name: "羈絆", icon: "💛" },
+  arrowdew: { name: "箭露", icon: "💧", image: "/ui/village/resource-arrowdew.webp" },
+  gachaToken: { name: "扭蛋幣", icon: "🎰" },
+});
+
+export function buildExpeditionRewardEntries(rewards = {}) {
+  return Object.entries(rewards).flatMap(([key, rawCount]) => {
+    const count = Math.max(0, Math.floor(Number(rawCount) || 0));
+    if (count <= 0) return [];
+
+    const special = EXPEDITION_SPECIAL_REWARD_META[key];
+    if (special) return [{ key, ...special, count, kind: "special" }];
+
+    const match = /^([a-z]+)_t([1-5])$/.exec(key);
+    if (!match) return [];
+    const [, resource, rawTier] = match;
+    const meta = EXPEDITION_RESOURCE_META[resource];
+    if (!meta) return [];
+    const tier = Number(rawTier);
+    return [{
+      key,
+      ...meta,
+      tier,
+      count,
+      kind: "material",
+      image: `/ui/village/resource-${resource}${tier}.webp`,
+    }];
+  });
+}
+
 export const EXPEDITION_MISSIONS = [
   {
     tier: 1,

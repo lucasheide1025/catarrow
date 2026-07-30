@@ -324,44 +324,75 @@ Object.entries(FIRST_CLEAR_DEFS).forEach(([dungeonId, item]) => {
   COLLECTIBLE_MAP[id] = { id, ...item, family: dungeonId.split("_")[0], rarity:"exclusive", dungeonId };
 });
 
+const FIRST_CLEAR_FAMILY_NAMES = {
+  ghost:"幽冥", mountain:"山嶺", insect:"昆蟲", workplace:"職場", exam:"考試", temple:"神廟",
+};
+Object.entries(FIRST_CLEAR_FAMILY_NAMES).forEach(([family, familyName]) => {
+  for (let tier = 1; tier <= 6; tier += 1) {
+    const id = `${family}_t${tier}_trophy`;
+    COLLECTIBLE_MAP[id] = {
+      id,
+      name:`${familyName} T${tier} 初次通關章`,
+      icon:"🏅",
+      image:`/ui/dungeon/first-clear/${family}-t${tier}.webp`,
+      desc:`首次完成${familyName}系 T${tier} 地下城的個人紀念章。`,
+      family,
+      rarity:"exclusive",
+      dungeonId:`${family}_t${tier}`,
+    };
+  }
+});
+
 // ── 掉落邏輯 ──────────────────────────────────────────────────
 
 // 普通戰鬥/寶箱/精英房掉落（回傳 {itemId} 或 null）
 // chanceMult: 人數獎勵倍率（1人=1.0，每+1人 +0.2；上限2.0）
-export function rollFamilyDrop(family, roomType, chanceMult = 1.0) {
+export function rollFamilyDrop(family, roomType, chanceMult = 1.0, random = Math.random) {
   const pool = FAMILY_COLLECTIBLES[family];
   if (!pool) return null;
-  const rand = Math.random();
+  const rand = random();
   const cm   = Math.min(2.0, chanceMult);
 
   if (roomType === "chest") {
-    if (rand < 0.15 * cm) return pick(pool.rare);
-    if (rand < 0.55 * cm) return pick(pool.common);
+    if (rand < 0.15 * cm) return pick(pool.rare, random);
+    if (rand < 0.55 * cm) return pick(pool.common, random);
     return null;
   }
   if (roomType === "elite") {
-    if (rand < 0.20 * cm) return pick(pool.rare);
-    if (rand < 0.45 * cm) return pick(pool.common);
+    if (rand < 0.20 * cm) return pick(pool.rare, random);
+    if (rand < 0.45 * cm) return pick(pool.common, random);
     return null;
   }
   // 普通怪物房
-  if (rand < 0.15 * cm) return pick(pool.common);
+  if (rand < 0.15 * cm) return pick(pool.common, random);
   return null;
 }
 
 // Boss 房掉落（回傳 [{itemId}] 陣列，可能含超稀有）
-export function rollBossDrops(family, difficulty, chanceMult = 1.0) {
+export function rollBossDrops(family, difficulty, chanceMult = 1.0, random = Math.random) {
   const pool = FAMILY_COLLECTIBLES[family];
   if (!pool) return [];
   const cm   = Math.min(1.8, chanceMult);
   const drops = [];
 
-  if (Math.random() < 0.65 * cm) drops.push(pick(pool.boss));
+  if (random() < 0.65 * cm) drops.push(pick(pool.boss, random));
 
   const superRate = { normal:0.01, advanced:0.02, hard:0.03, hell:0.05 }[difficulty] || 0.01;
-  if (Math.random() < superRate * cm) drops.push(pick(pool.superRare));
+  if (random() < superRate * cm) drops.push(pick(pool.superRare, random));
 
   return drops.filter(Boolean);
+}
+
+// 遠征最終寶藏房沿用「必得一件珍藏品」的定位，但只發正式圖鑑 ID。
+export function rollTreasureRoomDrop(family, difficultyTier = 1, random = Math.random) {
+  const pool = FAMILY_COLLECTIBLES[family];
+  if (!pool) return null;
+  const tier = Math.min(6, Math.max(1, Number(difficultyTier) || 1));
+  const rarityOrder = tier >= 5
+    ? ["boss", "rare", "common"]
+    : tier >= 3 ? ["rare", "common"] : ["common"];
+  const candidates = rarityOrder.flatMap(rarity => pool[rarity] || []);
+  return pick(candidates, random);
 }
 
 // 初次通關限定品
@@ -372,14 +403,13 @@ export function getFirstClearTrophy(dungeonId) {
 
 // 新遠征使用 1~4 的難度編號；首通紀念章則沿用圖鑑的文字難度鍵。
 // 集中轉換，避免結算流程寫出 expedition_ghost_4 這類沒有對應收藏品的 id。
-const EXPEDITION_TROPHY_DIFFICULTIES = ["normal", "advanced", "hard", "hell"];
-
 export function getExpeditionFirstClearTrophy(family, difficultyTier) {
-  const difficulty = EXPEDITION_TROPHY_DIFFICULTIES[Number(difficultyTier) - 1];
-  return difficulty ? getFirstClearTrophy(`${family}_${difficulty}`) : null;
+  const id = `${family}_t${Math.min(6, Math.max(1, Number(difficultyTier) || 1))}_trophy`;
+  return COLLECTIBLE_MAP[id] ? { itemId:id } : null;
 }
 
-function pick(items) {
+function pick(items, random = Math.random) {
   if (!items?.length) return null;
-  return { itemId: items[Math.floor(Math.random() * items.length)].id };
+  const item = items[Math.min(items.length - 1, Math.floor(random() * items.length))];
+  return item?.id && COLLECTIBLE_MAP[item.id] ? { itemId: item.id } : null;
 }

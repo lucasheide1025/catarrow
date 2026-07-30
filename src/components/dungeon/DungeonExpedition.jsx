@@ -11,11 +11,11 @@ import { drawExpeditionBoss } from "../../lib/monsterData";
 import { drawDungeonFloorMonsters, drawDungeonFallbackMonster } from "../../lib/dungeonExpansionMonsters";
 import { resolveDungeonBossEncounter } from "../../lib/dungeonBossEncounter";
 import { buildExpeditionMemberData } from "../../lib/expeditionMemberData";
+import { preloadDungeonUiAssets } from "../../lib/dungeonAssetCache";
 import { subscribeCardCollection } from "../../lib/db";
 import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
 import {
   getExcavationDifficulty,
-  DUNGEON_SHOP_ITEMS,
   drawDungeonEvent,
 } from "../../lib/dungeonData";
 import {
@@ -34,8 +34,14 @@ import {
   setActiveExpeditionProgress,
   clearActiveExpeditionProgress,
 } from "../../lib/expeditionDb";
-import { trySetDungeonFirstClear, addDungeonBroadcast, addCollectibles } from "../../lib/dungeonDb";
-import { getExpeditionFirstClearTrophy } from "../../lib/dungeonCollectibles";
+import { trySetDungeonWorldFirstClear, claimDungeonPersonalFirstClear, addDungeonBroadcast, addCollectibles } from "../../lib/dungeonDb";
+import {
+  COLLECTIBLE_MAP,
+  rollBossDrops,
+  rollFamilyDrop,
+} from "../../lib/dungeonCollectibles";
+import { drawDungeonMerchantType } from "../../lib/dungeonMerchant";
+import { makeFamilyMaterialChest } from "../../lib/itemData";
 import {
   completeExcavation,
   abandonExcavation,
@@ -47,6 +53,7 @@ import {
   addCoins,
   addArcherXP,
   addMaterials,
+  addPotions,
   grantKingVaultReward,
   addDungeonClear,
 } from "../../lib/db";
@@ -59,10 +66,11 @@ import {
   emptyExpeditionLoot,
   mergeExpeditionLoot,
   mergeExpeditionStats,
+  resolveExpeditionLootMultiplier,
 } from "../../lib/expeditionRewards";
 import {
   sfxTap, sfxDoorOpen, sfxPathSelect, sfxBuff, sfxDebuff,
-  sfxCoinDrop, sfxPotionDrink, sfxShopBuy, sfxVictory, sfxCounter, sfxError,
+  sfxCoinDrop, sfxPotionDrink, sfxShopBuy, sfxDungeonClearResult, sfxCounter, sfxError,
 } from "../../lib/sound";
 import DungeonBattleRoom from "./DungeonBattleRoom";
 import DungeonKillResult from "./DungeonKillResult";
@@ -86,7 +94,6 @@ const FLOOR_LABELS = [
 
 // 商店「一次性商品」規則：除了回血藥水(hp_restore)以外，所有商品整趟遠征只能買一次（防無限堆疊）。
 // 以 effect 為單位（atk_boost×1.2 與 atk_large×1.5 都算 atk_mult，買了其一另一支也鎖）。
-const isOneTimeShopEffect = (e) => !!e && e !== "hp_restore";
 
 
 // ── 戰鬥包裝元件 ────────────────────────────────────────
@@ -94,7 +101,7 @@ function ExpeditionBattleRoom({
   memberData, memberName, monster,
   difficultyTier, floorIndex, roomType,
   arrowsPerRound, targetFmt,
-  onDone, onAbandon, guestProfile,
+  onDone, onAbandon, guestProfile, cardCollection,
 }) {
   const [roomId, setRoomId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -215,6 +222,7 @@ function ExpeditionBattleRoom({
       onReturnToMap={() => {}}
       onExit={onAbandon}
       guestProfile={guestProfile}
+      cardCollection={cardCollection}
     />
   );
 }
@@ -291,13 +299,23 @@ export default function DungeonExpedition({
   onAbandon: onAbandonProp,
   isGuest,
   tierCap,
+  cardCollection,
 }) {
+  useEffect(() => {
+    preloadDungeonUiAssets();
+  }, []);
   const myId = profile?.id;
   // 卡片裝備加成（世界王卡等，地下城遠征本來沒串接，2026-07-09 補上）
   const [cardColl, setCardColl] = useState({ cards: {}, wbCards: {}, equipped: [] });
-  const [cardReady, setCardReady] = useState(() => isGuest || !myId);
+  const [cardReady, setCardReady] = useState(() => cardCollection !== undefined || isGuest || !myId);
   useEffect(() => {
-    if (!myId || isGuest) {
+    if (cardCollection !== undefined) {
+      setCardColl(cardCollection);
+      setCardReady(true);
+    }
+  }, [cardCollection]);
+  useEffect(() => {
+    if (cardCollection !== undefined || !myId || isGuest) {
       setCardReady(true);
       return undefined;
     }
@@ -306,7 +324,7 @@ export default function DungeonExpedition({
       setCardColl(data);
       setCardReady(true);
     });
-  }, [myId, isGuest]);
+  }, [myId, isGuest, cardCollection]);
   const cardBonus = calcEquippedBonus(resolveEquippedCards(cardColl));
   // 難度封頂第二層防禦：訪客/兒童一律夾在 1~tierCap（不完全信任上游 GuestDungeonEntry 傳來的值）
   // 見 .trellis/tasks/07-10-guest-kid-dungeon-parity/design.md §3
@@ -380,8 +398,8 @@ export default function DungeonExpedition({
   const [floorsCleared, setFloorsCleared] = useState(0);
   const [wonLast, setWonLast] = useState(false);
   const [resultRewards, setResultRewards] = useState(null);
-  // 出圖時決定的寶箱掉落倍數（1~3,整場固定;與組隊遠征同規格）
-  const [runLootMult] = useState(() => 1 + Math.floor(Math.random() * 3));
+  // 出圖時決定的寶箱掉落倍數（2～5，整場固定；存檔值優先）。
+  const [runLootMult] = useState(() => resolveExpeditionLootMultiplier(excavation?.lootMult));
   // 探索途中每殺即時入帳的金幣／射手 XP 累計。
   // ⚠️ 以前這兩個數字只餵給 4.5 秒的 killToast 就丟掉，結算頁因此只顯示通關獎勵，
   // 玩家實際入帳的卻是「通關獎勵 + 沿路擊殺」，數字對不上（使用者實測回報）。
@@ -417,6 +435,12 @@ export default function DungeonExpedition({
     const payload = {
       family, difficultyTier, isHidden, floorsCleared,
       hp: playerState?.hp, maxHP: playerState?.maxHP,
+      atk:playerState?.atk, def:playerState?.def,
+      wbBonus:playerState?.wbBonus || null,
+      combatSnapshotVersion:2,
+      lootMult:runLootMult,
+      restBonuses:playerState?.restBonuses || { atkPct:0, defPct:0 },
+      merchantBonuses:playerState?.merchantBonuses || { atkPct:0, defPct:0 },
       arrowsPerRound, targetFmt,
       expansionRunId: expansionRunIdRef.current,
       bossEncounter: expansionBossEncounter,
@@ -430,7 +454,7 @@ export default function DungeonExpedition({
 
     // 2. 寫入雲端 Firestore
     setActiveExpeditionProgress(myId, payload).catch(() => {});
-  }, [myId, family, difficultyTier, isHidden, floorsCleared, playerState?.hp, playerState?.maxHP, arrowsPerRound, targetFmt, expansionBossEncounter, floorIndex, gridFloor, playerPos, visitedIds, branchFloor, branchChoice, branchStep, phase]);
+  }, [myId, family, difficultyTier, isHidden, floorsCleared, playerState?.hp, playerState?.maxHP, playerState?.atk, playerState?.def, playerState?.wbBonus, playerState?.restBonuses, playerState?.merchantBonuses, runLootMult, arrowsPerRound, targetFmt, expansionBossEncounter, floorIndex, gridFloor, playerPos, visitedIds, branchFloor, branchChoice, branchStep, phase]);
 
   // 勝負已定（won/result）＝ run 結束：立即鎖住並清除續玩來源（雲端＋local）。
   // 比「領獎時才清」更早，避免打完王領完獎仍跳「從第三層繼續」而重複打王
@@ -495,14 +519,20 @@ export default function DungeonExpedition({
     if (phase === "intro" && cardReady) {
       const base = buildExpeditionMemberData(profile, cardBonus);
       const isResume = resumeFromFloor > 0 || resumeHp > 0 || excavation?.mapState;
-      const startHp = isResume ? Math.max(1, Math.min(resumeHp || base.hp, base.maxHP)) : base.hp;
+      const hasTrustedCombatSnapshot = Number(excavation?.combatSnapshotVersion) >= 2;
+      const lockedMaxHP = isResume && hasTrustedCombatSnapshot && Number.isFinite(Number(excavation?.resumeMaxHP))
+        ? Math.max(1, Math.round(Number(excavation.resumeMaxHP)))
+        : base.maxHP;
+      const startHp = isResume ? Math.max(1, Math.min(resumeHp || base.hp, lockedMaxHP)) : base.hp;
       setPlayerState({
         hp: startHp,
-        maxHP: base.maxHP,
-        atk: base.atk,
-        def: base.def,
-        wbBonus: base.wbBonus,
+        maxHP: lockedMaxHP,
+        atk: isResume && hasTrustedCombatSnapshot && Number.isFinite(Number(excavation?.resumeAtk)) ? Number(excavation.resumeAtk) : base.atk,
+        def: isResume && hasTrustedCombatSnapshot && Number.isFinite(Number(excavation?.resumeDef)) ? Number(excavation.resumeDef) : base.def,
+        wbBonus: isResume && hasTrustedCombatSnapshot && excavation?.resumeWbBonus ? excavation.resumeWbBonus : base.wbBonus,
         buffs: { atkMult: 1, defMult: 1, dmgMult: 1, hasRevival: false },
+        restBonuses: isResume ? (excavation?.restBonuses || { atkPct:0, defPct:0 }) : { atkPct:0, defPct:0 },
+        merchantBonuses: isResume ? (excavation?.merchantBonuses || { atkPct:0, defPct:0 }) : { atkPct:0, defPct:0 },
       });
       const targetFloor = excavation?.mapState?.floorIndex ?? resumeFromFloor;
       if (targetFloor > 0) setFloorsCleared(targetFloor);
@@ -516,7 +546,7 @@ export default function DungeonExpedition({
     // 排行榜：突破地下城次數（打贏＝擊敗王，分族累計；非訪客、每場一次）
     if (won && !isGuest && myId && !clearCountedRef.current) {
       clearCountedRef.current = true;
-      addDungeonClear(myId, family).catch(() => {});
+      addDungeonClear(myId, family, 1, expansionRunIdRef.current).catch(() => {});
     }
     const baseRewards = calculateExpeditionRewards({
       difficultyTier,
@@ -610,6 +640,11 @@ export default function DungeonExpedition({
       (finalEff.gold > 0 ? sfxCoinDrop : sfxDebuff)();
       addCoins(myId, finalEff.gold).catch(() => {});
     }
+    if (finalEff.item) {
+      import("../../lib/db").then(({ addPotions }) =>
+        addPotions(myId, [{ id:finalEff.item, count:1 }])
+      ).catch(() => {});
+    }
 
     // 舊相容 (Legacy type-based events)
     switch (eff.type) {
@@ -667,6 +702,14 @@ export default function DungeonExpedition({
           return p;
         });
         break;
+      case "rest_result":
+        sfxBuff();
+        setPlayerState(p => ({
+          ...p,
+          ...(Number.isFinite(effect.result?.hp) ? { hp:effect.result.hp } : {}),
+          restBonuses:effect.result?.restBonuses || p.restBonuses || { atkPct:0, defPct:0 },
+        }));
+        break;
       case "coins":
         sfxCoinDrop();
         addCoins(myId, effect.value).catch(() => {});
@@ -682,10 +725,17 @@ export default function DungeonExpedition({
   // 商店本地購買：扣金幣 + 套用效果
   const handleLocalBuy = useCallback((item) => {
     // 一次性商品（回血藥水以外）：已買過就擋下（不扣款、不套用）
-    if (isOneTimeShopEffect(item.effect) && boughtOneTime[item.effect]) { sfxError(); return; }
+    const runKey = item.group || (item.limitScope === "run" ? item.id : null);
+    if (runKey && boughtOneTime[runKey]) { sfxError(); return; }
     sfxShopBuy();
     addCoins(myId, -item.cost).catch(() => {});
-    if (isOneTimeShopEffect(item.effect)) setBoughtOneTime(b => ({ ...b, [item.effect]: true }));
+    if (item.kind === "carry_potion" && item.potionId) {
+      addPotions(myId, [{ id:item.potionId, count:1 }]).catch(() => {});
+    }
+    if (item.kind === "material_chest") {
+      addChests(myId, [makeFamilyMaterialChest(item.family, item.tier, "地下城神秘商人")]).catch(() => {});
+    }
+    if (runKey) setBoughtOneTime(b => ({ ...b, [runKey]: true }));
     setPlayerState(p => {
       switch (item.effect) {
         case "hp_restore":
@@ -699,6 +749,10 @@ export default function DungeonExpedition({
           return { ...p, atk: Math.round((p.atk || 0) * item.value) };
         case "def_mult":
           return { ...p, def: Math.round((p.def || 0) * item.value) };
+        case "dungeon_atk":
+          return { ...p, merchantBonuses:{ ...(p.merchantBonuses || {}), atkPct:item.pct } };
+        case "dungeon_def":
+          return { ...p, merchantBonuses:{ ...(p.merchantBonuses || {}), defPct:item.pct } };
         case "revival":
           return { ...p, buffs: { ...p.buffs, hasRevival: true } };
         default:
@@ -742,8 +796,7 @@ export default function DungeonExpedition({
       return;
     }
     if (r.type === "shop") {
-      const shuffled = [...DUNGEON_SHOP_ITEMS].sort(() => Math.random() - 0.5);
-      r.shopItems = shuffled.slice(0, 5).map(i => i.id);
+      r.shopType = drawDungeonMerchantType();
     }
     if (r.type === "event") {
       r.event = drawDungeonEvent("special");
@@ -839,11 +892,35 @@ export default function DungeonExpedition({
       return;
     }
     const killedMonster = battle?.monster || pendingRoom?.monster;
-    const killLoot = createExpeditionKillLoot(killedMonster, runLootMult);
+    const killLoot = createExpeditionKillLoot(killedMonster, runLootMult, {
+      roomType: pendingRoom?.type === "boss_battle" ? "boss"
+        : pendingRoom?.type === "elite_battle" ? "elite" : "monster",
+    });
     if (killLoot.chests.length > 0) {
       addChests(myId, killLoot.chests).catch(() => {});
       setRunLoot(previous => mergeExpeditionLoot(previous, killLoot));
     }
+    const collectibleDrops = pendingRoom?.type === "boss_battle"
+      ? rollBossDrops(
+        family,
+        ["normal", "advanced", "hard", "hell"][Math.min(3, difficultyTier - 1)] || "normal",
+      )
+      : [rollFamilyDrop(
+        family,
+        pendingRoom?.type === "elite_battle" ? "elite" : "monster",
+      )].filter(Boolean);
+    if (collectibleDrops.length > 0) {
+      await addCollectibles(myId, collectibleDrops);
+      setRunLoot(previous => mergeExpeditionLoot(previous, null, {
+        treasure: collectibleDrops
+          .map(drop => COLLECTIBLE_MAP[drop.itemId])
+          .filter(Boolean)
+          .map(item => ({ ...item, kind:"collectible" })),
+      }));
+    }
+    const collectibleItems = collectibleDrops
+      .map(drop => COLLECTIBLE_MAP[drop.itemId])
+      .filter(Boolean);
     // 每殺金幣（Tier 級距×5）＋射手 XP 即時入帳（王房獎勵另有 envelope,不重複——只對一般/精英房發）
     let killCoins = 0;
     let killArcherXP = 0;
@@ -882,6 +959,7 @@ export default function DungeonExpedition({
           coins: 0,          // 王房獎勵走 envelope，不重複發每殺金幣／XP
           archerXP: 0,
           lootMult: runLootMult,
+          collectibles: collectibleItems,
           continueLabel: "前往戰利品房 →",
           self: {
             id: myId,
@@ -906,6 +984,7 @@ export default function DungeonExpedition({
       coins: killCoins,
       archerXP: killArcherXP,
       lootMult: runLootMult,
+      collectibles: collectibleItems,
       self: {
         id: myId,
         name: profile?.nickname || profile?.name || "我",
@@ -986,15 +1065,17 @@ export default function DungeonExpedition({
 
     // ── 遠征首殺判定 ────────────────────────────────────────
     if (wonLast) {
-      const expeditionKey = `${family}_${["normal", "advanced", "hard", "hell"][difficultyTier - 1]}`;
       const diff = getExcavationDifficulty(difficultyTier);
       const FAMILY_MAP = { ghost:{e:"👻",l:"幽冥系"}, mountain:{e:"⛰️",l:"山嶺系"}, insect:{e:"🦋",l:"昆蟲系"}, workplace:{e:"💼",l:"職場系"}, exam:{e:"📝",l:"考試系"}, temple:{e:"🏛️",l:"神廟系"}, treasure:{e:"📦",l:"寶箱族"} };
       const f = FAMILY_MAP[family] || {e:"🏰",l:"遠征"};
-      await trySetDungeonFirstClear(expeditionKey, myId, profile?.name || "射手", []).then(async fcResult => {
+      const runId = expansionRunIdRef.current;
+      await claimDungeonPersonalFirstClear({ memberId:myId, family, difficultyTier, runId }).catch(() => {});
+      await trySetDungeonWorldFirstClear({
+        family, difficultyTier, hostId:myId, hostName:profile?.name || "射手",
+        teamMemberIds:[], teamNames:[], runId,
+      }).then(async fcResult => {
         if (fcResult.isFirst) {
-          const trophy = getExpeditionFirstClearTrophy(family, difficultyTier);
-          if (trophy) await addCollectibles(myId, [trophy]);
-          addDungeonBroadcast(expeditionKey, `遠征-${f.l}`, diff?.label || `Lv.${difficultyTier}`, f.e, [], profile?.nickname || profile?.name || "射手").catch(() => {});
+          addDungeonBroadcast(fcResult.key, `遠征-${f.l}`, diff?.label || `Lv.${difficultyTier}`, f.e, [], profile?.nickname || profile?.name || "射手").catch(() => {});
         }
       }).catch(() => {});
     }
@@ -1019,11 +1100,15 @@ export default function DungeonExpedition({
           alive: playerState.hp > 0,
           role: "front",
           buffs: playerState.buffs,
+          restBonuses: playerState.restBonuses || { atkPct:0, defPct:0 },
+          merchantBonuses: playerState.merchantBonuses || { atkPct:0, defPct:0 },
         },
       },
       roomConfirms: {},
       roomChoices: {},
       shopItems: pendingRoom?.shopItems || [],
+      shopType: pendingRoom?.shopType || null,
+      expeditionDifficulty: difficultyTier,
       shopPurchases: {},
       currentEvent: pendingRoom?.event || null,
       mapDungeonId: `${family}_expedition`,
@@ -1046,6 +1131,7 @@ export default function DungeonExpedition({
         lootMult={killResult.lootMult}
         isBoss={killResult.isBoss}
         bossDrops={killResult.bossDrops}
+        collectibles={killResult.collectibles}
         continueLabel={killResult.continueLabel || "下一步"}
         targetFmt={targetFmt}
         onContinue={() => { setKillResult(null); finishPendingRoom(); }}
@@ -1151,7 +1237,7 @@ export default function DungeonExpedition({
       case "chest":
         return <DungeonChest {...common} />;
       case "rest":
-        return <DungeonRest {...common} />;
+        return <DungeonRest {...common} coins={coins} />;
       default:
         // 不認得的房型：提供手動跳過（避免 render 期間觸發 setState）
         return (
@@ -1192,7 +1278,7 @@ export default function DungeonExpedition({
             claimId={bossRewardClaim.claimId}
             envelope={bossRewardClaim.envelope}
             memberId={myId}
-            onComplete={() => { sfxVictory(); showResult(true, 3); }}
+            onComplete={() => { sfxDungeonClearResult(); showResult(true, 3); }}
           />
         </Suspense>
       );
@@ -1202,7 +1288,7 @@ export default function DungeonExpedition({
         difficultyTier={difficultyTier}
         family={family}
         onLoot={handleTreasureLoot}
-        onClaim={() => { sfxVictory(); showResult(true, 3); }}
+        onClaim={() => { sfxDungeonClearResult(); showResult(true, 3); }}
       />
     );
   }
@@ -1222,6 +1308,8 @@ export default function DungeonExpedition({
           def: playerState.def,
           wbBonus: playerState.wbBonus,
           buffs: playerState.buffs,
+          restBonuses: playerState.restBonuses || { atkPct:0, defPct:0 },
+          merchantBonuses: playerState.merchantBonuses || { atkPct:0, defPct:0 },
         }}
         memberName={profile?.nickname || profile?.name || "射手"}
         monster={pendingRoom.monster}
@@ -1233,6 +1321,7 @@ export default function DungeonExpedition({
         onDone={handleBattleDone}
         onAbandon={handleAbandon}
         guestProfile={isGuest ? profile : undefined}
+        cardCollection={cardColl}
       />
       </>
     );

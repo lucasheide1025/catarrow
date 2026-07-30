@@ -54,7 +54,7 @@ function restoreDungeonFromTeamRoom(room) {
   };
 }
 
-export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap, autoReconnectRoomId = null }) {
+export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap, autoReconnectRoomId = null, sharedData }) {
   const { profile: authProfile } = useAuth();
   const profile = guestProfile || authProfile;
   const myId = profile?.id;
@@ -85,7 +85,17 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap, a
   const [cardColl, setCardColl] = useState({ cards: {}, wbCards: {}, equipped: [] });
   const [cardReady, setCardReady] = useState(() => isGuest || !myId);
   useEffect(() => {
+    if (sharedData?.cardData !== undefined) {
+      setCardColl(sharedData.cardData);
+      setCardReady(true);
+    }
+  }, [sharedData?.cardData]);
+  useEffect(() => {
     if (!myId || isGuest) {
+      setCardReady(true);
+      return undefined;
+    }
+    if (sharedData?.cardData !== undefined) {
       setCardReady(true);
       return undefined;
     }
@@ -94,7 +104,7 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap, a
       setCardColl(data);
       setCardReady(true);
     });
-  }, [myId, isGuest]);
+  }, [myId, isGuest, sharedData?.cardData]);
   const cardBonus = calcEquippedBonus(resolveEquippedCards(cardColl));
   function buildMemberData() { return buildExpeditionMemberData(profile, cardBonus, cardColl); }
 
@@ -280,11 +290,19 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap, a
       family: soloRecovery.family,
       difficulty: soloRecovery.difficultyTier,
       isHidden: soloRecovery.isHidden,
+      lootMult: soloRecovery.lootMult,
       resumeFromFloor: soloRecovery.floorsCleared || 0,
       resumeHp: soloRecovery.hp || 0,
+      resumeMaxHP: soloRecovery.maxHP,
+      resumeAtk: soloRecovery.atk,
+      resumeDef: soloRecovery.def,
+      resumeWbBonus: soloRecovery.wbBonus || null,
+      combatSnapshotVersion: soloRecovery.combatSnapshotVersion || 0,
       expansionRunId: soloRecovery.expansionRunId || null,
       bossEncounter: soloRecovery.bossEncounter || null,
       mapState: soloRecovery.mapState || null,
+      restBonuses: soloRecovery.restBonuses || null,
+      merchantBonuses: soloRecovery.merchantBonuses || null,
       ...settings,
     });
   }
@@ -300,6 +318,7 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap, a
           isHost={teamLobby?.hostId === myId}
           onComplete={() => { setExpeditionStart(null); setSelectedDungeon(null); setTeamLobby(null); }}
           onAbandon={() => { setExpeditionStart(null); setSelectedDungeon(null); setTeamLobby(null); }}
+          cardCollection={cardReady ? cardColl : undefined}
         />
       );
     }
@@ -327,6 +346,7 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap, a
         tierCap={tierCap}
         onComplete={handleExitExpedition}
         onAbandon={handleExitExpedition}
+        cardCollection={cardReady ? cardColl : undefined}
       />
     );
   }

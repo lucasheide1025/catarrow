@@ -10,6 +10,10 @@ import {
   getWorldBossHistory,
   getWorldBossSpawnConfig,
   saveWorldBossSpawnConfig,
+  getWorldBossCycleConfig,
+  saveWorldBossCycleConfig,
+  subscribeWorldBossSpawnCycle,
+  forceSpawnWorldBossFromCycle,
 } from "../../lib/worldBossDb";
 import { WORLD_BOSSES, WORLD_BOSS_KEYS, getBossPhase, PHASE_LABELS, getRewardByBossKey, getRewardTier, BOSS_DURATION_MAX_DAYS } from "../../lib/worldBossData";
 import { WB_CARDS } from "../../lib/worldBossCards";
@@ -122,6 +126,29 @@ export default function AdminWorldBoss() {
     setSpawnDaysSaving(false);
     setSpawnDaysMsg(res.ok ? "✅ 已儲存" : `❌ ${res.reason}`);
     setTimeout(() => setSpawnDaysMsg(""), 2000);
+  }
+  const [cycle, setCycle] = useState(null);
+  const [cycleConfig, setCycleConfig] = useState({
+    restHours:8, deadlineHours:48,
+    targets:{ arrows:10000, dungeonClears:30, monsterKills:500, villageDice:300 },
+  });
+  const [cycleBusy, setCycleBusy] = useState(false);
+  const [cycleMsg, setCycleMsg] = useState("");
+  useEffect(() => {
+    getWorldBossCycleConfig().then(setCycleConfig).catch(() => {});
+    return subscribeWorldBossSpawnCycle(setCycle);
+  }, []);
+  async function handleSaveCycleConfig() {
+    setCycleBusy(true);
+    const result = await saveWorldBossCycleConfig(cycleConfig, profile?.id);
+    setCycleBusy(false);
+    setCycleMsg(result.ok ? "✅ 誕生條件已儲存（下一輪套用）" : `❌ ${result.reason}`);
+  }
+  async function handleForceSpawn() {
+    setCycleBusy(true);
+    const result = await forceSpawnWorldBossFromCycle();
+    setCycleBusy(false);
+    setCycleMsg(result.ok ? "✅ 已召喚新的世界王" : `❌ ${result.reason || "目前無法召喚"}`);
   }
 
   // 手動發放世界王卡
@@ -502,6 +529,49 @@ export default function AdminWorldBoss() {
               </button>
               {spawnDaysMsg && <span className="text-xs text-emerald-300">{spawnDaysMsg}</span>}
             </div>
+          </div>
+
+          <div className="bg-white/5 border border-violet-400/25 rounded-2xl p-4 space-y-3">
+            <div className="font-black text-violet-200">🌌 世界王誕生進度</div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              {[
+                ["arrows","全體射箭箭數"], ["dungeonClears","地下城通關"],
+                ["monsterKills","全模式怪物擊倒"], ["villageDice","貓貓村骰子"],
+              ].map(([key,label]) => (
+                <label key={key} className="rounded-xl bg-black/20 p-2">
+                  <span className="block text-slate-400 mb-1">{label}</span>
+                  <input type="number" min="1" value={cycleConfig.targets[key]}
+                    onChange={e => setCycleConfig(c => ({...c, targets:{...c.targets, [key]:Math.max(1, Number(e.target.value)||1)}}))}
+                    className="w-full rounded-lg bg-black/30 border border-white/10 px-2 py-1.5 text-white"/>
+                  <span className="block mt-1 text-[10px] text-violet-300">
+                    本輪 {Number(cycle?.progress?.[key] || 0).toLocaleString()} / {Number(cycle?.targets?.[key] || cycleConfig.targets[key]).toLocaleString()}
+                  </span>
+                </label>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <label className="text-slate-400">擊倒後休息（小時）
+                <input type="number" min="0" max="48" value={cycleConfig.restHours}
+                  onChange={e => setCycleConfig(c => ({...c, restHours:Number(e.target.value)||0}))}
+                  className="mt-1 w-full rounded-lg bg-black/30 border border-white/10 px-2 py-1.5 text-white"/>
+              </label>
+              <label className="text-slate-400">最晚自動誕生（小時）
+                <input type="number" min="1" max="48" value={cycleConfig.deadlineHours}
+                  onChange={e => setCycleConfig(c => ({...c, deadlineHours:Number(e.target.value)||1}))}
+                  className="mt-1 w-full rounded-lg bg-black/30 border border-white/10 px-2 py-1.5 text-white"/>
+              </label>
+            </div>
+            <div className="flex gap-2">
+              <button disabled={cycleBusy} onClick={handleSaveCycleConfig}
+                className="flex-1 rounded-xl bg-violet-500/20 border border-violet-400/40 py-2 text-xs font-black text-violet-200 disabled:opacity-40">
+                儲存誕生條件
+              </button>
+              <button disabled={cycleBusy || event?.status === "active"} onClick={handleForceSpawn}
+                className="flex-1 rounded-xl bg-amber-500/20 border border-amber-400/40 py-2 text-xs font-black text-amber-200 disabled:opacity-40">
+                強制召喚
+              </button>
+            </div>
+            {cycleMsg && <div className="text-xs text-center text-slate-300">{cycleMsg}</div>}
           </div>
 
           {/* Boss 選擇 */}

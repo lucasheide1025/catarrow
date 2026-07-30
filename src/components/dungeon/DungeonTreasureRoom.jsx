@@ -5,7 +5,8 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { rollBattleLoot } from "../../lib/monsterRegistry";
 import { MONSTERS, TIER_ORDER } from "../../lib/monsterData";
 import { rollKingVaultReward } from "../../lib/kingVaultRewards";
-import { sfxCoinDrop, sfxGachaReveal } from "../../lib/sound";
+import { COLLECTIBLE_MAP, rollTreasureRoomDrop } from "../../lib/dungeonCollectibles";
+import { sfxCoinDrop, sfxGachaReveal, sfxDungeonTreasureRoom } from "../../lib/sound";
 import DungeonEventStage from "./DungeonEventStage";
 
 // ── 粒子背景（金色） ────────────────────────────────────
@@ -121,15 +122,15 @@ export default function DungeonTreasureRoom({
     result.coins = Math.round(result.coins * 5);
     result.chest = true;
     result.goldChest = Math.random() < 0.5 || result.goldChest;
-    // 必掉一個收藏品級物品
-    const extraItems = [
-      { id:"treasure_gem",  name:"寶藏寶石", icon:"💎", desc:"閃閃發光的巨大寶石" },
-      { id:"golden_feather",name:"黃金羽毛", icon:"🪶", desc:"純金打造的羽毛飾品" },
-      { id:"crystal_skull", name:"水晶骷髏", icon:"💀", desc:"純淨水晶雕刻的骷髏" },
-      { id:"ancient_coin",  name:"古代金幣", icon:"🪙", desc:"遠古文明的金幣" },
-      { id:"royal_crown",   name:"王室皇冠", icon:"👑", desc:"鑲滿寶石的王者皇冠" },
-    ];
-    const extraItem = extraItems[Math.floor(Math.random() * extraItems.length)];
+    // 必掉一個正式地下城圖鑑收藏品；禁止再寫入圖鑑不存在的臨時 ID。
+    const collectibleDrop = rollTreasureRoomDrop(family, difficultyTier);
+    const collectible = collectibleDrop ? COLLECTIBLE_MAP[collectibleDrop.itemId] : null;
+    const extraItem = collectible ? {
+      id: collectible.id,
+      name: collectible.name,
+      icon: collectible.icon,
+      desc: collectible.desc,
+    } : null;
     result.extraItem = extraItem;
     result.kingVault = rollKingVaultReward(difficultyTier, family);
     result.coins += result.kingVault.coins;
@@ -157,6 +158,7 @@ export default function DungeonTreasureRoom({
 
   // 金幣噴泉保留自動演出；卡片改由玩家手動推進。
   useEffect(() => {
+    sfxDungeonTreasureRoom();
     const t1 = setTimeout(() => {
       setPhase("fountain");
       setShowFountain(true);

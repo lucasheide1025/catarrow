@@ -48,6 +48,26 @@ Host only: resolveNonCombatRoom(roomId, room, hostId, activeRoomId)
 
 **Never** apply individual effects inside `confirmNonCombatRoom`. Effects are applied once by the host in `resolve`.
 
+### 組隊探索房的完成語意
+
+- `event`、`general_event`、`chest`：共享結果先完成，每位存活隊員再各自閱讀／領取並確認；只有所有有效隊員的 `roomConfirms[id] === true` 時才可自動回到地圖。
+- `trap`、`rest`、`shop`：`roomConfirms` 是選擇或完成狀態，不代表共享效果已結算；必須由房間本身的房主結算流程套用效果後才能前進。
+- 不可使用「欄位存在」判斷完成；`false`、`null` 與其他值都不算完成。
+- 功能房最上方必須保留僅房主可見的「強制結算前進」救援按鈕，供隊員斷線或流程卡住時人工解除；正常流程仍須等待全員完成。不得用逾時計時器自動清除共享房間狀態。
+- 寶箱選項由房主產生並同步，全員看見相同卡片；每位成員的領取標記必須以 transaction 防止重複選取。
+
+### 第三層固定路線
+
+第三層每條路線固定為七個階段：
+
+1. 前三房從寶箱、陷阱、事件、精英四類中隨機取三種，且同一路線不重複。
+2. 第四房為休息區。
+3. 第五房為商人區。
+4. 第六房為王房。
+5. 第七房為地下城獎勵房。
+
+2.5D 地圖的顯示列與實際觸發列必須共用同一份 layout 定義，禁止讓商人房與王房占用同一列。
+
 ---
 
 ## DungeonShop — Purchase Contracts
@@ -93,12 +113,47 @@ if (fallenFronters.length > 0) {
 
 ---
 
-## DungeonRest — Vote Mechanic
+## Personal Rest and Merchant Rooms
 
-- Each member votes via `confirmNonCombatRoom(roomId, memberId, optionId)`
-- Host resolves: pick highest-voted option, apply it **once**
-- `revive` fallback: if `revive` wins but no member has `role === "rear"`, apply heal +50% instead
-- `hasFrontFallen` = `aliveIds.some(id => members[id]?.role === "rear")`
+The expedition rest room no longer uses a majority vote. Each active member
+claims exactly one personal result per rest-room visit:
+
+- `rest`: heal a random 15–50% of maximum HP;
+- `prepare`: roll DEF +1–15% and keep the highest `restBonuses.defPct` seen in
+  the current run;
+- `polish`: roll ATK +1–15% and keep the highest
+  `restBonuses.atkPct` seen in the current run;
+- `blessing`: team-only, requires `role === "rear"` and 1,000 coins, then
+  restores `role` / `displayGroup` to `front` at 50% HP.
+
+The roll, room confirmation, result snapshot, blessing coin deduction, and
+member mutation must be committed in one Firestore transaction. Solo runs use
+the same pure resolver and persist `restBonuses` in active-expedition recovery
+state.
+
+Merchant rooms persist one shared `shopType` selected from healer, magic
+weapon, magic armor, and mystery. Prices and limits come only from
+`dungeonMerchant.js`. Team purchases must atomically validate catalog
+membership, coins, per-room/per-run counts, and mutual-exclusion groups before
+writing effects or inventory. `merchantBonuses` and `restBonuses` are separate
+run-scoped sources and combat calculation applies both without rewriting base
+ATK/DEF.
+
+## Expedition Collectible Drops
+
+New expedition paths must not bypass `dungeonCollectibles.js`:
+
+- ordinary monster 15%;
+- elite room 45%;
+- chest room 55%, independent from the facedown-card reward;
+- boss 65%, plus its difficulty-based super-rare roll;
+- treasure room always returns a registered collectible from the current
+  dungeon family.
+
+Every emitted ID must exist in `COLLECTIBLE_MAP`. Solo rewards are granted and
+shown at the room result. Team monster rewards are rolled per member inside the
+atomic final claim, never copied from the host's roll. Hard-coded display-only
+IDs must never be written to `members.dungeonCollectibles`.
 
 ---
 
@@ -303,7 +358,11 @@ Do not install temporary browser-automation packages into this project's live `n
 
 ## Expedition Loot and Claims
 
-- Every defeated expedition monster produces two matching family/tier material chests and two matching-tier coin chests.
+- 地圖建立時鎖定寶箱倍率 `2～5`，畫面顯示值、單人即時入帳、組隊成員即時入帳與房主共享戰利品彙總必須使用同一個 `lootMult`。
+- 單人 `activeExpedition` 必須一併保存 `lootMult`、當場鎖定的 HP／最大 HP／ATK／DEF／卡片被動，以及休息、商人加成；存檔、重整或斷線重連只能原樣恢復，禁止重新抽取或在卡片快照未就緒時用空資料覆蓋。
+- 戰鬥房玩家快照必須保留基礎 ATK／DEF 與 `buffs`、`potionBuffs`、`restBonuses`、`merchantBonuses`；地圖狀態列、傷害處理與 `BattleScreen` 必須共用 `calculateDungeonDisplayedStats` 的最終值語意。舊版缺少 `combatSnapshotVersion` 的存檔不可鎖死其 ATK／DEF，應等卡片快照就緒後重建並寫回新版快照。
+- `×N` 代表每次合格怪物擊殺各產生 N 個素材寶箱與 N 個金幣寶箱；禁止在獎勵生成或入帳層另外硬限制為 3。
+- Every eligible defeated expedition monster produces `lootMult` matching family/tier material chests and `lootMult` matching-tier coin chests.
 - Keep the complete run loot summary for the final report, including defeated monsters and treasure-room bonuses.
 - Treasure-room reward data is generated once. Animation state may reveal it progressively but must not reroll it.
 - Team loot is persisted on the coordination room. Claiming must atomically:

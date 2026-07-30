@@ -9,6 +9,8 @@ import { resolveDungeonBossEncounter } from "../../lib/dungeonBossEncounter";
 import { getExpeditionRewardPreview } from "../../lib/expeditionRewards";
 import DungeonRunSettings from "./DungeonRunSettings";
 import { getBattleMonsterSources } from "../../lib/battleAssets";
+import { getDungeonFirstClearState } from "../../lib/dungeonFirstClear";
+import { COLLECTIBLE_MAP, getExpeditionFirstClearTrophy } from "../../lib/dungeonCollectibles";
 import {
   DEFAULT_DUNGEON_ARROWS,
   DEFAULT_DUNGEON_TARGET,
@@ -71,6 +73,9 @@ export default function DungeonSelectionPanel({
   const bossTier = TIER_LABEL[boss?.tier];
   const lootMin = rewardPreview?.multiplierMin || 1;
   const lootMax = rewardPreview?.multiplierMax || 3;
+  const firstClearState = getDungeonFirstClearState(profile, dungeon);
+  const firstClearDrop = getExpeditionFirstClearTrophy(dungeon.family, dungeon.difficulty);
+  const firstClearItem = firstClearDrop ? COLLECTIBLE_MAP[firstClearDrop.itemId] : null;
 
   // 開新關前的衝突檢查（有進行中單人/已保存組隊進度 → 確認覆蓋）。回傳是否可繼續。
   async function confirmOverwrite() {
@@ -117,6 +122,23 @@ export default function DungeonSelectionPanel({
             </div>
           </div>
         </div>
+
+        {firstClearState.eligible && (
+          <div className="mt-3 rounded-2xl p-3 flex items-center gap-3"
+            style={{ background:firstClearState.completed ? "rgba(34,197,94,.08)" : "rgba(245,158,11,.12)", border:`1px solid ${firstClearState.completed ? "rgba(74,222,128,.3)" : "rgba(251,191,36,.38)"}` }}>
+            <div className="w-12 h-12 rounded-xl overflow-hidden bg-black/25 flex items-center justify-center shrink-0">
+              {firstClearItem?.image
+                ? <img src={firstClearItem.image} alt={firstClearItem.name} className="w-full h-full object-cover" onError={event => { event.currentTarget.style.display="none"; }} />
+                : <span className="text-2xl">{firstClearItem?.icon || "🏅"}</span>}
+            </div>
+            <div className="min-w-0">
+              <div className={`text-xs font-black ${firstClearState.completed ? "text-emerald-300" : "text-amber-300"}`}>
+                {firstClearState.completed ? "✓ 已完成個人首次通關" : firstClearState.known ? "★ 首次通關獎勵尚未取得" : "首次通關資料讀取中"}
+              </div>
+              {firstClearItem && <div className="text-[11px] text-slate-300 mt-1">首次必得：{firstClearItem.name}</div>}
+            </div>
+          </div>
+        )}
 
         {/* 守關 BOSS + 掉落倍率 */}
         <div className="mt-4 rounded-2xl p-3 flex items-center gap-3" style={{ background:"rgba(239,68,68,0.10)", border:"1px solid rgba(239,68,68,0.24)" }}>

@@ -8,10 +8,14 @@ import {
 import { db } from "./firebase";
 import { assertCostCapability, COST_CAPABILITIES } from "./costControl";
 import { addCoins, markDungeonUsed, createNotification } from "./db";
-import { calcPotionBuffs, getPotion } from "./itemData";
+import { calcPotionBuffs, getPotion, makeFamilyMaterialChest } from "./itemData";
 import { shouldTriggerEvent, drawRandomEvent } from "./randomEvents";
 import { resolveConsumable } from "./consumableSystem";
 import { resolvePlayerCounter } from "./damage";
+import { getDungeonRestOptionState, resolveDungeonRestChoice } from "./dungeonRestRules";
+import { buildDungeonMerchant } from "./dungeonMerchant";
+import { COLLECTIBLE_MAP, getExpeditionFirstClearTrophy, rollFamilyDrop } from "./dungeonCollectibles";
+import { buildDungeonFirstClearKey, normalizeWorldFirstClearInput } from "./dungeonFirstClear";
 import {
   assignContracts, rerollContract, generatePathOptions,
   drawDungeonEvent, DUNGEON_SHOP_ITEMS, generateDungeonFloors,
@@ -23,6 +27,16 @@ import { createOrdinaryChestLoot } from "./dungeonChestLoot";
 import { planDungeonRoundAbility, tickDungeonStatuses, getStatusStatMods } from "./dungeonAbilityRound";
 
 const D = "dungeonRooms";
+
+function restAtkMult(member) {
+  return (1 + Math.max(0, Number(member?.restBonuses?.atkPct) || 0) / 100)
+    * (1 + Math.max(0, Number(member?.merchantBonuses?.atkPct) || 0) / 100);
+}
+
+function restDefMult(member) {
+  return (1 + Math.max(0, Number(member?.restBonuses?.defPct) || 0) / 100)
+    * (1 + Math.max(0, Number(member?.merchantBonuses?.defPct) || 0) / 100);
+}
 
 function genCode() {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -220,7 +234,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       const statusMods = getStatusStatMods(abilityStatuses[id]);
       const effectiveAtk = isRear
         ? 0
-        : Math.round((m.atk || 10) * (m.buffs?.atkMult || 1) * (m.potionBuffs?.atkMult || 1) * (1 + atkBuffPctForFront) * (1 - statusMods.atkPct / 100));
+        : Math.round((m.atk || 10) * (m.buffs?.atkMult || 1) * (m.potionBuffs?.atkMult || 1) * restAtkMult(m) * (1 + atkBuffPctForFront) * (1 - statusMods.atkPct / 100));
       const dmgMult      = (m.buffs?.dmgMult || 1) * (m.potionBuffs?.dmgMult || 1) * (mods.dmgMult || 1) * (room.consumableEffects?.teamDmgMult || 1) * (1 + (m.wbBonus?.dmgBonusPct || 0)) * monsterReduceMult;
       const contract     = m.contract || { type:"standard", param:null };
       const damageItems  = (m.arrows || []).filter(arrow => getPotion(arrow?.label || arrow)?.actionCost === "arrow");
@@ -271,7 +285,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       }
       const usedPoison = (members[id].arrows || []).some(arrow => (arrow?.label || arrow) === "throw_poison");
       if (usedPoison) {
-        const atk = Math.round((members[id].atk || 10) * (members[id].buffs?.atkMult || 1) * (members[id].potionBuffs?.atkMult || 1));
+        const atk = Math.round((members[id].atk || 10) * (members[id].buffs?.atkMult || 1) * (members[id].potionBuffs?.atkMult || 1) * restAtkMult(members[id]));
         poisonByMember[id] = { damage:Math.round(atk * 0.4), rounds:2 };
       }
     }
@@ -444,7 +458,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
           alive: memberHPNow[id] > 0,
           hp: memberHPNow[id],
           maxHP: members[id].maxHP || 100,
-          def: Math.round((members[id].def || 10) * (members[id].buffs?.defMult || 1) * (members[id].potionBuffs?.defMult || 1)
+          def: Math.round((members[id].def || 10) * (members[id].buffs?.defMult || 1) * (members[id].potionBuffs?.defMult || 1) * restDefMult(members[id])
             * (1 - getStatusStatMods(abilityStatuses[id]).defPct / 100)),
           // 破解率只看計分箭：藥水箭在傷害路徑本來就被濾掉，這裡若算進去會變成 0 分箭拖累破解
           arrows: (members[id].arrows || [])
@@ -493,7 +507,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       for (const id of ctrTargets) {
         if (memberHPNow[id] <= 0) continue;
         const m            = members[id];
-        const effectiveDef = Math.round((m.def || 10) * (m.buffs?.defMult || 1) * (m.potionBuffs?.defMult || 1));
+        const effectiveDef = Math.round((m.def || 10) * (m.buffs?.defMult || 1) * (m.potionBuffs?.defMult || 1) * restDefMult(m));
         const rawCtr       = Math.ceil(calcCtrFn(monsterAtk, effectiveDef, m.wbBonus?.dmgReducePct || 0) * (1 - (room.consumableEffects?.counterReducePct || 0) / 100));
         const counterHit   = resolvePlayerCounter({ arrows:m.arrows || [], baseDamage:rawCtr, maxHP:m.maxHP || memberHPNow[id] });
         const absorbed     = Math.min(potionShieldNow[id] || 0, counterHit.damage);
@@ -1143,6 +1157,181 @@ export async function confirmNonCombatRoom(roomId, memberId, choice = null) {
   }
   console.warn("confirmNonCombatRoom failed:", lastErr);
   return { ok: false, reason: lastErr };
+}
+
+export async function trySetDungeonWorldFirstClear(input) {
+  const normalized = normalizeWorldFirstClearInput(input || {});
+  if (!normalized) return { ok:false, isFirst:false, reason:"首殺資料不完整" };
+  try {
+    const ref = doc(db, "dungeonFirstClear", normalized.key);
+    const isFirst = await runTransaction(db, async tx => {
+      const snap = await tx.get(ref);
+      if (snap.exists()) return false;
+      tx.set(ref, { ...normalized, clearedAt:serverTimestamp() });
+      return true;
+    });
+    return { ok:true, isFirst, key:normalized.key };
+  } catch (e) { return { ok:false, isFirst:false, reason:e.message }; }
+}
+
+export async function claimDungeonPersonalFirstClear({ memberId, family, difficultyTier, runId }) {
+  const key = buildDungeonFirstClearKey(family, difficultyTier);
+  const trophy = getExpeditionFirstClearTrophy(family, difficultyTier);
+  if (!memberId || !key || !runId || !trophy?.itemId) return { ok:false, isFirst:false, reason:"首次通關資料不完整" };
+  try {
+    const memberRef = doc(db, "members", memberId);
+    const isFirst = await runTransaction(db, async tx => {
+      const snap = await tx.get(memberRef);
+      if (!snap.exists()) throw new Error("會員不存在");
+      if (snap.data()?.dungeonFirstClears?.[key]) return false;
+      tx.update(memberRef, {
+        [`dungeonFirstClears.${key}`]:{ runId, rewardClaimed:true, clearedAt:new Date().toISOString() },
+        [`dungeonCollectibles.${trophy.itemId}`]:increment(1),
+      });
+      return true;
+    });
+    return { ok:true, isFirst, key, trophy:isFirst ? trophy : null };
+  } catch (e) { return { ok:false, isFirst:false, reason:e.message }; }
+}
+
+export async function purchaseDungeonMerchantItem(roomId, memberId, itemId) {
+  try {
+    return await runTransaction(db, async tx => {
+      const roomRef = doc(db, D, roomId);
+      const memberRef = doc(db, "members", memberId);
+      const potionRef = doc(db, "potionInventory", memberId);
+      const chestRef = doc(db, "chestInventory", memberId);
+      const [roomSnap, memberSnap, potionSnap, chestSnap] = await Promise.all([
+        tx.get(roomRef), tx.get(memberRef), tx.get(potionRef), tx.get(chestRef),
+      ]);
+      if (!roomSnap.exists() || !memberSnap.exists()) throw new Error("商店資料不存在");
+      const room = roomSnap.data();
+      const dungeonMember = room.members?.[memberId];
+      if (!dungeonMember) throw new Error("你不是這次地下城的成員");
+      const family = String(room.mapDungeonId || room.dungeonFamily || "ghost").split("_")[0];
+      const merchant = buildDungeonMerchant({
+        type:room.shopType,
+        family,
+        tier:room.expeditionDifficulty || room.dungeonDifficulty || 1,
+      });
+      const item = merchant.items.find(candidate => candidate.id === itemId);
+      if (!item || item.locked) throw new Error(item?.lockedReason || "商品不存在");
+      const coins = Number(memberSnap.data()?.coins) || 0;
+      if (coins < item.cost) throw new Error("金幣不足");
+      const roomCounts = room.merchantRoomPurchases?.[memberId] || {};
+      const runCounts = room.merchantRunPurchases?.[memberId] || {};
+      const counts = item.limitScope === "run" ? runCounts : roomCounts;
+      if ((counts[item.id] || 0) >= (item.limit || 1)) throw new Error("已達購買上限");
+      if (item.group && room.merchantGroups?.[memberId]?.[item.group]) throw new Error("本趟已選擇同類裝備");
+
+      const roomUpdates = {
+        [`${item.limitScope === "run" ? "merchantRunPurchases" : "merchantRoomPurchases"}.${memberId}.${item.id}`]:increment(1),
+      };
+      if (item.group) roomUpdates[`merchantGroups.${memberId}.${item.group}`] = item.id;
+      if (item.effect === "hp_restore") {
+        roomUpdates[`members.${memberId}.hp`] = Math.min(
+          dungeonMember.maxHP || 100,
+          (dungeonMember.hp || 0) + Math.round((dungeonMember.maxHP || 100) * item.value),
+        );
+      }
+      if (item.effect === "dungeon_atk") roomUpdates[`members.${memberId}.merchantBonuses.atkPct`] = item.pct;
+      if (item.effect === "dungeon_def") roomUpdates[`members.${memberId}.merchantBonuses.defPct`] = item.pct;
+      tx.update(roomRef, roomUpdates);
+      tx.update(memberRef, { coins:increment(-item.cost) });
+
+      if (item.kind === "carry_potion") {
+        const potionItems = { ...(potionSnap.data()?.items || {}) };
+        potionItems[item.potionId] = (potionItems[item.potionId] || 0) + 1;
+        tx.set(potionRef, { items:potionItems, updatedAt:serverTimestamp() }, { merge:true });
+      }
+      if (item.kind === "material_chest") {
+        const chest = makeFamilyMaterialChest(item.family, item.tier, "地下城神秘商人");
+        tx.set(chestRef, {
+          chests:[...(chestSnap.data()?.chests || []), chest],
+          updatedAt:serverTimestamp(),
+        }, { merge:true });
+      }
+      return { ok:true, item, coinsAfter:coins - item.cost };
+    });
+  } catch (error) {
+    return { ok:false, reason:error?.message || "購買失敗" };
+  }
+}
+
+// 個人休息區：每位玩家各自結算一次；擲值、扣款與房間結果在同一 transaction 固定。
+export async function claimPersonalDungeonRest(roomId, memberId, option) {
+  try {
+    return await runTransaction(db, async tx => {
+      const roomRef = doc(db, "dungeonRooms", roomId);
+      const memberRef = doc(db, "members", memberId);
+      const [roomSnap, memberSnap] = await Promise.all([tx.get(roomRef), tx.get(memberRef)]);
+      if (!roomSnap.exists()) throw new Error("休息房不存在");
+      const room = roomSnap.data();
+      const dungeonMember = room.members?.[memberId];
+      if (!dungeonMember || dungeonMember.alive === false) throw new Error("你不是有效的隊伍成員");
+      if (room.roomConfirms?.[memberId]) {
+        return { ok:true, alreadyClaimed:true, result:room.restResults?.[memberId] || null };
+      }
+      const coins = Number(memberSnap.data()?.coins) || 0;
+      const state = getDungeonRestOptionState(dungeonMember, option, { coins });
+      if (!state.visible || !state.enabled) throw new Error(state.reason || "目前無法使用");
+      const result = resolveDungeonRestChoice(dungeonMember, option);
+      const updates = {
+        [`members.${memberId}.restBonuses`]:result.restBonuses,
+        [`roomChoices.${memberId}`]:option,
+        [`roomConfirms.${memberId}`]:true,
+        [`restResults.${memberId}`]:result,
+      };
+      if (Number.isFinite(result.hp)) updates[`members.${memberId}.hp`] = result.hp;
+      if (result.role) updates[`members.${memberId}.role`] = result.role;
+      if (result.displayGroup) updates[`members.${memberId}.displayGroup`] = result.displayGroup;
+      tx.update(roomRef, updates);
+      if (result.coinCost) tx.update(memberRef, { coins:increment(-result.coinCost) });
+      return { ok:true, alreadyClaimed:false, result };
+    });
+  } catch (error) {
+    return { ok:false, reason:error?.message || "休息區結算失敗" };
+  }
+}
+
+export async function claimTeamDungeonChestChoice(roomId, memberId, choiceIndex) {
+  try {
+    const roomRef = doc(db, D, roomId);
+    const memberRef = doc(db, "members", memberId);
+    return await runTransaction(db, async transaction => {
+      const [snapshot, memberSnapshot] = await Promise.all([
+        transaction.get(roomRef),
+        transaction.get(memberRef),
+      ]);
+      if (!snapshot.exists()) return { ok:false, reason:"room not found" };
+      const room = snapshot.data();
+      if (!room.members?.[memberId]) return { ok:false, reason:"not a room member" };
+      if (!Array.isArray(room.chestChoices) || !room.chestChoices[choiceIndex]) {
+        return { ok:false, reason:"invalid chest choice" };
+      }
+      if (room.chestClaims?.[memberId]) {
+        return { ok:false, reason:"already claimed", claim:room.chestClaims[memberId] };
+      }
+      const family = String(room.mapDungeonId || "ghost").split("_")[0];
+      const collectible = rollFamilyDrop(family, "chest");
+      const validCollectible = collectible?.itemId && COLLECTIBLE_MAP[collectible.itemId]
+        ? collectible : null;
+      const claim = {
+        choiceIndex,
+        claimedAt:Date.now(),
+        ...(validCollectible ? { collectibleItemId:validCollectible.itemId } : {}),
+      };
+      transaction.update(roomRef, { [`chestClaims.${memberId}`]:claim });
+      if (validCollectible && memberSnapshot.exists()) {
+        transaction.update(memberRef, {
+          [`dungeonCollectibles.${validCollectible.itemId}`]:increment(1),
+        });
+      }
+      return { ok:true, claim, collectible:validCollectible };
+    });
+  } catch (error) {
+    return { ok:false, reason:error?.message || String(error) };
+  }
 }
 
 // 房主結算非戰鬥房間（全員確認或房主強制）→ 回地圖探索

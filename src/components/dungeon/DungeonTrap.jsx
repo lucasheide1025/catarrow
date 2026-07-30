@@ -14,7 +14,7 @@ export default function DungeonTrap({
   localMode = false, onLocalEffect, onLocalDone, onSharedDone,
 }) {
   const [trapType,  setTrapType]  = useState(null);
-  const [animPhase, setAnimPhase] = useState("entering"); // entering | trap_reveal | dice_bet | dice_result | done
+  const [animPhase, setAnimPhase] = useState("dice_bet"); // dice_bet | dice_result | done
   const [diceValue, setDiceValue] = useState(null);
   const [dodgeSuccess, setDodgeSuccess] = useState(null); // null | true | false
   const [myBet, setMyBet] = useState(null); // "big" | "small" | null
@@ -27,6 +27,7 @@ export default function DungeonTrap({
   const aliveIds = Object.keys(members).filter(id => members[id]?.alive);
   const roomConfirms = localMode ? localConfirms : (room?.roomConfirms || {});
   const roomChoices  = localMode ? localChoices : (room?.roomChoices || {});
+  const allConfirmed = aliveIds.length > 0 && aliveIds.every(id => roomConfirms[id] === true);
 
   // 讀取/初始化陷阱
   useEffect(() => {
@@ -53,14 +54,12 @@ export default function DungeonTrap({
     }
   }, [room?.trapTypeId, trapType, localMode, isHost, roomId]);
 
-  // 動畫過場
+  // 進房直接開放押大小，不再等待陷阱文字過場。
   useEffect(() => {
     if (!trapType) return;
     if (room?.roomResolution?.kind === "trap") return;
     sfxCounter();
-    const t1 = setTimeout(() => setAnimPhase("trap_reveal"), 500);
-    const t2 = setTimeout(() => setAnimPhase("dice_bet"), 2500);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
+    setAnimPhase("dice_bet");
   }, [trapType, room?.roomResolution]);
 
   // 讀取結算結果
@@ -99,7 +98,7 @@ export default function DungeonTrap({
   }
 
   async function handleRollAndResolve() {
-    if (!isHost || rollStartedRef.current || !trapType) return;
+    if (!isHost || rollStartedRef.current || !trapType || !allConfirmed) return;
     rollStartedRef.current = true;
     sfxCast();
     setAnimPhase("dice_result");
@@ -205,9 +204,10 @@ export default function DungeonTrap({
               <button
                 type="button"
                 onClick={handleRollAndResolve}
+                disabled={!allConfirmed}
                 className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-sm shadow-md mt-2"
               >
-                🎲 擲骰結算
+                {allConfirmed ? "🎲 擲骰結算" : `等待隊員選擇（${Object.keys(roomConfirms).length}/${aliveIds.length}）`}
               </button>
             )}
           </div>

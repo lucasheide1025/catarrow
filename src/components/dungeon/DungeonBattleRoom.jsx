@@ -10,11 +10,12 @@ import {
   applyDungeonCarryPotion, applyDungeonUtilityPotion,
   forceSkipDungeonPlayer,
   clearDungeonProcessing, claimDungeonReward, returnToMapAfterBattle, confirmDungeonResolution,
-  trySetDungeonFirstClear, addDungeonBroadcast, setDungeonMemberRole,
+  trySetDungeonWorldFirstClear, claimDungeonPersonalFirstClear, addDungeonBroadcast, setDungeonMemberRole,
 } from "../../lib/dungeonDb";
 import { resolveHitPart, MONSTERS, TIER_LABEL } from "../../lib/monsterData";
 import { VARIANT_LABEL } from "../../lib/monsterRegistry";
 import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_MAPS } from "../../lib/dungeonData";
+import { normalizeDungeonDifficultyTier } from "../../lib/dungeonFirstClear";
 import { calcDungeonCounter } from "../../lib/damage";
 import { recordBattleDex, addCoins, addChests, addPracticeLog, addArrowdew, addArcherXP, addGachaCoins, usePotions, addRoundArrows, subscribePotions, subscribeCardCollection, recordGuestBattleStats, finalizeGameShootingSession } from "../../lib/db";
 import { DUNGEON_FLOOR_XP, MONSTER_TIER_XP, archerLevelFromXP } from "../../lib/archerLevel";
@@ -48,6 +49,7 @@ import { getDungeonTargetLabel } from "../../lib/dungeonRunSettings";
 import WorldBossCardBadge from "../shared/WorldBossCardBadge";
 import { getBattleBackgroundUrl, getBattleMonsterSources } from "../../lib/battleAssets";
 import { WB_CARDS } from "../../lib/worldBossCards";
+import { calculateDungeonDisplayedStats } from "../../lib/dungeonDisplayedStats";
 
 // SCORE_MAP/SCORE_LABELS/SCORE_GATE_LABELS/SCORE_COLORS 統一由 ../../lib/score 管理
 
@@ -193,7 +195,7 @@ function pickBg(family) {
   return getBattleBackgroundUrl(family);
 }
 
-export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, onReturnToMap, expeditionMode = false, guestProfile }) {
+export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, onReturnToMap, expeditionMode = false, guestProfile, cardCollection }) {
   // 訪客/兒童單人遠征：profile 由 DungeonExpedition → ExpeditionBattleRoom 明確傳入，
   // 不能只靠 useAuth()——教練/會員登入中的裝置掃兒童模式 QR code 時，訪客的匿名登入走的是
   // 隔離的臨時 Firebase App（見 guestAuth.js），不會更新這裡 useAuth() 訂閱的主要 auth 物件，
@@ -449,9 +451,12 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   // ── 訂閱卡片收藏（只用來顯示世界王卡徽章，純視覺）───────────
   const [myCardColl, setMyCardColl] = useState({ cards: {}, wbCards: {}, equipped: [] });
   useEffect(() => {
-    if (!myId || isLimitedAccount) return;
+    if (cardCollection !== undefined) setMyCardColl(cardCollection);
+  }, [cardCollection]);
+  useEffect(() => {
+    if (!myId || isLimitedAccount || cardCollection !== undefined) return;
     return subscribeCardCollection(myId, setMyCardColl);
-  }, [myId, isLimitedAccount]);
+  }, [myId, isLimitedAccount, cardCollection]);
 
   // Must be derived before any conditional return: the shared BattleScreen
   // branch uses it while the room is active.
@@ -574,17 +579,39 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
 
   // ── 首殺檢查（Boss 房通關時，提前顯示徽章用）─────────────────
   useEffect(() => {
-    if (!isBossRoom || !isMapMode || !isHost) return;
+    if (!isBossRoom || !isMapMode) return;
     if (status !== "completed" || room?.result !== "win") return;
     if (firstClearCheckedRef.current) return;
     firstClearCheckedRef.current = true;
     const dungeonInfo = DUNGEON_MAPS.find(d => d.id === room?.mapDungeonId);
     if (!dungeonInfo) { setFirstClearBonus(false); return; }
     const teamNames = Object.values(room?.members || {}).map(m => m.name).filter(Boolean);
-    trySetDungeonFirstClear(room.mapDungeonId, myId, me.name || "", teamNames).then(fcRes => {
+    // 難度字串→數字的對映集中在 dungeonFirstClear.js，不在這裡另抄一份：
+    // 這裡寫入的鍵必須跟 DungeonSelectionPanel 讀取時算出的鍵完全一致，
+    // 否則打完進階寫 t3、面板查 t1，首次通關狀態永遠顯示不出來。
+    const difficultyTier = normalizeDungeonDifficultyTier(dungeonInfo.difficulty);
+    claimDungeonPersonalFirstClear({
+      memberId:myId,
+      family:dungeonInfo.family,
+      difficultyTier,
+      runId:room?.expeditionId || roomId,
+    }).catch(() => {});
+    if (!isHost) {
+      setFirstClearBonus(false);
+      return;
+    }
+    trySetDungeonWorldFirstClear({
+      family:dungeonInfo.family,
+      difficultyTier,
+      hostId:room?.hostId || myId,
+      hostName:me.name || "",
+      teamMemberIds:Object.keys(room?.members || {}),
+      teamNames,
+      runId:room?.expeditionId || roomId,
+    }).then(fcRes => {
       if (fcRes?.ok && fcRes?.isFirst) {
         setFirstClearBonus({ coins: 500, arrowdew: 50, gachaCoins: 5 });
-        addDungeonBroadcast(room.mapDungeonId, dungeonInfo.name, dungeonInfo.difficultyLabel, dungeonInfo.emoji, teamNames, me.name || "").catch(() => {});
+        addDungeonBroadcast(fcRes.key, dungeonInfo.name, dungeonInfo.difficultyLabel, dungeonInfo.emoji, teamNames, me.name || "").catch(() => {});
       } else {
         setFirstClearBonus(false);
       }
@@ -1464,6 +1491,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     // 這一場怪物已被擊敗，才能顯示確認結算畫面並呼叫 onConfirmPartyResult。
     const resolvedBattleResult = room.result
       || (status === "resolving" && (room.monsterHP ?? 1) <= 0 ? "win" : null);
+    const displayedStats = calculateDungeonDisplayedStats(me);
     return (
       <BattleScreen
         player={{
@@ -1472,8 +1500,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
           lv: myLevel || 1,
           cardFrame: myBattleCosmetics.wbFrame ? "worldboss" : "none",
           battleCosmetics: myBattleCosmetics,
-          atk: me?.atk || 10,
-          def: me?.def || 10,
+          atk: displayedStats.atk || 10,
+          def: displayedStats.def || 10,
           hp: me?.hp || 100,
           maxHp: me?.maxHP || 100,
           catId: battleCatId || "diandian",
@@ -1945,8 +1973,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
                     {m.role==="rear"?"🛡後衛":"⚔️前衛"}
                   </div>
                   <div style={{ display:"flex", justifyContent:"center", gap:4, marginBottom:1 }}>
-                    <div style={{ fontSize:9, color:"#f87171" }}>⚔️{Math.round((m.atk||0)*(m.buffs?.atkMult||1))}{(m.buffs?.atkMult||1)>1&&<span style={{color:"#fbbf24",fontSize:7}}>↑</span>}</div>
-                    <div style={{ fontSize:9, color:"#60a5fa" }}>🛡{Math.round((m.def||0)*(m.buffs?.defMult||1))}{(m.buffs?.defMult||1)>1&&<span style={{color:"#fbbf24",fontSize:7}}>↑</span>}</div>
+                    <div style={{ fontSize:9, color:"#f87171" }}>⚔️{Math.round((m.atk||0)*(m.buffs?.atkMult||1)*(1+(m.restBonuses?.atkPct||0)/100)*(1+(m.merchantBonuses?.atkPct||0)/100))}{((m.buffs?.atkMult||1)>1||(m.restBonuses?.atkPct||0)>0||(m.merchantBonuses?.atkPct||0)>0)&&<span style={{color:"#fbbf24",fontSize:7}}>↑</span>}</div>
+                    <div style={{ fontSize:9, color:"#60a5fa" }}>🛡{Math.round((m.def||0)*(m.buffs?.defMult||1)*(1+(m.restBonuses?.defPct||0)/100)*(1+(m.merchantBonuses?.defPct||0)/100))}{((m.buffs?.defMult||1)>1||(m.restBonuses?.defPct||0)>0||(m.merchantBonuses?.defPct||0)>0)&&<span style={{color:"#fbbf24",fontSize:7}}>↑</span>}</div>
                   </div>
                   {((m.buffs?.dmgMult||1)>1||(m.buffs?.hasRevival)) && (
                     <div style={{ fontSize:7, color:"#fbbf24", marginBottom:1 }}>

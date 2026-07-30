@@ -6,7 +6,8 @@
 //       抽成獨立小模組後，DungeonExpedition 與 TeamExpeditionBattle 都從這裡匯入，消除該風險。
 //       見第二大腦 memory：共用常數勿放 UI 元件再 re-export（循環／跨檔匯入坑）。
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
-import { GRID_SIZE, isAdjacent } from "../../lib/expeditionGrid";
+import { GRID_SIZE, getBranchMapLayout, isAdjacent } from "../../lib/expeditionGrid";
+import { calculateDungeonDisplayedStats } from "../../lib/dungeonDisplayedStats";
 
 const TYPE_ICONS = {
   entrance:"🚪", battle:"⚔️", elite_battle:"💀", boss_battle:"👑",
@@ -293,14 +294,23 @@ function MapViewport({ worldW, worldH, focusX, focusY, height = 380, fit = false
 }
 
 // ── 頂部玩家狀態列（HP / 金幣 / buff）───────────────────
-function PlayerStatusBar({ playerState, coins, lootMult = 1 }) {
+function PlayerStatusBar({ playerState, coins, lootMult = 1, partyMembers = [], currentMemberId = "" }) {
   const hp = playerState?.hp ?? 0;
   const maxHP = playerState?.maxHP || 1;
   const pct = Math.max(0, Math.min(1, hp / maxHP));
   const buffs = playerState?.buffs || {};
+  const stats = calculateDungeonDisplayedStats(playerState);
   const badges = [];
-  if ((buffs.atkMult || 1) !== 1) badges.push({ t:`⚔️×${buffs.atkMult}`, up:(buffs.atkMult||1) > 1 });
-  if ((buffs.defMult || 1) !== 1) badges.push({ t:`🛡️×${buffs.defMult}`, up:(buffs.defMult||1) > 1 });
+  const restAtkPct = Number(playerState?.restBonuses?.atkPct) || 0;
+  const restDefPct = Number(playerState?.restBonuses?.defPct) || 0;
+  const merchantAtkPct = Number(playerState?.merchantBonuses?.atkPct) || 0;
+  const merchantDefPct = Number(playerState?.merchantBonuses?.defPct) || 0;
+  if (restAtkPct) badges.push({ t:`🔨 打磨 ATK ${restAtkPct > 0 ? "+" : ""}${restAtkPct}%`, up:restAtkPct > 0 });
+  if (restDefPct) badges.push({ t:`🧰 整備 DEF ${restDefPct > 0 ? "+" : ""}${restDefPct}%`, up:restDefPct > 0 });
+  if (merchantAtkPct) badges.push({ t:`🪄 武器 ATK ${merchantAtkPct > 0 ? "+" : ""}${merchantAtkPct}%`, up:merchantAtkPct > 0 });
+  if (merchantDefPct) badges.push({ t:`✨ 防具 DEF ${merchantDefPct > 0 ? "+" : ""}${merchantDefPct}%`, up:merchantDefPct > 0 });
+  if ((buffs.atkMult || 1) !== 1) badges.push({ t:`⚔️ 臨時 ATK ${Math.round(((buffs.atkMult || 1) - 1) * 100)}%`, up:(buffs.atkMult||1) > 1 });
+  if ((buffs.defMult || 1) !== 1) badges.push({ t:`🛡️ 臨時 DEF ${Math.round(((buffs.defMult || 1) - 1) * 100)}%`, up:(buffs.defMult||1) > 1 });
   if ((buffs.dmgMult || 1) !== 1) badges.push({ t:`💥×${buffs.dmgMult}`, up:(buffs.dmgMult||1) > 1 });
   if (buffs.hasRevival) badges.push({ t:"💫復活", up:true });
 
@@ -314,12 +324,33 @@ function PlayerStatusBar({ playerState, coins, lootMult = 1 }) {
               background: pct > 0.5 ? "#16a34a" : pct > 0.25 ? "#d97706" : "#dc2626",
             }}/>
           </div>
-          <div style={{ fontSize:10, color:"#94a3b8", marginTop:2 }}>
-            ❤️ {hp}/{maxHP}
-            {badges.map((b, i) => (
-              <span key={i} style={{ marginLeft:6, color: b.up ? "#4ade80" : "#f87171", fontWeight:700 }}>{b.t}</span>
-            ))}
+          <div style={{ display:"flex", flexWrap:"wrap", alignItems:"center", gap:"3px 8px", fontSize:10, color:"#94a3b8", marginTop:3 }}>
+            <span>❤️ {hp}/{maxHP}</span>
+            <span style={{ color:"#fb7185", fontWeight:900 }}>
+              ⚔️ ATK {stats.atkPct !== 0 ? `${stats.atkBase} → ` : ""}{stats.atk}
+              {stats.atkPct !== 0 && <small style={{ marginLeft:3, color:stats.atkPct > 0 ? "#4ade80" : "#f87171", fontWeight:900 }}>
+                ({stats.atkPct > 0 ? "+" : ""}{stats.atkPct}%)
+              </small>}
+            </span>
+            <span style={{ color:"#60a5fa", fontWeight:900 }}>
+              🛡️ DEF {stats.defPct !== 0 ? `${stats.defBase} → ` : ""}{stats.def}
+              {stats.defPct !== 0 && <small style={{ marginLeft:3, color:stats.defPct > 0 ? "#4ade80" : "#f87171", fontWeight:900 }}>
+                ({stats.defPct > 0 ? "+" : ""}{stats.defPct}%)
+              </small>}
+            </span>
           </div>
+          {badges.length > 0 && (
+            <div style={{ display:"flex", flexWrap:"wrap", gap:"3px 5px", marginTop:4 }}>
+              {badges.map((b, i) => (
+                <span key={i} style={{
+                  padding:"2px 6px", borderRadius:999, fontSize:9, fontWeight:800,
+                  color:b.up ? "#86efac" : "#fca5a5",
+                  background:b.up ? "rgba(22,101,52,.35)" : "rgba(127,29,29,.35)",
+                  border:`1px solid ${b.up ? "rgba(74,222,128,.3)" : "rgba(248,113,113,.3)"}`,
+                }}>{b.t}</span>
+              ))}
+            </div>
+          )}
         </div>
         {/* 本圖寶箱倍率（出圖時擲定,整場固定）——收進狀態列，不再用浮動角標 */}
         {lootMult > 1 && (
@@ -332,6 +363,44 @@ function PlayerStatusBar({ playerState, coins, lootMult = 1 }) {
           💰 {coins.toLocaleString()}
         </div>
       </div>
+      {partyMembers.length > 0 && (
+        <div style={{
+          display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(118px,1fr))",
+          gap:5, marginTop:6,
+        }}>
+          {partyMembers
+            .filter(member => member?.id && member.id !== currentMemberId)
+            .map(member => {
+              const memberStats = calculateDungeonDisplayedStats(member);
+              const memberHp = member.hp ?? 0;
+              const memberMaxHp = member.maxHP || 1;
+              const memberHpPct = Math.max(0, Math.min(100, memberHp / memberMaxHp * 100));
+              return (
+                <div key={member.id} style={{
+                  minWidth:0, padding:"5px 7px", borderRadius:9,
+                  background:"rgba(15,23,42,.78)", border:"1px solid rgba(148,163,184,.18)",
+                }}>
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:5 }}>
+                    <span style={{ minWidth:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", fontSize:9, fontWeight:900, color:"#e2e8f0" }}>
+                      {member.avatarId ? "🏹" : "👤"} {member.name || "隊友"}
+                    </span>
+                    <span style={{ fontSize:8, color:member.alive === false ? "#f87171" : member.role === "rear" ? "#fbbf24" : "#86efac" }}>
+                      {member.alive === false ? "倒下" : member.role === "rear" ? "後衛" : "前衛"}
+                    </span>
+                  </div>
+                  <div style={{ height:3, marginTop:4, overflow:"hidden", borderRadius:3, background:"rgba(255,255,255,.1)" }}>
+                    <div style={{ width:`${memberHpPct}%`, height:"100%", background:"#22c55e" }} />
+                  </div>
+                  <div style={{ display:"flex", justifyContent:"space-between", gap:4, marginTop:3, fontSize:8, fontWeight:800 }}>
+                    <span style={{ color:"#86efac" }}>HP {memberHp}/{memberMaxHp}</span>
+                    <span style={{ color:"#fb7185" }}>ATK {memberStats.atk}</span>
+                    <span style={{ color:"#60a5fa" }}>DEF {memberStats.def}</span>
+                  </div>
+                </div>
+              );
+            })}
+        </div>
+      )}
     </div>
   );
 }
@@ -410,7 +479,7 @@ export function GridMapStage({
   playerState, coins, lootMult, onCellClick, onEnterRoom, onDescend, onSaveAndLeave, onRetreat,
   canControl = true,
   difficulty = 1,
-  family = "ghost",
+  family = "ghost", partyMembers = [], currentMemberId = "",
 }) {
   const [confirmExit, setConfirmExit] = useState(false);
   const theme = FAMILY_STYLES[family] || FAMILY_STYLES.ghost;
@@ -498,7 +567,8 @@ export function GridMapStage({
         </div>
       </div>
 
-      <PlayerStatusBar playerState={playerState} coins={coins} lootMult={lootMult} />
+      <PlayerStatusBar playerState={playerState} coins={coins} lootMult={lootMult}
+        partyMembers={partyMembers} currentMemberId={currentMemberId} />
 
       {/* Map */}
         <div style={{ padding:"10px 0" }}>
@@ -602,15 +672,18 @@ const BRANCH_COL = { A: 0, B: 1, C: 2 };
 
 function DungeonBranchView({ branchFloor, branchChoice, branchSeq, branchStep, canControl, family, onChoose }) {
   const theme = FAMILY_STYLES[family] || FAMILY_STYLES.ghost;
+  const layout = getBranchMapLayout();
   const ISO_OX = 5 * HALF_W;
   const worldW = 6 * HALF_W + TILE_W;
-  const worldH = 7 * HALF_H + TILE_H;
+  const worldH = 9 * HALF_H + TILE_H;
   const isoXY = (col, row) => ({ x: (col - row) * HALF_W + ISO_OX, y: (col + row) * HALF_H });
   const cc = (col, row) => { const p = isoXY(col, row); return { cx: p.x + TILE_W / 2, cy: p.y + TILE_H * 0.5 }; };
   const chosen = branchChoice;
   const seq = branchSeq || [];
 
-  const ENTR = { col: 1, row: 0 }, BOSS = { col: 1, row: 5 }, TRE = { col: 1, row: 6 };
+  const ENTR = { col: 1, row: 0 };
+  const BOSS = { col: 1, row: layout.bossRow };
+  const TRE = { col: 1, row: layout.treasureRow };
   const curType = chosen ? seq[branchStep]?.type : "entrance";
 
   let curPos = ENTR;
@@ -626,8 +699,10 @@ function DungeonBranchView({ branchFloor, branchChoice, branchSeq, branchStep, c
   ["A", "B", "C"].forEach(k => {
     const col = BRANCH_COL[k];
     links.push([ENTR, { col, row: 1 }, k]);
-    for (let i = 1; i <= 3; i++) links.push([{ col, row: i }, { col, row: i + 1 }, k]);
-    links.push([{ col, row: 4 }, BOSS, k]);
+    for (let i = 1; i < layout.branchRoomRows.length; i++) {
+      links.push([{ col, row: i }, { col, row: i + 1 }, k]);
+    }
+    links.push([{ col, row: layout.branchRoomRows.at(-1) }, BOSS, k]);
   });
   links.push([BOSS, TRE, null]);
 
@@ -695,7 +770,7 @@ export function BranchStage({
   playerState, coins, lootMult, onChoose, onEnterNext, onRetreat,
   canControl = true,
   difficulty = 1,
-  family = "ghost",
+  family = "ghost", partyMembers = [], currentMemberId = "",
 }) {
   const [confirmExit, setConfirmExit] = useState(false);
   const theme = FAMILY_STYLES[family] || FAMILY_STYLES.ghost;
@@ -736,7 +811,8 @@ export function BranchStage({
         </button>
       </div>
 
-      <PlayerStatusBar playerState={playerState} coins={coins} lootMult={lootMult} />
+      <PlayerStatusBar playerState={playerState} coins={coins} lootMult={lootMult}
+        partyMembers={partyMembers} currentMemberId={currentMemberId} />
 
       {/* 2.5D 分支地圖（三條並排可見） */}
       <div style={{ padding:"8px 0 0" }}>

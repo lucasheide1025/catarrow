@@ -91,6 +91,7 @@ export default function DungeonKillResult({
   targetFmt = "full_110",
   isBoss = false,
   bossDrops = [],          // 王房專屬掉落（素材／卡片），一般怪不傳
+  collectibles = [],       // 本場掉落的地下城圖鑑收藏品
   canContinue = true,      // 組隊非房主時為 false
   waitingLabel = "等待房主繼續…",
   continueLabel = "下一步",
@@ -239,6 +240,17 @@ export default function DungeonKillResult({
                   <span style={{ fontSize:18 }}>{drop.icon || (drop.kind === "card" ? "🃏" : "💎")}</span>
                   <span style={{ fontSize:12, fontWeight:700, color:"#fde68a" }}>{drop.name}</span>
                   {drop.count > 1 && <span style={{ marginLeft:"auto", fontWeight:900, color:"#fcd34d" }}>×{drop.count}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+          {collectibles.length > 0 && (
+            <div style={{ marginTop:12, paddingTop:12, borderTop:"1px solid rgba(255,255,255,.08)" }}>
+              <div style={{ fontSize:12, fontWeight:900, color:"#c084fc" }}>🏺 地下城收藏品</div>
+              {collectibles.map(item => (
+                <div key={item.id} style={{ marginTop:7, display:"flex", alignItems:"center", gap:8 }}>
+                  <span style={{ fontSize:22 }}>{item.icon || "🏺"}</span>
+                  <span style={{ fontSize:12, fontWeight:800, color:"#e9d5ff" }}>{item.name}</span>
                 </div>
               ))}
             </div>

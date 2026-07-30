@@ -20,10 +20,12 @@ import { ALL_MILESTONES } from "../../lib/arrowMilestone";
 import { EXPEDITION_MISSIONS, fmtCountdown } from "../../lib/expeditionData";
 import { subscribeActiveGoal } from "../../lib/villageGoalDb";
 import { GOAL_TYPE_MAP, buildGoalTitle } from "../../lib/villageGoalData";
+import { subscribeWorldBossSpawnCycle } from "../../lib/worldBossDb";
 import { Card, ST } from "../shared/UI";
 import { SectionHeader, StatBar, ProgressRing, HubTile } from "../shared/Widgets";
 import ShareCard from "./ShareCard";
 import HomeLeaderboardBlock from "./HomeLeaderboardBlock";
+import MemberFeatureArt from "./MemberFeatureArt";
 
 const CERT_SHOW = ["recurve_bare", "compound", "traditional"];
 
@@ -37,12 +39,12 @@ const HOME_HUBS = [
 
 // ── 快速入口（常用功能捷徑）─────────────────────────────
 const QUICK_LINKS = [
-  { page:"guide",       icon:"📘", label:"說明書" },
-  { page:"monster",     icon:"⚔️", label:"打怪" },
-  { page:"leaderboard", icon:"📊", label:"排行榜" },
-  { page:"practice",    icon:"🎯", label:"自主練習" },
-  { page:"coinshop",    icon:"🛒", label:"商店" },
-  { page:"equipment",   icon:"🛡️", label:"我的裝備" },
+  { page:"guide",       art:"guide",      label:"說明書" },
+  { page:"monster",     art:"adventure",  label:"打怪" },
+  { page:"leaderboard", art:"history",    label:"排行榜" },
+  { page:"practice",    art:"training",   label:"自主練習" },
+  { page:"coinshop",    art:"inventory",  label:"商店" },
+  { page:"equipment",   art:"bowsetting", label:"我的裝備" },
 ];
 
 // Firestore Timestamp / Date / string → ms
@@ -90,6 +92,8 @@ export default function MemberHome({
   dexUnseenCount = 0,
 }) {
   const { profile } = useAuth();
+  const [worldBossCycle, setWorldBossCycle] = useState(null);
+  useEffect(() => subscribeWorldBossSpawnCycle(setWorldBossCycle), []);
   const { catHP, catATK, catDEF, hasCat } = useCatCompanion();
   const [certRecords, setCertRecords]     = useState([]);
   const [results, setResults]             = useState([]);
@@ -307,15 +311,17 @@ export default function MemberHome({
         const ringVal = nextDaily ? todayArrows - prevDailyArrows : 1;
         const ringMax = nextDaily ? nextDaily.arrows - prevDailyArrows : 1;
         return (
-          <Card className="p-4" style={{ background:"#101827", border:"1px solid rgba(45,212,191,.2)", boxShadow:"0 10px 24px rgba(0,0,0,.24), inset 4px 0 #14b8a6" }}>
-            <SectionHeader icon="📋" title="今日狀態" action={
+          <Card className="relative isolate overflow-hidden p-4" style={{ background:"linear-gradient(145deg,#10231f,#101827 70%)", border:"1px solid rgba(45,212,191,.28)", boxShadow:"0 14px 30px rgba(0,0,0,.28)" }}>
+            <MemberFeatureArt name="training" size={126} style={{ position:"absolute", right:-20, bottom:-28, opacity:.16, zIndex:-1 }} />
+            <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-teal-300 to-emerald-600" />
+            <SectionHeader icon="🎯" title="今日狀態" action={
               <button onClick={() => onPageChange("training-hub")}
                 style={{ fontSize:11, color:"var(--text-accent)", fontWeight:700, background:"none", border:"none", cursor:"pointer", padding:0 }}>
                 前往練箭 →
               </button>
             } />
             <div style={{ display:"flex", alignItems:"center", gap:14 }}>
-              <div style={{ flexShrink:0 }}>
+              <div className="rounded-full bg-slate-950/45 p-1 shadow-lg" style={{ flexShrink:0 }}>
                 <ProgressRing value={ringVal} max={ringMax} size={72} stroke={6} color="var(--success-fg)">
                   <div style={{ textAlign:"center", lineHeight:1.1 }}>
                     <div style={{ fontSize:18, fontWeight:900, color:"var(--text-primary)" }}>{todayArrows}</div>
@@ -344,15 +350,18 @@ export default function MemberHome({
       {/* ── 進行中卡：世界王／遠征倒數／村目標（有內容才顯示）──── */}
       {(() => {
         const wbActive = worldBoss && worldBoss.status === "active";
-        if (!wbActive && expSlots.length === 0 && !villageGoal) return null;
+        const wbCharging = !wbActive && worldBossCycle && !["spawned"].includes(worldBossCycle.status);
+        if (!wbActive && !wbCharging && expSlots.length === 0 && !villageGoal) return null;
         const rowStyle = (bg, border) => ({
           display:"flex", alignItems:"center", gap:10, width:"100%",
           background:bg, border:`1px solid ${border}`, borderRadius:"var(--r-md)",
           padding:"8px 12px", cursor:"pointer", textAlign:"left",
         });
         return (
-          <Card className="p-4" style={{ background:"#101827", border:"1px solid rgba(251,191,36,.18)", boxShadow:"0 10px 24px rgba(0,0,0,.24), inset 4px 0 #f59e0b" }}>
-            <SectionHeader icon="⏳" title="進行中" />
+          <Card className="relative isolate overflow-hidden p-4" style={{ background:"linear-gradient(145deg,#24180a,#101827 68%)", border:"1px solid rgba(251,191,36,.25)", boxShadow:"0 14px 30px rgba(0,0,0,.28)" }}>
+            <MemberFeatureArt name="adventure" size={142} style={{ position:"absolute", right:-30, top:-24, opacity:.13, zIndex:-1 }} />
+            <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-amber-300 to-orange-600" />
+            <SectionHeader icon="🗺️" title="進行中" />
             <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
               {wbActive && (
                 <button onClick={() => onPageChange("worldboss")} style={rowStyle("var(--danger-bg)", "rgba(239,68,68,0.35)")}>
@@ -364,6 +373,29 @@ export default function MemberHome({
                     <div style={{ fontSize:10, color:"var(--text-secondary)" }}>全體射手協力討伐</div>
                   </div>
                   <span style={{ fontSize:11, color:"var(--danger-fg)", fontWeight:700, flexShrink:0 }}>參戰 →</span>
+                </button>
+              )}
+              {wbCharging && (
+                <button onClick={() => onPageChange("worldboss")}
+                  style={{ ...rowStyle("rgba(124,58,237,0.13)", "rgba(167,139,250,0.32)"), flexDirection:"column", alignItems:"stretch", gap:7 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                    <span style={{ fontSize:20 }}>🌌</span>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:13, fontWeight:900, color:"#c4b5fd" }}>世界王誕生徵兆</div>
+                      <div style={{ fontSize:10, color:"var(--text-secondary)" }}>
+                        全體射箭、通關、擊倒怪物與探索骰子都會累積
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:4 }}>
+                    {[
+                      ["arrows","🏹"], ["dungeonClears","🏰"], ["monsterKills","👹"], ["villageDice","🎲"],
+                    ].map(([key,icon]) => {
+                      const value = Number(worldBossCycle.progress?.[key] || 0);
+                      const target = Number(worldBossCycle.targets?.[key] || 1);
+                      return <div key={key} style={{ fontSize:9, color:"#ddd6fe" }}>{icon} {value.toLocaleString()} / {target.toLocaleString()}</div>;
+                    })}
+                  </div>
                 </button>
               )}
               {expSlots.map(e => {
@@ -629,12 +661,14 @@ export default function MemberHome({
         const gachaCoins = profile?.gachaCoins || 0;
         const kingSeals = profile?.kingSeals || 0;
         return (
-          <Card className="p-4" style={{ background:"#101827", border:"1px solid rgba(96,165,250,.18)", boxShadow:"0 10px 24px rgba(0,0,0,.24), inset 4px 0 #3b82f6" }}>
+          <Card className="relative isolate overflow-hidden p-4" style={{ background:"linear-gradient(145deg,#18162e,#101827 68%)", border:"1px solid rgba(167,139,250,.25)", boxShadow:"0 14px 30px rgba(0,0,0,.28)" }}>
+            <MemberFeatureArt name="profile" size={150} style={{ position:"absolute", right:-32, top:-34, opacity:.14, zIndex:-1 }} />
+            <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-fuchsia-300 via-violet-500 to-blue-600" />
             {/* 等級標題列 */}
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:6 }}>
               <div>
-                <div style={{ fontSize:11, color:"rgba(255,255,255,0.5)", fontWeight:700 }}>⚔️ 射手等級</div>
-                <div style={{ fontSize:22, fontWeight:900, color:"#f472b6" }}>Lv. {level} <span style={{ fontSize:12, color:"rgba(255,255,255,0.4)", fontWeight:400 }}>/ {MAX_ARCHER_LEVEL}</span></div>
+                <div style={{ fontSize:10, color:"#c4b5fd", fontWeight:900, letterSpacing:".16em" }}>ARCHER LEVEL</div>
+                <div style={{ fontSize:25, fontWeight:950, color:"#f5d0fe", textShadow:"0 3px 14px rgba(217,70,239,.35)" }}>Lv. {level} <span style={{ fontSize:12, color:"rgba(255,255,255,0.4)", fontWeight:400 }}>/ {MAX_ARCHER_LEVEL}</span></div>
               </div>
               {/* 實際數值 */}
               <div style={{ display:"flex", gap:8, fontSize:12 }}>
@@ -884,7 +918,7 @@ export default function MemberHome({
             <button key={q.page} onClick={() => onPageChange(q.page)}
               className="flex flex-col items-center justify-center gap-1 active:scale-95 transition-transform"
               style={{ minHeight:64, borderRadius:"var(--r-md)", border:"1px solid rgba(148,163,184,.16)", background:"#111b2d", boxShadow:"0 8px 18px rgba(0,0,0,.2)", cursor:"pointer" }}>
-              <span style={{ fontSize:20 }}>{q.icon}</span>
+              <MemberFeatureArt name={q.art} size={38} />
               <span style={{ fontSize:10, fontWeight:700, color:"var(--text-secondary)" }}>{q.label}</span>
             </button>
           ))}

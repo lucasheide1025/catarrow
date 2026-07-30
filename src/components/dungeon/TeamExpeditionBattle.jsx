@@ -4,12 +4,12 @@
 import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { onSnapshot, doc } from "firebase/firestore";
 import { db } from "../../lib/firebase";
+import { addCoins, addPotions, addDungeonClear } from "../../lib/db";
 import { useAuth } from "../../hooks/useAuth";
 import { MATERIAL_BY_ID as EXPANSION_MATERIAL_BY_ID } from "../../lib/monsterEconomyCatalog";
 import { drawDungeonFloorMonsters, drawDungeonFallbackMonster } from "../../lib/dungeonExpansionMonsters";
 import { bossRewardBlocksAdvance, isEligibleForBossReward } from "../../lib/bossRewardAdvance";
 import {
-  DUNGEON_SHOP_ITEMS,
   drawDungeonEvent,
   getExcavationDifficulty,
 } from "../../lib/dungeonData";
@@ -29,8 +29,12 @@ import {
   claimTeamExpeditionResult,
   saveTeamExpeditionProgress,
 } from "../../lib/expeditionTeamDb";
-import { trySetDungeonFirstClear, addDungeonBroadcast, addCollectibles } from "../../lib/dungeonDb";
-import { getExpeditionFirstClearTrophy } from "../../lib/dungeonCollectibles";
+import { trySetDungeonWorldFirstClear, claimDungeonPersonalFirstClear, addDungeonBroadcast } from "../../lib/dungeonDb";
+import { drawDungeonMerchantType } from "../../lib/dungeonMerchant";
+import { createOrdinaryChestChoices } from "../../lib/dungeonChestLoot";
+import { buildTeamEventResolution } from "../../lib/dungeonEventResolution";
+import { shouldAutoAdvanceTeamFunctionRoom } from "../../lib/dungeonTeamRoomFlow";
+import { preloadDungeonUiAssets } from "../../lib/dungeonAssetCache";
 import {
   cleanupExpeditionRoom,
   broadcastExpeditionFailure,
@@ -41,6 +45,7 @@ import {
   collectBattleStats,
   collectBattleArrows,
   createExpeditionKillLoot,
+  normalizeExpeditionLootMultiplier,
 } from "../../lib/expeditionRewards";
 import DungeonBattleRoom from "./DungeonBattleRoom";
 import DungeonExpeditionResult from "./DungeonExpeditionResult";
@@ -79,7 +84,7 @@ function TeamRoomVotingBar({ teamRoom, myId, isHost, onSaveProgress, onForceAdva
 
   const members = Object.entries(teamRoom.members || {}).filter(([, m]) => m && m.alive !== false);
   const confirms = teamRoom.roomConfirms || {};
-  const confirmedCount = members.filter(([id]) => confirms[id] === true || confirms[id] !== undefined).length;
+  const confirmedCount = members.filter(([id]) => confirms[id] === true).length;
   const totalCount = members.length;
 
   return (
@@ -94,7 +99,7 @@ function TeamRoomVotingBar({ teamRoom, myId, isHost, onSaveProgress, onForceAdva
 
         <div className="flex items-center gap-1.5 flex-wrap">
           {members.map(([id, m]) => {
-            const isDone = confirms[id] === true || confirms[id] !== undefined;
+            const isDone = confirms[id] === true;
             const isMe = id === myId;
             return (
               <span
@@ -113,7 +118,7 @@ function TeamRoomVotingBar({ teamRoom, myId, isHost, onSaveProgress, onForceAdva
         </div>
       </div>
 
-      {isHost && (
+      {isHost && onForceAdvance && (
         <div className="flex items-center gap-2 shrink-0">
           {onSaveProgress && (
             <button
@@ -192,8 +197,8 @@ function buildTeamFloorState(floorIndex, difficulty, family, fixedBoss) {
       key,
       {
         ...branch,
-        rooms: branch.rooms.map(room => room.type === "battle"
-          ? { ...room, monster: drawDungeonFallbackMonster("strong", difficulty, { family }) }
+        rooms: branch.rooms.map(room => room.type === "elite_battle"
+          ? { ...room, monster: plan.elite || drawDungeonFallbackMonster("strong", difficulty, { family }) }
           : room),
       },
     ])),
@@ -213,7 +218,7 @@ function buildTeamFloorState(floorIndex, difficulty, family, fixedBoss) {
 }
 
 // ── 戰鬥房間包裝元件（監聽戰況 + 清理房間）───────────────
-function TeamBattleRoom({ roomId, isHost, onDone, onAbandon, guestProfile, lootMult = 1, onArrowsCollected, onKillRewardCollected }) {
+function TeamBattleRoom({ roomId, isHost, onDone, onAbandon, guestProfile, cardCollection, lootMult = 1, onArrowsCollected, onKillRewardCollected }) {
   const [loading, setLoading] = useState(true);
   const [battleDone, setBattleDone] = useState(false);
   const terminalHandledRef = useRef(false);
@@ -234,7 +239,7 @@ function TeamBattleRoom({ roomId, isHost, onDone, onAbandon, guestProfile, lootM
   const killClaimedRef = useRef(false);
   const claimMyKillReward = useCallback(monster => {
     // 2026-07-18 使用者規格：地下城中途擊殺「不掉單怪素材」——
-    // 改為 材料寶箱+金幣寶箱 必掉,數量 = 出圖時決定的 1~3 倍（teamRoom.lootMult）。
+    // 改為 材料寶箱+金幣寶箱 必掉,數量 = 出圖時決定的 2～5 倍（teamRoom.lootMult）。
     // 王/小王不走此路（王房 envelope 不變）;素材取得回歸「難度=Tier」的王房與寶箱。
     if (!monster || guestProfile || killClaimedRef.current) return;
     if (monster.encounter && monster.encounter !== "normal") return;
@@ -248,7 +253,7 @@ function TeamBattleRoom({ roomId, isHost, onDone, onAbandon, guestProfile, lootM
       const [{ makeChests }, { makeCoinChest }, dbMod, { rollDungeonKillReward }] = await Promise.all([
         import("../../lib/itemData"), import("../../lib/lootTable"), import("../../lib/db"), import("../../lib/dungeonKillRewards"),
       ]);
-      const mult = Math.max(1, Math.min(3, Math.round(lootMult) || 1));
+      const mult = normalizeExpeditionLootMultiplier(lootMult);
       const chests = [];
       for (let i = 0; i < mult; i++) {
         const { mainChest } = makeChests(monster, "student");
@@ -424,6 +429,7 @@ function TeamBattleRoom({ roomId, isHost, onDone, onAbandon, guestProfile, lootM
       isMapMode={true}
       expeditionMode={true}
       guestProfile={guestProfile}
+      cardCollection={cardCollection}
       onReturnToMap={() => {}}
       onExit={onAbandon}
     />
@@ -440,7 +446,11 @@ export default function TeamExpeditionBattle({
   isHost,
   onComplete,
   onAbandon,
+  cardCollection,
 }) {
+  useEffect(() => {
+    preloadDungeonUiAssets();
+  }, []);
   const myId = profile?.id;
   const myName = profile?.nickname || profile?.name || "射手";
   const isGuestMode = ["guest", "kid"].includes(profile?.accountType);
@@ -516,19 +526,7 @@ export default function TeamExpeditionBattle({
 
   }, [teamRoom?.currentBattleRoomId, teamRoom?.expeditionPhase, teamRoom?.status, teamRoom?.result, onAbandon]);
 
-  // ── 卡死保護（見 dungeon 穩定性任務）───────────────────────
-  // 房主：房間/事件協調狀態卡住 20 秒 → 自動清除，讓房主能重新操作
-  useEffect(() => {
-    if (!isHost || !teamRoom?.activeRoomId) return;
-    const t = setTimeout(() => {
-      updateTeamExpeditionRoom(teamRoomId, {
-        activeRoomId: null, roomConfirms: {}, roomChoices: {}, currentEvent: null,
-      }).catch(() => {});
-    }, 20000);
-    return () => clearTimeout(t);
-  }, [teamRoom?.activeRoomId, isHost, teamRoomId]);
-
-  // 非房主：等待房主超過 20 秒沒有變化 → 顯示提示 + 安全返回大廳（不影響隊伍成員資格）
+  // 閱讀事件與開箱動畫期間不得用計時器清除共享房間；只顯示連線提示。
   const [showStuckHint, setShowStuckHint] = useState(false);
   useEffect(() => {
     setShowStuckHint(false);
@@ -606,6 +604,7 @@ export default function TeamExpeditionBattle({
     });
     const saved = await updateTeamExpeditionRoom(teamRoomId, {
       ...buffReset,
+      nextFloorModifiers: {},
       expeditionMapState: stripMapStateGrid(expeditionMapState),
       expeditionFloorIndex: fi,
       currentBattleRoomId: null,
@@ -632,6 +631,10 @@ export default function TeamExpeditionBattle({
       activeRoomId: null,
       roomConfirms: {},
       roomChoices: {},
+      restResults: {},
+      chestChoices: null,
+      chestEggType: null,
+      merchantRoomPurchases: {},
       currentEvent: null,
     }).catch(() => {});
   }, [isHost, teamRoomId]);
@@ -661,6 +664,8 @@ export default function TeamExpeditionBattle({
         displayGroup: m.displayGroup || m.role || "front",
         // buffs＝樓層級（事件/商人）：繼承 teamRoom 成員的當層 buffs，同層多場戰鬥都帶著。
         buffs: m.buffs || { atkMult: 1, defMult: 1, dmgMult: 1, hasRevival: false, hasFrontRevival: false },
+        restBonuses: m.restBonuses || { atkPct:0, defPct:0 },
+        merchantBonuses: m.merchantBonuses || { atkPct:0, defPct:0 },
         // potionBuffs＝戰鬥級（藥水）：每場都乾淨，打完該場就歸零（不會被 sync 帶回 teamRoom）。
         potionBuffs: { atkMult: 1, defMult: 1, dmgMult: 1 },
         wbBonus: m.wbBonus || null,
@@ -670,10 +675,17 @@ export default function TeamExpeditionBattle({
     setFlowError("");
 
     try {
+    const monsterModifiers = teamRoom.nextFloorModifiers || {};
+    const battleMonster = {
+      ...room.monster,
+      hp:Math.round((room.monster?.hp || 100) * (monsterModifiers.monsterHpMult || 1)),
+      maxHP:Math.round((room.monster?.maxHP || room.monster?.hp || 100) * (monsterModifiers.monsterHpMult || 1)),
+      atk:Math.round((room.monster?.atk || 10) * (monsterModifiers.monsterAtkMult || 1)),
+    };
     const res = await createTeamExpeditionBattleRoom({
       members,
       hostId: teamRoom.hostId,
-      monster: room.monster,
+      monster: battleMonster,
       difficultyTier: dungeonDifficulty,
       floorIndex,
       roomType: room.type === "boss_battle" ? "boss" : room.type === "elite_battle" ? "elite" : "monster",
@@ -725,9 +737,13 @@ export default function TeamExpeditionBattle({
   const handleFloorDone = useCallback(async ({ won, members: battleMembers, battle }) => {
     if (!isHost) return;
 
+    const mapState = teamRoom?.expeditionMapState;
     const battleSummary = {
       stats: collectBattleStats(battle?.log),
-      loot: won ? createExpeditionKillLoot(battle?.monster) : null,
+      loot: won ? createExpeditionKillLoot(battle?.monster, teamRoom?.lootMult, {
+        roomType: mapState?.pendingRoom?.type === "boss_battle" ? "boss"
+          : mapState?.pendingRoom?.type === "elite_battle" ? "elite" : "monster",
+      }) : null,
     };
     const syncResult = await syncTeamExpeditionMembers(
       teamRoomId,
@@ -754,7 +770,6 @@ export default function TeamExpeditionBattle({
       );
     }
 
-    const mapState = teamRoom?.expeditionMapState;
     const pendingRoom = mapState?.pendingRoom;
     if (!mapState) {
       if (floorIndex >= 2) {
@@ -837,15 +852,16 @@ export default function TeamExpeditionBattle({
       mapDungeonId: `${dungeonFamily}_expedition`,
       roomConfirms: {},
       roomChoices: {},
+      chestChoices: null,
+      chestEggType: null,
       // Event results are display-only state.  Carrying an old result into
       // the next map room makes events such as cursed_fog render as already
       // resolved and prevents their confirmation flow from running.
       roomResolution: null,
     };
     if (room.type === "shop") {
-      const shuffled = [...DUNGEON_SHOP_ITEMS].sort(() => Math.random() - 0.5);
-      preparedRoom.shopItems = shuffled.slice(0, 5).map(item => item.id);
-      sharedRoomFields.shopItems = preparedRoom.shopItems;
+      preparedRoom.shopType = drawDungeonMerchantType();
+      sharedRoomFields.shopType = preparedRoom.shopType;
     }
     if (room.type === "event") {
       preparedRoom.event = drawDungeonEvent("special");
@@ -855,6 +871,17 @@ export default function TeamExpeditionBattle({
       preparedRoom.event = drawDungeonEvent("general");
       sharedRoomFields.currentEvent = preparedRoom.event;
     }
+    if (room.type === "chest") {
+      preparedRoom.chestEggType = "normal";
+      preparedRoom.chestChoices = createOrdinaryChestChoices({
+        family:dungeonFamily,
+        difficultyTier:dungeonDifficulty,
+        hidden:dungeonIsHidden,
+      });
+      sharedRoomFields.chestEggType = preparedRoom.chestEggType;
+      sharedRoomFields.chestChoices = preparedRoom.chestChoices;
+      sharedRoomFields.chestClaims = {};
+    }
     await updateTeamExpeditionRoom(teamRoomId, {
       ...sharedRoomFields,
       expeditionMapState: stripMapStateGrid({
@@ -863,7 +890,7 @@ export default function TeamExpeditionBattle({
         pendingRoom: preparedRoom,
       }),
     });
-  }, [isHost, startRoomBattle, teamRoomId, dungeonFamily]);
+  }, [isHost, startRoomBattle, teamRoomId, dungeonFamily, dungeonDifficulty, dungeonIsHidden]);
 
   // 兩段式：點格子只移動+揭露（同步位置），不立刻進場；進入事件改由「進入」按鈕
   const handleCellClick = useCallback(async room => {
@@ -903,6 +930,51 @@ export default function TeamExpeditionBattle({
     await enterExplorationRoom(room, mapState);
   }, [isHost, branchSeq, mapState, enterExplorationRoom]);
 
+  const resolveTeamEvent = useCallback(async (choice, choiceIndex) => {
+    if (!isHost || !mapState?.pendingRoom?.event || teamRoom?.roomResolution?.kind === "team_event") {
+      return teamRoom?.roomResolution || null;
+    }
+    const event = mapState.pendingRoom.event;
+    const resolution = buildTeamEventResolution({
+      event,
+      choice,
+      members:teamRoom?.members || {},
+    });
+    const saved = await updateTeamExpeditionRoom(teamRoomId, {
+      ...resolution.updates,
+      roomResolution: {
+        kind:"team_event",
+        eventId:resolution.eventId,
+        title:resolution.title,
+        choiceIndex:choiceIndex ?? null,
+        choiceLabel:resolution.choiceLabel,
+        cost:resolution.cost,
+        effect:resolution.effect,
+        badges:resolution.badges,
+      },
+    });
+    if (!saved.ok) {
+      setFlowError(`事件效果無法套用：${saved.reason}`);
+      return null;
+    }
+    const coinDelta = (Number(resolution.effect?.gold) || 0) - (Number(resolution.cost?.gold) || 0);
+    if (coinDelta !== 0) {
+      await Promise.all(
+        Object.entries(teamRoom?.members || {})
+          .filter(([, member]) => member && member.alive !== false && !["guest", "kid"].includes(member.accountType))
+          .map(([memberId]) => addCoins(memberId, coinDelta))
+      );
+    }
+    if (resolution.effect?.item) {
+      await Promise.all(
+        Object.entries(teamRoom?.members || {})
+          .filter(([, member]) => member && member.alive !== false && !["guest", "kid"].includes(member.accountType))
+          .map(([memberId]) => addPotions(memberId, [{ id:resolution.effect.item, count:1 }]))
+      );
+    }
+    return resolution;
+  }, [isHost, mapState?.pendingRoom?.event, teamRoom?.members, teamRoom?.roomResolution, teamRoomId]);
+
   const finishFunctionRoom = useCallback(async () => {
     if (!isHost || !mapState?.pendingRoom) return;
     let nextMapState;
@@ -932,6 +1004,9 @@ export default function TeamExpeditionBattle({
       roomChoices: {},
       currentEvent: null,
       roomResolution: null,
+      chestChoices: null,
+      chestEggType: null,
+      chestClaims: null,
       expeditionMapState: stripMapStateGrid(nextMapState),
     });
   }, [isHost, mapState, floorIndex, teamRoomId]);
@@ -939,12 +1014,11 @@ export default function TeamExpeditionBattle({
   // ── 全員投票完成自動推進（房主端監聽） ───────────────────────────
   useEffect(() => {
     if (!isHost || mapState?.phase !== "func_room" || !mapState?.pendingRoom) return;
-    const activeMembers = Object.entries(teamRoom?.members || {})
-      .filter(([, m]) => m && m.alive !== false);
-    if (activeMembers.length === 0) return;
-    const confirms = teamRoom?.roomConfirms || {};
-    const allConfirmed = activeMembers.every(([id]) => confirms[id] === true || confirms[id] !== undefined);
-    if (allConfirmed) {
+    if (shouldAutoAdvanceTeamFunctionRoom({
+      roomType: mapState.pendingRoom.type,
+      members:teamRoom?.members,
+      confirms:teamRoom?.roomConfirms,
+    })) {
       finishFunctionRoom();
     }
   }, [isHost, mapState?.phase, mapState?.pendingRoom, teamRoom?.members, teamRoom?.roomConfirms, finishFunctionRoom]);
@@ -966,21 +1040,30 @@ export default function TeamExpeditionBattle({
     }      if (claim.ok && claim.allClaimed) {
         cleanupTeamExpeditionRoom(teamRoomId).catch(() => {});
       }
+      if (wonLast && !isGuestMode) {
+        addDungeonClear(myId, dungeonFamily, 1, `${teamRoomId}:${myId}`).catch(() => {});
+      }
 
       // ── 遠征首殺判定 ────────────────────────────────────────
       if (!isGuestMode && wonLast) {
-          const expeditionKey = `${dungeonFamily}_${["normal", "advanced", "hard", "hell"][dungeonDifficulty - 1]}`;
         const teamNames = Object.values(teamRoom?.members || {})
           .filter(Boolean).map(m => m.name).filter(Boolean);
         try {
-          const fcResult = await trySetDungeonFirstClear(expeditionKey, myId, myName, teamNames);
-          if (fcResult.isFirst) {
-            const trophy = getExpeditionFirstClearTrophy(dungeonFamily, dungeonDifficulty);
-            if (trophy) await addCollectibles(myId, [trophy]);
+          await claimDungeonPersonalFirstClear({
+            memberId:myId, family:dungeonFamily, difficultyTier:dungeonDifficulty, runId:teamRoomId,
+          });
+          if (isHost) {
+            const fcResult = await trySetDungeonWorldFirstClear({
+              family:dungeonFamily, difficultyTier:dungeonDifficulty,
+              hostId:teamRoom?.hostId || myId, hostName:myName,
+              teamMemberIds:Object.keys(teamRoom?.members || {}), teamNames, runId:teamRoomId,
+            });
+            if (fcResult.isFirst) {
             const diff = getExcavationDifficulty(dungeonDifficulty);
             const FAMILY_MAP = { ghost:{e:"👻",l:"幽冥系"}, mountain:{e:"⛰️",l:"山嶺系"}, insect:{e:"🦋",l:"昆蟲系"}, workplace:{e:"💼",l:"職場系"}, exam:{e:"📝",l:"考試系"}, temple:{e:"🏛️",l:"神廟系"}, treasure:{e:"📦",l:"寶箱族"} };
             const f = FAMILY_MAP[dungeonFamily] || {e:"🏰",l:"遠征"};
-            addDungeonBroadcast(expeditionKey, `遠征-${f.l}`, diff?.label || `Lv.${dungeonDifficulty}`, f.e, teamNames, myName).catch(() => {});
+            addDungeonBroadcast(fcResult.key, `遠征-${f.l}`, diff?.label || `Lv.${dungeonDifficulty}`, f.e, teamNames, myName).catch(() => {});
+            }
           }
         } catch (_) {}
       }
@@ -1102,6 +1185,9 @@ export default function TeamExpeditionBattle({
     atk: myMember.atk ?? 0,
     def: myMember.def ?? 0,
     buffs: myMember.buffs || {},
+    potionBuffs: myMember.potionBuffs || {},
+    restBonuses: myMember.restBonuses || { atkPct:0, defPct:0 },
+    merchantBonuses: myMember.merchantBonuses || { atkPct:0, defPct:0 },
   };
 
   if (mapState?.phase === "floor_intro") {
@@ -1145,6 +1231,8 @@ export default function TeamExpeditionBattle({
           visitedIds={new Set(mapState.visitedIds || [])}
           floorIndex={floorIndex}
           playerState={playerState}
+          partyMembers={Object.entries(teamRoom?.members || {}).map(([id, member]) => ({ id, ...member }))}
+          currentMemberId={myId}
           coins={profile?.coins || 0}
           lootMult={teamRoom?.lootMult || 1}
           onCellClick={handleCellClick}
@@ -1177,6 +1265,8 @@ export default function TeamExpeditionBattle({
           branchSeq={branchSeq}
           branchStep={mapState.branchStep || 0}
           playerState={playerState}
+          partyMembers={Object.entries(teamRoom?.members || {}).map(([id, member]) => ({ id, ...member }))}
+          currentMemberId={myId}
           coins={profile?.coins || 0}
           lootMult={teamRoom?.lootMult || 1}
           onChoose={handleChooseBranch}
@@ -1197,7 +1287,7 @@ export default function TeamExpeditionBattle({
       room: teamRoom,
       memberId: myId,
       isHost,
-      onSharedDone: finishFunctionRoom,
+      onSharedDone:finishFunctionRoom,
     };
     return (
       <div className="relative min-h-screen flex flex-col">
@@ -1214,13 +1304,17 @@ export default function TeamExpeditionBattle({
                 return <DungeonShop {...common} memberData={{ ...myMember, id: myId, coins: profile?.coins || 0 }} />;
               case "event":
               case "general_event":
-                return <DungeonEvent {...common} event={mapState.pendingRoom?.event || teamRoom?.currentEvent} />;
+                return <DungeonEvent
+                  {...common}
+                  event={mapState.pendingRoom?.event || teamRoom?.currentEvent}
+                  onResolveEvent={resolveTeamEvent}
+                />;
               case "trap":
                 return <DungeonTrap {...common} />;
               case "chest":
                 return <DungeonChest {...common} />;
               case "rest":
-                return <DungeonRest {...common} />;
+                return <DungeonRest {...common} coins={profile?.coins || 0} />;
               default:
                 return null;
             }
@@ -1312,6 +1406,7 @@ export default function TeamExpeditionBattle({
         onDone={isHost ? handleFloorDone : undefined}
         onAbandon={handleAbandon}
         guestProfile={isGuestMode ? profile : undefined}
+        cardCollection={cardCollection}
         lootMult={teamRoom?.lootMult || 1}
         // 整場射箭表現與擊殺獎勵都要各自累積：handleFloorDone 只有房主會跑，隊員得靠這兩條回報
         onArrowsCollected={arrows => setRunArrows(previous => [...previous, ...arrows])}

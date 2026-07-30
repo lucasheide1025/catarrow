@@ -212,27 +212,19 @@ const BRANCH_META = {
 
 // 回傳 { entrance, branches:{A,B,C 各 rooms:[3 抽 + 固定商人 + 休息]}, boss, treasure }
 export function generateBranchFloor() {
-  const floor3Config = EXCAVATION_FLOOR_CONFIG[2]?.roomTypes || {
-    monsters: { weight: 30 },
-    traps: { weight: 30 },
-    events: { weight: 30 },
-    general_events: { weight: 10 },
-  };
-
   const branches = {};
   for (const key of ["A", "B", "C"]) {
-    const branchTypes = [
-      { type: "shop", label: "神秘商人" },
+    const randomRooms = shuffle([
+      { type: "chest", label: "寶箱房" },
+      { type: "trap", label: "陷阱房" },
+      { type: "event", label: "事件房" },
+      { type: "elite_battle", label: "精英房" },
+    ]).slice(0, 3);
+    const assigned = [
+      ...randomRooms,
       { type: "rest", label: "休息區" },
+      { type: "shop", label: "商人區" },
     ];
-    // 3 格從權重抽
-    for (let i = 0; i < 3; i++) {
-      const k = pickWeightedKey(floor3Config);
-      const meta = WEIGHT_ROOM_MAP[k] || WEIGHT_ROOM_MAP.monsters;
-      branchTypes.push({ ...meta });
-    }
-
-    const assigned = shuffle(branchTypes);
     const rooms = assigned.map((r, i) => ({
       id: `b${key}r${i}`,
       type: r.type,
@@ -248,5 +240,13 @@ export function generateBranchFloor() {
     branches,
     boss: { id: "b_boss", type: "boss_battle", label: "Boss", cleared: false },
     treasure: { id: "b_treasure", type: "treasure", label: "寶藏房", cleared: false },
+  };
+}
+
+export function getBranchMapLayout() {
+  return {
+    branchRoomRows: [1, 2, 3, 4, 5],
+    bossRow: 6,
+    treasureRow: 7,
   };
 }

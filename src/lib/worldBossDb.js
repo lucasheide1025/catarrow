@@ -3,10 +3,12 @@
 import {
   collection, doc, addDoc, updateDoc, setDoc, onSnapshot,
   serverTimestamp, increment, getDoc, getDocs, query,
-  where, orderBy, limit, arrayUnion,
+  where, orderBy, limit, arrayUnion, runTransaction,
 } from "firebase/firestore";
 import { grantWorldBossDungeon } from "./dungeonExcavation";
 import { db } from "./firebase";
+import app from "./firebase";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import { assertCostCapability, COST_CAPABILITIES } from "./costControl";
 import { addCoins, addMaterials, addChests, addCardPack, addWorldBossCard, addArrowdew, addArcherXP, createNotification } from "./db";
 import { addCatXP, addCatBond } from "./catDb";
@@ -18,6 +20,12 @@ import {
   DROP_TABLE_BY_CATEGORY, getDropCategory, WB_CARD_DUPLICATE_COINS, WB_NO_CAT_COIN_RATE,
   RANK_BONUS, WB_TROPHY_MAP,
 } from "./worldBossData";
+import { findPendingWorldBossEvents, normalizeWorldBossState } from "./worldBossState";
+import {
+  applyWorldBossSpawnContribution,
+  buildWorldBossSpawnCycle,
+  evaluateWorldBossSpawnCycle,
+} from "./worldBossSpawnCycle";
 
 // 怪物階級順序，對照 T1~T6（index 0 = T1）
 const MONSTER_TIER_ORDER = ["common", "rare", "elite", "fierce", "boss", "mythic"];
@@ -32,6 +40,77 @@ function randTierNameInRange([min, max]) {
 
 const WB  = "worldBossEvents";
 const WBH = "worldBossHistory";
+const WBSC = "worldBossSpawnCycles";
+const WBSC_CURRENT = "current";
+const WBSC_OPS = "worldBossSpawnOps";
+
+export function subscribeWorldBossSpawnCycle(cb) {
+  return onSnapshot(doc(db, WBSC, WBSC_CURRENT), snap => cb(snap.exists() ? { id:snap.id, ...snap.data() } : null), () => cb(null));
+}
+
+async function beginWorldBossSpawnCycle(eventId, bossKey) {
+  const ref = doc(db, WBSC, WBSC_CURRENT);
+  const defeatedAtMs = Date.now();
+  const cycle = buildWorldBossSpawnCycle({ previousEventId:eventId, previousBossKey:bossKey, defeatedAtMs });
+  await runTransaction(db, async tx => {
+    const snap = await tx.get(ref);
+    if (snap.exists() && snap.data()?.previousEventId === eventId) return;
+    tx.set(ref, { ...cycle, createdAt:serverTimestamp(), updatedAt:serverTimestamp() });
+  });
+}
+
+export async function contributeWorldBossSpawnProgress({ memberId, type, amount = 1, operationId }) {
+  memberId = String(memberId || "");
+  if (!memberId || !operationId || !["arrows", "dungeonClears", "monsterKills", "villageDice"].includes(type)) {
+    return { ok:false, reason:"invalid_spawn_contribution" };
+  }
+  try {
+    const result = await httpsCallable(getFunctions(app, "asia-east1"), "contributeWorldBossSpawnProgress")({
+      memberId, type, amount, operationId,
+    });
+    return result.data;
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
+
+export async function ensureWorldBossLifecycle() {
+  try {
+    const result = await httpsCallable(getFunctions(app, "asia-east1"), "ensureWorldBossLifecycle")({});
+    return result.data;
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
+
+export async function forceSpawnWorldBossFromCycle() {
+  try {
+    const result = await httpsCallable(getFunctions(app, "asia-east1"), "forceSpawnWorldBossFromCycle")({});
+    return result.data;
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
+
+export async function trySpawnWorldBossFromCycle() {
+  const cycleRef = doc(db, WBSC, WBSC_CURRENT);
+  try {
+    const lock = await runTransaction(db, async tx => {
+      const snap = await tx.get(cycleRef);
+      if (!snap.exists()) return null;
+      const cycle = snap.data();
+      const evaluation = evaluateWorldBossSpawnCycle(cycle);
+      if (!evaluation.ready || ["spawning", "spawned"].includes(cycle.status)) return null;
+      tx.update(cycleRef, { status:"spawning", triggeredBy:evaluation.reason, spawnLockedAt:serverTimestamp() });
+      return cycle;
+    });
+    if (!lock) return { ok:false, reason:"not_ready" };
+    const pool = WORLD_BOSS_KEYS.filter(key => key !== lock.previousBossKey);
+    const bossKey = pool[Math.floor(Math.random() * pool.length)] || WORLD_BOSS_KEYS[0];
+    const durationDays = await getWorldBossSpawnConfig();
+    const created = await createWorldBossEvent({ adminId:"world_boss_spawn_cycle", bossKey, durationDays });
+    if (!created.ok) {
+      await updateDoc(cycleRef, { status:"charging", spawnError:created.reason || "create_failed" });
+      return created;
+    }
+    await updateDoc(cycleRef, { status:"spawned", spawnedEventId:created.eventId, spawnedBossKey:bossKey, spawnedAt:serverTimestamp() });
+    return { ok:true, eventId:created.eventId, bossKey };
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
 
 function taipeiDateKey(date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -53,7 +132,7 @@ export function subscribeActiveWorldBoss(cb) {
   return onSnapshot(q, snap => {
     if (snap.empty) { cb(null); return; }
     const d = snap.docs[0];
-    cb({ id: d.id, ...d.data() });
+    cb(normalizeWorldBossState({ id: d.id, ...d.data() }));
   });
 }
 
@@ -111,7 +190,7 @@ export function subscribeLatestWorldBoss(cb) {
   return onSnapshot(q, snap => {
     if (snap.empty) { cb(null); return; }
     const d = snap.docs[0];
-    const data = { id: d.id, ...d.data() };
+    const data = normalizeWorldBossState({ id: d.id, ...d.data() });
     if (data.status === "expired" || data.status === "cancelled") { cb(null); return; }
     cb(data);
   });
@@ -119,7 +198,7 @@ export function subscribeLatestWorldBoss(cb) {
 
 export function subscribeWorldBoss(eventId, cb) {
   return onSnapshot(doc(db, WB, eventId), snap => {
-    if (snap.exists()) cb({ id: snap.id, ...snap.data() });
+    if (snap.exists()) cb(normalizeWorldBossState({ id: snap.id, ...snap.data() }));
     else cb(null);
   });
 }
@@ -185,45 +264,89 @@ export async function saveWorldBossSpawnConfig(durationDays, operatorId) {
 // ── 自動刷新世界王（被擊殺隔天自動隨機產生新 Boss）────────────
 // 呼叫時機：前端載入世界王頁面時（任何人皆可呼叫，內部防重複）
 export async function autoSpawnWorldBoss() {
+  return { ok:false, reason:"automatic_spawn_disabled" };
+}
+
+export async function getWorldBossCycleConfig() {
   try {
-    // 查最新一筆
-    const q = query(collection(db, WB), orderBy("createdAt", "desc"), limit(1));
-    const snap = await getDocs(q);
-    if (snap.empty) return { ok: false, reason: "no_boss" };
+    const snap = await getDoc(doc(db, "sysConfig", "worldBossSpawn"));
+    const data = snap.data() || {};
+    return {
+      restHours:Math.max(0, Number(data.restHours) || 8),
+      deadlineHours:Math.min(48, Math.max(8, Number(data.deadlineHours) || 48)),
+      targets:{
+        arrows:Math.max(1, Number(data.targets?.arrows) || 10000),
+        dungeonClears:Math.max(1, Number(data.targets?.dungeonClears) || 30),
+        monsterKills:Math.max(1, Number(data.targets?.monsterKills) || 500),
+        villageDice:Math.max(1, Number(data.targets?.villageDice) || 300),
+      },
+    };
+  } catch {
+    return { restHours:8, deadlineHours:48, targets:{ arrows:10000, dungeonClears:30, monsterKills:500, villageDice:300 } };
+  }
+}
 
-    const latest = snap.docs[0].data();
+export async function saveWorldBossCycleConfig(config, operatorId) {
+  try {
+    const normalized = {
+      restHours:Math.max(0, Math.min(48, Number(config?.restHours) || 8)),
+      deadlineHours:Math.max(1, Math.min(48, Number(config?.deadlineHours) || 48)),
+      targets:Object.fromEntries(
+        ["arrows", "dungeonClears", "monsterKills", "villageDice"]
+          .map(key => [key, Math.max(1, Math.floor(Number(config?.targets?.[key]) || 1))]),
+      ),
+    };
+    normalized.deadlineHours = Math.max(normalized.restHours, normalized.deadlineHours);
+    await setDoc(doc(db, "sysConfig", "worldBossSpawn"), {
+      ...normalized, updatedAt:serverTimestamp(), updatedBy:operatorId || null,
+    }, { merge:true });
+    return { ok:true, config:normalized };
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
 
-    // 若仍 active → 不刷新
-    if (latest.status === "active") return { ok: false, reason: "still_active" };
+export async function repairWorldBossTerminalState(eventId) {
+  try {
+    const ref = doc(db, WB, eventId);
+    const repaired = await runTransaction(db, async tx => {
+      const snap = await tx.get(ref);
+      if (!snap.exists()) return false;
+      const event = snap.data();
+      if (event.status !== "defeated" || Number(event.bossCurrentHP) <= 0) return false;
+      tx.update(ref, { bossCurrentHP:0 });
+      return true;
+    });
+    return { ok:true, repaired };
+  } catch (e) { return { ok:false, reason:e.message }; }
+}
 
-    // 已 defeated：判斷是否已過 24 小時
-    if (latest.status === "defeated") {
-      const defeatedAt = latest.defeatedAt?.toDate?.() || new Date(0);
-      const hoursSince = (Date.now() - defeatedAt.getTime()) / 3600000;
-      if (hoursSince < 24) return { ok: false, reason: "too_soon" };
-    }
-
-    // 防重複：最新一筆若已是今天建立的就跳過
-    const createdAt = latest.createdAt?.toDate?.() || new Date(0);
-    const today = new Date().toISOString().slice(0, 10);
-    if (createdAt.toISOString().slice(0, 10) === today && latest.status === "active") {
-      return { ok: false, reason: "already_today" };
-    }
-
-    // 隨機選一隻 Boss（排除上一隻，避免連續重複）
-    const lastKey = latest.bossKey;
-    const pool = WORLD_BOSS_KEYS.filter(k => k !== lastKey);
-    const nextKey = pool[Math.floor(Math.random() * pool.length)];
-
-    const durationDays = await getWorldBossSpawnConfig();
-    return await createWorldBossEvent({ adminId: "system", bossKey: nextKey, durationDays });
-  } catch (e) { return { ok: false, reason: e.message }; }
+export async function getPendingWorldBossRewards(memberId, maxEvents = 100) {
+  if (!memberId) return [];
+  try {
+    const snap = await getDocs(query(
+      collection(db, WB),
+      orderBy("createdAt", "desc"),
+      limit(Math.max(1, Math.min(200, maxEvents))),
+    ));
+    return findPendingWorldBossEvents(
+      snap.docs.map(entry => ({ id:entry.id, ...entry.data() })),
+      memberId,
+    );
+  } catch { return []; }
 }
 
 // ── 每回合即時更新 Boss HP（讓大廳即時顯示）──────────────────
 export async function updateWorldBossHP(eventId, newHP) {
   try {
-    await updateDoc(doc(db, WB, eventId), { bossCurrentHP: Math.max(0, newHP) });
+    await runTransaction(db, async tx => {
+      const ref = doc(db, WB, eventId);
+      const snap = await tx.get(ref);
+      if (!snap.exists()) return;
+      const current = snap.data();
+      const hp = current.status === "defeated"
+        ? 0
+        : Math.min(Number(current.bossCurrentHP) || 0, Math.max(0, Number(newHP) || 0));
+      tx.update(ref, { bossCurrentHP: hp });
+    });
   } catch { /* silent */ }
 }
 
@@ -265,57 +388,60 @@ export async function attackWorldBoss({ eventId, memberId, memberName, weapon, r
     }
 
     const combinedDmg = Math.round(totalDmg + botTotalDmg);
-    const newHP       = alreadyDefeated ? ev.bossCurrentHP : Math.max(0, ev.bossCurrentHP - combinedDmg);
-    const defeated    = !alreadyDefeated && newHP <= 0;
-
-    // 最後一擊者
-    const isLastHit = defeated;
-    const upd = {
-      [`participants.${memberId}`]: {
-        name: memberName,
-        weapon: weapon || "訪客弓組",
-        totalDmg: (myPrev?.totalDmg || 0) + combinedDmg,
-        lastAttackedDate: today,
-        sessions: arrayUnion({
-          date: today, dmg: combinedDmg, playerDmg: Math.round(totalDmg),
-          botDmg: botTotalDmg, rounds: roundResults.length,
-        }),
-        isGuest: !!isGuest,
-        accountType: accountType || (isGuest ? "guest" : "official"),
-        sessionSourceId: sessionSourceId || null,
-        atk: memberAtk,
-        def: memberDef || Math.round(memberAtk * 0.5),
-        hp:  memberHP  || memberAtk * 5,
-      },
-    };
-
-    // 首次參戰
-    if (!myPrev) {
-      upd.totalParticipants = increment(1);
-    }
-
-    // boss 尚未被擊倒時才更新 HP 與狀態
-    if (!alreadyDefeated) {
-      upd.bossCurrentHP = newHP;
-      if (defeated) {
+    const committed = await runTransaction(db, async tx => {
+      const freshSnap = await tx.get(eventRef);
+      if (!freshSnap.exists()) throw new Error("活動不存在");
+      const fresh = freshSnap.data();
+      if (fresh.status === "expired") throw new Error("活動已結束");
+      const freshPrev = fresh.participants?.[memberId];
+      if ([today, ...legacyTodayKeys].includes(freshPrev?.lastAttackedDate)) throw new Error("今天已經攻擊過了");
+      const wasDefeated = fresh.status === "defeated";
+      const nextHP = wasDefeated ? 0 : Math.max(0, (Number(fresh.bossCurrentHP) || 0) - combinedDmg);
+      const didDefeat = !wasDefeated && nextHP <= 0;
+      const update = {
+        [`participants.${memberId}`]: {
+          name: memberName,
+          weapon: weapon || "訪客弓組",
+          totalDmg: (freshPrev?.totalDmg || 0) + combinedDmg,
+          lastAttackedDate: today,
+          sessions: arrayUnion({
+            date: today, dmg: combinedDmg, playerDmg: Math.round(totalDmg),
+            botDmg: botTotalDmg, rounds: roundResults.length,
+          }),
+          isGuest: !!isGuest,
+          accountType: accountType || (isGuest ? "guest" : "official"),
+          sessionSourceId: sessionSourceId || null,
+          atk: memberAtk,
+          def: memberDef || Math.round(memberAtk * 0.5),
+          hp: memberHP || memberAtk * 5,
+        },
+        bossCurrentHP: nextHP,
+      };
+      if (!freshPrev) update.totalParticipants = increment(1);
+      if (didDefeat) {
         const announcement = buildKillAnnouncement(memberName, weapon || "訪客弓組");
-        upd.status       = "defeated";
-        upd.lastHitBy    = { memberId, memberName, weapon: weapon || "訪客弓組", killerStyle: killerStyle || "baobao", finishingArrow: finishingArrow || null };
-        upd.announcement = announcement;
-        // 同步那份「全體常駐訂閱」用的小狀態文件（一場活動只會走到這裡一次）
-        writeWorldBossStatus({ eventId, status: "defeated", bossName: ev.bossData?.name || "", announcement });
-        upd.defeatedAt   = serverTimestamp();
-        createNotification({
-          type: "worldboss",
-          title: `⚔️ 世界王擊殺！${ev.bossData?.name || "Boss"} 已倒下！`,
-          content: `${memberName || "英雄"} 給予最後一擊！全員功勛已發放 🎁`,
-          targetMemberId: null,
-        }).catch(() => {});
+        update.status = "defeated";
+        update.lastHitBy = { memberId, memberName, weapon: weapon || "訪客弓組", killerStyle: killerStyle || "baobao", finishingArrow: finishingArrow || null };
+        update.announcement = announcement;
+        update.defeatedAt = serverTimestamp();
       }
-    }
-
-    await updateDoc(eventRef, upd);
+      tx.update(eventRef, update);
+      return { ev:fresh, myPrev:freshPrev, alreadyDefeated:wasDefeated, newHP:nextHP, defeated:didDefeat, upd:update };
+    });
+    const { ev: committedEvent, newHP, defeated, upd } = committed;
+    Object.assign(ev, committedEvent);
+    const isLastHit = defeated;
     if (defeated) {
+      writeWorldBossStatus({ eventId, status:"defeated", bossName:ev.bossData?.name || "", announcement:upd.announcement });
+      createNotification({
+        type:"worldboss",
+        title:`⚔️ 世界王擊殺！${ev.bossData?.name || "Boss"} 已倒下！`,
+        content:`${memberName || "英雄"} 給予最後一擊！全員功勛已發放 🎁`,
+        targetMemberId:null,
+      }).catch(() => {});
+    }
+    if (defeated) {
+      await beginWorldBossSpawnCycle(eventId, ev.bossKey).catch(() => {});
       await addDoc(collection(db, WBH), {
         eventId, bossKey: ev.bossKey, bossName: ev.bossData?.name,
         result: "defeated", ts: serverTimestamp(), defeatedAt: serverTimestamp(),
@@ -386,7 +512,7 @@ export async function distributeWorldBossRewards(eventId) {
 
     // 依傷害排行取前三名（訪客排除），存到事件文件供各自請領時查詢
     const top3Ids = Object.entries(participants)
-      .filter(([, p]) => !p.isGuest)
+      .filter(([, p]) => p.accountType === "official" || p.isGuest !== true)
       .map(([mid, p]) => ({ mid, dmg: p.totalDmg || 0 }))
       .sort((a, b) => b.dmg - a.dmg)
       .slice(0, 3)
@@ -425,7 +551,7 @@ export async function claimWorldBossKillReward(memberId, eventId) {
     if (!ev.rewardDistributed) {
       if (ev.status !== "defeated") return { ok: false, reason: "尚未結算" };
       const top3Ids = Object.entries(ev.participants || {})
-        .filter(([, participant]) => !participant.isGuest)
+        .filter(([, participant]) => participant.accountType === "official" || participant.isGuest !== true)
         .sort(([, a], [, b]) => (b.totalDmg || 0) - (a.totalDmg || 0))
         .slice(0, 3)
         .map(([id]) => id);
@@ -449,7 +575,7 @@ export async function claimWorldBossKillReward(memberId, eventId) {
       }).catch(() => {});
     }
     const mine = ev.participants?.[memberId];
-    if (!mine || mine.isGuest) return { ok: false, reason: "非參戰者" };
+    if (!mine || (mine.isGuest === true && mine.accountType !== "official")) return { ok: false, reason: "此帳號沒有世界王結算資格" };
     if (mine.claimed) return { ok: false, reason: "already_claimed" };
 
     const boss = WORLD_BOSSES[ev.bossKey] || {};
@@ -627,7 +753,7 @@ export async function previewWorldBossKillReward(memberId, eventId) {
     if (!snap.exists()) return { ok: false, reason: "活動不存在" };
     const ev = snap.data();
     const mine = ev.participants?.[memberId];
-    if (!mine || mine.isGuest || mine.claimed) return { ok: false, reason: "無可領取獎勵" };
+    if (!mine || (mine.isGuest === true && mine.accountType !== "official") || mine.claimed) return { ok: false, reason: "無可領取獎勵" };
     const boss = WORLD_BOSSES[ev.bossKey] || {};
     const cfg = DROP_TABLE_BY_CATEGORY[getDropCategory(boss)] || DROP_TABLE_BY_CATEGORY.family_big;
     const totalDamage = Object.values(ev.participants || {}).reduce((s, p) => s + (p.totalDmg || 0), 0) || 1;

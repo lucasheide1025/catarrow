@@ -1,77 +1,62 @@
 // src/components/dungeon/DungeonChest.jsx — 地下城寶箱房間（背面隱藏三選一 ＋ 逐一揭示 ＋ 狀態變化）
-import { useState, useEffect, useMemo, useRef } from "react";
-import { confirmNonCombatRoom } from "../../lib/dungeonDb";
-import { createOrdinaryChestLoot } from "../../lib/dungeonChestLoot";
+import { useState, useEffect } from "react";
+import { claimTeamDungeonChestChoice, confirmNonCombatRoom } from "../../lib/dungeonDb";
+import { createOrdinaryChestChoices } from "../../lib/dungeonChestLoot";
+import { COLLECTIBLE_MAP, rollFamilyDrop } from "../../lib/dungeonCollectibles";
 import { sfxOpenChest, sfxCoinDrop, sfxSuccess } from "../../lib/sound";
 import DungeonEventStage from "./DungeonEventStage";
 
 export default function DungeonChest({
-  roomId, room, memberId, isHost,
-  localMode = false, onLocalEffect, onLocalDone, onSharedDone,
+  roomId, room, memberId,
+  localMode = false, onLocalEffect, onLocalDone,
+  isHost = false, onSharedDone,
 }) {
-  const [animPhase, setAnimPhase]   = useState("entering"); // entering | opening | choices | empty | done
-  const [cardState, setCardState]   = useState("hidden");   // hidden (背面) | revealing (逐一揭示中) | revealed (完成)
-  const [revealedCount, setRevealedCount] = useState(0);    // 1, 2, 3 逐一翻牌計數
-  const [chosenIdx, setChosenIdx]   = useState(null);
+  const existingClaim = room?.chestClaims?.[memberId] || null;
+  const [animPhase, setAnimPhase]   = useState(existingClaim ? "done" : "entering"); // entering | opening | choices | empty | done
+  const [cardState, setCardState]   = useState(existingClaim ? "revealed" : "hidden");   // hidden (背面) | revealing (逐一揭示中) | revealed (完成)
+  const [revealedCount, setRevealedCount] = useState(existingClaim ? 3 : 0);    // 1, 2, 3 逐一翻牌計數
+  const [chosenIdx, setChosenIdx]   = useState(existingClaim?.choiceIndex ?? null);
   const [claiming, setClaiming]     = useState(false);
   const [confirmedWait, setConfirmedWait] = useState(false);
-  const [eggType, setEggType]       = useState("normal");   // normal | empty | mimic
-  const chestSeedRef = useRef(null);
-
+  const [bonusCollectible, setBonusCollectible] = useState(
+    existingClaim?.collectibleItemId ? COLLECTIBLE_MAP[existingClaim.collectibleItemId] || null : null
+  );
   const dungeonMapId = room?.mapDungeonId || "";
   const family = dungeonMapId.split("_")[0] || "ghost";
   const isHidden = !!room?.hiddenRoomLoot?.found;
-
-  // 1. 初始化寶箱與彩蛋判斷 (10% 擬態怪, 3% 空箱)
-  if (!chestSeedRef.current) {
-    const rollEgg = Math.random();
-    let egg = "normal";
-    if (rollEgg < 0.10) egg = "mimic";
-    else if (rollEgg < 0.13) egg = "empty";
-    setEggType(egg);
-
-    chestSeedRef.current = createOrdinaryChestLoot({
+  const [eggType] = useState(() => {
+    if (room?.chestEggType) return room.chestEggType;
+    const roll = Math.random();
+    if (roll < 0.10) return "mimic";
+    if (roll < 0.13) return "empty";
+    return "normal";
+  });
+  const [choices] = useState(() =>
+    room?.chestChoices || createOrdinaryChestChoices({
       family,
       difficultyTier: room?.expeditionDifficulty || room?.dungeonDifficulty || 1,
       hidden: isHidden,
+    })
+  );
+  const activeMemberIds = Object.entries(room?.members || {})
+    .filter(([, member]) => member && member.alive !== false)
+    .map(([id]) => id);
+  const allConfirmed = activeMemberIds.length > 0
+    && activeMemberIds.every(id => room?.roomConfirms?.[id] === true);
+  const selectedChoice = chosenIdx === null ? null : choices[chosenIdx];
+
+  // 組隊玩家翻牌完成即標記「已閱讀」，結果頁仍保留；只有房主能推進地圖。
+  useEffect(() => {
+    if (localMode || animPhase !== "done" || confirmedWait) return;
+    setConfirmedWait(true);
+    confirmNonCombatRoom(roomId, memberId, "opened").catch(() => {
+      setConfirmedWait(false);
     });
-  }
-
-  const baseLoot = chestSeedRef.current;
-
-  // 2. 產生「三選一」獎勵選項
-  const choices = useMemo(() => {
-    if (!baseLoot) return [];
-    return [
-      {
-        id: "choice_coins",
-        title: "🪙 金幣大禮包",
-        icon: "🪙",
-        desc: `獲得 ${(baseLoot.coins || 100) + 50} 金幣`,
-        type: "coins",
-        value: (baseLoot.coins || 100) + 50,
-      },
-      {
-        id: "choice_item",
-        title: baseLoot.item ? baseLoot.item.name : "🧪 冒險藥水包",
-        icon: baseLoot.item ? (baseLoot.item.icon || "✨") : "🧪",
-        desc: baseLoot.item ? (baseLoot.item.desc || "地下城收藏品") : "獲得回復藥水 ×1",
-        type: baseLoot.item ? "item" : "potion",
-        item: baseLoot.item,
-      },
-      {
-        id: "choice_material",
-        title: baseLoot.material ? baseLoot.material.name : "🧱 稀有素材包",
-        icon: baseLoot.material ? (baseLoot.material.icon || "🧱") : "📦",
-        desc: baseLoot.material ? "獲得精選掉落素材 ×2" : "獲得基礎備用建材包",
-        type: "material",
-        material: baseLoot.material,
-      },
-    ];
-  }, [baseLoot]);
+  }, [animPhase, confirmedWait, localMode, memberId, roomId]);
 
   // 開箱動畫
   useEffect(() => {
+    if (existingClaim) return undefined;
     const t1 = setTimeout(() => {
       setAnimPhase("opening");
       sfxOpenChest();
@@ -87,11 +72,16 @@ export default function DungeonChest({
     }, 1400);
 
     return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, [eggType]);
+  }, [eggType, existingClaim]);
 
   // 點擊選擇背面卡片 → 觸發逐一揭示動畫
   async function handleSelectFaceDownCard(index) {
     if (chosenIdx !== null || claiming) return;
+    if (!localMode) {
+      const claim = await claimTeamDungeonChestChoice(roomId, memberId, index);
+      if (!claim.ok) return;
+      if (claim.collectible?.itemId) setBonusCollectible(COLLECTIBLE_MAP[claim.collectible.itemId] || null);
+    }
     setChosenIdx(index);
     setClaiming(true);
     sfxSuccess();
@@ -114,10 +104,28 @@ export default function DungeonChest({
           }
         } else if (selected.type === "material" && selected.material) {
           const { addMaterials } = await import("../../lib/db");
-          await addMaterials(memberId, [selected.material]);
+          await addMaterials(memberId, Array.from(
+            { length:selected.material.quantity || 1 },
+            () => selected.material
+          ));
+        } else if (selected.type === "potion" && selected.potion) {
+          const { addPotions } = await import("../../lib/db");
+          await addPotions(memberId, [{ id:selected.potion.id, count:selected.potion.quantity || 1 }]);
         } else if (selected.item) {
           const { addCollectibles } = await import("../../lib/dungeonDb");
           await addCollectibles(memberId, [{ itemId: selected.item.id, qty: 1 }]);
+        }
+        if (localMode) {
+          // 單人本地房沒有共享 transaction，仍只判定一次並立即入帳。
+          const collectibleDrop = rollFamilyDrop(family, "chest");
+          if (collectibleDrop?.itemId) {
+            const item = COLLECTIBLE_MAP[collectibleDrop.itemId];
+            if (item) {
+              const { addCollectibles } = await import("../../lib/dungeonDb");
+              await addCollectibles(memberId, [{ ...collectibleDrop, qty: 1 }]);
+              setBonusCollectible(item);
+            }
+          }
         }
 
         setAnimPhase("done");
@@ -132,9 +140,7 @@ export default function DungeonChest({
       onLocalDone?.();
       return;
     }
-    setConfirmedWait(true);
-    await confirmNonCombatRoom(roomId, memberId, "opened");
-    if (isHost && onSharedDone) await onSharedDone();
+    if (isHost && allConfirmed) await onSharedDone?.();
   }
 
   return (
@@ -214,34 +220,47 @@ export default function DungeonChest({
           </div>
         )}
 
-        {/* 空寶箱或選擇完成後顯示繼續探索 */}
+        {/* 翻牌結束後切換為單一結果頁，只保留實際取得的內容。 */}
         {(animPhase === "empty" || animPhase === "done") && cardState !== "revealing" && (
           <div className="w-full max-w-sm bg-slate-900/95 border border-amber-500/40 p-6 rounded-3xl text-center space-y-4 animate-fade-in shadow-2xl backdrop-blur-md">
-            <div className="text-5xl">
-              {animPhase === "empty" ? "🍎" : "🎉"}
+              <div className="text-5xl">
+              {animPhase === "empty" ? "🍎" : selectedChoice?.icon || "🎉"}
             </div>
             <div>
               <div className="text-base font-black text-amber-300">
                 {animPhase === "empty"
                   ? "這是一隻餓鬼留下的空箱，什麼都沒拿到！"
-                  : "已成功揭示並領取戰利品！"}
+                  : `獲得：${selectedChoice?.title || "寶箱戰利品"}`}
               </div>
               <div className="text-xs text-slate-400 mt-1">
-                {animPhase === "empty" ? "收拾心情前進下一間房間吧。" : "戰利品已加入您的背包與個人資源庫。"}
+                {animPhase === "empty"
+                  ? "收拾心情前進下一間房間吧。"
+                  : selectedChoice?.desc || "戰利品已加入您的背包與個人資源庫。"}
               </div>
+              {bonusCollectible && (
+                <div className="mt-3 rounded-2xl border border-purple-400/40 bg-purple-950/40 p-3">
+                  <div className="text-[10px] font-black text-purple-300">地下城圖鑑收藏品</div>
+                  <div className="mt-1 text-sm font-black text-purple-100">
+                    {bonusCollectible.icon || "🏺"} {bonusCollectible.name}
+                  </div>
+                </div>
+              )}
             </div>
-            <button
-              type="button"
-              onClick={handleFinish}
-              disabled={confirmedWait}
-              className={`w-full py-3.5 font-black rounded-2xl text-sm shadow-xl transition-all ${
-                confirmedWait
-                  ? "bg-slate-800 text-amber-300/80 border border-amber-500/30 cursor-wait animate-pulse"
-                  : "bg-gradient-to-r from-amber-500 to-orange-500 hover:brightness-110 text-slate-950 active:scale-95"
-              }`}
-            >
-              {confirmedWait ? "✅ 已完成確認，等待其他隊友繼續…" : "➡️ 繼續探索下一關"}
-            </button>
+            {localMode ? (
+              <button type="button" onClick={handleFinish}
+                className="w-full rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 py-3.5 text-sm font-black text-slate-950 shadow-xl transition-all hover:brightness-110 active:scale-95">
+                ➡️ 繼續探索下一關
+              </button>
+            ) : isHost ? (
+              <button type="button" onClick={handleFinish} disabled={!allConfirmed}
+                className="w-full rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 py-3.5 text-sm font-black text-slate-950 shadow-xl transition-all enabled:hover:brightness-110 enabled:active:scale-95 disabled:cursor-wait disabled:bg-slate-800 disabled:text-slate-400">
+                {allConfirmed ? "➡️ 帶領隊伍繼續探索" : "等待所有隊員領取完成…"}
+              </button>
+            ) : (
+              <div className="w-full rounded-2xl border border-amber-500/30 bg-slate-800 px-4 py-3.5 text-sm font-black text-amber-200">
+                ✅ 已完成領取，等待房主進行下一步…
+              </div>
+            )}
           </div>
         )}
       </div>
