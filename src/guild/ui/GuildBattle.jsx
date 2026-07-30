@@ -22,7 +22,7 @@ import {
 import { MonsterArt, CatArt, fieldBg, bgLayer } from "./GuildArt";
 import { GuildPlayerAppearance } from "./GuildItemArt";
 import GuildDefenseLine from "./GuildDefenseLine";
-import { guildBattleFinalizeDelay, retargetPendingShots } from "../domain/guildBattlePresentation";
+import { buildBattleTimeline, guildBattleFinalizeDelay, retargetPendingShots } from "../domain/guildBattlePresentation";
 const MAX_DIST = 10;
 
 // 演出節奏（毫秒）——調快慢改這裡就好。
@@ -124,6 +124,9 @@ export default function GuildBattle({
   const [hitMap, setHitMap] = useState({});        // 動畫期間先扣的傷害 {instanceId: dmg}
   const [shakeIds, setShakeIds] = useState([]);    // 受擊抖動
   const [dying, setDying] = useState([]);          // 死亡殘影 [{id, pos, icon}]
+  // 動畫期間已倒下的怪物 id。舊版整場都用開打前的 aliveTargets(state) 畫怪，被打死的
+  // 會一直站到回合結束才整批消失，於是「已確認全部敵人陣亡」會在怪物還在場上時就先跳出來。
+  const [downed, setDowned] = useState([]);
   const [pouncing, setPouncing] = useState([]);    // 出爪的貓 id
   const [hurt, setHurt] = useState(false);         // 玩家受擊紅閃
   const [bowPull, setBowPull] = useState(false);   // 拉弓
@@ -135,8 +138,19 @@ export default function GuildBattle({
   // 卸載時清掉所有排程，避免動畫跑到一半離開畫面還在 setState
   useEffect(() => () => timersRef.current.forEach(clearTimeout), []);
   const later = (fn, ms) => { timersRef.current.push(setTimeout(fn, ms)); };
+  // 擊殺：立刻把怪物從場上移除，同時留一個殘影播消散動畫
+  const killOnField = (instanceId, pos, dropOnField) => {
+    dropOnField(instanceId);
+    const gid = uid();
+    setDying(d => [...d, { id: gid, pos, icon: pos.icon, monsterId: pos.monsterId }]);
+    later(() => setDying(d => d.filter(x => x.id !== gid)), T.poof);
+    sound.monsterDown();
+  };
   const uid = () => `f${seqRef.current++}`;
 
+  // targets＝state 上仍存活的怪，位置計算一律用這份完整清單（gridPosOf 的 fallback
+  // posOf(index, len) 會吃 index 與長度，若邊播邊從清單移除，活著的怪會跳位）。
+  // 動畫期間「已倒下」只在渲染時跳過，不從清單移除。
   const targets = aliveTargets(state);
   const visualHp = m => Math.max(0, m.hp - (hitMap[m.instanceId] || 0));
 
@@ -177,134 +191,134 @@ export default function GuildBattle({
     setTarget(null);
     setAnimating(true);
     setFlash(null);
+    setDowned([]);
 
     // 動畫要用「開打前」的位置，所以先把當下畫面的座標記下來
     const posMap = {};
     targets.forEach((m, i) => { posMap[m.instanceId] = { ...gridPosOf(m, i, targets.length), icon: m.icon, monsterId: m.monsterId }; });
     const posOrCenter = id => posMap[id] || { topPct: 40, leftPct: 50, scale: 1, icon: "❓" };
 
-    let t = 0;
-    const arrowLogs = next.log.filter(l => l.type === "arrow");
-    const catLogs = next.log.filter(l => l.type === "catAttack");
-    const monHits = next.log.filter(l => l.type === "monsterAttack");
-    const dodges = next.log.filter(l => l.type === "dodge");
-    const starve = next.log.find(l => l.type === "starve");
+    // ── 依 log 原始順序播，不再按 type 分桶 ──────────────────────────────
+    // domain 已經把技能反制／結算夾在對應那一箭之後、閃避與怪物攻擊逐隻交錯，
+    // 分桶會把因果拆散（見 guildBattlePresentation.buildBattleTimeline 的註解）。
+    const { timeline, totalMs } = buildBattleTimeline(next.log);
     const waveClear = next.log.find(l => l.type === "waveClear");
     const travelEvent = next.log.find(l => l.type === "travelEvent");
     const villagerAssist = next.log.find(l => l.type === "villagerAssist");
-    const skillEvents = next.log.filter(l => ["skillResolve", "counterSuccess", "effectApply", "effectReplace", "effectRemove"].includes(l.type));
+    const catAssisted = next.log.some(l => l.type === "catAttack");
+    const gotHit = next.log.some(l => l.type === "monsterAttack");
 
-    // ① 箭矢逐發飛出 → 命中 → 傷害數字 → 擊殺殘影
-    for (const lg of arrowLogs) {
-      const p = posOrCenter(lg.target);
-      const at = t;
-      later(() => {
-        const id = uid();
-        setArrows(a => [...a, { id, top: PLAYER_POS.topPct, left: PLAYER_POS.leftPct }]);
-        later(() => setArrows(a => a.map(x => x.id === id ? { ...x, top: p.topPct, left: p.leftPct } : x)), 20);
-        later(() => setArrows(a => a.filter(x => x.id !== id)), T.arrowFly + 90);
-      }, at);
-      later(() => {
-        if (lg.crit) { sound.critical(); vibrate(40); } else sound.hit();
-        setHitMap(h => ({ ...h, [lg.target]: (h[lg.target] || 0) + lg.dmg }));
-        shakeOnce(lg.target);
-        addFloater(p, `${lg.crit ? "💥" : ""}-${lg.dmg}`, lg.crit ? "#fbbf24" : "#fca5a5");
-        if (lg.killed) {
-          const gid = uid();
-          setDying(d => [...d, { id: gid, pos: p, icon: p.icon, monsterId: p.monsterId }]);
-          later(() => setDying(d => d.filter(x => x.id !== gid)), T.poof);
-          sound.monsterDown();
+    const dropOnField = id => setDowned(d => (d.includes(id) ? d : [...d, id]));
+
+    for (const { entry: lg, at } of timeline) {
+      switch (lg.type) {
+        // ── 箭矢：飛行 → 命中 → 傷害數字 → 擊殺 ──
+        case "arrow": {
+          const p = posOrCenter(lg.target);
+          later(() => {
+            const id = uid();
+            setArrows(a => [...a, { id, top: PLAYER_POS.topPct, left: PLAYER_POS.leftPct }]);
+            later(() => setArrows(a => a.map(x => x.id === id ? { ...x, top: p.topPct, left: p.leftPct } : x)), 20);
+            later(() => setArrows(a => a.filter(x => x.id !== id)), T.arrowFly + 90);
+          }, at);
+          later(() => {
+            if (lg.crit) { sound.critical(); vibrate(40); } else sound.hit();
+            setHitMap(h => ({ ...h, [lg.target]: (h[lg.target] || 0) + lg.dmg }));
+            shakeOnce(lg.target);
+            addFloater(p, `${lg.crit ? "💥" : ""}-${lg.dmg}`, lg.crit ? "#fbbf24" : "#fca5a5");
+            if (lg.killed) killOnField(lg.target, p, dropOnField);
+          }, at + T.arrowFly);
+          break;
         }
-      }, at + T.arrowFly);
-      t = at + T.arrowStep;
-    }
-
-    // ② 貓貓助攻（往前彈跳 + 爪痕）
-    t += arrowLogs.length ? T.hitLinger : 0;
-    for (const lg of catLogs) {
-      const p = posOrCenter(lg.target);
-      const at = t;
-      later(() => {
-        setPouncing(p2 => [...p2, lg.cat]);
-        later(() => setPouncing(p2 => p2.filter(x => x !== lg.cat)), 520);
-        sound.enemyAttack();
-        setHitMap(h => ({ ...h, [lg.target]: (h[lg.target] || 0) + lg.dmg }));
-        shakeOnce(lg.target);
-        addFloater(p, `🐾-${lg.dmg}`, "#fcd34d");
-        if (lg.killed) {
-          const gid = uid();
-          setDying(d => [...d, { id: gid, pos: p, icon: p.icon, monsterId: p.monsterId }]);
-          later(() => setDying(d => d.filter(x => x.id !== gid)), T.poof);
-          sound.monsterDown();
+        // ── 貓貓助攻 ──
+        case "catAttack": {
+          const p = posOrCenter(lg.target);
+          later(() => {
+            setPouncing(p2 => [...p2, lg.cat]);
+            later(() => setPouncing(p2 => p2.filter(x => x !== lg.cat)), 520);
+            sound.enemyAttack();
+            setHitMap(h => ({ ...h, [lg.target]: (h[lg.target] || 0) + lg.dmg }));
+            shakeOnce(lg.target);
+            addFloater(p, `🐾-${lg.dmg}`, "#fcd34d");
+            if (lg.killed) killOnField(lg.target, p, dropOnField);
+          }, at);
+          break;
         }
-      }, at);
-      t = at + T.catStep;
+        case "dodge":
+          later(() => addFloater({ topPct: PLAYER_POS.topPct - 8, leftPct: PLAYER_POS.leftPct }, "MISS", "#93c5fd"), at);
+          break;
+        case "monsterAttack":
+          later(() => {
+            sound.catAssist(); vibrate(60);
+            setHurt(true);
+            later(() => setHurt(false), 520);
+            addFloater({ topPct: PLAYER_POS.topPct - 10, leftPct: PLAYER_POS.leftPct }, `-${lg.dmg}`, "#ef4444");
+          }, at);
+          break;
+        case "starve":
+          later(() => {
+            sound.hazard();
+            addFloater({ topPct: PLAYER_POS.topPct - 18, leftPct: PLAYER_POS.leftPct }, `🍖💧 力竭 -${lg.dmg}`, "#f87171");
+          }, at);
+          break;
+        // ── 清波後旅途事件：補給／HP 變化要看得見，否則像資源憑空消失 ──
+        case "travelEvent": {
+          const deltas = [
+            lg.food ? `🍖${lg.food > 0 ? "+" : ""}${lg.food}` : "",
+            lg.water ? `💧${lg.water > 0 ? "+" : ""}${lg.water}` : "",
+            lg.hp ? `❤️${lg.hp > 0 ? "+" : ""}${lg.hp}` : "",
+          ].filter(Boolean).join(" ");
+          later(() => {
+            lg.hp < 0 ? sound.hazard() : sound.waveClear();
+            setFlash(`🧭 ${lg.label}${deltas ? `　${deltas}` : ""}`);
+          }, at);
+          break;
+        }
+        case "villagerAssist":
+          later(() => { sound.waveClear(); setFlash(`🏘️ ${lg.label}：${lg.summary || "協助完成"}`); }, at);
+          break;
+        // ── 強技能預告：spec 要求「提前一個射擊階段預告」，舊版完全沒演出 ──
+        case "skillIntent": {
+          const p = posOrCenter(lg.monsterId);
+          later(() => {
+            sound.hazard(); vibrate(30);
+            shakeOnce(lg.monsterId);
+            addFloater(p, "⚠️", "#fbbf24");
+            const counter = lg.intent?.counter ? `　破解：${counterConditionLabel(lg.intent.counter)}` : "";
+            setFlash(`⚠️ 敵方蓄力：${lg.intent?.name || "強力技能"}（下回合發動）${counter}`);
+          }, at);
+          break;
+        }
+        case "skillResolve":
+          later(() => {
+            sound.hazard();
+            setFlash(`💥 ${lg.skill} 發動${lg.damage ? `，造成 ${lg.damage} 傷害` : ""}`);
+          }, at);
+          break;
+        case "counterSuccess":
+          later(() => { sound.waveClear(); setFlash(`✅ 反制成功：${lg.skill}`); }, at);
+          break;
+        case "effectRemove":
+          later(() => setFlash(`狀態解除：${combatStatLabel(lg.effect?.stat)}`), at);
+          break;
+        case "effectApply":
+        case "effectReplace":
+          later(() => setFlash(`狀態變化：${combatStatLabel(lg.effect?.stat)} ${lg.effect?.value > 0 ? "+" : ""}${lg.effect?.value || ""}`), at);
+          break;
+        default:
+          break;  // travelSupply/defenseSpawn 等不需要獨立演出
+      }
     }
 
-    // ③ 閃避 / 怪物反擊（玩家紅閃）
-    for (const lg of dodges) {
-      const at = t;
-      later(() => addFloater({ topPct: PLAYER_POS.topPct - 8, leftPct: PLAYER_POS.leftPct }, "MISS", "#93c5fd"), at);
-      t = at + T.dodgeStep;
-    }
-    for (const lg of monHits) {
-      const at = t;
-      later(() => {
-        sound.catAssist(); vibrate(60);
-        setHurt(true);
-        later(() => setHurt(false), 520);
-        addFloater({ topPct: PLAYER_POS.topPct - 10, leftPct: PLAYER_POS.leftPct }, `-${lg.dmg}`, "#ef4444");
-      }, at);
-      t = at + T.monHitStep;
-    }
-
-    // ④ 補給耗盡的力竭傷害
-    if (starve) {
-      const at = t;
-      later(() => { sound.hazard(); addFloater({ topPct: PLAYER_POS.topPct - 18, leftPct: PLAYER_POS.leftPct }, `🍖💧 力竭 -${starve.dmg}`, "#f87171"); }, at);
-      t = at + T.starveStep;
-    }
-
-    // ⑤ 清波後旅途事件：補給／HP 的變化要讓玩家看得見，否則像是資源憑空消失。
-    if (travelEvent) {
-      const at = t;
-      const deltas = [
-        travelEvent.food ? `🍖${travelEvent.food > 0 ? "+" : ""}${travelEvent.food}` : "",
-        travelEvent.water ? `💧${travelEvent.water > 0 ? "+" : ""}${travelEvent.water}` : "",
-        travelEvent.hp ? `❤️${travelEvent.hp > 0 ? "+" : ""}${travelEvent.hp}` : "",
-      ].filter(Boolean).join(" ");
-      later(() => {
-        travelEvent.hp < 0 ? sound.hazard() : sound.waveClear();
-        setFlash(`🧭 ${travelEvent.label}${deltas ? `　${deltas}` : ""}`);
-      }, at);
-      t = at + T.eventStep;
-    }
-    if (villagerAssist) {
-      const at = t;
-      later(() => {
-        sound.waveClear();
-        setFlash(`🏘️ ${villagerAssist.label}：${villagerAssist.summary || "協助完成"}`);
-      }, at);
-      t = at + T.eventStep + 500;
-    }
-    for (const event of skillEvents) {
-      const at = t;
-      later(() => {
-        if (event.type === "counterSuccess") setFlash(`✅ 反制成功：${event.skill}`);
-        else if (event.type === "skillResolve") setFlash(`⚠️ ${event.skill} 發動${event.damage ? `，造成 ${event.damage} 傷害` : ""}`);
-        else if (event.type === "effectRemove") setFlash(`狀態解除：${combatStatLabel(event.effect.stat)}`);
-        else setFlash(`狀態變化：${combatStatLabel(event.effect?.stat)} ${event.effect?.value > 0 ? "+" : ""}${event.effect?.value || ""}`);
-      }, at);
-      t = at + 650;
-    }
-
-    const visualEnd = t + T.hitLinger;
+    const visualEnd = totalMs + T.hitLinger;
+    // 勝利確認橫幅必須等場上真的清空才跳——舊版在怪物還站著時就先喊「已確認全部敵人陣亡」
     if (next.status === "won") {
       later(() => setFlash("✅ 已確認全部敵人陣亡"), visualEnd);
     }
-    // ⑥ 收尾：勝利時先讓玩家看完死亡動畫與全滅確認，再套用空場狀態。
+    // ── 收尾 ──
     later(() => {
       setHitMap({});
+      setDowned([]);
       setState(next);
       onPersist?.(next);          // 每回合落地一次：關掉 App 再回來能從這一回合續戰
       setAnimating(false);
@@ -314,7 +328,7 @@ export default function GuildBattle({
       else if (next.status === "lost") { setFlash(`💀 ${next.lostReason}`); sound.defeat(); }
       else {
         if (waveClear && !travelEvent) { setFlash(`✅ 清空一波！第 ${waveClear.nextWave + 1} 波來了`); sound.waveClear(); }
-        else setFlash(`本回合擊殺 ${kills} 隻${catLogs.length ? "（貓貓助攻）" : ""}${monHits.length ? "，你受到攻擊！" : ""}`);
+        else setFlash(`本回合擊殺 ${kills} 隻${catAssisted ? "（貓貓助攻）" : ""}${gotHit ? "，你受到攻擊！" : ""}`);
       }
       if (next.status === "waveCleared") {
         later(() => onWaveClear?.(next), T.endPause + 500);
@@ -397,6 +411,7 @@ export default function GuildBattle({
 
         {/* 怪物 */}
         {targets.map((m, i) => {
+          if (downed.includes(m.instanceId)) return null;   // 動畫中已倒下：不渲染，但保留它的索引位置
           const p = gridPosOf(m, i, targets.length);
           const isSel = target === m.instanceId;
           const shaking = shakeIds.includes(m.instanceId);
