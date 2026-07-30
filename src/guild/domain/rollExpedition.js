@@ -66,6 +66,10 @@ export const GUILD_TIER_SCALE = Object.freeze({
 // 2026-07-30 依作者決定放寬到 6：低危險度不受影響（範圍本來就在 4 以下）。
 export const MAX_TARGETS = 6;
 
+// 首領單挑：一對一時血量倍率與起始距離。倍率太低會三箭結束、技能放不出來。
+export const DUEL_BOSS_HP_MULT = 3;
+const MAX_DIST_START = 9;
+
 const normDanger = d => (DANGER_META[d] ? d : 1);
 
 // 委託可能遭遇的怪物池（畫面預覽與實際抽怪共用同一份規則，預覽才不會騙人）。
@@ -175,6 +179,32 @@ export function rollExpedition(contract = {}, opts = {}) {
   }
 
   const mods = contract.affixes?.length ? mergeAffixMods(contract.affixes) : null;
+  // ── 首領單挑：沒有雜兵，只有一隻首領 ──────────────────────────────────
+  // 一對一時首領血量要拉高，否則三箭就結束、技能連一次都放不出來（蓄力預告是這個模式的主軸）。
+  // 起始距離拉遠，讓玩家有幾回合觀察牠的攻擊距離與蓄力節奏。
+  if (contract.mode === "duel") {
+    const duelMods = contract.affixes?.length ? mergeAffixMods(contract.affixes) : null;
+    const bossEncounter = danger >= 5 ? "boss" : "miniBoss";
+    const bossPool = expeditionMonsterPool({ ...contract, danger }, { encounter: bossEncounter });
+    const fallback = expeditionMonsterPool({ ...contract, danger });
+    const source = bossPool.length ? bossPool : fallback;
+    if (!source.length) return { contractId: contract.id || null, danger, family: null, families: [], totalWaves: 0, waves: [] };
+    const boss = toGuildMonster(pick(source), danger, "duel0", MAX_DIST_START, undefined, duelMods);
+    boss.maxHp = Math.round(boss.maxHp * DUEL_BOSS_HP_MULT);
+    boss.hp = boss.maxHp;
+    return {
+      contractId: contract.id || null,
+      affixes: contract.affixes || [],
+      challenge: contract.challenge || null,
+      danger,
+      family: contract.family || contract.families?.[0] || null,
+      families: contract.families || (contract.family ? [contract.family] : []),
+      totalWaves: 1,
+      waves: [{ waveIndex: 0, monsters: [boss] }],
+      isDuel: true,
+    };
+  }
+
   const pool = expeditionMonsterPool({ ...contract, danger });
   const lockedLeader = Object.prototype.hasOwnProperty.call(contract, "leader")
     ? contract.leader

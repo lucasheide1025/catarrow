@@ -162,3 +162,54 @@ describe("波次規模與角色組成（2026-07-30 放寬高危險度 + 組成�
     expect(leader.combatRole).toBeUndefined();   // 交給圖鑑/hash 決定
   });
 });
+
+describe("首領單挑（2026-07-30）", () => {
+  const seeded = seed => { let x = seed; return () => { x = (x * 1103515245 + 12345) % 2147483648; return x / 2147483648; }; };
+  const duel = (danger, extra = {}) => rollExpedition(
+    { id: "d", danger, family: "ghost", mode: "duel", ...extra }, { rand: seeded(7) },
+  );
+
+  test("只有一波、只有一隻", () => {
+    for (const danger of [1, 3, 5, 6]) {
+      const exp = duel(danger);
+      expect(exp.totalWaves).toBe(1);
+      expect(exp.waves).toHaveLength(1);
+      expect(exp.waves[0].monsters).toHaveLength(1);
+      expect(exp.isDuel).toBe(true);
+    }
+  });
+
+  test("對手是首領，不是雜兵", () => {
+    for (const danger of [3, 4]) {
+      expect(duel(danger).waves[0].monsters[0].encounter).toBe("miniBoss");
+    }
+    for (const danger of [5, 6]) {
+      expect(duel(danger).waves[0].monsters[0].encounter).toBe("boss");
+    }
+  });
+
+  test("血量比一般首領厚——否則三箭結束、技能放不出來", () => {
+    const solo = duel(5).waves[0].monsters[0];
+    const normal = rollExpedition({ id: "n", danger: 5, family: "ghost" }, { rand: seeded(7) });
+    const anyBoss = normal.waves.flatMap(w => w.monsters).find(m => m.encounter === "boss");
+    if (anyBoss) expect(solo.maxHp).toBeGreaterThan(anyBoss.maxHp);
+    expect(solo.hp).toBe(solo.maxHp);
+  });
+
+  test("起始距離夠遠，玩家有回合觀察蓄力節奏", () => {
+    expect(duel(5).waves[0].monsters[0].distance).toBeGreaterThanOrEqual(8);
+  });
+
+  test("單挑也吃詞綴", () => {
+    const plain = duel(5).waves[0].monsters[0];
+    const buffed = duel(5, { affixes: ["berserk", "veteran"] }).waves[0].monsters[0];
+    expect(buffed.atk).toBeGreaterThan(plain.atk);
+    expect(buffed.maxHp).toBeGreaterThan(plain.maxHp);
+  });
+
+  test("非單挑模式完全不受影響", () => {
+    const normal = rollExpedition({ id: "n", danger: 3, family: "ghost" }, { rand: seeded(7) });
+    expect(normal.isDuel).toBeUndefined();
+    expect(normal.totalWaves).toBeGreaterThan(1);
+  });
+});

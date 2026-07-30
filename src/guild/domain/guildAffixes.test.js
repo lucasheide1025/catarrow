@@ -89,13 +89,26 @@ describe("挑戰層級", () => {
 describe("挑戰委託", () => {
   const args = { dateKey: "2026-07-30", memberId: "m1" };
 
-  test("每個危險度各一張精銳與危殆＝12 張", () => {
+  test("每個危險度各一張精銳／危殆／單挑＝18 張", () => {
     const list = rollChallengeContracts(args);
-    expect(list).toHaveLength(12);
+    expect(list).toHaveLength(18);
     for (let danger = 1; danger <= 6; danger += 1) {
       const ofDanger = list.filter(c => c.danger === danger);
-      expect(ofDanger).toHaveLength(2);
-      expect(ofDanger.map(c => c.challenge).sort()).toEqual(["elite", "perilous"]);
+      expect(ofDanger).toHaveLength(3);
+      expect(ofDanger.map(c => c.challenge).sort()).toEqual(["duel", "elite", "perilous"]);
+    }
+  });
+
+  test("單挑層級鎖定 duel 模式；其餘層級只會是日常三種模式", () => {
+    for (const c of rollChallengeContracts(args)) {
+      if (c.challenge === "duel") expect(c.mode).toBe("duel");
+      else expect(["exploration", "assault", "defense"]).toContain(c.mode);
+    }
+  });
+
+  test("日常委託不會出現單挑模式（spec：每階恰好一張探索/進攻/防守）", () => {
+    for (const c of rollDailyContracts(args)) {
+      expect(["exploration", "assault", "defense"]).toContain(c.mode);
     }
   });
 

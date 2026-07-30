@@ -162,6 +162,8 @@ export default function GuildBattle({
   // 仍然可以鎖定——你知道那裡有東西，只是不知道是什麼，這才是壓力來源；
   // 全部藏起來會變成無法出手，那是懲罰不是設計。
   const visionDepth = Number(state.affixMods?.visionDepth) || 0;
+  // 單挑：場上只有一隻，畫大一點才有壓迫感（同一個引擎，只是呈現不同）
+  const isDuel = !!state.expedition?.isDuel;
   const isVeiled = m => visionDepth > 0 && (m.distance ?? 0) > visionDepth;
   const visualHp = m => Math.max(0, m.hp - (hitMap[m.instanceId] || 0));
 
@@ -467,7 +469,7 @@ export default function GuildBattle({
                   fontSize: MOB_SIZE * 0.5, color: "#1e293b",
                   filter: "drop-shadow(0 0 10px rgba(129,140,248,.55))" }}>❔</div>
               ) : (
-                <MonsterArt monsterId={m.monsterId} icon={m.icon} size={MOB_SIZE}
+                <MonsterArt monsterId={m.monsterId} icon={m.icon} size={isDuel ? Math.round(MOB_SIZE * 1.6) : MOB_SIZE}
                   style={{ filter: isSel ? "drop-shadow(0 0 8px #f59e0b)" : "drop-shadow(0 3px 6px rgba(0,0,0,.6))" }} />
               )}
               <div style={{ fontSize: 9, fontWeight: 800, color: veiled ? "#818cf8" : "#fecaca", whiteSpace: "nowrap", textShadow: "0 1px 3px #000" }}>

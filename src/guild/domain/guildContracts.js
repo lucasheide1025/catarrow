@@ -29,6 +29,9 @@ export const MISSION_MODE_META = Object.freeze({
   exploration: { label: "探索遠征", icon: "🗺️", description: "移動、事件、遭遇，最後完成遠征目標" },
   assault: { label: "連續進攻", icon: "⚔️", description: "連續擊破多批敵人，中途不返回地圖" },
   defense: { label: "防守戰", icon: "🏰", description: "守住據點，敵人會持續從視距外逼近" },
+  // ⚠️ duel 必須排在最後：日常板用 MISSION_MODES[i % CONTRACTS_PER_DANGER(3)] 取模式，
+  //    放前面會把某一種日常模式擠掉。它只由挑戰層級的 forceMode 指定。
+  duel: { label: "首領單挑", icon: "👑", description: "沒有雜兵，只有牠。看穿蓄力、抓住破綻" },
 });
 const MISSION_MODES = Object.freeze(Object.keys(MISSION_MODE_META));
 
@@ -142,10 +145,13 @@ export function rollChallengeContracts({ dateKey = todayKey(), memberId = "guest
   const out = [];
   for (let danger = 1; danger <= 6; danger += 1) {
     for (const tierId of CHALLENGE_TIER_IDS) {
+      // 有 forceMode 的層級（單挑）鎖定模式；其餘從日常三種模式隨機
+      const forced = CHALLENGE_TIERS[tierId]?.forceMode;
+      const dailyModes = MISSION_MODES.slice(0, CONTRACTS_PER_DANGER);
       out.push(build({
         idSuffix: `c${danger}-${tierId}`,
         danger,
-        mode: MISSION_MODES[Math.floor(rand() * MISSION_MODES.length)] || "assault",
+        mode: forced || dailyModes[Math.floor(rand() * dailyModes.length)] || "assault",
         challenge: tierId,
       }));
     }

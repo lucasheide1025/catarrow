@@ -95,6 +95,7 @@ function newRun(contract) {
     exp: rollExpedition({
       id: contract.id, danger: contract.danger, family: contract.family, families: contract.families,
       affixes: contract.affixes || [], challenge: contract.challenge || null,
+      mode: contract.mode,   // 首領單挑要靠這個決定陣容（沒有雜兵、只有一隻首領）
     }),
     key: Date.now(),
   };
@@ -385,7 +386,8 @@ export default function GuildTestApp({ onBack, onLegacy, onImmersiveChange }) {
     // 委託 → 遠征（怪物依人數放大血量，見 partyHpScale）
     const exp = scaleExpeditionForParty(
       rollExpedition({ id: teamRoom.contract.id, danger: teamRoom.contract.danger, family: teamRoom.contract.family, families: teamRoom.contract.families,
-        affixes: teamRoom.contract.affixes || [], challenge: teamRoom.contract.challenge || null }),
+        affixes: teamRoom.contract.affixes || [], challenge: teamRoom.contract.challenge || null,
+        mode: teamRoom.contract.mode }),
       roster.length,
     );
     const battle = createTeamState(exp, roster, {

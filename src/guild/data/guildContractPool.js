@@ -53,6 +53,10 @@ export const CONTRACT_STORIES = Object.freeze({
       { title: "撐到天亮就好",     story: "安養院的長輩整夜喊有人站在床尾，看護求我們陪一晚。" },
       { title: "香火不能斷",       story: "只要香熄了牠們就進得來——有人得守著爐子到日出。" },
     ],
+    duel: [
+      { title: "點名的那一個", story: "牠每晚報一個名字，昨天報到你。" },
+      { title: "鏡子裡等你的東西", story: "那面鏡子照不出你，只照得出牠。" },
+    ],
   },
   mountain: {
     exploration: [
@@ -71,6 +75,10 @@ export const CONTRACT_STORIES = Object.freeze({
       { title: "護送最後一班車",   story: "司機說彎道那段有東西跟車，今晚最後一班還載著十幾個人。" },
       { title: "顧好蓄水池",       story: "整座山的水都靠這口池，有東西在附近徘徊，弄髒就麻煩了。" },
     ],
+    duel: [
+      { title: "守稜線的那頭", story: "巡山員說牠站在稜線上看了整夜，沒有動。" },
+      { title: "山神的看門獸", story: "過了那塊界碑，只有牠和你。" },
+    ],
   },
   insect: {
     exploration: [
@@ -87,6 +95,10 @@ export const CONTRACT_STORIES = Object.freeze({
       { title: "守住育嬰室的窗",   story: "安養院二樓的紗窗被咬破一個洞，看護整夜不敢閉眼。" },
       { title: "顧住這批貨",       story: "老闆的貨明早要出，倉庫外面已經聚了一整片。" },
       { title: "圍住蜂群動線",     story: "牠們每晚同一時間往學校飛，今晚得在半路擋下來。" },
+    ],
+    duel: [
+      { title: "蟲后要見你", story: "整條蟲道都空了，牠們讓開一條路。" },
+      { title: "蛻殼之後", story: "那個殼有一人高，主人還在裡面等。" },
     ],
   },
   workplace: {
@@ -105,6 +117,10 @@ export const CONTRACT_STORIES = Object.freeze({
       { title: "守住最後一間店",   story: "整排都收了，只剩雜貨店還開著，老闆說他不走。" },
       { title: "撐過這個月結",     story: "月結夜的辦公室會湧進東西，去年那批人到現在還沒回來上班。" },
     ],
+    duel: [
+      { title: "最後一關的主管", story: "前面的人都被擋在這裡，沒有一個過去。" },
+      { title: "簽下去就結束了", story: "牠把筆推過來，說只要簽名就放你走。" },
+    ],
   },
   exam: {
     exploration: [
@@ -122,6 +138,10 @@ export const CONTRACT_STORIES = Object.freeze({
       { title: "顧著保健室",       story: "護理師守著十幾個昏倒的孩子，外面還有東西在敲門。" },
       { title: "撐過放榜夜",       story: "放榜那晚校園最不平靜，去年有人整夜沒能走出來。" },
     ],
+    duel: [
+      { title: "監考官", story: "整間教室只剩你跟牠，鈴聲不會響。" },
+      { title: "最後一題", story: "題目只有一行：你確定嗎？" },
+    ],
   },
   temple: {
     exploration: [
@@ -138,6 +158,10 @@ export const CONTRACT_STORIES = Object.freeze({
       { title: "守到繞境結束",     story: "陣頭少年說隊伍必須走完全程，路上不能被攔下來。" },
       { title: "護住這尊神像",     story: "神像今晚要移駕，廟公說路上會有東西來搶。" },
       { title: "顧住庄頭的橋",     story: "只有那座橋能進庄，橋斷了或被跨過去，庄裡就守不住了。" },
+    ],
+    duel: [
+      { title: "神像睜眼了", story: "繞境的隊伍都退開了，只有你還站在原地。" },
+      { title: "契約的另一方", story: "三十年前有人簽了字，今天輪到你面對牠。" },
     ],
   },
   // 第七族（2026-07-30 加入輪替）。寶箱族是「會動的箱子」——語氣走詭計與貪婪，
@@ -157,6 +181,10 @@ export const CONTRACT_STORIES = Object.freeze({
       { title: "顧住今晚的錢箱",   story: "阿姨說收攤的錢一定要撐到天亮，箱子外面已經圍了一圈。" },
       { title: "守住廟裡的功德箱", story: "廟公說功德箱昨晚自己跳了三下，今晚不能再讓它被搬走。" },
       { title: "護住這批年貨",     story: "整條街的年貨堆在倉庫，外面那些東西聞得到味道。" },
+    ],
+    duel: [
+      { title: "最大的那口箱", story: "它比人還高，鎖從裡面反扣著。" },
+      { title: "金山的主人", story: "那些金子全都朝同一個方向流過去。" },
     ],
   },
 });

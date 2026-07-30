@@ -78,6 +78,14 @@ export const CHALLENGE_TIERS = Object.freeze({
     tagline: "公會不保證你回得來。",
     affixCount: 2, lootMult: 2.2, repMult: 2.5,
   },
+  // 首領單挑：沒有雜兵，只有一隻首領。做成挑戰層級而不是日常模式，是因為 spec 規定
+  // 每個危險度恰好一張探索/進攻/防守；放進挑戰板既不破壞它，又保證每天每階都有一張。
+  duel: {
+    id: "duel", name: "單挑", icon: "👑", color: "#c084fc",
+    tagline: "沒有雜兵擋在前面，也沒有人幫你分擔。",
+    affixCount: 1, lootMult: 2.0, repMult: 2.0,
+    forceMode: "duel",
+  },
 });
 
 export const CHALLENGE_TIER_IDS = Object.freeze(Object.keys(CHALLENGE_TIERS));

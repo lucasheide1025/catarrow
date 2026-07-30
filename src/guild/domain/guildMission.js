@@ -1,5 +1,6 @@
 export const GUILD_MISSION_VERSION = 3;
-export const GUILD_MISSION_MODES = Object.freeze(["exploration", "assault", "defense"]);
+// duel（首領單挑）只出現在挑戰板；日常板仍是前三種（spec：每階恰好一張探索/進攻/防守）。
+export const GUILD_MISSION_MODES = Object.freeze(["exploration", "assault", "defense", "duel"]);
 
 export function normalizeMissionMode(mode) {
   return GUILD_MISSION_MODES.includes(mode) ? mode : "assault";
