@@ -71,3 +71,16 @@ test("每個紀念章都有對應的圖片路徑，且與 tier 一致", () => {
 test("寶藏族沒有首次通關紀念章", () => {
   expect(getExpeditionFirstClearTrophy("treasure", "normal")).toBeNull();
 });
+
+// 舊制首殺徽章（{family}_{normal|advanced|hard|hell}_trophy，24 件、只有 emoji）已依需求移除，
+// 一律以新制 36 件為主。這條測試防止舊制被重新加回來造成兩套並存、圖鑑又只列到其中一套。
+test("首次通關紀念章只有新制 36 件，沒有舊制難度字串版", () => {
+  const trophies = Object.keys(COLLECTIBLE_MAP).filter(id => id.endsWith("_trophy"));
+  const tierStyle = trophies.filter(id => /_t[1-6]_trophy$/.test(id));
+  expect(tierStyle).toHaveLength(36);
+  for (const legacy of ["ghost_normal_trophy", "exam_hell_trophy", "workplace_hard_trophy", "temple_advanced_trophy"]) {
+    expect(COLLECTIBLE_MAP[legacy]).toBeUndefined();
+  }
+  // 除了 36 件 tier 紀念章，不該再有其他以 _trophy 結尾的地下城收藏品
+  expect(trophies.sort()).toEqual(tierStyle.sort());
+});

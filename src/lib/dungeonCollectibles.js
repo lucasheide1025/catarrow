@@ -1,5 +1,10 @@
 // src/lib/dungeonCollectibles.js — 地下城收藏品資料與掉落邏輯
-// 6族系 × (20普通 + 10稀有 + 5首領 + 1超稀有) = 216件 + 24首殺限定
+// 6族系 × (20普通 + 10稀有 + 5首領 + 1超稀有) = 216件 + 36件首次通關紀念章
+//
+// 首次通關紀念章原本有兩套並存：舊制 24 件（id `{family}_{normal|advanced|hard|hell}_trophy`，
+// 只有 emoji）與新制 36 件（id `{family}_t{1..6}_trophy`，各有專屬 webp）。舊制已依需求移除，
+// 一律以新制為主。已擁有舊制的會員文件裡仍留著舊 key，那些是查不到定義的孤兒計數，
+// 不影響運作；收藏總數分母因此少 24 件。
 import { normalizeDungeonDifficultyTier } from "./dungeonFirstClear";
 
 export const FAMILY_COLLECTIBLES = {
@@ -281,34 +286,6 @@ export const FAMILY_COLLECTIBLES = {
   },
 };
 
-// ── 初次通關限定品（24種，每個地下城一件）──────────────────
-const FIRST_CLEAR_DEFS = {
-  ghost_normal:      { name:"廢墟探索章",   icon:"🏆", desc:"首次征服幽靈廢墟的紀念勳章，刻有你的到訪日期。"       },
-  ghost_advanced:    { name:"幽冥地窖章",   icon:"🥇", desc:"征服幽冥地窖的榮耀勳章，見證了對死亡的超越。"         },
-  ghost_hard:        { name:"亡靈禁地章",   icon:"💀", desc:"踏入亡靈禁地並生還的極少數人才能得到的殊榮。"         },
-  ghost_hell:        { name:"死神殿堂章",   icon:"☠️",  desc:"只有征服死神殿堂的英雄才能持有，散發強大的死靈之氣。" },
-  mountain_normal:   { name:"山麓探道章",   icon:"🏆", desc:"首次踏遍山麓探道的紀念章，帶有清新的山風氣息。"       },
-  mountain_advanced: { name:"岩壁迷宮章",   icon:"🥇", desc:"在岩壁迷宮中找到出路的成就章，堅硬如岩石。"           },
-  mountain_hard:     { name:"險峰試煉章",   icon:"⛰️",  desc:"通過險峰試煉的登頂紀念章，只有真正的勇者才能獲得。"  },
-  mountain_hell:     { name:"天柱巔峰章",   icon:"👑", desc:"登上天柱巔峰的傳說成就章，鑄造者已無人知曉。"         },
-  insect_normal:     { name:"草叢探索章",   icon:"🏆", desc:"首次深入草叢探索的紀念章，上面停著一隻蝴蝶標本。"     },
-  insect_advanced:   { name:"蟲穴迷宮章",   icon:"🥇", desc:"走出蟲穴迷宮的紀念章，蟲絲包覆著金屬外殼。"           },
-  insect_hard:       { name:"蟲后禁地章",   icon:"🦋", desc:"挑戰蟲后禁地的成就章，散發著蟲后費洛蒙的氣味。"      },
-  insect_hell:       { name:"螞蟻帝國章",   icon:"🐜", desc:"推翻螞蟻帝國的傳說章，銘刻著最終戰役的場景。"         },
-  workplace_normal:  { name:"職場初探章",   icon:"🏆", desc:"第一天上班就混到下班的紀念章，附贈加班費收據。"        },
-  workplace_advanced:{ name:"會議室逃脫章", icon:"🥇", desc:"從無止盡的會議室逃脫的成就章，印有會議記錄殘骸。"      },
-  workplace_hard:    { name:"加班煉獄章",   icon:"💼", desc:"在加班煉獄中存活的鐵人章，凌晨三點的時鐘永遠定格。"  },
-  workplace_hell:    { name:"企業黑洞章",   icon:"🌑", desc:"逃出企業黑洞的傳說章，上面的文字只有前員工才看得懂。" },
-  exam_normal:       { name:"小考及格章",   icon:"🏆", desc:"首次通過小考練習場的紀念章，上面有個歪歪斜斜的60分。"  },
-  exam_advanced:     { name:"期中優等章",   icon:"🥇", desc:"期中考迷宮的優等生章，每個字都是用血淚寫成的。"      },
-  exam_hard:         { name:"聯考英雄章",   icon:"📝", desc:"通過聯考禁地的英雄章，是無數個深夜苦讀的結晶。"      },
-  exam_hell:         { name:"最終試煉章",   icon:"🎓", desc:"完成最終試驗的傳說章，上面印有全滿分的成績單。"       },
-  temple_normal:     { name:"神廟訪客章",   icon:"🏆", desc:"首次參訪神廟前廳的紀念章，沾有神聖的香灰。"           },
-  temple_advanced:   { name:"神廟探索章",   icon:"🥇", desc:"深入神廟迷宮的成就章，神明的眼睛在上面望著你。"      },
-  temple_hard:       { name:"神聖禁地章",   icon:"🏛️",  desc:"踏入神聖禁地並生還的稀有章，散發神聖光輝。"           },
-  temple_hell:       { name:"神明試煉章",   icon:"⚡", desc:"通過神明試煉的傳說章，與神明締結的永恆契約。"         },
-};
-
 // ── 扁平化查詢 MAP ─────────────────────────────────────────────
 export const COLLECTIBLE_MAP = {};
 
@@ -318,11 +295,6 @@ Object.entries(FAMILY_COLLECTIBLES).forEach(([family, tiers]) => {
       COLLECTIBLE_MAP[item.id] = { ...item, family, rarity };
     });
   });
-});
-
-Object.entries(FIRST_CLEAR_DEFS).forEach(([dungeonId, item]) => {
-  const id = `${dungeonId}_trophy`;
-  COLLECTIBLE_MAP[id] = { id, ...item, family: dungeonId.split("_")[0], rarity:"exclusive", dungeonId };
 });
 
 const FIRST_CLEAR_FAMILY_NAMES = {

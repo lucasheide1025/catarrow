@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { FAMILY_COLLECTIBLES, COLLECTIBLE_MAP } from "../../lib/dungeonCollectibles";
-import { DUNGEON_MAPS, FAMILY_CONFIGS } from "../../lib/dungeonData";
+import { FAMILY_CONFIGS } from "../../lib/dungeonData";
 
 const COLLECTION_GRADES = [
   { min:100, id:"mythic", label:"神話", color:"#fb7185", next:null },
@@ -20,18 +20,16 @@ function collectionGrade(qty) {
   };
 }
 
-// 首次通關頁要列的紀念品。這裡有兩套並存：
-//   新制：`{family}_t{1..6}_trophy` 共 36 件，有專屬 webp，由 claimDungeonPersonalFirstClear 發放。
-//   舊制：`{family}_{normal|advanced|hard|hell}_trophy` 共 24 件，只有 emoji。
-// 圖鑑原本只查舊制的 `${map.id}_trophy`，所以新制 36 件完全沒出現在圖鑑裡（使用者實測）。
-// 現在以新制為主，另把玩家「已經擁有」的舊制補在後面，避免既有收藏突然看不到。
+// 首次通關頁要列的紀念章：`{family}_t{1..6}_trophy` 共 36 件，由
+// claimDungeonPersonalFirstClear 發放。圖鑑原本查的是舊制的 `${map.id}_trophy`
+// （family_難度字串），所以新制完全沒出現過；舊制 24 件已移除，這裡只列新制。
 const TIER_TROPHY_RE = /^([a-z]+)_t([1-6])_trophy$/;
 
 function buildFirstClearEntries(collectibles) {
   const familyLabel = {};
   FAMILY_CONFIGS.forEach(family => { familyLabel[family.id] = `${family.emoji} ${family.label}`; });
 
-  const current = Object.values(COLLECTIBLE_MAP)
+  return Object.values(COLLECTIBLE_MAP)
     .map(item => ({ item, match: TIER_TROPHY_RE.exec(item.id) }))
     .filter(entry => entry.match)
     .sort((a, b) => (a.match[1].localeCompare(b.match[1]) || Number(a.match[2]) - Number(b.match[2])))
@@ -40,17 +38,6 @@ function buildFirstClearEntries(collectibles) {
       qty: collectibles[item.id] || 0,
       context: `${familyLabel[match[1]] || match[1]} T${match[2]}`,
     }));
-
-  const legacyOwned = DUNGEON_MAPS
-    .map(map => ({ map, item: COLLECTIBLE_MAP[`${map.id}_trophy`] }))
-    .filter(({ item }) => item && (collectibles[item.id] || 0) > 0)
-    .map(({ map, item }) => ({
-      item,
-      qty: collectibles[item.id] || 0,
-      context: `${map.emoji} ${map.name}（舊版）`,
-    }));
-
-  return [...current, ...legacyOwned];
 }
 
 // 收藏品圖片。部分收藏品（首次通關紀念章共 36 張）有專屬 webp，其餘只有 emoji；
