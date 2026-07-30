@@ -20,8 +20,54 @@ function collectionGrade(qty) {
   };
 }
 
+// 首次通關頁要列的紀念品。這裡有兩套並存：
+//   新制：`{family}_t{1..6}_trophy` 共 36 件，有專屬 webp，由 claimDungeonPersonalFirstClear 發放。
+//   舊制：`{family}_{normal|advanced|hard|hell}_trophy` 共 24 件，只有 emoji。
+// 圖鑑原本只查舊制的 `${map.id}_trophy`，所以新制 36 件完全沒出現在圖鑑裡（使用者實測）。
+// 現在以新制為主，另把玩家「已經擁有」的舊制補在後面，避免既有收藏突然看不到。
+const TIER_TROPHY_RE = /^([a-z]+)_t([1-6])_trophy$/;
+
+function buildFirstClearEntries(collectibles) {
+  const familyLabel = {};
+  FAMILY_CONFIGS.forEach(family => { familyLabel[family.id] = `${family.emoji} ${family.label}`; });
+
+  const current = Object.values(COLLECTIBLE_MAP)
+    .map(item => ({ item, match: TIER_TROPHY_RE.exec(item.id) }))
+    .filter(entry => entry.match)
+    .sort((a, b) => (a.match[1].localeCompare(b.match[1]) || Number(a.match[2]) - Number(b.match[2])))
+    .map(({ item, match }) => ({
+      item,
+      qty: collectibles[item.id] || 0,
+      context: `${familyLabel[match[1]] || match[1]} T${match[2]}`,
+    }));
+
+  const legacyOwned = DUNGEON_MAPS
+    .map(map => ({ map, item: COLLECTIBLE_MAP[`${map.id}_trophy`] }))
+    .filter(({ item }) => item && (collectibles[item.id] || 0) > 0)
+    .map(({ map, item }) => ({
+      item,
+      qty: collectibles[item.id] || 0,
+      context: `${map.emoji} ${map.name}（舊版）`,
+    }));
+
+  return [...current, ...legacyOwned];
+}
+
+// 收藏品圖片。部分收藏品（首次通關紀念章共 36 張）有專屬 webp，其餘只有 emoji；
+// 圖片載入失敗就換回 emoji，避免圖鑑出現空白格。
+function CollectibleArt({ item, className }) {
+  const [failed, setFailed] = useState(false);
+  if (failed || !item?.image) return <span>{item?.icon || "❔"}</span>;
+  return (
+    <img src={item.image} alt={item.name} loading="lazy" draggable={false}
+      className={className} onError={() => setFailed(true)} />
+  );
+}
+
 // 陳列櫃小格：框色＝品階；未收集顯示灰色 ❔。點擊 → 開細項。
-function MuseumTile({ item, qty, onClick }) {
+// big：首次通關紀念章有專屬圖片，塞進原本給 emoji 用的 40px 扁格子會被壓扁；
+// 改用正方形展示座並減少欄數，圖才看得清楚。
+function MuseumTile({ item, qty, onClick, big = false }) {
   const grade = collectionGrade(qty);
   const owned = qty > 0;
   return (
@@ -34,12 +80,18 @@ function MuseumTile({ item, qty, onClick }) {
         opacity: owned ? 1 : 0.7,
       }}>
       {/* 展示座 */}
-      <div className="grid h-10 w-full place-items-center rounded-md text-2xl"
+      <div className={`grid w-full place-items-center overflow-hidden rounded-md ${big ? "aspect-square text-4xl" : "h-10 text-2xl"}`}
         style={{
           background: owned ? "radial-gradient(circle at 50% 25%, rgba(255,255,255,.07), #0a1220)" : "#0a1220",
           filter: owned ? "none" : "grayscale(1) brightness(.55)",
         }}>
-        {owned ? item.icon : "❔"}
+        {/* 有專屬圖就畫圖（首次通關紀念章等 36 張 webp 就是靠這裡才看得到），
+            沒有圖的收藏品才退回 emoji；載入失敗也退回 emoji，不留白框 */}
+        {owned
+          ? (item.image
+              ? <CollectibleArt item={item} className="h-full w-full rounded-md object-cover" />
+              : item.icon)
+          : "❔"}
       </div>
       {/* 收集到的等級（品階，用色）+ 數量 */}
       <div className="flex w-full items-center justify-center gap-0.5 leading-none">
@@ -64,7 +116,11 @@ function DetailModal({ entry, onClose }) {
         style={{ background:"linear-gradient(180deg,#16233a,#0b1220)", borderColor:`${grade.color}66`, boxShadow:`0 0 34px ${grade.color}33` }}>
         <div className="mx-auto grid h-24 w-24 place-items-center rounded-2xl text-6xl"
           style={{ background:"radial-gradient(circle at 50% 25%, rgba(255,255,255,.08), #0a1220)", filter: owned ? "none" : "grayscale(1) brightness(.6)" }}>
-          {owned ? item.icon : "❔"}
+          {owned
+            ? (item.image
+                ? <CollectibleArt item={item} className="h-full w-full rounded-2xl object-cover" />
+                : item.icon)
+            : "❔"}
         </div>
         <div className="mt-2 text-xs font-black tracking-wide" style={{ color:grade.color }}>{grade.label} 收藏</div>
         <h3 className="mt-0.5 text-lg font-black text-white">{owned ? item.name : "尚未發現"}</h3>
@@ -138,14 +194,11 @@ export default function DungeonDex({ guestProfile }) {
       </div>
 
       {mode === "exclusive" ? (
-        <div className="grid grid-cols-5 gap-1.5">
-          {DUNGEON_MAPS.map(map => {
-            const item = COLLECTIBLE_MAP[`${map.id}_trophy`];
-            if (!item) return null;
-            const qty = collectibles[item.id] || 0;
-            const context = `${map.emoji} ${map.name}`;
-            return <MuseumTile key={item.id} item={item} qty={qty} onClick={() => setSelected({ item, qty, context })} />;
-          })}
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+          {buildFirstClearEntries(collectibles).map(({ item, qty, context }) => (
+            <MuseumTile key={item.id} item={item} qty={qty} big
+              onClick={() => setSelected({ item, qty, context })} />
+          ))}
         </div>
       ) : (
         <>
