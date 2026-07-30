@@ -97,7 +97,12 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
   const [catBondPop, setCatBondPop] = useState(null);    // 貓貓羈絆格：{ catId, name, speech, catXP, catBond }
   const [showSummary, setShowSummary] = useState(false); // 骰子用完的總結算
   const sessionRef = useRef({});                         // 本次 session 累計獎勵
+  // busyRef 是同步守衛（ref 才能在同一個 commit 內立即生效，擋住重入與快照搶跑）；
+  // busy 只是給 render 用的鏡射——原本按鈕只看 rolling，落點停頓與結算那段會顯示成
+  // 可按，但點下去會被 busyRef 無聲擋掉，回饋不明確。
   const busyRef = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const setBusyBoth = useCallback(value => { busyRef.current = value; setBusy(value); }, []);
 
   // 顯示獎勵詳細 + 累加到 session。tileType 只用來決定前置動畫的圖示／台詞。
   const showReward = useCallback((reward, band, tileType) => {
@@ -150,16 +155,16 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
         showReward(res.reward, undefined, tileType);
       }
     }
-    busyRef.current = false;
+    setBusyBoth(false);
     flushSummary();
-  }, [myId, villageBuildings, catId, showReward, flushSummary, profile]);
+  }, [myId, villageBuildings, catId, showReward, flushSummary, profile, setBusyBoth]);
 
   // 骰 → 逐格動畫 → 落點結算
   const handleRoll = useCallback(async () => {
     if (rolling || busyRef.current || !board || (board.dice || 0) <= 0) return;
-    busyRef.current = true; setRolling(true); sfxCast();
+    setBusyBoth(true); setRolling(true); sfxCast();
     const res = await rollAndMove(myId);
-    if (!res?.ok) { showToast(res?.reason || "無法擲骰"); setRolling(false); busyRef.current = false; return; }
+    if (!res?.ok) { showToast(res?.reason || "無法擲骰"); setRolling(false); setBusyBoth(false); return; }
     pendingSummaryRef.current = (res.diceLeft ?? 0) <= 0;
     // 擲骰動畫：快速跳數字 ~0.8s 定格在 res.roll
     setDiceAnim(1);
@@ -186,7 +191,7 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
     // 落點停頓：讓「踩到格子上」看得清楚，才觸發事件/結算（避免一瞬間就過去）
     await new Promise(r => setTimeout(r, 750));
     await settle(res.tile);
-  }, [rolling, board, myId, settle]);
+  }, [rolling, board, myId, settle, setBusyBoth]);
 
   // 6 箭計分完成
   const finishShoot = useCallback(async () => {
@@ -197,14 +202,14 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
     addRoundArrows(myId, 6).catch(() => {}); // 射箭格＝射出 6 箭，累積今日/終身箭數與里程碑
     const res = await settleBoardTile(myId, type, { villageBuildings, catId, scoreRatio: ratio });
     if (res?.ok) { sfxSuccess(); showReward(res.reward, res.reward.band, type); }
-    busyRef.current = false;
+    setBusyBoth(false);
     flushSummary();
-  }, [arrows, shootTile, myId, villageBuildings, catId, showReward, flushSummary]);
+  }, [arrows, shootTile, myId, villageBuildings, catId, showReward, flushSummary, setBusyBoth]);
 
   // 事件卡效果套用
   const applyEvent = useCallback(async () => {
     const ev = eventCard?.event; setEventCard(null);
-    if (!ev) { busyRef.current = false; return; }
+    if (!ev) { setBusyBoth(false); return; }
     const r = await applyEventEffect(myId, ev, { villageBuildings, catId });
     // 需要 UI 反應的效果
     if (r.kind === "move") { const np = (((board.boardPos + r.steps) % BOARD_SIZE) + BOARD_SIZE) % BOARD_SIZE; await setBoardPos(myId, np); setDisplayPos(np); await settle(BOARD_LAYOUT[np]); return; }
@@ -215,9 +220,9 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
     else if (r.kind === "dice") showToast(r.delta > 0 ? `🎲 +${r.delta} 骰` : "😴 暫停一回合");
     else if (r.kind === "flavor") showToast("😸 " + (ev.text.length > 14 ? "會心一笑" : ev.text));
     else sfxSuccess();
-    busyRef.current = false;
+    setBusyBoth(false);
     flushSummary();
-  }, [eventCard, myId, villageBuildings, catId, board, settle, flushSummary]);
+  }, [eventCard, myId, villageBuildings, catId, board, settle, flushSummary, setBusyBoth]);
 
   if (!board) return null;
 
@@ -336,9 +341,9 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
               <div className="text-amber-100 font-black text-lg drop-shadow">{mode.name}</div>
               <div className="text-amber-200/80 text-xs mt-1">刷「{mode.familyName}」資源</div>
               <div className="text-amber-300/70 text-[11px] mt-2">已繞 {board.lapCount} 圈</div>
-              <button onClick={handleRoll} disabled={rolling || board.dice <= 0}
+              <button onClick={handleRoll} disabled={rolling || busy || board.dice <= 0}
                 className="mt-3 px-6 py-2.5 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-900 font-black text-sm shadow-lg disabled:opacity-40 active:scale-95">
-                {rolling ? "🎲 前進中…" : board.dice <= 0 ? "骰子用完了" : "🎲 擲骰前進"}
+                {rolling ? "🎲 前進中…" : busy ? "⏳ 結算中…" : board.dice <= 0 ? "骰子用完了" : "🎲 擲骰前進"}
               </button>
               {board.dice <= 0 && (
                 <button type="button" disabled={!profile?.specialItems?.boardDiceTicket}

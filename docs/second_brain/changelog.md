@@ -5,6 +5,34 @@
 
 ---
 
+## 2026-07-30（大富翁：獎勵演出、棋子搶跑、寶箱格改抽獎）
+
+作者：「大富翁的一些缺乏動畫 聲光效果」＋「很常會出現骰子還沒出現步數 但格子已經先走了」
+＋「寶箱格改成不需要射箭而是隨機抽到 1~5 個寶箱」。
+
+**踩坑（重要）：跨 effect 的守衛旗標一律用 ref，不能用 useState。**
+`CatVillageBoardTeam.jsx` 的 boardPos 同步 effect 原本寫 `if (room && !animating)`，
+而 `animating` 是 useState。同一個 Firestore 快照會同時觸發「跟隨動畫」effect
+（宣告在前，`setAnimating(true)`）與這個同步 effect；React 依宣告順序執行，但
+`setAnimating(true)` 在同一個 commit 內**還沒生效**，同步 effect 讀到的仍是舊 render 的
+`false` → 立刻把棋子設到終點，骰子還在轉棋子就走完了。改用 `animatingRef`。
+單機版本來就用 `busyRef`，所以這個 bug 只在組隊版出現（每一步都會踩到，所以「很常」）。
+
+**獎勵三段演出**：新增共用元件 `BoardRewardPopup`（單機與組隊共用，不各寫一份）。
+前置動畫約 0.95 秒，圖示與台詞依格子類型變化（素材格「採集中…翻找素材」、寶箱格
+「開箱中…撬開鎖扣」）→ 獎勵逐項淡入（每項延遲 70ms）→「收下！」。
+演出期間**點背景不關閉**，避免手滑跳過又看不到拿了什麼。遵守 `prefers-reduced-motion`。
+
+**寶箱格改抽獎**：不再射 6 箭。踩到就隨機 1~5 箱，階級**固定等於進場選的 T**
+（不再 `rollTier` 隨機降階，讓進場選階有意義），仍受建築 stage 上限夾住。
+只改 `TILE_TYPES.chest.shooting = false` 就夠——組隊端與 `villageBoardTeamDb`
+都是讀這個旗標決定走 `pendingShoot` 還是 `pendingSettle`。
+
+**順手**：單機版按鈕原本只看 `rolling`，落點停頓與結算那段會顯示成可按但點了被
+`busyRef` 無聲擋掉；加一個鏡射 state（`busy`）給 render 用，按鈕顯示「⏳ 結算中…」。
+
+---
+
 ## 2026-07-30（貓貓村採集：新增第七族寶箱族，素材改用擴充圖鑑）
 
 作者：「探索地圖 新增第七族 寶箱族可以對應射箭場的建築物等級」＋「目前太多升級材料需要寶箱族了」。
