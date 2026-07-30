@@ -1,5 +1,5 @@
 export const WEBSITE_CMS_PAGES = [
-  { id: "home", label: "首頁", path: "/index-redesign.html" },
+  { id: "home", label: "首頁", path: "/" },
   { id: "beginner-guide", label: "第一次射箭", path: "/beginner-guide/" },
   { id: "visit-guide", label: "價格與到店", path: "/visit-guide/" },
   { id: "equipment-guide", label: "裝備選購", path: "/equipment-guide/" },

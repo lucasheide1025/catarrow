@@ -2,7 +2,8 @@
   const PROJECT_ID = "catgroup-8d0bb";
   const params = new URLSearchParams(location.search);
   const parts = location.pathname.split("/").filter(Boolean);
-  const inferred = location.pathname.endsWith("index-redesign.html") ? "home" : (parts.at(-1)?.includes(".") ? parts.at(-2) : parts.at(-1));
+  const isHome = location.pathname === "/" || location.pathname.endsWith("/index.html") || location.pathname.endsWith("/index-redesign.html");
+  const inferred = isHome ? "home" : (parts.at(-1)?.includes(".") ? parts.at(-2) : parts.at(-1));
   const pageId = params.get("pageId") || inferred || "home";
   const previewMode = params.get("cmsPreview") === "1";
   const selector = "h1,h2,h3,h4,p,li,summary,a,button,small,strong";
@@ -12,8 +13,14 @@
     ![...element.children].some(child => child.matches(selector))
   );
   const imageNodes = [...document.querySelectorAll("img")].filter(image => !image.closest("[data-cms-ignore]"));
-  textNodes.forEach((element, index) => { element.dataset.cmsKey = element.dataset.cms || `text-${index + 1}`; });
-  imageNodes.forEach((element, index) => { element.dataset.cmsKey = element.dataset.cmsImage || `image-${index + 1}`; });
+  let legacyTextIndex = 0;
+  let legacyImageIndex = 0;
+  textNodes.forEach(element => {
+    element.dataset.cmsKey = element.dataset.cms || `text-${++legacyTextIndex}`;
+  });
+  imageNodes.forEach(image => {
+    image.dataset.cmsKey = image.dataset.cmsImage || `image-${++legacyImageIndex}`;
+  });
   const defaults = {
     text: Object.fromEntries(textNodes.map(element => [element.dataset.cmsKey, element.textContent.trim()])),
     html: Object.fromEntries(textNodes.map(element => [element.dataset.cmsKey, element.innerHTML])),
