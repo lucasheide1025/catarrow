@@ -24,10 +24,10 @@ export const MAX_DANGER = 6;
 export const DANGER_META = Object.freeze({
   1: { label: "例行", skulls: "☠️",         tier: "common", tierNo: 1, waves: 3, waveSize: [1, 2], initDist: [3, 10], leader: null },
   2: { label: "警戒", skulls: "☠️☠️",       tier: "rare",   tierNo: 2, waves: 3, waveSize: [2, 3], initDist: [3, 10], leader: null },
-  3: { label: "危險", skulls: "☠️×3",       tier: "elite",  tierNo: 3, waves: 4, waveSize: [2, 3], initDist: [3, 10], leader: "miniBoss" },
-  4: { label: "極危", skulls: "☠️×4",       tier: "fierce", tierNo: 4, waves: 4, waveSize: [2, 4], initDist: [3, 10], leader: "miniBoss" },
-  5: { label: "討伐", skulls: "☠️×5",       tier: "boss",   tierNo: 5, waves: 5, waveSize: [2, 4], initDist: [3, 10], leader: "boss" },
-  6: { label: "傳說", skulls: "☠️×6",       tier: "mythic", tierNo: 6, waves: 5, waveSize: [3, 4], initDist: [3, 10], leader: "boss" },
+  3: { label: "危險", skulls: "☠️×3",       tier: "elite",  tierNo: 3, waves: 4, waveSize: [2, 4], initDist: [3, 10], leader: "miniBoss" },
+  4: { label: "極危", skulls: "☠️×4",       tier: "fierce", tierNo: 4, waves: 4, waveSize: [3, 5], initDist: [3, 10], leader: "miniBoss" },
+  5: { label: "討伐", skulls: "☠️×5",       tier: "boss",   tierNo: 5, waves: 5, waveSize: [3, 6], initDist: [3, 10], leader: "boss" },
+  6: { label: "傳說", skulls: "☠️×6",       tier: "mythic", tierNo: 6, waves: 5, waveSize: [4, 6], initDist: [3, 10], leader: "boss" },
 });
 
 // 每張每日委託在生成時就鎖定首領結果；同一天重整不會換王。
@@ -60,7 +60,10 @@ export const GUILD_TIER_SCALE = Object.freeze({
   6: { hp: 0.30, atk: 0.75 },
 });
 
-export const MAX_TARGETS = 4; // 畫面最多同時 4 個目標
+// 同時在場上限。三線 × 六深 = 18 格放得下，戰場定義 BATTLEFIELD.maxVisible 也是 8；
+// 舊值 4 讓高危險度的 waveSize 上緣永遠被切掉（[2,4] 實際只有 2~4），每波幾乎一樣多。
+// 2026-07-30 依作者決定放寬到 6：低危險度不受影響（範圍本來就在 4 以下）。
+export const MAX_TARGETS = 6;
 
 const normDanger = d => (DANGER_META[d] ? d : 1);
 
@@ -83,7 +86,7 @@ export function expeditionMonsterPool(contract = {}, opts = {}) {
 }
 
 // 擴充怪 → 公會戰鬥單位（含公會縮放）
-function toGuildMonster(raw, danger, instanceId, distance) {
+function toGuildMonster(raw, danger, instanceId, distance, combatRole) {
   const m = toLegacyBattleMonster(raw);
   const scale = GUILD_TIER_SCALE[danger] || GUILD_TIER_SCALE[1];
   const hp = Math.max(1, Math.round(m.hp * scale.hp));
@@ -106,7 +109,37 @@ function toGuildMonster(raw, danger, instanceId, distance) {
     atk: Math.max(1, Math.round(m.atk * scale.atk)),
     def: m.def,             // DEF 不縮放（減傷已在傷害公式裡是 def*0.5）
     distance,
+    // 有指定就用指定的；沒有時 guildCombatV2.roleForMonster 會用 monsterId hash 推
+    ...(combatRole ? { combatRole } : {}),
   };
+}
+
+// ── 每波的角色組成 ────────────────────────────────────────────────────────
+// 舊行為：combatRole 由 monsterId 的 hash 決定 → 同一隻怪永遠同一個角色，於是「抽到誰」
+// 就決定了組成，同一份委託每次打起來幾乎一樣（使用者回報「每次數量／感覺都固定」）。
+//
+// 現在每波即時規劃組成：先保證近戰與遠程各至少一隻（有推進壓力，也有打不到的遠程），
+// 3 隻以上再保證一個施法/支援（技能預告才有戲），其餘隨機。首領不套用——牠自己的
+// 角色由圖鑑決定，不該被洗掉。
+const MELEE_ROLES = ["pursuer", "heavy", "charger"];
+const RANGED_ROLES = ["ranged", "caster"];
+const SUPPORT_ROLES = ["caster", "support"];
+
+export function planWaveRoles(size, rand = Math.random) {
+  const n = Math.max(0, Math.floor(Number(size) || 0));
+  if (n <= 0) return [];
+  const pickFrom = arr => arr[Math.floor(rand() * arr.length)];
+  const roles = [];
+  if (n >= 1) roles.push(pickFrom(MELEE_ROLES));
+  if (n >= 2) roles.push(pickFrom(RANGED_ROLES));
+  if (n >= 3) roles.push(pickFrom(SUPPORT_ROLES));
+  while (roles.length < n) roles.push(pickFrom([...MELEE_ROLES, ...RANGED_ROLES, ...SUPPORT_ROLES]));
+  // 洗牌，避免站位永遠是「近戰在前、遠程在後」的固定順序
+  for (let i = roles.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rand() * (i + 1));
+    [roles[i], roles[j]] = [roles[j], roles[i]];
+  }
+  return roles.slice(0, n);
 }
 
 // contract: { id?, danger:1~6, family?, families? }；opts.rand 可注入（測試用）
@@ -144,12 +177,14 @@ export function rollExpedition(contract = {}, opts = {}) {
     const isLast = w === meta.waves - 1;
     const size = Math.min(MAX_TARGETS, ri(meta.waveSize[0], meta.waveSize[1]));
     const monsters = [];
-    // 最後一波：首領壓陣（佔一個名額）
+    // 最後一波：首領壓陣（佔一個名額）。首領不套組成規劃——角色由圖鑑決定，不該被洗掉。
     if (isLast && leaderPool.length) {
       monsters.push(toGuildMonster(pick(leaderPool), danger, `g${inst++}`, ri(meta.initDist[0], meta.initDist[1])));
     }
+    const roles = planWaveRoles(size - monsters.length, rand);
+    let roleIdx = 0;
     while (monsters.length < size) {
-      monsters.push(toGuildMonster(pick(pool), danger, `g${inst++}`, ri(meta.initDist[0], meta.initDist[1])));
+      monsters.push(toGuildMonster(pick(pool), danger, `g${inst++}`, ri(meta.initDist[0], meta.initDist[1]), roles[roleIdx++]));
     }
     waves.push({ waveIndex: w, monsters });
   }

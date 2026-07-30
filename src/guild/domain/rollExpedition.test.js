@@ -1,5 +1,12 @@
 // src/guild/domain/rollExpedition.test.js
-import { rollExpedition, DANGER_META, MAX_TARGETS, MAX_DANGER, GUILD_TIER_SCALE } from "./rollExpedition";
+import {
+  DANGER_META,
+  GUILD_TIER_SCALE,
+  MAX_DANGER,
+  MAX_TARGETS,
+  planWaveRoles,
+  rollExpedition,
+} from "./rollExpedition";
 import { EXPANSION_MONSTER_BY_ID } from "../../lib/monsterExpansionCatalog";
 
 // 固定亂數（deterministic），讓測試可重現
@@ -78,5 +85,76 @@ describe("rollExpedition — 委託遠征生成", () => {
       const exp = rollExpedition({ danger: d }, { rand: seededRand(50 + d) });
       expect(exp.waves.flatMap(w => w.monsters).some(m => m.family === "treasure")).toBe(false);
     }
+  });
+});
+
+describe("波次規模與角色組成（2026-07-30 放寬高危險度 + 組成隨機）", () => {
+  const seeded = seed => {
+    let x = seed;
+    return () => { x = (x * 1103515245 + 12345) % 2147483648; return x / 2147483648; };
+  };
+
+  test("低危險度維持原樣，高危險度才放寬", () => {
+    // ☠️1~2 不動：新手體驗不變
+    expect(DANGER_META[1].waveSize).toEqual([1, 2]);
+    expect(DANGER_META[2].waveSize).toEqual([2, 3]);
+    // ☠️4 以上明顯拉開
+    expect(DANGER_META[5].waveSize[1]).toBeGreaterThan(4);
+    expect(DANGER_META[6].waveSize[0]).toBeGreaterThanOrEqual(4);
+  });
+
+  test("同時上限不再把高危險度的上緣切掉", () => {
+    for (const danger of [1, 2, 3, 4, 5, 6]) {
+      expect(DANGER_META[danger].waveSize[1]).toBeLessThanOrEqual(MAX_TARGETS);
+    }
+  });
+
+  test("多次擲出的每波隻數會有變化，不是固定值", () => {
+    const sizes = new Set();
+    for (let seed = 1; seed <= 40; seed += 1) {
+      const exp = rollExpedition({ danger: 5, family: "ghost" }, { rand: seeded(seed) });
+      exp.waves.forEach(w => sizes.add(w.monsters.length));
+    }
+    expect(sizes.size).toBeGreaterThan(1);
+  });
+
+  test("planWaveRoles：1 隻給近戰、2 隻近戰+遠程、3 隻再加施法或支援", () => {
+    const melee = ["pursuer", "heavy", "charger"];
+    const ranged = ["ranged", "caster"];
+    const support = ["caster", "support"];
+    expect(planWaveRoles(1, seeded(7))).toHaveLength(1);
+    expect(melee).toContain(planWaveRoles(1, seeded(7))[0]);
+
+    const two = planWaveRoles(2, seeded(11));
+    expect(two).toHaveLength(2);
+    expect(two.some(r => melee.includes(r))).toBe(true);
+    expect(two.some(r => ranged.includes(r))).toBe(true);
+
+    const three = planWaveRoles(3, seeded(13));
+    expect(three).toHaveLength(3);
+    expect(three.some(r => melee.includes(r))).toBe(true);
+    expect(three.some(r => ranged.includes(r))).toBe(true);
+    expect(three.some(r => support.includes(r))).toBe(true);
+  });
+
+  test("planWaveRoles 邊界：0 隻回空、大量也不會少給", () => {
+    expect(planWaveRoles(0)).toEqual([]);
+    expect(planWaveRoles(-3)).toEqual([]);
+    expect(planWaveRoles(6, seeded(3))).toHaveLength(6);
+  });
+
+  test("組成會因為 seed 不同而不同（不再由 monsterId hash 綁死）", () => {
+    const a = rollExpedition({ danger: 6, family: "ghost" }, { rand: seeded(21) });
+    const b = rollExpedition({ danger: 6, family: "ghost" }, { rand: seeded(99) });
+    const rolesOf = exp => exp.waves.flatMap(w => w.monsters.map(m => m.combatRole || "auto")).join(",");
+    expect(rolesOf(a)).not.toBe(rolesOf(b));
+  });
+
+  test("首領不被組成規劃洗掉角色", () => {
+    const exp = rollExpedition({ danger: 6, family: "ghost" }, { rand: seeded(5) });
+    const last = exp.waves[exp.waves.length - 1];
+    const leader = last.monsters.find(m => m.encounter === "boss" || m.encounter === "miniBoss");
+    expect(leader).toBeTruthy();
+    expect(leader.combatRole).toBeUndefined();   // 交給圖鑑/hash 決定
   });
 });
