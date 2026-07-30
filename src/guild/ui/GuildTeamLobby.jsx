@@ -7,13 +7,13 @@
 // 設計取捨：不再做一套完整的備包畫面（單人版 GuildLoadout 已經有了）。這裡只讓成員調
 // 食物/水，其餘（六維、貓、箭數）**直接沿用他自己的存檔**——組隊時最重要的是「快速上線」，
 // 沒有人想在等別人的時候還被逼著重新配裝。
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MAX_TEAM_SIZE } from "../domain/teamExpeditionFlow";
-import { STAT_META, deriveGuildCombat, carryStatus } from "../domain/guildStats";
+import { STAT_META, SUPPLY_WEIGHT, deriveGuildCombat, carryStatus } from "../domain/guildStats";
 import { GUILD_SLOTS, resolveEquipWeight } from "../data/guildEquipCatalog";
 import { sfxTap, sfxClose, sfxError } from "../../lib/sound";
 import { hallBg, bgLayer, CatArt, HeroArt } from "./GuildArt";
-import { EXPEDITION_SUPPLY_LOAD } from "../domain/guildSupplies";
+import { EXPEDITION_SUPPLY_LOAD, autoFillSupplyLoad, supplyLoadCap } from "../domain/guildSupplies";
 import { GUILD_TARGET_FACE_OPTIONS } from "./guildTargetFace";
 
 const card = { background: "rgba(0,0,0,.34)", borderRadius: 12, padding: 12 };
@@ -39,6 +39,17 @@ export default function GuildTeamLobby({
     return w + (it && it.archetypeId ? resolveEquipWeight(it.archetypeId, it.grade) : 0);
   }, 0) * 10) / 10;
   const carry = carryStatus({ derived: deriveGuildCombat(stats), gearWeight, food, water });
+  // 跟單人備包同一套：上限由負重決定，進來就自動補滿（只做一次，之後手動調整不被蓋掉）
+  const perKindCap = supplyLoadCap({ capacity: carry.capacity, gearWeight, supplyWeight: SUPPLY_WEIGHT });
+  const fillSupplies = () => autoFillSupplyLoad({
+    profile: { supplyStock }, capacity: carry.capacity, gearWeight, supplyWeight: SUPPLY_WEIGHT,
+  });
+  const filledOnce = useRef(false);
+  useEffect(() => {
+    if (filledOnce.current) return;
+    filledOnce.current = true;
+    onChangeSupplyLoad?.(fillSupplies());
+  }, [onChangeSupplyLoad]); // eslint-disable-line
 
   const members = room?.members || {};
   const ids = Object.keys(members);
@@ -184,7 +195,12 @@ export default function GuildTeamLobby({
           房主設定，全隊共用。原野靶會換算為標準戰鬥分數，不會因最高只有 5 分而降低傷害。
         </div>
         <div style={{ fontSize: 12, lineHeight: 1.8, marginBottom: 6 }}>
-          本次攜帶　🍖 {food}　💧 {water}<br />
+          本次攜帶　🍖 {food}　💧 {water}　
+          {!meReady && (
+            <button type="button" onClick={() => { sfxTap(); onChangeSupplyLoad?.(fillSupplies()); }}
+              style={{ fontSize: 10, fontWeight: 900, borderRadius: 7, padding: "3px 7px", border: "1px solid #475569",
+                background: "#1e293b", color: "#e2e8f0", cursor: "pointer" }}>🔄 補滿</button>
+          )}<br />
           倉庫庫存　🍖 {supplyStock.food}　💧 {supplyStock.water}
         </div>
         {!meReady && (
@@ -200,8 +216,8 @@ export default function GuildTeamLobby({
                     onClick={() => onChangeSupplyLoad?.({ ...supplyLoad, [item.key]: Math.max(1, item.value - 1) })}
                     style={{ ...btn("#334155"), padding: 0, width: 27, height: 27 }}>−</button>
                   <b>{item.value}</b>
-                  <button type="button" disabled={item.value >= 10}
-                    onClick={() => onChangeSupplyLoad?.({ ...supplyLoad, [item.key]: Math.min(10, item.value + 1) })}
+                  <button type="button" disabled={item.value >= Math.min(perKindCap, Math.floor(supplyStock[item.key] || 0))}
+                    onClick={() => onChangeSupplyLoad?.({ ...supplyLoad, [item.key]: Math.min(perKindCap, item.value + 1) })}
                     style={{ ...btn("#92400e"), padding: 0, width: 27, height: 27 }}>＋</button>
                 </div>
               </div>

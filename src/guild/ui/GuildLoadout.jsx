@@ -1,14 +1,14 @@
 // src/guild/ui/GuildLoadout.jsx
 // 出發前「備包」畫面：顯示六維、裝備、並在「背包容量」限制下抉擇帶多少食/水。
 // 核心張力：裝備佔重、補給也佔重；容量 = 基礎 + VIT 加成。帶太多裝就帶不了糧。
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { calcGuildExpeditionStats, deriveGuildCombat, STAT_META, BASE_CAPACITY, SUPPLY_WEIGHT } from "../domain/guildStats";
 import { GUILD_SLOTS, SLOT_META, GUILD_EQUIP_ARCHETYPES, resolveEquipWeight, equipDisplayName, GRADE_META } from "../data/guildEquipCatalog";
 import { equipmentDefinition, resolveEquipmentV2 } from "../domain/guildEquipmentV2";
 import { MAX_PARTY_CATS } from "../domain/guildCats";
 import { sfxTap, sfxSwitch, sfxCast } from "../../lib/sound";
 import { hallBg, bgLayer, CatArt } from "./GuildArt";
-import { EXPEDITION_SUPPLY_LOAD, supplyShortage } from "../domain/guildSupplies";
+import { EXPEDITION_SUPPLY_LOAD, autoFillSupplyLoad, supplyLoadCap, supplyShortage } from "../domain/guildSupplies";
 import { GUILD_TARGET_FACE_OPTIONS } from "./guildTargetFace";
 import GuildIcon, { GUILD_SLOT_ICON } from "./GuildIcon";
 import { GuildEquipmentArt, GuildPlayerAppearance, PLAYER_APPEARANCES } from "./GuildItemArt";
@@ -35,6 +35,26 @@ export default function GuildLoadout({
 
   const party = partyCatIds; // 已由上層解析成「實際出戰」的 id（空選單時上層會自動填最強的）
   const { food, water } = supplyLoad;
+  // 每種補給帶得動的上限＝剩餘負重平分。VIT 越高背得越多，不再硬鎖 10。
+  const perKindCap = supplyLoadCap({ capacity, gearWeight, supplyWeight: SUPPLY_WEIGHT });
+
+  // 一進備包就自動補滿（帶得動多少就帶多少，庫存不夠就帶有的）。
+  // 只在首次掛載做，之後玩家自己調的數字不會被蓋掉。
+  const filledOnce = useRef(false);
+  useEffect(() => {
+    if (filledOnce.current) return;
+    filledOnce.current = true;
+    onChangeSupplyLoad?.(autoFillSupplyLoad({ profile, capacity, gearWeight, supplyWeight: SUPPLY_WEIGHT }));
+  }, [profile, capacity, gearWeight, onChangeSupplyLoad]);
+
+  // 換上更重的裝備後，補給要跟著壓回上限，否則會卡在「超重不能出發」卻不知道要減哪邊。
+  useEffect(() => {
+    if (!filledOnce.current) return;
+    if (food <= perKindCap && water <= perKindCap) return;
+    onChangeSupplyLoad?.({ food: Math.min(food, perKindCap), water: Math.min(water, perKindCap) });
+  }, [perKindCap, food, water, onChangeSupplyLoad]);
+
+  const stockOf = key => Math.floor(Number(profile?.supplyStock?.[key]) || 0);
   const missing = supplyShortage(profile, supplyLoad);
   const lacksStock = missing.food > 0 || missing.water > 0;
   const supplyWeight = (food + water) * SUPPLY_WEIGHT;
@@ -217,7 +237,13 @@ export default function GuildLoadout({
 
       {/* 補給 + 容量 */}
       <div style={{ background: "rgba(0,0,0,.3)", borderRadius: 12, padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-        <div style={{ fontSize: 12, fontWeight: 900, color: "#c7d2fe" }}>補給（戰鬥與地圖移動都會消耗）</div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 900, color: "#c7d2fe" }}>補給（戰鬥與地圖移動都會消耗）</div>
+          <button type="button"
+            onClick={() => { sfxTap(); onChangeSupplyLoad?.(autoFillSupplyLoad({ profile, capacity, gearWeight, supplyWeight: SUPPLY_WEIGHT })); }}
+            style={{ fontSize: 10.5, fontWeight: 900, borderRadius: 8, padding: "5px 9px", border: "1px solid #475569",
+              background: "#1e293b", color: "#e2e8f0", cursor: "pointer", whiteSpace: "nowrap" }}>🔄 補滿</button>
+        </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           {[
             { key: "food", icon: "food", label: "食物", value: food },
@@ -230,15 +256,15 @@ export default function GuildLoadout({
                   onClick={() => onChangeSupplyLoad?.({ ...supplyLoad, [item.key]: Math.max(1, item.value - 1) })}
                   style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "#334155", color: "#fff", fontWeight: 900 }}>−</button>
                 <b style={{ fontSize: 17 }}>{item.value}</b>
-                <button type="button" disabled={item.value >= 10}
-                  onClick={() => onChangeSupplyLoad?.({ ...supplyLoad, [item.key]: Math.min(10, item.value + 1) })}
+                <button type="button" disabled={item.value >= Math.min(perKindCap, stockOf(item.key))}
+                  onClick={() => onChangeSupplyLoad?.({ ...supplyLoad, [item.key]: Math.min(perKindCap, item.value + 1) })}
                   style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "#92400e", color: "#fff", fontWeight: 900 }}>＋</button>
               </div>
             </div>
           ))}
         </div>
         <div style={{ fontSize: 12, lineHeight: 1.8 }}>
-          本次攜帶　🍖 食物 <b>{food}</b>　💧 飲水 <b>{water}</b><br />
+          本次攜帶　🍖 食物 <b>{food}</b>　💧 飲水 <b>{water}</b>　<span style={{ color: "#64748b", fontSize: 10.5 }}>（負重上限各 {perKindCap} 份）</span><br />
           倉庫庫存　🍖 {profile.supplyStock.food}　💧 {profile.supplyStock.water}
         </div>
         {lacksStock && <div style={{ fontSize: 11, color: "#f87171" }}>補給不足：還缺{missing.food ? ` 食物 ${missing.food}` : ""}{missing.water ? ` 飲水 ${missing.water}` : ""}</div>}

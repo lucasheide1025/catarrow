@@ -7,7 +7,7 @@ import {
   mergeAffixMods,
   rollAffixes,
 } from "./guildAffixes";
-import { rollChallengeContracts, rollDailyContracts } from "./guildContracts";
+import { contractMonsterPreview, rollChallengeContracts, rollDailyContracts } from "./guildContracts";
 import { rollExpedition } from "./rollExpedition";
 
 const seeded = seed => {
@@ -170,5 +170,57 @@ describe("詞綴實際影響生怪", () => {
     expect(b.atk).toBe(a.atk);
     expect(b.maxHp).toBe(a.maxHp);
     expect(b.def).toBe(a.def);
+  });
+});
+
+describe("委託書要說實話（單挑不能寫雜兵）", () => {
+  const args = { dateKey: "2026-07-31", memberId: "m1" };
+  const duels = () => rollChallengeContracts(args).filter(c => c.challenge === "duel");
+
+  test("單挑委託標示 1 波、每波 1 隻", () => {
+    for (const c of duels()) {
+      expect(c.waves).toBe(1);
+      expect(c.waveSize).toEqual([1, 1]);
+    }
+  });
+
+  test("單挑的首領機率是 100%，不是「可能出現」", () => {
+    for (const c of duels()) {
+      expect(c.leaderOdds.normal).toBe(0);
+      expect(c.leaderOdds.miniBoss + c.leaderOdds.boss).toBe(1);
+      expect(c.leader).toBe(c.danger >= 5 ? "boss" : "miniBoss");
+    }
+  });
+
+  test("單挑的怪物預覽只有首領，一隻雜兵都不列", () => {
+    for (const c of duels()) {
+      const preview = contractMonsterPreview(c);
+      expect(preview.length).toBeGreaterThan(0);
+      expect(preview.every(m => m.tierNo === c.tiers[0].tierNo)).toBe(true);
+    }
+    // 對照組：一般委託的預設預覽仍是雜兵池
+    const normal = rollDailyContracts(args)[0];
+    expect(contractMonsterPreview(normal).length).toBeGreaterThan(0);
+  });
+
+  test("委託書寫的波數／隻數，跟實際生出來的陣容一致", () => {
+    for (const c of duels()) {
+      const exp = rollExpedition(c, { rand: seeded(3) });
+      expect(exp.totalWaves).toBe(c.waves);
+      expect(exp.waves[0].monsters).toHaveLength(1);
+      expect(exp.waves[0].monsters[0].encounter).toBe(c.leader);
+    }
+  });
+
+  test("每個模式都有一句話目標，UI 不必再寫 mode 判斷式", () => {
+    for (const c of [...rollDailyContracts(args), ...rollChallengeContracts(args)]) {
+      expect(c.objective).toBeTruthy();
+      expect(c.modeMeta.objective).toBeTruthy();
+    }
+  });
+
+  test("單挑委託書會標出血量倍率；一般委託是 1", () => {
+    for (const c of duels()) expect(c.bossHpMult).toBeGreaterThan(1);
+    for (const c of rollDailyContracts(args)) expect(c.bossHpMult).toBe(1);
   });
 });

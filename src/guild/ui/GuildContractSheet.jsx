@@ -12,9 +12,12 @@ export default function GuildContractSheet({ contract: c, profile, done, onAccep
   const locked = !canAcceptDanger(profile, c.danger);
   const need = repNeededForDanger(profile, c.danger);
   const rw = contractRewardPreview(c);
-  const pool = contractMonsterPreview(c);
-  const miniLeaders = contractMonsterPreview(c, { encounter: "miniBoss" });
-  const bossLeaders = contractMonsterPreview(c, { encounter: "boss" });
+  const isDuel = c.mode === "duel";
+  // 單挑沒有雜兵：雜兵區整個不畫，首領區改成「你的對手」。
+  const pool = isDuel ? [] : contractMonsterPreview(c);
+  const miniLeaders = isDuel ? [] : contractMonsterPreview(c, { encounter: "miniBoss" });
+  const bossLeaders = isDuel ? [] : contractMonsterPreview(c, { encounter: "boss" });
+  const duelPool = isDuel ? contractMonsterPreview(c) : [];
   const odds = c.leaderOdds || {};
   const tiers = c.tiers || [];
 
@@ -38,11 +41,13 @@ export default function GuildContractSheet({ contract: c, profile, done, onAccep
           <span style={{ ...chip, color: "#fff", background: c.danger >= 3 ? "#b91c1c" : c.danger === 2 ? "#b45309" : "#3f6212" }}>{c.skulls} {c.tag}</span>
           <span style={{ ...chip, background: "rgba(59,42,20,.14)", color: "#3d2c16" }}>
             {c.modeMeta?.icon || "⚔️"} {c.modeMeta?.label || "連續進攻"}・
-            {c.mode === "assault" ? `${c.waves} 波` : c.mode === "defense" ? "守住據點" : "抵達最終目標"}
+            {c.mode === "assault" ? `${c.waves} 波` : (c.objective || c.modeMeta?.objective || "完成委託")}
           </span>
           {c.modeMeta?.description && <div style={{ width: "100%", marginTop: 6, fontSize: 11, color: "#5b4636" }}>{c.modeMeta.description}</div>}
           <span style={{ ...chip, background: "#7c2d12", color: "#fde68a" }}>
-            ⚔️ 小王 {Math.round((odds.miniBoss || 0) * 100)}%・大王 {Math.round((odds.boss || 0) * 100)}%
+            {isDuel
+              ? `👑 必定首領・生命 ×${c.bossHpMult || 1}・無雜兵`
+              : `⚔️ 小王 ${Math.round((odds.miniBoss || 0) * 100)}%・大王 ${Math.round((odds.boss || 0) * 100)}%`}
           </span>
         </div>
 
@@ -68,7 +73,30 @@ export default function GuildContractSheet({ contract: c, profile, done, onAccep
           </div>
         </div>
 
+        {/* 單挑：對手清單（只會出現其中一隻）*/}
+        {isDuel && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 900, color: "#7f1d1d", marginBottom: 6 }}>
+              👑 你的對手 <span style={{ fontWeight: 700, color: "#6b5636" }}>（{duelPool.length} 種擇一，出發前不揭露）</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(96px,1fr))", gap: 6 }}>
+              {duelPool.map(m => (
+                <div key={m.id} style={{ background: "rgba(127,29,29,.12)", border: "1px solid rgba(127,29,29,.3)", borderRadius: 8, padding: 6, textAlign: "center" }}>
+                  <MonsterArt monsterId={m.id} icon={m.icon} size={44} style={{ margin: "0 auto" }} />
+                  <div style={{ fontSize: 10, fontWeight: 800, color: "#241809", marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.name}</div>
+                  <div style={{ fontSize: 9, fontWeight: 900, color: m.tierColor }}>T{m.tierNo} {m.tierLabel}</div>
+                  <div style={{ fontSize: 8.5, color: "#6b5636" }}>❤️{Math.round(m.hp * (c.bossHpMult || 1))} ⚔️{m.atk} 🛡️{m.def}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 10.5, color: "#6b5636", marginTop: 6, lineHeight: 1.6 }}>
+              牠的血量已按單挑倍率放大——短時間打不完是正常的，重點是看牠蓄力、在破綻上出手。
+            </div>
+          </div>
+        )}
+
         {/* 可能遭遇（跟實際抽怪同一份池，預覽不騙人）*/}
+        {!isDuel && (
         <div style={{ marginTop: 12 }}>
           <div style={{ fontSize: 12, fontWeight: 900, color: "#3d2c16", marginBottom: 6 }}>
             👁️ 可能遭遇的雜兵 <span style={{ fontWeight: 700, color: "#6b5636" }}>（{pool.length} 種，實際陣容出發時隨機）</span>
@@ -84,6 +112,7 @@ export default function GuildContractSheet({ contract: c, profile, done, onAccep
             ))}
           </div>
         </div>
+        )}
 
         {/* 壓陣首領 */}
         {(miniLeaders.length > 0 || bossLeaders.length > 0) && (

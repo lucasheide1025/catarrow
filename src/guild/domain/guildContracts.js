@@ -7,7 +7,7 @@
 // ─────────────────────────────────────────────────────────────
 import { FAMILIES, TIER_LABEL, TIER_ORDER } from "../../lib/monsterData";
 import { LOOT_BY_DANGER } from "../data/guildLootTable";
-import { DANGER_META, LEADER_ODDS, MAX_DANGER, expeditionMonsterPool, rollLeaderEncounter } from "./rollExpedition";
+import { DANGER_META, DUEL_BOSS_HP_MULT, LEADER_ODDS, MAX_DANGER, expeditionMonsterPool, rollLeaderEncounter } from "./rollExpedition";
 import { CONTRACT_CLIENTS, CONTRACT_STORIES, DANGER_TONE, CONTRACTS_PER_DANGER } from "../data/guildContractPool";
 import { CHALLENGE_TIERS, CHALLENGE_TIER_IDS } from "../data/guildAffixPool";
 import { affixesOf, challengeRewardMult, rollAffixes } from "./guildAffixes";
@@ -26,12 +26,12 @@ export function storiesFor(family, mode) {
   return Object.values(entry).flat();                        // 該模式沒寫 → 全族合併
 }
 export const MISSION_MODE_META = Object.freeze({
-  exploration: { label: "探索遠征", icon: "🗺️", description: "移動、事件、遭遇，最後完成遠征目標" },
-  assault: { label: "連續進攻", icon: "⚔️", description: "連續擊破多批敵人，中途不返回地圖" },
-  defense: { label: "防守戰", icon: "🏰", description: "守住據點，敵人會持續從視距外逼近" },
+  exploration: { label: "探索遠征", icon: "🗺️", description: "移動、事件、遭遇，最後完成遠征目標", objective: "抵達最終目標" },
+  assault: { label: "連續進攻", icon: "⚔️", description: "連續擊破多批敵人，中途不返回地圖", objective: "擊破所有來襲批次" },
+  defense: { label: "防守戰", icon: "🏰", description: "守住據點，敵人會持續從視距外逼近", objective: "守住據點" },
   // ⚠️ duel 必須排在最後：日常板用 MISSION_MODES[i % CONTRACTS_PER_DANGER(3)] 取模式，
   //    放前面會把某一種日常模式擠掉。它只由挑戰層級的 forceMode 指定。
-  duel: { label: "首領單挑", icon: "👑", description: "沒有雜兵，只有牠。看穿蓄力、抓住破綻" },
+  duel: { label: "首領單挑", icon: "👑", description: "沒有雜兵、沒有增援，全場只有牠一隻。看穿蓄力、抓住破綻", objective: "獨自擊倒首領" },
 });
 const MISSION_MODES = Object.freeze(Object.keys(MISSION_MODE_META));
 
@@ -88,6 +88,12 @@ function contractFactory({ dateKey, rand }) {
     const client = pick(CONTRACT_CLIENTS);
     const affixes = challenge ? rollAffixes(challenge, rand) : [];
     const tierMeta = challenge ? CHALLENGE_TIERS[challenge] : null;
+    // ⚠️ 委託書上的數字必須跟 rollExpedition 真的生出來的陣容一致，否則就是在騙玩家。
+    //    單挑＝1 波 1 隻、必定首領（危險度 ≥5 是大王），所以波數／每波隻數／首領機率
+    //    都要覆寫掉危險度的預設值。rand 照樣先抽一次首領，維持亂數序列不變。
+    const isDuel = mode === "duel";
+    const rolledLeader = rollLeaderEncounter(danger, rand);
+    const duelBoss = danger >= 5 ? "boss" : "miniBoss";
     return {
       id: `${dateKey}-${idSuffix}`,
       mode,
@@ -107,15 +113,19 @@ function contractFactory({ dateKey, rand }) {
         color: TIER_LABEL[DANGER_META[danger].tier]?.color || "#94a3b8",
       }],
       // 結果以每日 seed 鎖死，重整不能洗王；UI 只顯示機率，不提前暴雷。
-      leader: rollLeaderEncounter(danger, rand),
-      leaderOdds: { ...LEADER_ODDS[danger] },
-      waveSize: DANGER_META[danger].waveSize,
+      leader: isDuel ? duelBoss : rolledLeader,
+      leaderOdds: isDuel
+        ? { normal: 0, miniBoss: duelBoss === "miniBoss" ? 1 : 0, boss: duelBoss === "boss" ? 1 : 0 }
+        : { ...LEADER_ODDS[danger] },
+      waveSize: isDuel ? [1, 1] : DANGER_META[danger].waveSize,
       client,
       title: story.title,
       story: story.story,
       tag: DANGER_TONE[danger].tag,
       hint: DANGER_TONE[danger].hint,
-      waves: DANGER_META[danger].waves,
+      waves: isDuel ? 1 : DANGER_META[danger].waves,
+      bossHpMult: isDuel ? DUEL_BOSS_HP_MULT : 1,
+      objective: MISSION_MODE_META[mode]?.objective || "完成委託",
       skulls: DANGER_META[danger].skulls,
       // 挑戰委託專屬（一般委託是 null／空陣列，UI 據此決定要不要畫詞綴列）
       challenge,
@@ -137,7 +147,7 @@ export function rollDailyContracts({ dateKey = todayKey(), memberId = "guest" } 
   }));
 }
 
-// 挑戰委託：每個危險度各一張「精銳」與一張「危殆」＝ 6 × 2 = 12 張／天。
+// 挑戰委託：每個危險度各一張「精銳」「危殆」「單挑」＝ 6 × 3 = 18 張／天。
 // 另用一組 seed，這樣挑戰板不會跟一般板抽到同樣的故事順序。
 export function rollChallengeContracts({ dateKey = todayKey(), memberId = "guest" } = {}) {
   const rand = makeRand(hashSeed(`${dateKey}|${memberId}|challenge`));
@@ -162,7 +172,11 @@ export function rollChallengeContracts({ dateKey = todayKey(), memberId = "guest
 // 委託詳情用「可能遭遇的怪物」清單：跟實際抽怪走同一份規則（`expeditionMonsterPool`），
 // 預覽才不會騙人。回傳按階級排序、標好 T 幾，UI 直接畫。
 export function contractMonsterPreview(contract, opts = {}) {
-  return expeditionMonsterPool(contract, opts)
+  // 單挑沒有雜兵：預設池直接換成牠的首領池，免得委託書列出永遠不會出現的怪。
+  const encounter = contract?.mode === "duel" && !opts.encounter
+    ? ((contract.danger || 1) >= 5 ? "boss" : "miniBoss")
+    : opts.encounter;
+  return expeditionMonsterPool(contract, { ...opts, encounter })
     .map(m => ({
       id: m.id, name: m.name, icon: m.icon, family: m.family,
       familyLabel: FAMILIES[m.family]?.label || m.family,
