@@ -14,17 +14,24 @@ import {
 } from "../../lib/db";
 import { Card, Btn, Inp, ST, useToast } from "../shared/UI";
 import { completeBookingFromCheckin, completeBookingForMemberOnDate } from "../../lib/bookingDb";
+import { billingPlanPrice, isEarlyBirdArcher, finalBillPrice, EARLY_BIRD_DISC } from "../../lib/bookingPricing";
 
+// 報到核准後直接開帳單用的方案清單。`id` 是既有帳務紀錄 billingRecords.plan 實際存進
+// Firestore 的字串，改名會對不上歷史資料，只能沿用；價格一律從 bookingPricing 推導，
+// 不在這裡手抄——舊價（單一 300／自訂一小時 200）就是手抄後漏改留下來的。
 const PLANS_EQUIP = [
-  { id:"自訂一小時", price:200 },
-  { id:"自訂三小時", price:400 },
-  { id:"月卡",       price:0   },
+  { id:"自訂一小時", price: billingPlanPrice("自一") },
+  { id:"自訂三小時", price: billingPlanPrice("自三") },
+  { id:"月卡",       price: 0 },
 ];
 const PLANS_NO_EQUIP = [
+  // TODO(待確認)：這個方案的定價意義不明——它與下方 archerNo 的早鳥 -50 是兩套機制，
+  // 兩者疊加會變成 150。價格暫留舊值 200，待確認後改為從 bookingPricing 推導。
   { id:"早鳥折扣", price:200 },
-  { id:"單一",     price:300 },
-  { id:"單三",     price:600 },
+  { id:"單一",     price: billingPlanPrice("單一") },
+  { id:"單三",     price: billingPlanPrice("單三") },
 ];
+// 這條路徑的「月卡」是方案而不是付款方式，所以付款方式不含月卡（與 BillingSystem 不同）
 const PAY_METHODS = ["現金", "轉帳"];
 
 export default function AdminDailyQuest({ mode = "all" }) {
@@ -118,7 +125,8 @@ export default function AdminDailyQuest({ mode = "all" }) {
         if (snap.exists()) {
           const data = snap.data();
           hasEquip  = Object.values(data.equipment || {}).some(Boolean);
-          earlyBird = !!data.archerNo;
+          // 早鳥只限射手編號 1～123（原本寫 !!data.archerNo，編號 124 以後也會被折 50）
+          earlyBird = isEarlyBirdArcher(data.archerNo);
           defaultPlan = data.defaultPlan || null;
         }
       } catch {}
@@ -137,8 +145,13 @@ export default function AdminDailyQuest({ mode = "all" }) {
       const planObj = plans.find(p => p.id === bs.plan);
       const payMethod = bs.plan === "月卡" ? "月卡" : bs.payMethod;
       const basePrice = planObj?.price || 0;
-      const discount  = (bs.plan !== "月卡" && bs.earlyBird) ? 50 : 0;
-      const finalPrice = bs.plan === "月卡" ? 0 : Math.max(0, basePrice - discount);
+      const isMonthly = bs.plan === "月卡";
+      const discount  = (!isMonthly && bs.earlyBird) ? EARLY_BIRD_DISC : 0;
+      const finalPrice = finalBillPrice({
+        basePrice,
+        earlyBird: !isMonthly && bs.earlyBird,
+        payMethod: isMonthly ? "月卡" : payMethod,
+      });
       const dateStr = new Date().toISOString().slice(0, 10);
       const [y, m, d] = dateStr.split("-").map(Number);
       let billingId = bs.billingRecordId || null;
@@ -536,7 +549,7 @@ export default function AdminDailyQuest({ mode = "all" }) {
                                 onChange={e => setBillState(s => ({ ...s, [c.id]: { ...s[c.id], earlyBird: e.target.checked } }))}
                                 className="w-4 h-4 accent-amber-500 cursor-pointer" />
                               <span className="text-xs font-black text-amber-700">
-                                🌅 早鳥折扣 -50元
+                                🌅 早鳥折扣 -{EARLY_BIRD_DISC}元
                               </span>
                               {bs.earlyBird && <span className="text-[10px] text-amber-500">（已有射手證號或手動套用）</span>}
                             </label>
@@ -546,8 +559,14 @@ export default function AdminDailyQuest({ mode = "all" }) {
                           {(() => {
                             const planObj2 = (bs.hasEquip ? PLANS_EQUIP : PLANS_NO_EQUIP).find(p => p.id === bs.plan);
                             const base2 = planObj2?.price || 0;
-                            const disc2 = (bs.plan !== "月卡" && bs.earlyBird) ? 50 : 0;
-                            const final2 = bs.plan === "月卡" ? 0 : Math.max(0, base2 - disc2);
+                            const monthly2 = bs.plan === "月卡";
+                            const disc2 = (!monthly2 && bs.earlyBird) ? EARLY_BIRD_DISC : 0;
+                            // 畫面預覽與 confirmBill() 的實收金額共用同一個函式，避免兩邊算出不同數字
+                            const final2 = finalBillPrice({
+                              basePrice: base2,
+                              earlyBird: !monthly2 && bs.earlyBird,
+                              payMethod: monthly2 ? "月卡" : bs.payMethod,
+                            });
                             return (
                               <div className="text-xs text-gray-500 bg-white rounded-lg px-3 py-1.5 border border-gray-100">
                                 {bs.plan}・{bs.plan === "月卡" ? "月卡扣除" : bs.payMethod}

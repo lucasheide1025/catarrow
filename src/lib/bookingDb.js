@@ -25,6 +25,7 @@ import {
   legacyPlanTypeFor,
   normalizeParticipantBreakdown,
   participantTotal,
+  validatePartySize,
 } from "./bookingPricing";
 
 const BOOKINGS    = "bookings";
@@ -107,10 +108,9 @@ export async function createBooking(memberId, memberName, contact, planType, dur
     options.participantBreakdown,
     { planType, participantCount },
   );
-  const count = Math.max(1, Math.min(LANE_CAPACITY, participantTotal(participantBreakdown)));
-  if (participantTotal(participantBreakdown) !== count) {
-    return { ok: false, reason: `同行總人數需為 1～${LANE_CAPACITY} 人` };
-  }
+  const partySize = validatePartySize(participantBreakdown, LANE_CAPACITY);
+  if (!partySize.ok) return { ok: false, reason: partySize.reason };
+  const count = partySize.count;
   const visitCounts = firstReturningCounts({
     firstTimeCount: options.firstTimeCount,
     participantCount: count,
@@ -435,8 +435,10 @@ export async function updateBooking(bookingId, updates, options = {}) {
         { planType: planType ?? old.planType, participantCount: participantCount ?? old.participantCount },
       );
       const newPlan = legacyPlanTypeFor(newBreakdown);
-      const newCount = participantTotal(newBreakdown);
-      if (newCount < 1 || newCount > LANE_CAPACITY) throw new Error("INVALID_PARTICIPANT_COUNT");
+      // 後台結帳前改人數也走同一個上限判斷，不得藉此突破 8 人容量
+      const newParty = validatePartySize(newBreakdown, LANE_CAPACITY);
+      if (!newParty.ok) throw new Error("INVALID_PARTICIPANT_COUNT");
+      const newCount = newParty.count;
       const [startH, startM] = newStartTime.split(":").map(Number);
       const endH = startH + newDuration;
       const mm = startM === 0 ? "00" : String(startM).padStart(2, "0");

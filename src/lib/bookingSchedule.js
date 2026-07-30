@@ -25,10 +25,9 @@ export const PLAN_TYPES = BOOKING_PLAN_TYPES;
 // 時數選項（07-10-booking-multihour-and-stats + 後續加2小時）
 export const DURATION_OPTIONS = BOOKING_DURATIONS;
 
-// 方案類別 × 時數 → 價格（NT$）。2小時刻意「收費不變」＝直接是1小時的2倍，沒有折扣
-// （3小時「2送1」才是折扣價）。這份數字要跟 BillingSystem.jsx 的 PLANS 常數保持一致——
-// 那邊是給「結帳寫進會計系統」用的方案代碼+價格，這邊是給「預約當下顯示金額」用的純價格表，
-// 兩處各自獨立維護但數字必須對得上，之後改價記得兩邊都要改。
+// 方案類別 × 時數 → 價格（NT$）。3小時與2小時同價，但保留兩種時數讓行程較短的人不必
+// 佔滿三小時；舊的「2送1」文案已隨新價移除。價格的單一來源是 bookingPricing.js，
+// 前台顯示、後台結帳代碼與報到開帳單全部從那裡推導，不要在任何地方另抄一份數字。
 export const PLAN_PRICE = BOOKING_PRICES;
 
 // 單價 × 人數＝總金額（07-10-booking-ui-polish-headcount：確認預約畫面要顯示自動加總的金額）

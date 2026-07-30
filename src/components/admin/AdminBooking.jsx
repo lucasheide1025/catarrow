@@ -36,13 +36,14 @@ import ParticipantBreakdownPicker from "../booking/ParticipantBreakdownPicker";
 import BookingScheduleCard from "../booking/BookingScheduleCard";
 import BookingEmailSettings from "./BookingEmailSettings";
 import { Card, Btn, Inp, Modal, Spinner, Empty, useToast } from "../shared/UI";
-import { PAY_METHODS, EARLY_BIRD_DISC, EARLY_BIRD_MAX } from "./BillingSystem";
+import { PAY_METHODS, EARLY_BIRD_DISC, EARLY_BIRD_MAX } from "../../lib/bookingPricing";
 
 const DOW_LABEL = ["日", "一", "二", "三", "四", "五", "六"];
 const PAYMENT_LABEL = { cash: "💵 現金", transfer: "🏦 轉帳", monthly: "💳 月卡" };
 // 行事曆格子空間有限，用短版方案名稱（教練後台直接顯示「誰＋什麼方案」用，不是給學生看的）
 const PLAN_SHORT_LABEL = { general: "單人一般", discount: "兒童/學生/敬老", own_equipment: "自備器材" };
-// 預約方案類別＋時數 → 會計系統既有方案代碼（見 BillingSystem.jsx 的 PLANS，價格沿用那邊，不重複定義）
+// 預約方案類別＋時數 → 會計系統既有方案代碼（價格沿用 lib/bookingPricing.js 的
+// BILLING_PLAN_CODES，不重複定義）
 const BOOKING_TO_BILLING_PLAN = {
   general:       { 1: "單一", 2: "單二", 3: "單三" },
   discount:      { 1: "學一", 2: "學二", 3: "學三" },

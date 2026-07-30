@@ -4,23 +4,15 @@ import {
   addBillingRecord, deleteBillingRecord,
   subscribeBillingRecords, getMembersForBilling, getTodayCheckinMembers,
 } from "../../lib/db";
+import {
+  BILLING_PLANS, PAY_METHODS, EARLY_BIRD_MAX, EARLY_BIRD_DISC,
+  isEarlyBirdArcher, finalBillPrice,
+} from "../../lib/bookingPricing";
 
-// 匯出給 AdminBooking.jsx 的結帳串接用（避免另外定義一份價格表，見
-// .trellis/tasks/07-10-booking-billing-integration/prd.md）
-export const PLANS = [
-  { id: "自一", price: 250 },
-  { id: "自二", price: 450 },
-  { id: "自三", price: 450 },
-  { id: "單一", price: 350 },
-  { id: "單二", price: 650 },
-  { id: "單三", price: 650 },
-  { id: "學一", price: 250 },
-  { id: "學二", price: 450 },
-  { id: "學三", price: 450 },
-];
-export const PAY_METHODS = ["現金", "轉帳", "月卡"];
-export const EARLY_BIRD_MAX  = 123;
-export const EARLY_BIRD_DISC = 50;
+// 價格表與早鳥常數統一放 lib/bookingPricing.js（見該檔 BILLING_PLAN_CODES 註解）。
+// 這裡不再 re-export 共用常數：從 UI 元件 re-export 會形成循環 import，
+// 教練切換射手模式時整頁空白就是這樣來的。要用請直接 import lib/bookingPricing。
+const PLANS = BILLING_PLANS;
 
 const today = () => new Date().toISOString().slice(0, 10);
 const currentYear  = new Date().getFullYear();
@@ -82,7 +74,7 @@ export default function BillingSystem({ profile }) {
     setSelectedMember(m);
     setMemberQuery(m.name);
     setMemberSuggestions([]);
-    setDiscount(!!m.archerNo && m.archerNo <= EARLY_BIRD_MAX);
+    setDiscount(isEarlyBirdArcher(m.archerNo));
   }
   function clearMember() { setSelectedMember(null); setMemberQuery(""); setDiscount(false); }
 
@@ -94,8 +86,8 @@ export default function BillingSystem({ profile }) {
   }
 
   const basePrice  = PLANS.find(p => p.id === plan)?.price ?? 0;
-  // 月卡付款 → 免費
-  const finalPrice = payMethod === "月卡" ? 0 : Math.max(0, basePrice - (discount ? EARLY_BIRD_DISC : 0));
+  // 月卡付款 → 免費；早鳥每筆帳單只折抵一次（見 bookingPricing.finalBillPrice）
+  const finalPrice = finalBillPrice({ basePrice, earlyBird: discount, payMethod });
 
   async function handleSubmit() {
     if (!memberQuery.trim() || !plan || submitting) return;
