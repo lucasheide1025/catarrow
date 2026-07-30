@@ -9,7 +9,7 @@
 // ⚠️ 只用公會自己的六維（guildStats），不碰主線戰力。
 // ─────────────────────────────────────────────────────────────
 import { deriveGuildCombat } from "./guildStats";
-import { advanceCounter, applySignedEffect, createCounter, toGridMonster } from "./guildCombatV2";
+import { advanceCounter, applySignedEffect, createCounter, proximityDamageMultiplier, toGridMonster } from "./guildCombatV2";
 
 function cloneWaveMonsters(wave, combatV2 = false) {
   return (wave?.monsters || []).map((m, index) => {
@@ -330,14 +330,18 @@ export function processRound(state, shots = [], opts = {}) {
       if (mon.distance <= range) {
         if (rand() < d.dodgeChance) { s.log.push({ type: "dodge", from: mon.instanceId }); continue; }
         const effectiveMonsterAtk = Math.max(1, mon.atk + effectBonus(s, mon.instanceId, "atk"));
-        const dmg = Math.max(1, Math.round(effectiveMonsterAtk * (1 - d.dmgReducePct / 100)));
+        // 距離越近越痛：射程邊緣 ×1、貼到 0 格 ×2（見 guildCombatV2.PROXIMITY_DAMAGE）
+        const proximity = s.combatVersion === 2 ? proximityDamageMultiplier(mon.distance, range) : 1;
+        const dmg = Math.max(1, Math.round(effectiveMonsterAtk * (1 - d.dmgReducePct / 100) * proximity));
         if (s.missionMode === "defense" && mon.targetPolicy === "gate") {
           s.defense.gateHp = Math.max(0, s.defense.gateHp - dmg);
         } else {
           s.hp = Math.max(0, s.hp - dmg);
         }
         if (s.combatVersion !== 2) mon.distance = 2;
-        s.log.push({ type: "monsterAttack", from: mon.instanceId, dmg, range, role: mon.combatRole });
+        s.log.push({ type: "monsterAttack", from: mon.instanceId, dmg, range,
+          distance: mon.distance, contact: s.combatVersion === 2 && mon.distance === 0,
+          role: mon.combatRole });
       }
     }
   }

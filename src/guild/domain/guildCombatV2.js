@@ -11,6 +11,25 @@ const ROLE_DEFAULTS = Object.freeze({
   charger: { moveSpeed: 2, attackRange: 0, cooldown: 3, skillChance: 0.18, targetPolicy: "player" },
 });
 
+// ── 距離傷害倍率 ─────────────────────────────────────────────────────────────
+// 戰場縱深 10 格，怪物依角色有各自的攻擊距離（近戰 0／遠程 3／施法 4…）。
+// 舊版只要 distance <= attackRange 就用同一個傷害，站在射程邊緣跟貼到臉上一樣痛，
+// 玩家因此感覺不到「該優先處理貼近的怪」——使用者回報「沒有明確的怪物攻擊」。
+//
+// 現在：射程邊緣＝base 倍，愈近愈痛，貼到 0 格＝contact 倍（線性內插，好預期）。
+// 純近戰（attackRange 0）只有貼身一種距離，一律吃 contact 倍。
+// 要調平衡就改這兩個數字。
+export const PROXIMITY_DAMAGE = Object.freeze({ base: 1, contact: 2 });
+
+export function proximityDamageMultiplier(distance, attackRange) {
+  const range = Math.max(0, Math.floor(Number(attackRange) || 0));
+  const dist = Math.max(0, Math.floor(Number(distance) || 0));
+  if (dist > range) return 0;                        // 射程外：根本不該攻擊
+  if (range === 0) return PROXIMITY_DAMAGE.contact;  // 純近戰
+  const closeness = (range - dist) / range;          // 0＝射程邊緣，1＝貼身
+  return PROXIMITY_DAMAGE.base + (PROXIMITY_DAMAGE.contact - PROXIMITY_DAMAGE.base) * closeness;
+}
+
 const hash = value => Array.from(String(value || "")).reduce((sum, char) => (sum * 31 + char.charCodeAt(0)) >>> 0, 7);
 const clampLane = lane => Math.max(0, Math.min(BATTLEFIELD.lanes - 1, Math.floor(Number(lane) || 0)));
 const clampDepth = depth => Math.max(0, Math.floor(Number(depth) || 0));

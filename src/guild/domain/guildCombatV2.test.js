@@ -1,9 +1,11 @@
 import {
+  BATTLEFIELD,
+  PROXIMITY_DAMAGE,
   advanceCounter,
   applySignedEffect,
-  BATTLEFIELD,
   createCounter,
   createGridCombatState,
+  proximityDamageMultiplier,
   resolveMonsterActions,
   toGridMonster,
 } from "./guildCombatV2";
@@ -71,5 +73,47 @@ describe("公會棋盤戰鬥 v2", () => {
     expect(state.log.map(event => event.type)).toEqual(expect.arrayContaining([
       "effectApply", "effectRefresh", "effectReplace", "effectIgnore",
     ]));
+  });
+});
+
+describe("距離傷害倍率", () => {
+  test("射程邊緣是基礎倍率，貼到 0 格最痛", () => {
+    expect(proximityDamageMultiplier(3, 3)).toBe(PROXIMITY_DAMAGE.base);
+    expect(proximityDamageMultiplier(0, 3)).toBe(PROXIMITY_DAMAGE.contact);
+  });
+
+  test("距離越近倍率單調遞增", () => {
+    const range = 4;
+    let prev = -Infinity;
+    for (let dist = range; dist >= 0; dist -= 1) {
+      const mult = proximityDamageMultiplier(dist, range);
+      expect(mult).toBeGreaterThan(prev);
+      prev = mult;
+    }
+  });
+
+  test("純近戰（攻擊距離 0）一律吃貼身倍率", () => {
+    expect(proximityDamageMultiplier(0, 0)).toBe(PROXIMITY_DAMAGE.contact);
+  });
+
+  test("射程外回 0（不該進到攻擊判定）", () => {
+    expect(proximityDamageMultiplier(4, 3)).toBe(0);
+    expect(proximityDamageMultiplier(10, 0)).toBe(0);
+  });
+
+  test("倍率永遠落在 base 與 contact 之間", () => {
+    for (const range of [0, 1, 2, 3, 4, 5]) {
+      for (let dist = 0; dist <= range; dist += 1) {
+        const mult = proximityDamageMultiplier(dist, range);
+        expect(mult).toBeGreaterThanOrEqual(PROXIMITY_DAMAGE.base);
+        expect(mult).toBeLessThanOrEqual(PROXIMITY_DAMAGE.contact);
+      }
+    }
+  });
+
+  test("異常輸入不丟例外", () => {
+    expect(proximityDamageMultiplier(undefined, undefined)).toBe(PROXIMITY_DAMAGE.contact);
+    expect(proximityDamageMultiplier(-5, 3)).toBe(PROXIMITY_DAMAGE.contact);
+    expect(proximityDamageMultiplier("2", "4")).toBeCloseTo(1.5, 5);
   });
 });

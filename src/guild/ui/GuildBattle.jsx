@@ -47,6 +47,7 @@ const KEYFRAMES = `
 @keyframes gb-float { 0%{opacity:0;transform:translate(-50%,0) scale(.8)} 15%{opacity:1;transform:translate(-50%,-8px) scale(1.1)} 100%{opacity:0;transform:translate(-50%,-42px) scale(1)} }
 @keyframes gb-pounce { 0%,100%{transform:translateY(0)} 40%{transform:translateY(-14px) scale(1.12)} }
 @keyframes gb-hurt { 0%,100%{opacity:0} 20%{opacity:.55} }
+@keyframes gb-lunge { 0%,100%{transform:translate(-50%,-50%) scale(var(--s))} 45%{transform:translate(-50%,-30%) scale(calc(var(--s) * 1.18))} }
 @keyframes gb-bowpull { 0%,100%{transform:scale(1)} 50%{transform:scale(1.14) rotate(-8deg)} }
 @keyframes gb-banner { 0%{opacity:0;transform:translate(-50%,-10px)} 15%,85%{opacity:1;transform:translate(-50%,0)} 100%{opacity:0;transform:translate(-50%,-6px)} }
 `;
@@ -127,7 +128,8 @@ export default function GuildBattle({
   // 動畫期間已倒下的怪物 id。舊版整場都用開打前的 aliveTargets(state) 畫怪，被打死的
   // 會一直站到回合結束才整批消失，於是「已確認全部敵人陣亡」會在怪物還在場上時就先跳出來。
   const [downed, setDowned] = useState([]);
-  const [pouncing, setPouncing] = useState([]);    // 出爪的貓 id
+  const [pouncing, setPouncing] = useState([]);
+  const [lunging, setLunging] = useState([]);      // 正在對玩家出手的怪物 id    // 出爪的貓 id
   const [hurt, setHurt] = useState(false);         // 玩家受擊紅閃
   const [bowPull, setBowPull] = useState(false);   // 拉弓
   const [showTactics, setShowTactics] = useState(false);
@@ -247,14 +249,28 @@ export default function GuildBattle({
         case "dodge":
           later(() => addFloater({ topPct: PLAYER_POS.topPct - 8, leftPct: PLAYER_POS.leftPct }, "MISS", "#93c5fd"), at);
           break;
-        case "monsterAttack":
+        // ── 怪物攻擊：要看得出「誰打的、從多近」──
+        // 舊版只有玩家身上一個 -N 紅字，玩家不知道是哪隻怪、也感覺不到距離差異。
+        case "monsterAttack": {
+          const from = posOrCenter(lg.from);
           later(() => {
-            sound.catAssist(); vibrate(60);
+            // 發動者往玩家方向撲一下（近戰貼身時幅度最大）
+            setLunging(l => [...l, lg.from]);
+            later(() => setLunging(l => l.filter(x => x !== lg.from)), 480);
+            shakeOnce(lg.from);
+            addFloater(from, lg.contact ? "‼️ 貼身" : `距離 ${lg.distance}`, lg.contact ? "#f87171" : "#fbbf24");
+            lg.contact ? sound.critical() : sound.catAssist();
+            vibrate(lg.contact ? 90 : 60);
             setHurt(true);
             later(() => setHurt(false), 520);
-            addFloater({ topPct: PLAYER_POS.topPct - 10, leftPct: PLAYER_POS.leftPct }, `-${lg.dmg}`, "#ef4444");
+            addFloater(
+              { topPct: PLAYER_POS.topPct - 10, leftPct: PLAYER_POS.leftPct },
+              `${lg.contact ? "‼️" : ""}-${lg.dmg}`,
+              lg.contact ? "#dc2626" : "#ef4444",
+            );
           }, at);
           break;
+        }
         case "starve":
           later(() => {
             sound.hazard();
@@ -420,14 +436,17 @@ export default function GuildBattle({
               style={{ position: "absolute", top: `${p.topPct}%`, left: `${p.leftPct}%`,
                 "--s": p.scale, transform: `translate(-50%,-50%) scale(${p.scale})`,
                 transition: "top .5s ease-out, left .5s ease-out, transform .5s ease-out",
-                animation: shaking ? "gb-shake .3s ease-in-out" : "none",
+                animation: lunging.includes(m.instanceId) ? "gb-lunge .48s ease-out"
+                  : shaking ? "gb-shake .3s ease-in-out" : "none",
                 background: "none", border: "none", cursor: canAct ? "pointer" : "default", textAlign: "center", zIndex: Math.round(p.topPct) }}>
               <MonsterArt monsterId={m.monsterId} icon={m.icon} size={MOB_SIZE}
                 style={{ filter: isSel ? "drop-shadow(0 0 8px #f59e0b)" : "drop-shadow(0 3px 6px rgba(0,0,0,.6))" }} />
               <div style={{ fontSize: 9, fontWeight: 800, color: "#fecaca", whiteSpace: "nowrap", textShadow: "0 1px 3px #000" }}>{m.name}</div>
               <div style={{ width: 54, margin: "1px auto" }}><Bar cur={visualHp(m)} max={m.maxHp} /></div>
-              <div style={{ fontSize: 9, fontWeight: 900, color: m.distance <= 1 ? "#ef4444" : "#fcd34d" }}>
-                {m.distance <= (m.attackRange || 0) ? "⚔️射程內" : `距離 ${m.distance} 公尺`}
+              <div style={{ fontSize: 9, fontWeight: 900, color: m.distance === 0 ? "#dc2626" : m.distance <= 1 ? "#ef4444" : "#fcd34d" }}>
+                {m.distance === 0 ? "‼️貼身（重擊）"
+                  : m.distance <= (m.attackRange || 0) ? `⚔️射程內（距離 ${m.distance}）`
+                  : `距離 ${m.distance} 公尺`}
               </div>
               {m.combatRole && <div style={{ fontSize: 8.5, color: "#bfdbfe", fontWeight: 800 }}>
                 {combatRoleLabel(m.combatRole)}・移動 {m.moveSpeed}・射程 {attackRangeLabel(m.attackRange)}
