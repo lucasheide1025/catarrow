@@ -20,6 +20,7 @@ import { calculateGatheringRound } from "../../lib/catVillageGathering";
 import { addRoundArrows, addVillageLap } from "../../lib/db";
 import { getCatSpeech } from "../cat/catSpeeches";
 import { sfxTap, sfxSuccess, sfxCast } from "../../lib/sound";
+import BoardRewardPopup from "./BoardRewardPopup";
 import CatVillageNavArt from "./CatVillageNavArt";
 
 const ASSET = "/assets/board";
@@ -122,6 +123,10 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
   const shootSeqRef = useRef(0);
   const animatedSeqRef = useRef(-1);            // 已播完跟隨動畫的 lastMove.seq
   const [animatedSeq, setAnimatedSeq] = useState(-1); // 同上（state，供 pending UI 閘門）
+  // 動畫進行中的旗標必須用 ref：同一個 Firestore 快照會同時觸發「跟隨動畫」與「boardPos 同步」
+  // 兩個 effect，而 setAnimating(true) 在同一個 commit 內還沒生效，同步 effect 讀到的
+  // animating 仍是舊值 false → 立刻把棋子設到終點，骰子還沒定格棋子就先走完了。
+  const animatingRef = useRef(false);
   const [pendingEventMsg, setPendingEventMsg] = useState(null); // 事件結果訊息，等全員確認後才跳
   const [confirmExit, setConfirmExit] = useState(false); // 返回鍵確認（房主按下去＝解散全房，不能手滑）
   const [stuckLong, setStuckLong] = useState(false);     // 卡同一步超過 15 秒 → 才給房主解卡工具（避免動不動就踢人）
@@ -188,12 +193,14 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
   useEffect(() => {
     const lm = room?.lastMove;
     if (!lm || lm.seq <= animatedSeqRef.current) return;
+    animatingRef.current = true;
     setAnimating(true);
     setDisplayPos(lm.from);
     let cur = lm.from, stepIv = null, landT = null;
     const finish = () => {
       animatedSeqRef.current = lm.seq;
       setAnimatedSeq(lm.seq);
+      animatingRef.current = false;
       setAnimating(false);
       if (lm.lapped) {
         addVillageLap(myId).catch(() => {}); // 排行榜繞圈數：每位成員各自累計
@@ -201,7 +208,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
           const lapMode = BOARD_MODES.find(x => x.id === lm.modeId) || BOARD_MODES[0];
           const rw = rollTileReward("start", { mode: lapMode, tierCap: getModeTierCap(lm.modeId, villageBuildings), tier: lm.tier, partyMult: lm.partyMult || 1 });
           applyBoardReward(myId, rw, { catId }).catch(() => {});
-          setReward({ items: describeReward(rw), band: rw.band });
+          setReward({ items: describeReward(rw), band: rw.band, tileType: "start" });
         }
       }
     };
@@ -245,13 +252,14 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     const t = setTimeout(() => {
       animatedSeqRef.current = seq;
       setAnimatedSeq(seq);
+      animatingRef.current = false;
       setAnimating(false);
     }, 9000); // 正常動畫最長約 3 秒（走 6 格），9 秒還沒完就是被凍結了
     return () => clearTimeout(t);
   }, [room?.seq, animatedSeq]); // eslint-disable-line
 
   // boardPos 同步（重整/非動畫時對齊權威位置——desync 自我修復）
-  useEffect(() => { if (room && !animating) setDisplayPos(room.boardPos || 0); }, [room?.boardPos, animating]);
+  useEffect(() => { if (room && !animatingRef.current) setDisplayPos(room.boardPos || 0); }, [room?.boardPos, animating]);
 
   // 成員自動 claim 結算獎勵
   useEffect(() => {
@@ -281,7 +289,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
           catBond: res.reward.catBond || 0,
         });
       } else {
-        setReward({ items: describeReward(res.reward), band: res.reward.band });
+        setReward({ items: describeReward(res.reward), band: res.reward.band, tileType: room.pendingSettle.tileType });
       }
     });
   }, [room?.pendingSettle?.seq, room?.settleClaims, myId, roomId, catId, profile, animatedSeq, retryNonce]); // eslint-disable-line
@@ -362,6 +370,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     const seq = room?.seq || 0;
     animatedSeqRef.current = seq;
     setAnimatedSeq(seq);
+    animatingRef.current = false;
     setAnimating(false);
     setRolling(false);
     setCard(c => (c?.waiting ? null : c));
@@ -795,17 +804,13 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
         </div>
       )}
 
-      {reward && (
-        <div className="fixed inset-0 z-[215] bg-black/70 flex items-center justify-center p-4" onClick={() => setReward(null)}>
-          <div className="bg-slate-900 border-2 border-amber-400/50 rounded-3xl p-5 w-full max-w-xs" onClick={e => e.stopPropagation()}>
-            <div className="text-center text-amber-200 font-black mb-2">🎁 獲得獎勵{reward.band ? `・${reward.band} 級` : ""}</div>
-            <div className="space-y-1.5 my-2 max-h-[45vh] overflow-y-auto">
-              {reward.items.map((it, i) => <div key={i} className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-2"><span className="text-sm font-bold text-slate-100">{it.icon} {it.name}</span><span className="text-amber-300 font-black">×{it.amount}</span></div>)}
-            </div>
-            <button onClick={() => setReward(null)} className="w-full py-2.5 rounded-xl bg-amber-400 text-slate-900 font-black">收下！</button>
-          </div>
-        </div>
-      )}
+      {/* 獎勵演出（三段：前置動畫→逐項顯示→領取，與單機版共用元件） */}
+      <BoardRewardPopup
+        reward={reward}
+        tileType={reward?.tileType}
+        onClose={() => setReward(null)}
+        zIndex={215}
+      />
 
       {catBondPop && (
         <div className="fixed inset-0 z-[218] bg-black/75 flex items-center justify-center p-4" onClick={() => setCatBondPop(null)}>

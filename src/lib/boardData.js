@@ -37,7 +37,8 @@ export const TILE_TYPES = {
   coins:    { id: "coins",    icon: "🪙", label: "金幣",     shooting: false },
   gacha:    { id: "gacha",    icon: "🎰", label: "扭蛋幣",   shooting: false },
   potion:   { id: "potion",   icon: "🧪", label: "藥水",     shooting: false },
-  chest:    { id: "chest",    icon: "🎁", label: "寶箱",     shooting: true  },
+  // 寶箱格不射箭（2026-07-30 改版）：踩到就直接隨機抽 1~5 箱，階級用進場選的 T。
+  chest:    { id: "chest",    icon: "🎁", label: "寶箱",     shooting: false },
   catbond:  { id: "catbond",  icon: "🐱", label: "貓咪羈絆", shooting: false },
   fate:     { id: "fate",     icon: "🎴", label: "命運",     shooting: false },
   opp:      { id: "opp",      icon: "🎴", label: "機會",     shooting: false },
@@ -131,12 +132,13 @@ export function rollTileReward(tileType, ctx = {}) {
       break;
     }
     case "chest": {
-      // 6 箭完成度決定箱數 3/2/1
-      const band = scoreToBand(scoreRatio);
-      for (let i = 0; i < band.chestCount; i++) {
-        r.chests.push({ kind: Math.random() < 0.5 ? "family" : "universal", family: mode.family, tier: rollTier(T) });
+      // 不射箭：直接隨機 1~5 箱。階級固定用進場選的 T（不再 rollTier 隨機降階），
+      // 「T 幾就給 T 幾」對玩家比較好理解，也讓進場選階真的有意義。
+      const chestCount = randInt(1, 5);
+      for (let i = 0; i < chestCount; i++) {
+        r.chests.push({ kind: Math.random() < 0.5 ? "family" : "universal", family: mode.family, tier: T });
       }
-      r.band = band.band;
+      r.chestCount = chestCount;
       break;
     }
     case "arrowdew": r.arrowdew = scale(randInt(15, 50) * T); break;

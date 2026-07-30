@@ -10,6 +10,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { BOARD_LAYOUT, BOARD_SIZE, TILE_TYPES, BOARD_MODES, getModeTierCap } from "../../lib/boardData";
 import { drawBoardEvent } from "../../lib/boardEvents";
 import { sfxTap, sfxSuccess, sfxCast } from "../../lib/sound";
+import BoardRewardPopup from "./BoardRewardPopup";
 import { MATERIALS } from "../../lib/monsterMaterials";
 import { NORMAL_MATERIALS } from "../../lib/monsterEconomyCatalog";
 import { RESOURCE_NAMES } from "../../lib/villageData";
@@ -98,11 +99,11 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
   const sessionRef = useRef({});                         // 本次 session 累計獎勵
   const busyRef = useRef(false);
 
-  // 顯示獎勵詳細 + 累加到 session
-  const showReward = useCallback((reward, band) => {
+  // 顯示獎勵詳細 + 累加到 session。tileType 只用來決定前置動畫的圖示／台詞。
+  const showReward = useCallback((reward, band, tileType) => {
     sessionRef.current = mergeRewards(sessionRef.current, reward);
     const items = describeReward(reward);
-    if (items.length) setRewardPopup({ items, band });
+    if (items.length) setRewardPopup({ items, band, tileType });
   }, []);
 
   useEffect(() => {
@@ -146,7 +147,7 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
           catBond: res.reward.catBond || 0,
         });
       } else {
-        showReward(res.reward);
+        showReward(res.reward, undefined, tileType);
       }
     }
     busyRef.current = false;
@@ -195,7 +196,7 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
     setShootTile(null);
     addRoundArrows(myId, 6).catch(() => {}); // 射箭格＝射出 6 箭，累積今日/終身箭數與里程碑
     const res = await settleBoardTile(myId, type, { villageBuildings, catId, scoreRatio: ratio });
-    if (res?.ok) { sfxSuccess(); showReward(res.reward, res.reward.band); }
+    if (res?.ok) { sfxSuccess(); showReward(res.reward, res.reward.band, type); }
     busyRef.current = false;
     flushSummary();
   }, [arrows, shootTile, myId, villageBuildings, catId, showReward, flushSummary]);
@@ -383,23 +384,13 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
         </div>
       )}
 
-      {/* 詳細獎勵彈窗 */}
-      {rewardPopup && (
-        <div className="fixed inset-0 z-[140] bg-black/70 flex items-center justify-center p-4" onClick={() => setRewardPopup(null)}>
-          <div className="bg-slate-900 border-2 border-amber-400/50 rounded-3xl p-5 w-full max-w-xs animate-fade-in-up" onClick={e => e.stopPropagation()}>
-            <div className="text-center text-amber-200 font-black mb-2">🎁 獲得獎勵{rewardPopup.band ? `・${rewardPopup.band} 級` : ""}</div>
-            <div className="space-y-1.5 my-2 max-h-[45vh] overflow-y-auto">
-              {rewardPopup.items.map((it, i) => (
-                <div key={i} className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-2">
-                  <span className="text-sm font-bold text-slate-100">{it.icon} {it.name}</span>
-                  <span className="text-amber-300 font-black">×{it.amount}</span>
-                </div>
-              ))}
-            </div>
-            <button onClick={() => setRewardPopup(null)} className="w-full py-2.5 rounded-xl bg-amber-400 text-slate-900 font-black active:scale-95">收下！</button>
-          </div>
-        </div>
-      )}
+      {/* 詳細獎勵彈窗（三段演出：前置動畫→逐項顯示→領取，與組隊版共用元件） */}
+      <BoardRewardPopup
+        reward={rewardPopup}
+        tileType={rewardPopup?.tileType}
+        onClose={() => setRewardPopup(null)}
+        zIndex={140}
+      />
 
       {/* 貓貓羈絆格：陪練貓說句話 + 經驗/羈絆 */}
       {catBondPop && (
