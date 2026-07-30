@@ -14,23 +14,17 @@ import {
 } from "../../lib/db";
 import { Card, Btn, Inp, ST, useToast } from "../shared/UI";
 import { completeBookingFromCheckin, completeBookingForMemberOnDate } from "../../lib/bookingDb";
-import { billingPlanPrice, isEarlyBirdArcher, finalBillPrice, EARLY_BIRD_DISC } from "../../lib/bookingPricing";
+import {
+  CHECKIN_PLANS_EQUIP, CHECKIN_PLANS_NO_EQUIP,
+  isEarlyBirdArcher, finalBillPrice, EARLY_BIRD_DISC,
+} from "../../lib/bookingPricing";
 
 // 報到核准後直接開帳單用的方案清單。`id` 是既有帳務紀錄 billingRecords.plan 實際存進
 // Firestore 的字串，改名會對不上歷史資料，只能沿用；價格一律從 bookingPricing 推導，
 // 不在這裡手抄——舊價（單一 300／自訂一小時 200）就是手抄後漏改留下來的。
-const PLANS_EQUIP = [
-  { id:"自訂一小時", price: billingPlanPrice("自一") },
-  { id:"自訂三小時", price: billingPlanPrice("自三") },
-  { id:"月卡",       price: 0 },
-];
-const PLANS_NO_EQUIP = [
-  // TODO(待確認)：這個方案的定價意義不明——它與下方 archerNo 的早鳥 -50 是兩套機制，
-  // 兩者疊加會變成 150。價格暫留舊值 200，待確認後改為從 bookingPricing 推導。
-  { id:"早鳥折扣", price:200 },
-  { id:"單一",     price: billingPlanPrice("單一") },
-  { id:"單三",     price: billingPlanPrice("單三") },
-];
+// 方案清單與價格定義在 lib/bookingPricing.js（見該檔 CHECKIN_PLANS_* 註解）
+const PLANS_EQUIP = CHECKIN_PLANS_EQUIP;
+const PLANS_NO_EQUIP = CHECKIN_PLANS_NO_EQUIP;
 // 這條路徑的「月卡」是方案而不是付款方式，所以付款方式不含月卡（與 BillingSystem 不同）
 const PAY_METHODS = ["現金", "轉帳"];
 

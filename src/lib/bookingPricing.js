@@ -114,6 +114,25 @@ export const BILLING_PLANS = BILLING_PLAN_CODES.map(code => ({
 
 export const PAY_METHODS = ["現金", "轉帳", "月卡"];
 
+// 報到核准後直接開帳單（AdminDailyQuest）用的方案清單。這條路徑的方案代號與上面的
+// BILLING_PLAN_CODES 不同字串，但同樣是既有帳務紀錄實際存過的值，不可更名。
+// 依會員是否已登記自備器材分成兩份，價格一律從 BOOKING_PRICES 推導。
+// 這裡的「月卡」是方案而不是付款方式，實收 0。
+export const CHECKIN_PLANS_EQUIP = [
+  { id: "自訂一小時", price: billingPlanPrice("自一") },
+  { id: "自訂二小時", price: billingPlanPrice("自二") },
+  { id: "自訂三小時", price: billingPlanPrice("自三") },
+  { id: "月卡",       price: 0 },
+];
+
+// 原本第一項是「早鳥折扣 200」，已移除：正式的早鳥制度是射手編號 1～123 每筆帳單
+// 自動折抵 NT$50，同名方案是舊制殘留，兩者疊加會變成 150。歷史紀錄不受影響。
+export const CHECKIN_PLANS_NO_EQUIP = [
+  { id: "單一", price: billingPlanPrice("單一") },
+  { id: "單二", price: billingPlanPrice("單二") },
+  { id: "單三", price: billingPlanPrice("單三") },
+];
+
 // 射手編號 1～123 的既有優惠：每筆帳單折抵一次 NT$50。是「每筆帳單」而不是「每人」——
 // 混合同行把多人算成一筆 basePrice，折抵仍只有一次，不隨人數倍增。
 export const EARLY_BIRD_MAX = 123;

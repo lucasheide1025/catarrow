@@ -2,6 +2,8 @@ import {
   BILLING_PLANS,
   BILLING_PLAN_CODES,
   BOOKING_DURATIONS,
+  CHECKIN_PLANS_EQUIP,
+  CHECKIN_PLANS_NO_EQUIP,
   BOOKING_PLAN_TYPES,
   BOOKING_PRICES,
   EARLY_BIRD_DISC,
@@ -88,6 +90,34 @@ test("後台結帳每個方案代號的價格都等於預約價目表", () => {
 test("未知的方案代號回 0，不會回 undefined 汙染金額", () => {
   expect(billingPlanPrice("不存在")).toBe(0);
   expect(billingPlanPrice(undefined)).toBe(0);
+});
+
+test("報到開帳單的方案價格同樣等於預約價目表", () => {
+  expect(CHECKIN_PLANS_EQUIP).toEqual([
+    { id: "自訂一小時", price: 250 },
+    { id: "自訂二小時", price: 450 },
+    { id: "自訂三小時", price: 450 },
+    { id: "月卡",       price: 0 },
+  ]);
+  expect(CHECKIN_PLANS_NO_EQUIP).toEqual([
+    { id: "單一", price: 350 },
+    { id: "單二", price: 650 },
+    { id: "單三", price: 650 },
+  ]);
+});
+
+test("報到開帳單三種時數都有，且不再有與早鳥機制重複的方案", () => {
+  for (const plans of [CHECKIN_PLANS_EQUIP, CHECKIN_PLANS_NO_EQUIP]) {
+    // 月卡不算時數方案
+    expect(plans.filter(p => p.id !== "月卡")).toHaveLength(BOOKING_DURATIONS.length);
+    expect(plans.map(p => p.id)).not.toContain("早鳥折扣");
+  }
+});
+
+test("報到開帳單的預設方案（清單第一項）是 1 小時而非月卡", () => {
+  // openBill() 在會員沒有 defaultPlan 時會退回 plans[0]
+  expect(CHECKIN_PLANS_EQUIP[0].id).toBe("自訂一小時");
+  expect(CHECKIN_PLANS_NO_EQUIP[0].id).toBe("單一");
 });
 
 // ── 早鳥折扣：每筆帳單只折一次 ─────────────────────────────────────────────
