@@ -21,7 +21,7 @@ import { subscribeMyCats } from "../lib/catDb";
 import { addRoundArrows } from "../lib/db";
 import { nextRankInfo } from "./domain/guildRank";
 import { unlockAudio, sfxLevelUp, sfxCoinDrop, sfxOpenChest } from "../lib/sound";
-import { rollDailyContracts, contractsStateFor, todayKey } from "./domain/guildContracts";
+import { rollDailyContracts, rollChallengeContracts, contractsStateFor, todayKey } from "./domain/guildContracts";
 import {
   createGuildTeamRoom, joinGuildTeamRoomById, setGuildTeamLoadout, unreadyGuildTeamMember,
   setGuildTeamSettings,
@@ -90,7 +90,14 @@ function clearSavedRun(memberId) {
 
 // 一趟遠征 = 一張委託（委託決定族群與危險度）
 function newRun(contract) {
-  return { exp: rollExpedition({ id: contract.id, danger: contract.danger, family: contract.family, families: contract.families }), key: Date.now() };
+  // ⚠️ affixes/challenge 一定要傳下去，否則挑戰委託會退化成一般難度（詞綴只剩卡片上的裝飾）
+  return {
+    exp: rollExpedition({
+      id: contract.id, danger: contract.danger, family: contract.family, families: contract.families,
+      affixes: contract.affixes || [], challenge: contract.challenge || null,
+    }),
+    key: Date.now(),
+  };
 }
 
 export default function GuildTestApp({ onBack, onLegacy, onImmersiveChange }) {
@@ -148,6 +155,8 @@ export default function GuildTestApp({ onBack, onLegacy, onImmersiveChange }) {
   // 每日委託：同一天同一個人固定同一批（重整不會換，見 guildContracts）
   const dateKey = todayKey();
   const dailyContracts = useMemo(() => rollDailyContracts({ dateKey, memberId: memberId || "guest" }), [dateKey, memberId]);
+  // 挑戰委託：每階精銳＋危殆各一張，另開分頁（同日同人固定，重整不能洗）
+  const challengeContracts = useMemo(() => rollChallengeContracts({ dateKey, memberId: memberId || "guest" }), [dateKey, memberId]);
 
   // 載入存檔（auth 還在解析時先不載，免得用離線存檔覆蓋真存檔）
   useEffect(() => {
@@ -375,7 +384,8 @@ export default function GuildTestApp({ onBack, onLegacy, onImmersiveChange }) {
     if (roster.some(r => !r.guildStats)) return { ok: false, reason: "有人還沒備包完成" };
     // 委託 → 遠征（怪物依人數放大血量，見 partyHpScale）
     const exp = scaleExpeditionForParty(
-      rollExpedition({ id: teamRoom.contract.id, danger: teamRoom.contract.danger, family: teamRoom.contract.family, families: teamRoom.contract.families }),
+      rollExpedition({ id: teamRoom.contract.id, danger: teamRoom.contract.danger, family: teamRoom.contract.family, families: teamRoom.contract.families,
+        affixes: teamRoom.contract.affixes || [], challenge: teamRoom.contract.challenge || null }),
       roster.length,
     );
     const battle = createTeamState(exp, roster, {
@@ -659,7 +669,7 @@ export default function GuildTestApp({ onBack, onLegacy, onImmersiveChange }) {
   if (phase === "board" && !result) {
     return (
       <>
-        <GuildBoard profile={gp} contracts={dailyContracts} doneIds={doneIds} archerLevel={teamStats?._archerLevel || 0}
+        <GuildBoard profile={gp} contracts={dailyContracts} challengeContracts={challengeContracts} doneIds={doneIds} archerLevel={teamStats?._archerLevel || 0}
           onOpen={setSheet} onOpenStash={() => setPhase("stash")} onOpenShop={() => { setShopReturnPhase("board"); setPhase("shop"); }}
           onOpenTerritory={() => setPhase("territory")} onPromotion={acceptPromotion}
           onOpenVault={() => setPhase("vault")} onOpenLicense={() => setPhase("license")}
@@ -913,7 +923,7 @@ export default function GuildTestApp({ onBack, onLegacy, onImmersiveChange }) {
   // 保險：沒有委託/沒 roll 到遠征就不該在戰鬥畫面（例如放棄後的殘留狀態）
   if (!run || !contract) {
     return (
-      <GuildBoard profile={gp} contracts={dailyContracts} doneIds={doneIds} archerLevel={teamStats?._archerLevel || 0}
+      <GuildBoard profile={gp} contracts={dailyContracts} challengeContracts={challengeContracts} doneIds={doneIds} archerLevel={teamStats?._archerLevel || 0}
         onOpen={setSheet} onOpenStash={() => setPhase("stash")} onOpenShop={() => { setShopReturnPhase("board"); setPhase("shop"); }}
         onOpenTerritory={() => setPhase("territory")} onPromotion={acceptPromotion}
         onOpenVault={() => setPhase("vault")} onOpenLicense={() => setPhase("license")}

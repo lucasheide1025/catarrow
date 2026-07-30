@@ -9,6 +9,8 @@ import { FAMILIES, TIER_LABEL, TIER_ORDER } from "../../lib/monsterData";
 import { LOOT_BY_DANGER } from "../data/guildLootTable";
 import { DANGER_META, LEADER_ODDS, MAX_DANGER, expeditionMonsterPool, rollLeaderEncounter } from "./rollExpedition";
 import { CONTRACT_CLIENTS, CONTRACT_STORIES, DANGER_TONE, CONTRACTS_PER_DANGER } from "../data/guildContractPool";
+import { CHALLENGE_TIERS, CHALLENGE_TIER_IDS } from "../data/guildAffixPool";
+import { affixesOf, challengeRewardMult, rollAffixes } from "./guildAffixes";
 import { normalizeGuildProfile } from "./guildRewards";
 
 const FAMILY_IDS = Object.keys(CONTRACT_STORIES); // 六族（不含寶箱族）
@@ -66,13 +68,10 @@ const DANGER_SLOTS = Array.from({ length: MAX_DANGER }, (_, i) => i + 1)
 // 混族是玩法差異不是難度差異——同 tier 的怪，只是陣容更雜、預覽更有看頭。
 const FAMILY_COUNT = { 1: [1, 1], 2: [1, 2], 3: [1, 2], 4: [2, 3], 5: [2, 3], 6: [2, 4] };
 
-export function rollDailyContracts({ dateKey = todayKey(), memberId = "guest" } = {}) {
-  const rand = makeRand(hashSeed(`${dateKey}|${memberId}`));
+// 單張委託的建構工廠。一般委託與挑戰委託共用同一份邏輯——兩邊各寫一份遲早漂移。
+function contractFactory({ dateKey, rand }) {
   const pick = arr => arr[Math.floor(rand() * arr.length)];
-  const out = [];
-  for (let i = 0; i < DANGER_SLOTS.length; i++) {
-    const danger = DANGER_SLOTS[i] || 1;
-    const mode = MISSION_MODES[i % CONTRACTS_PER_DANGER] || "assault";
+  return function buildContract({ idSuffix, danger, mode, challenge = null }) {
     const family = pick(FAMILY_IDS);                       // 主族：決定故事與戰場底圖
     const [fMin, fMax] = FAMILY_COUNT[danger] || [1, 1];
     const famCount = fMin + Math.floor(rand() * (fMax - fMin + 1));
@@ -81,13 +80,13 @@ export function rollDailyContracts({ dateKey = todayKey(), memberId = "guest" } 
       const extra = pick(FAMILY_IDS);
       if (!families.includes(extra)) families.push(extra);
     }
-    // 故事依模式取（2026-07-30）：探索/進攻/防守各有自己的語氣。
-    // 缺該模式時退回該族全部故事合併，確保永遠取得到、不會開天窗。
     const storyPool = storiesFor(family, mode);
     const story = pick(storyPool);
     const client = pick(CONTRACT_CLIENTS);
-    out.push({
-      id: `${dateKey}-${i}`,
+    const affixes = challenge ? rollAffixes(challenge, rand) : [];
+    const tierMeta = challenge ? CHALLENGE_TIERS[challenge] : null;
+    return {
+      id: `${dateKey}-${idSuffix}`,
       mode,
       modeMeta: MISSION_MODE_META[mode],
       danger,
@@ -115,7 +114,41 @@ export function rollDailyContracts({ dateKey = todayKey(), memberId = "guest" } 
       hint: DANGER_TONE[danger].hint,
       waves: DANGER_META[danger].waves,
       skulls: DANGER_META[danger].skulls,
-    });
+      // 挑戰委託專屬（一般委託是 null／空陣列，UI 據此決定要不要畫詞綴列）
+      challenge,
+      challengeMeta: tierMeta,
+      affixes,
+      affixList: affixesOf(affixes),
+      rewardMult: challengeRewardMult(challenge),
+    };
+  };
+}
+
+export function rollDailyContracts({ dateKey = todayKey(), memberId = "guest" } = {}) {
+  const rand = makeRand(hashSeed(`${dateKey}|${memberId}`));
+  const build = contractFactory({ dateKey, rand });
+  return DANGER_SLOTS.map((danger, i) => build({
+    idSuffix: String(i),
+    danger: danger || 1,
+    mode: MISSION_MODES[i % CONTRACTS_PER_DANGER] || "assault",
+  }));
+}
+
+// 挑戰委託：每個危險度各一張「精銳」與一張「危殆」＝ 6 × 2 = 12 張／天。
+// 另用一組 seed，這樣挑戰板不會跟一般板抽到同樣的故事順序。
+export function rollChallengeContracts({ dateKey = todayKey(), memberId = "guest" } = {}) {
+  const rand = makeRand(hashSeed(`${dateKey}|${memberId}|challenge`));
+  const build = contractFactory({ dateKey, rand });
+  const out = [];
+  for (let danger = 1; danger <= 6; danger += 1) {
+    for (const tierId of CHALLENGE_TIER_IDS) {
+      out.push(build({
+        idSuffix: `c${danger}-${tierId}`,
+        danger,
+        mode: MISSION_MODES[Math.floor(rand() * MISSION_MODES.length)] || "assault",
+        challenge: tierId,
+      }));
+    }
   }
   return out;
 }

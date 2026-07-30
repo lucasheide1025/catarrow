@@ -15,6 +15,7 @@
 // ─────────────────────────────────────────────────────────────
 import { EXPANSION_MONSTERS, EXPANSION_MONSTER_BY_ID } from "../../lib/monsterExpansionCatalog";
 import { toLegacyBattleMonster } from "../../lib/monsterExpansionAdapter";
+import { mergeAffixMods } from "./guildAffixes";
 
 export const DANGER = Object.freeze({ T1: 1, T2: 2, T3: 3, T4: 4, T5: 5, T6: 6 });
 export const MAX_DANGER = 6;
@@ -86,10 +87,15 @@ export function expeditionMonsterPool(contract = {}, opts = {}) {
 }
 
 // 擴充怪 → 公會戰鬥單位（含公會縮放）
-function toGuildMonster(raw, danger, instanceId, distance, combatRole) {
+function toGuildMonster(raw, danger, instanceId, distance, combatRole, mods = null) {
   const m = toLegacyBattleMonster(raw);
   const scale = GUILD_TIER_SCALE[danger] || GUILD_TIER_SCALE[1];
-  const hp = Math.max(1, Math.round(m.hp * scale.hp));
+  // 挑戰詞綴的數值修正（一般委託 mods 為 null → 完全不變）
+  const hpMult = mods?.monsterHpMult || 1;
+  const atkMult = mods?.monsterAtkMult || 1;
+  const defMult = mods?.monsterDefMult || 1;
+  const speedBonus = mods?.monsterSpeedBonus || 0;
+  const hp = Math.max(1, Math.round(m.hp * scale.hp * hpMult));
   return {
     instanceId,
     monsterId: m.id,
@@ -106,8 +112,9 @@ function toGuildMonster(raw, danger, instanceId, distance, combatRole) {
     counterSummary: raw.counterSummary,
     maxHp: hp,
     hp,
-    atk: Math.max(1, Math.round(m.atk * scale.atk)),
-    def: m.def,             // DEF 不縮放（減傷已在傷害公式裡是 def*0.5）
+    atk: Math.max(1, Math.round(m.atk * scale.atk * atkMult)),
+    def: Math.max(0, Math.round(m.def * defMult)),   // 基準不縮放，只有詞綴會動它
+    ...(speedBonus ? { moveSpeedBonus: speedBonus } : {}),
     distance,
     // 有指定就用指定的；沒有時 guildCombatV2.roleForMonster 會用 monsterId hash 推
     ...(combatRole ? { combatRole } : {}),
@@ -164,6 +171,7 @@ export function rollExpedition(contract = {}, opts = {}) {
     };
   }
 
+  const mods = contract.affixes?.length ? mergeAffixMods(contract.affixes) : null;
   const pool = expeditionMonsterPool({ ...contract, danger });
   const lockedLeader = Object.prototype.hasOwnProperty.call(contract, "leader")
     ? contract.leader
@@ -175,22 +183,26 @@ export function rollExpedition(contract = {}, opts = {}) {
   const waves = [];
   for (let w = 0; w < meta.waves; w++) {
     const isLast = w === meta.waves - 1;
-    const size = Math.min(MAX_TARGETS, ri(meta.waveSize[0], meta.waveSize[1]));
+    // 詞綴「成群」會加隻數，上限跟著放寬（否則加了也被 MAX_TARGETS 切掉）
+    const bonus = mods?.waveSizeBonus || 0;
+    const size = Math.min(MAX_TARGETS + bonus, ri(meta.waveSize[0], meta.waveSize[1]) + bonus);
     const monsters = [];
     // 最後一波：首領壓陣（佔一個名額）。首領不套組成規劃——角色由圖鑑決定，不該被洗掉。
     if (isLast && leaderPool.length) {
-      monsters.push(toGuildMonster(pick(leaderPool), danger, `g${inst++}`, ri(meta.initDist[0], meta.initDist[1])));
+      monsters.push(toGuildMonster(pick(leaderPool), danger, `g${inst++}`, ri(meta.initDist[0], meta.initDist[1]), undefined, mods));
     }
     const roles = planWaveRoles(size - monsters.length, rand);
     let roleIdx = 0;
     while (monsters.length < size) {
-      monsters.push(toGuildMonster(pick(pool), danger, `g${inst++}`, ri(meta.initDist[0], meta.initDist[1]), roles[roleIdx++]));
+      monsters.push(toGuildMonster(pick(pool), danger, `g${inst++}`, ri(meta.initDist[0], meta.initDist[1]), roles[roleIdx++], mods));
     }
     waves.push({ waveIndex: w, monsters });
   }
 
   return {
     contractId: contract.id || null,
+    affixes: contract.affixes || [],
+    challenge: contract.challenge || null,
     danger,
     family: contract.family || contract.families?.[0] || null,  // 戰場底圖用主族
     families: contract.families?.length ? [...contract.families] : (contract.family ? [contract.family] : []),

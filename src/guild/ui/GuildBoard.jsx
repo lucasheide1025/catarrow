@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { rankUnlocks, canAcceptDanger, repNeededForDanger, nextRankInfo, effectiveMaxDanger, archerDangerCap } from "../domain/guildRank";
 import { currentTitle } from "../domain/guildTitles";
 import { sfxOpen } from "../../lib/sound";
@@ -55,6 +56,7 @@ export default function GuildBoard({
   onBack,
   onLegacy,
   archerLevel = 0,
+  challengeContracts = [],
 }) {
   const rankInfo = nextRankInfo(profile);
   const rank = rankInfo.current;
@@ -63,6 +65,11 @@ export default function GuildBoard({
   const maxDanger = effectiveMaxDanger(profile, archerLevel);
   const archerCap = archerDangerCap(archerLevel);
   const openable = contracts.filter(contract => canAcceptDanger(profile, contract.danger, archerLevel));
+  // 挑戰委託另開分頁：一般 18 張＋挑戰 12 張塞在同一面板手機上太長
+  const [tab, setTab] = useState("daily");
+  const shownContracts = tab === "daily" ? contracts : challengeContracts;
+  const challengeOpenable = challengeContracts.filter(c => canAcceptDanger(profile, c.danger, archerLevel));
+  const challengeDone = challengeOpenable.filter(c => doneIds.includes(c.id)).length;
   const doneCount = openable.filter(contract => doneIds.includes(contract.id)).length;
   const junkCount = Object.values(profile.junkStock || {}).reduce((sum, count) => sum + count, 0);
   const wornTitle = currentTitle(profile);
@@ -163,25 +170,59 @@ export default function GuildBoard({
         ) : null}
 
         <section style={{ marginTop: 15 }}>
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 }}>
-            <div>
-              <h2 style={{ display: "inline", margin: 0, color: "#fbbf24", fontSize: 17 }}>今日委託</h2>
-              <span style={{ marginLeft: 7, fontSize: 10, color: "#a89878" }}>點選查看詳情</span>
-            </div>
-            <span style={{ fontSize: 10, color: "#c8b89a" }}>{doneCount}/{openable.length} 完成</span>
+          <style>{BOARD_FX_CSS}</style>
+          <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+            {[
+              { id: "daily", label: "今日委託", icon: "📜", done: doneCount, total: openable.length },
+              { id: "challenge", label: "挑戰委託", icon: "☠️", done: challengeDone, total: challengeOpenable.length },
+            ].map(t => {
+              const active = tab === t.id;
+              return (
+                <button key={t.id} type="button" onClick={() => { sfxOpen(); setTab(t.id); }}
+                  className={active && t.id === "challenge" ? "gb-tab-danger" : undefined}
+                  style={{
+                    flex: 1, padding: "9px 8px", borderRadius: 10, cursor: "pointer",
+                    border: active ? "1px solid rgba(251,191,36,.65)" : "1px solid rgba(255,255,255,.10)",
+                    background: active
+                      ? (t.id === "challenge"
+                        ? "linear-gradient(135deg,rgba(127,29,29,.92),rgba(69,10,10,.92))"
+                        : "linear-gradient(135deg,rgba(120,80,20,.9),rgba(60,38,8,.92))")
+                      : "rgba(20,14,6,.55)",
+                    color: active ? "#fde68a" : "#a89878",
+                    fontWeight: 900, fontSize: 12.5, textAlign: "left",
+                    boxShadow: active ? "0 4px 14px rgba(0,0,0,.45)" : "none",
+                    transition: "background .18s ease, color .18s ease",
+                  }}>
+                  <span style={{ fontSize: 14 }}>{t.icon}</span> {t.label}
+                  <span style={{ display: "block", marginTop: 2, fontSize: 9.5, opacity: .85, fontWeight: 700 }}>
+                    {t.done}/{t.total} 完成
+                  </span>
+                </button>
+              );
+            })}
           </div>
+          {tab === "challenge" && (
+            <div style={{ marginBottom: 8, padding: "7px 10px", borderRadius: 9,
+              background: "rgba(127,29,29,.28)", border: "1px solid rgba(248,113,113,.32)",
+              color: "#fecaca", fontSize: 10.5, lineHeight: 1.5 }}>
+              同樣的危險度，敵人帶著<b>詞綴</b>。獎勵與聲望大幅提高，但公會不保證你回得來。
+            </div>
+          )}
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(155px,1fr))", gap: 8 }}>
-            {contracts.map(contract => {
+            {shownContracts.map(contract => {
               const locked = !canAcceptDanger(profile, contract.danger, archerLevel);
               const need = repNeededForDanger(profile, contract.danger);
               const done = doneIds.includes(contract.id);
               const tier = contract.tiers?.[0];
               return (
                 <button key={contract.id} type="button" onClick={() => { sfxOpen(); onOpen(contract); }}
+                  className={contract.challenge && !locked && !done
+                    ? (contract.challenge === "perilous" ? "gb-card-perilous" : "gb-card-elite")
+                    : "gb-card"}
                   style={{
                     ...paperStyle,
-                    minHeight: 126,
+                    minHeight: contract.challenge ? 150 : 126,
                     padding: "10px 11px",
                     border: 0,
                     cursor: "pointer",
@@ -193,13 +234,37 @@ export default function GuildBoard({
                     gap: 6,
                   }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 5 }}>
-                    <span style={{ padding: "2px 5px", borderRadius: 4, color: "#fff", background: dangerColor(contract.danger), fontSize: 9, fontWeight: 900 }}>{contract.skulls}</span>
+                    <span style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                      <span style={{ padding: "2px 5px", borderRadius: 4, color: "#fff", background: dangerColor(contract.danger), fontSize: 9, fontWeight: 900 }}>{contract.skulls}</span>
+                      {contract.challengeMeta && (
+                        <span style={{ padding: "2px 6px", borderRadius: 4, fontSize: 9, fontWeight: 900,
+                          color: "#1c1917", background: contract.challengeMeta.color }}>
+                          {contract.challengeMeta.icon}{contract.challengeMeta.name}
+                        </span>
+                      )}
+                    </span>
                     <b style={{ color: tier?.color || "#5b4527", fontSize: 10 }}>T{tier?.tierNo}</b>
                   </div>
                   <b style={{ color: "#241809", fontSize: 13, lineHeight: 1.35 }}>{contract.title}</b>
+                  {contract.affixList?.length > 0 && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                      {contract.affixList.map(affix => (
+                        <span key={affix.id} title={affix.desc}
+                          style={{ padding: "1.5px 5px", borderRadius: 999, fontSize: 9, fontWeight: 900,
+                            color: "#1c1917", background: affix.color, whiteSpace: "nowrap" }}>
+                          {affix.icon}{affix.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   <div style={{ marginTop: "auto", color: "#5b4527", fontSize: 9.5 }}>
                     {contract.modeMeta?.icon} {contract.modeMeta?.label}　{(contract.familyTags || []).map(family => family.icon).join("")}
                   </div>
+                  {contract.rewardMult?.loot > 1 && (
+                    <div style={{ color: "#9a3412", fontSize: 9.5, fontWeight: 900 }}>
+                      🎁 掉落 ×{contract.rewardMult.loot}　🏅 聲望 ×{contract.rewardMult.rep}
+                    </div>
+                  )}
                   <div style={{ color: done ? "#57534e" : locked ? "#9a3412" : "#3f6212", fontSize: 9.5, fontWeight: 900 }}>
                     {done ? "今日已完成" : locked ? (need === "trial" ? "需完成晉升試煉" : `尚需 ${need} 聲望`) : "可接受委託"}
                   </div>
@@ -212,3 +277,35 @@ export default function GuildBoard({
     </div>
   );
 }
+
+// 委託板特效。挑戰委託要「一眼看出不一樣」：精銳有金色掃光、危殆有紅色脈動。
+// 全部尊重 .no-anim（index.css 已全域抑制），不需在這裡各自處理 reduced-motion。
+const BOARD_FX_CSS = `
+@keyframes gb-sheen { 0% { transform: translateX(-120%); } 60%,100% { transform: translateX(220%); } }
+@keyframes gb-danger-pulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(248,113,113,.55), 0 6px 16px rgba(0,0,0,.35); }
+  50%     { box-shadow: 0 0 0 4px rgba(248,113,113,0), 0 6px 22px rgba(127,29,29,.6); }
+}
+@keyframes gb-tab-glow {
+  0%,100% { box-shadow: 0 4px 14px rgba(0,0,0,.45); }
+  50%     { box-shadow: 0 4px 20px rgba(248,113,113,.5); }
+}
+.gb-card { transition: transform .16s ease, box-shadow .16s ease; }
+.gb-card:active { transform: scale(.97); }
+.gb-card-elite, .gb-card-perilous {
+  position: relative; overflow: hidden;
+  transition: transform .16s ease, box-shadow .16s ease;
+}
+.gb-card-elite:active, .gb-card-perilous:active { transform: scale(.97); }
+.gb-card-elite::after {
+  content: ""; position: absolute; top: 0; bottom: 0; width: 45%;
+  background: linear-gradient(100deg, transparent, rgba(255,232,150,.5), transparent);
+  animation: gb-sheen 2.8s ease-in-out infinite; pointer-events: none;
+}
+.gb-card-perilous { animation: gb-danger-pulse 2.2s ease-in-out infinite; }
+.gb-card-perilous::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(circle at 50% 120%, rgba(248,113,113,.28), transparent 62%);
+}
+.gb-tab-danger { animation: gb-tab-glow 2.4s ease-in-out infinite; }
+`;

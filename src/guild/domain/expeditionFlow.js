@@ -10,6 +10,7 @@
 // ─────────────────────────────────────────────────────────────
 import { deriveGuildCombat } from "./guildStats";
 import { advanceCounter, applySignedEffect, createCounter, proximityDamageMultiplier, toGridMonster } from "./guildCombatV2";
+import { NEUTRAL_AFFIX_MODS, mergeAffixMods } from "./guildAffixes";
 
 function cloneWaveMonsters(wave, combatV2 = false) {
   return (wave?.monsters || []).map((m, index) => {
@@ -88,6 +89,8 @@ export function normalizeArrowsPerRound(n) {
 export function createExpeditionState(expedition, guildStats, supplies = { food: 6, water: 6 }, cats = [], opts = {}) {
   const derived = deriveGuildCombat(guildStats);
   const missionMode = opts.missionMode || "assault";
+  // 挑戰詞綴的合併結果。一般委託沒有 affixes → 中性值（等於沒有任何修正）。
+  const affixMods = expedition?.affixes?.length ? mergeAffixMods(expedition.affixes) : { ...NEUTRAL_AFFIX_MODS };
   const defenseRoster = missionMode === "defense"
     ? (expedition.waves || []).flatMap(wave => cloneWaveMonsters(wave, true))
     : [];
@@ -112,6 +115,8 @@ export function createExpeditionState(expedition, guildStats, supplies = { food:
     hp: derived.maxHP,
     supplies: { ...supplies },
     waveIndex: 0,
+    affixes: expedition?.affixes || [],
+    affixMods,
     monsters: missionMode === "defense" ? defenseVisible : cloneWaveMonsters(expedition.waves[0], opts.combatV2),
     defense: missionMode === "defense" ? {
       clock: 0,
@@ -201,7 +206,9 @@ export function consumeTravelSupplies(state, amount = 0.25) {
     log: [...(state.log || [])],
   };
   const savePct = Number(s.derived?.supplySavePct) || 0;
-  const rate = Math.round(Math.max(0, amount * (1 - savePct)) * 100) / 100;
+  // 詞綴「斷糧」讓補給消耗加倍（VIT 的節省仍然生效，只是基數變大）
+  const costMult = Number(s.affixMods?.supplyCostMult) || 1;
+  const rate = Math.round(Math.max(0, amount * costMult * (1 - savePct)) * 100) / 100;
   s.supplies.food = Math.max(0, Math.round((s.supplies.food - rate) * 100) / 100);
   s.supplies.water = Math.max(0, Math.round((s.supplies.water - rate) * 100) / 100);
   s.log.push({ type: "travelSupply", food: -rate, water: -rate });
@@ -218,6 +225,8 @@ export function processRound(state, shots = [], opts = {}) {
     monsters: state.monsters.map(m => ({ ...m })),
     supplies: { ...state.supplies },
     shotStats: { ...(state.shotStats || { count: 0, score: 0 }) },
+    affixMods: state.affixMods || { ...NEUTRAL_AFFIX_MODS },
+    affixes: state.affixes || [],
     effects: { ...(state.effects || {}) },
     log: [],
     defense: state.defense ? { ...state.defense, queue: state.defense.queue.map(monster => ({ ...monster, position: { ...monster.position } })), assistanceUsed: [...state.defense.assistanceUsed] } : null,
@@ -341,7 +350,10 @@ export function processRound(state, shots = [], opts = {}) {
     for (const mon of s.monsters) {
       const oldCell = `${mon.position?.lane ?? 0}:${mon.distance}`;
       occupied.delete(oldCell);
-      const speed = s.combatVersion === 2 ? Math.max(0, mon.moveSpeed || 1) : 1;
+      // 詞綴「疾行」讓所有怪多走一格
+      const speed = s.combatVersion === 2
+        ? Math.max(0, (mon.moveSpeed || 1) + (mon.moveSpeedBonus || 0))
+        : 1;
       const range = s.combatVersion === 2 ? Math.max(0, mon.attackRange || 0) : 0;
       let nextDistance = Math.max(0, mon.distance - speed);
       let lane = mon.position?.lane ?? 0;
@@ -486,6 +498,14 @@ export function processRound(state, shots = [], opts = {}) {
   }
 
   s.round += 1;
+
+  // 詞綴「急襲」：逾時強迫撤退（已經打贏就不算逾時）
+  const roundLimit = Number(s.affixMods?.roundLimit) || 0;
+  if (roundLimit > 0 && s.round > roundLimit && s.status === "fighting") {
+    s.status = "lost";
+    s.lostReason = `逾時撤退（限 ${roundLimit} 回合）`;
+    s.log.push({ type: "timeout", roundLimit });
+  }
 
   // 5. 敗北判定
   if (s.hp <= 0 && s.status !== "won") {
