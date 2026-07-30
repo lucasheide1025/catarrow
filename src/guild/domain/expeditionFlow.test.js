@@ -1,14 +1,16 @@
 // src/guild/domain/expeditionFlow.test.js
 import {
-  createExpeditionState,
+  DEFAULT_GUILD_ARROWS,
+  GUILD_ARROWS_OPTIONS,
+  arrowDamage,
   consumeTravelSupplies,
+  createExpeditionState,
+  defenseMultiplier,
+  normalizeArrowsPerRound,
   prepareExpeditionWave,
   processRound,
   resolveShotTarget,
   resolveTravelEvent,
-  normalizeArrowsPerRound,
-  GUILD_ARROWS_OPTIONS,
-  DEFAULT_GUILD_ARROWS,
 } from "./expeditionFlow";
 
 const NO_LUCK = { rand: () => 0.99 }; // 不爆擊、不閃避（機率都很小）
@@ -328,5 +330,84 @@ describe("每回合箭數 3/6（作者要求提供選擇）", () => {
     const next = processRound(st, shots, { rand: () => 0.9 });
     expect(next.log.filter(l => l.type === "arrow")).toHaveLength(6);
     expect(next.monsters[0].hp).toBeLessThan(9999);
+  });
+});
+
+describe("比例減傷（2026-07-30 取代直接相減）", () => {
+  test("防禦永遠壓不到 0 傷，不會出現「每箭只打 1 點」的偽難度", () => {
+    // 舊公式：atk 16、def 155（T6）→ 16*1.409-77.5 為負 → 夾到 1
+    expect(arrowDamage(10, 16, 155)).toBeGreaterThan(1);
+    expect(arrowDamage(10, 10, 300)).toBeGreaterThan(0);
+  });
+
+  test("防禦越高傷害越低，但單調且連續", () => {
+    let prev = Infinity;
+    for (const def of [0, 14, 24, 40, 68, 105, 155]) {
+      const dmg = arrowDamage(10, 40, def);
+      expect(dmg).toBeLessThanOrEqual(prev);
+      prev = dmg;
+    }
+  });
+
+  test("零防禦時等於滿額傷害", () => {
+    expect(defenseMultiplier(0)).toBe(1);
+    expect(arrowDamage(11, 20, 0)).toBe(Math.round(20 * 1.5));
+  });
+
+  test("減傷倍率恆落在 (0,1]", () => {
+    for (const def of [0, 1, 50, 200, 9999]) {
+      const m = defenseMultiplier(def);
+      expect(m).toBeGreaterThan(0);
+      expect(m).toBeLessThanOrEqual(1);
+    }
+  });
+
+  test("爆擊仍是 1.5 倍", () => {
+    const base = arrowDamage(10, 40, 24);
+    expect(arrowDamage(10, 40, 24, true)).toBe(Math.round(base * 1.5));
+  });
+
+  test("設計目標：白板新手（ATK 16）射 10 分約 5 箭解決 T1 雜兵", () => {
+    const T1_HP = 100;          // 250 中位 * 0.40 縮放
+    const T1_DEF = 14;
+    const arrows = T1_HP / arrowDamage(10, 16, T1_DEF);
+    expect(arrows).toBeGreaterThan(3);
+    expect(arrows).toBeLessThan(7);
+  });
+});
+
+describe("AGI 額外箭（2026-07-30 接線；原本 extraArrowChance 全專案 0 處使用）", () => {
+  // 靶子血很厚，確保不會被打死而提前結束回合
+  const dummy = () => mon("m1", { maxHp: 99999, hp: 99999, atk: 1, def: 0, distance: 9 });
+  const build = agi => createExpeditionState(
+    { totalWaves: 1, waves: [{ monsters: [dummy()] }] },
+    { hp: 200, atk: 40, agi, def: 5, vit: 10, luk: 0 },
+    { food: 10, water: 10 },
+  );
+
+  test("AGI 0 不會有額外箭", () => {
+    const next = processRound(build(0), [{ targetInstanceId: "m1", score: 10 }], NO_LUCK);
+    expect(next.log.filter(l => l.type === "arrow")).toHaveLength(1);
+  });
+
+  test("擲骰必中時每支箭都追加一發，且標記 extra", () => {
+    const next = processRound(build(50), [
+      { targetInstanceId: "m1", score: 10 },
+      { targetInstanceId: "m1", score: 10 },
+    ], { rand: () => 0 });
+    const arrows = next.log.filter(l => l.type === "arrow");
+    expect(arrows).toHaveLength(4);                       // 2 支 + 2 支額外
+    expect(arrows.filter(a => a.extra)).toHaveLength(2);
+  });
+
+  test("額外箭本身不會再觸發額外箭（不會無限連鎖）", () => {
+    const next = processRound(build(50), [{ targetInstanceId: "m1", score: 10 }], { rand: () => 0 });
+    expect(next.log.filter(l => l.type === "arrow")).toHaveLength(2);
+  });
+
+  test("額外箭一樣會造成傷害", () => {
+    const next = processRound(build(50), [{ targetInstanceId: "m1", score: 10 }], { rand: () => 0 });
+    const extra = next.log.find(l => l.type === "arrow" && l.extra);
+    expect(extra.dmg).toBeGreaterThan(0);
   });
 });

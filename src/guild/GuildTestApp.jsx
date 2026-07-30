@@ -701,6 +701,13 @@ export default function GuildTestApp({ onBack, onLegacy, onImmersiveChange }) {
                 {loot.accuracy.extraRoll ? "　＋額外掉落判定" : ""}）
               </div>
             )}
+            {/* LUK 原本完全看不見（多拿了什麼、雜貨多值多少都沒提示），玩家因此覺得沒意義 */}
+            {loot.luck && (
+              <div style={{ color: "#fde68a" }}>
+                🍀 幸運 LUK <b>{loot.luck.luk}</b>
+                （掉寶 +{loot.luck.dropBonusPct}%　雜貨售價 +{loot.luck.valuationBonusPct}%　爆擊 {loot.luck.critChancePct}%）
+              </div>
+            )}
             {loot.materials.length > 0 && (
               <div style={{ color: "#a7f3d0" }}>
                 📦 材料：{loot.materials.map(m => `${m.name}×${m.qty}`).join("、")}

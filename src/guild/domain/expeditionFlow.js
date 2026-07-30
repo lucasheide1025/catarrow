@@ -19,10 +19,25 @@ function cloneWaveMonsters(wave, combatV2 = false) {
   });
 }
 
-// 公會箭傷公式（重用「分數×攻擊 − 防禦」概念，獨立於主線 damage.js 呼叫）
+// 怪物防禦改成「比例減傷」（2026-07-30）。
+//
+// 舊公式是 atk * 分數係數 − def * 0.5，直接相減 → ATK 不夠時整個被扣成負數、夾到 1，
+// 於是體驗是斷崖：ATK 差一點就完全打不動（實測 Lv20 白板打 T3 要 358 箭＝每箭 1 傷），
+// ATK 一夠又瞬間輾壓，中間沒有「有點吃力」的地帶。連 T6 對滿等好裝也是每箭 1 傷。
+//
+// 比例減傷讓曲線連續：DEF 只能把傷害壓到某個比例，永遠壓不到 0。
+// DEF_SOFTENING 越大代表防禦越不值錢；調整整體鬆緊改這一個數字就好。
+export const DEF_SOFTENING = 90;
+
+export function defenseMultiplier(def = 0) {
+  const d = Math.max(0, Number(def) || 0);
+  return DEF_SOFTENING / (d + DEF_SOFTENING);
+}
+
+// 公會箭傷公式（獨立於主線 damage.js）
 // export：組隊版狀態機（teamExpeditionFlow）要用同一條公式，單人/組隊的手感才會一致。
 export function arrowDamage(score, atk, def, crit) {
-  const base = Math.max(1, Math.round(atk * (0.5 + (score || 0) / 11) - def * 0.5));
+  const base = Math.max(1, Math.round(atk * (0.5 + (score || 0) / 11) * defenseMultiplier(def)));
   return crit ? Math.round(base * 1.5) : base;
 }
 
@@ -215,9 +230,12 @@ export function processRound(state, shots = [], opts = {}) {
   const d = s.derived;
 
   // 1. 玩家射箭
-  for (const shot of lockedShots) {
+  // extra=true 代表 AGI 觸發的額外箭。AGI 的招牌效果原本只在 deriveGuildCombat 算出
+  // extraArrowChance 卻**全專案 0 處使用**，等於 AGI 少了一半功能（使用者回報「AGI 沒感覺」）。
+  // 每支送出的箭各自擲一次，命中同一個鎖定目標、同分數；額外箭本身不會再觸發額外箭。
+  const fireArrow = (shot, extra = false) => {
     const mon = resolveShotTarget(s.monsters, shot.targetInstanceId);
-    if (!mon) break;
+    if (!mon) return false;
     const crit = rand() < d.critChance;
     const effectiveAtk = Math.max(1, s.guildStats.atk + effectBonus(s, "player", "atk"));
     const effectiveDef = Math.max(0, mon.def + effectBonus(s, mon.instanceId, "def"));
@@ -230,8 +248,15 @@ export function processRound(state, shots = [], opts = {}) {
       selectedTarget: shot.targetInstanceId,
       dmg,
       crit,
+      extra,
       killed: mon.hp <= 0,
     });
+    return true;
+  };
+
+  for (const shot of lockedShots) {
+    if (!fireArrow(shot)) break;
+    if (rand() < d.extraArrowChance) fireArrow(shot, true);
   }
   s.monsters = s.monsters.filter(m => m.hp > 0);
 
@@ -277,7 +302,8 @@ export function processRound(state, shots = [], opts = {}) {
     const alive = s.monsters.filter(m => m.hp > 0);
     if (!alive.length) break;
     const target = alive.slice().sort((a, b) => a.distance - b.distance || a.hp - b.hp)[0];
-    const dmg = Math.max(1, Math.round((cat.atk || 10) - target.def * 0.3));
+    // 貓咪也改比例減傷：舊式相減在高階會被夾到 1，貓等於白帶
+    const dmg = Math.max(1, Math.round((cat.atk || 10) * defenseMultiplier(target.def * 0.6)));
     target.hp = Math.max(0, target.hp - dmg);
     s.log.push({ type: "catAttack", cat: cat.id, name: cat.name, target: target.instanceId, dmg, killed: target.hp <= 0 });
   }

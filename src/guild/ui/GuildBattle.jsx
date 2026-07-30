@@ -224,7 +224,7 @@ export default function GuildBattle({
           const p = posOrCenter(lg.target);
           later(() => {
             const id = uid();
-            setArrows(a => [...a, { id, top: PLAYER_POS.topPct, left: PLAYER_POS.leftPct }]);
+            setArrows(a => [...a, { id, top: PLAYER_POS.topPct, left: PLAYER_POS.leftPct, extra: !!lg.extra }]);
             later(() => setArrows(a => a.map(x => x.id === id ? { ...x, top: p.topPct, left: p.leftPct } : x)), 20);
             later(() => setArrows(a => a.filter(x => x.id !== id)), T.arrowFly + 90);
           }, at);
@@ -232,7 +232,11 @@ export default function GuildBattle({
             if (lg.crit) { sound.critical(); vibrate(40); } else sound.hit();
             setHitMap(h => ({ ...h, [lg.target]: (h[lg.target] || 0) + lg.dmg }));
             shakeOnce(lg.target);
-            addFloater(p, `${lg.crit ? "💥" : ""}-${lg.dmg}`, lg.crit ? "#fbbf24" : "#fca5a5");
+            // 爆擊＝LUK 的回饋，明講「幸運」玩家才知道那點 LUK 有用；
+            // 額外箭＝AGI 的回饋，要標出來否則看起來只是多一發不明所以的箭。
+            const tag = lg.extra ? "💨額外箭 " : lg.crit ? "🍀幸運 💥" : "";
+            addFloater(p, `${tag}-${lg.dmg}`, lg.extra ? "#93c5fd" : lg.crit ? "#fbbf24" : "#fca5a5");
+            if (lg.extra) setFlash("💨 敏捷發動：追加一箭！");
             if (lg.killed) killOnField(lg.target, p, dropOnField);
           }, at + T.arrowFly);
           break;
@@ -488,7 +492,9 @@ export default function GuildBattle({
         {/* 飛行中的箭（從玩家位置飛向目標）*/}
         {arrows.map(a => (
           <div key={a.id} style={{ position: "absolute", top: `${a.top}%`, left: `${a.left}%`, transform: "translate(-50%,-50%) rotate(-45deg)",
-            transition: `top ${T.arrowFly}ms linear, left ${T.arrowFly}ms linear`, fontSize: 20, pointerEvents: "none", zIndex: 85 }}>
+            transition: `top ${T.arrowFly}ms linear, left ${T.arrowFly}ms linear`, fontSize: 20, pointerEvents: "none", zIndex: 85,
+            color: a.extra ? "#93c5fd" : undefined,
+            filter: a.extra ? "drop-shadow(0 0 6px #60a5fa)" : undefined }}>
             ➶
           </div>
         ))}

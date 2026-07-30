@@ -52,7 +52,7 @@ export function rollLeaderEncounter(danger = 1, rand = Math.random) {
 // 公會版縮放：{ hp, atk } 乘在擴充怪原數值上。
 // 高階降得更多，因為公會裝的成長幅度遠小於擴充怪的 HP 成長（等比 vs 等比但斜率不同）。
 export const GUILD_TIER_SCALE = Object.freeze({
-  1: { hp: 0.50, atk: 0.90 },
+  1: { hp: 0.40, atk: 0.90 },   // 入門階再放寬：新手白板要能在 2 回合內解決一隻雜兵
   2: { hp: 0.55, atk: 0.90 },
   3: { hp: 0.55, atk: 0.85 },
   4: { hp: 0.50, atk: 0.80 },

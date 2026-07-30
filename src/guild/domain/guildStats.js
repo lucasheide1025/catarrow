@@ -13,7 +13,10 @@ import { GUILD_SLOTS } from "../data/guildEquipCatalog";
 import { resolveEquipmentV2 } from "./guildEquipmentV2";
 
 // 六維基底（提案值，實作可調）
-export const GUILD_BASE_STATS = Object.freeze({ hp: 100, atk: 10, agi: 10, def: 5, vit: 10, luk: 5 });
+// 2026-07-30：基礎 ATK 10 → 16。白板新手每箭最多只有 10*1.409≈14 傷，而 T1 雜兵 125 HP，
+// 就算完全不減傷也要 9 箭；比例減傷救得了「被 DEF 扣光」，救不了基礎值太低。
+// 對老手影響很小（他們的 ATK 大多來自等級與裝備）。
+export const GUILD_BASE_STATS = Object.freeze({ hp: 100, atk: 16, agi: 10, def: 5, vit: 10, luk: 5 });
 const STAT_KEYS = ["hp", "atk", "agi", "def", "vit", "luk"];
 
 // guildEquip 形狀：{ bow:{archetypeId,grade}, arrow:{...}, armor, quiver, potionPouch }
@@ -57,7 +60,8 @@ export function deriveGuildCombat(stats = {}) {
     supplySavePct:    Math.min(0.5, s.vit * 0.01),       // VIT：補給消耗減緩 %
     carryBonus:       Math.round(s.vit * 0.2 * 10) / 10, // VIT：背包負重上限加成
     dropBonusPct:     s.luk * 0.01,                      // LUK：掉寶率加成
-    critChance:       Math.min(0.5, s.luk * 0.008),      // LUK：爆擊機率
+    // LUK 爆擊 0.008 → 0.015：白板 LUK 5 只有 4% 爆擊＝25 箭才爆一次，玩家完全感受不到
+    critChance:       Math.min(0.5, s.luk * 0.015),      // LUK：爆擊機率
     valuationBonusPct:s.luk * 0.015,                     // LUK：雜貨評估價值加成
   };
 }
