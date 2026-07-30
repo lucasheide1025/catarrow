@@ -80,13 +80,14 @@ function posOf(index, len, distance) {
     scale: 0.8 + near * 0.6,                      // 遠 0.8 → 近 1.4
   };
 }
+// 格位（lane, depth）→ 畫面座標。移動演出也用同一份公式，不要各算一次。
+function gridPosAt(lane, depth) {
+  const near = 1 - Math.min(MAX_DIST, Math.max(0, depth)) / MAX_DIST;
+  return { topPct: 12 + near * 46, leftPct: 25 + lane * 25, scale: 0.8 + near * 0.6 };
+}
 function gridPosOf(monster, index, len) {
   if (!monster.position) return posOf(index, len, monster.distance);
-  return {
-    topPct: 12 + (1 - Math.min(MAX_DIST, monster.position.depth) / MAX_DIST) * 46,
-    leftPct: 25 + monster.position.lane * 25,
-    scale: 0.8 + (1 - Math.min(MAX_DIST, monster.position.depth) / MAX_DIST) * 0.6,
-  };
+  return gridPosAt(monster.position.lane, monster.position.depth);
 }
 const PLAYER_POS = { topPct: 88, leftPct: 50 };
 
@@ -129,7 +130,10 @@ export default function GuildBattle({
   // 會一直站到回合結束才整批消失，於是「已確認全部敵人陣亡」會在怪物還在場上時就先跳出來。
   const [downed, setDowned] = useState([]);
   const [pouncing, setPouncing] = useState([]);
-  const [lunging, setLunging] = useState([]);      // 正在對玩家出手的怪物 id    // 出爪的貓 id
+  const [lunging, setLunging] = useState([]);      // 正在對玩家出手的怪物 id
+  // 動畫期間的位置覆寫。畫面平常吃 state 的位置，但 state 要等回合結束才更新，
+  // 所以推進要靠這份覆寫 + CSS transition 讓怪物滑過去。
+  const [movedPos, setMovedPos] = useState({});    // 出爪的貓 id
   const [hurt, setHurt] = useState(false);         // 玩家受擊紅閃
   const [bowPull, setBowPull] = useState(false);   // 拉弓
   const [showTactics, setShowTactics] = useState(false);
@@ -194,6 +198,7 @@ export default function GuildBattle({
     setAnimating(true);
     setFlash(null);
     setDowned([]);
+    setMovedPos({});
 
     // 動畫要用「開打前」的位置，所以先把當下畫面的座標記下來
     const posMap = {};
@@ -246,6 +251,13 @@ export default function GuildBattle({
           }, at);
           break;
         }
+        // ── 怪物推進：讓玩家看見牠們一步步逼近 ──
+        case "monsterMove":
+          later(() => {
+            setMovedPos(m => ({ ...m, [lg.id]: gridPosAt(lg.lane, lg.to) }));
+            if (lg.to === 0) { sound.hazard(); vibrate(24); }   // 逼到貼身要有警訊
+          }, at);
+          break;
         case "dodge":
           later(() => addFloater({ topPct: PLAYER_POS.topPct - 8, leftPct: PLAYER_POS.leftPct }, "MISS", "#93c5fd"), at);
           break;
@@ -335,6 +347,7 @@ export default function GuildBattle({
     later(() => {
       setHitMap({});
       setDowned([]);
+      setMovedPos({});
       setState(next);
       onPersist?.(next);          // 每回合落地一次：關掉 App 再回來能從這一回合續戰
       setAnimating(false);
@@ -428,7 +441,7 @@ export default function GuildBattle({
         {/* 怪物 */}
         {targets.map((m, i) => {
           if (downed.includes(m.instanceId)) return null;   // 動畫中已倒下：不渲染，但保留它的索引位置
-          const p = gridPosOf(m, i, targets.length);
+          const p = movedPos[m.instanceId] || gridPosOf(m, i, targets.length);
           const isSel = target === m.instanceId;
           const shaking = shakeIds.includes(m.instanceId);
           return (

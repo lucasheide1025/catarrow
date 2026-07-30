@@ -324,9 +324,19 @@ export function processRound(state, shots = [], opts = {}) {
         if (alternate == null) nextDistance = mon.distance;
         else lane = alternate;
       }
+      const movedFrom = mon.distance;
+      const movedLaneFrom = mon.position?.lane ?? lane;
       mon.distance = nextDistance;
       if (mon.position) mon.position = { lane, depth: nextDistance };
       occupied.add(`${lane}:${nextDistance}`);
+      // 推進事件：舊版只改 distance 不留 log，UI 沒有錨點可以演出，怪物只會在回合
+      // 最後 setState 時一次跳位——使用者回報「怪物好像也沒有移動畫面」就是這個。
+      if (movedFrom !== nextDistance || movedLaneFrom !== lane) {
+        s.log.push({
+          type: "monsterMove", id: mon.instanceId,
+          from: movedFrom, to: nextDistance, lane, laneFrom: movedLaneFrom,
+        });
+      }
       if (mon.distance <= range) {
         if (rand() < d.dodgeChance) { s.log.push({ type: "dodge", from: mon.instanceId }); continue; }
         const effectiveMonsterAtk = Math.max(1, mon.atk + effectBonus(s, mon.instanceId, "atk"));

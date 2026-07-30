@@ -19,6 +19,7 @@ export function retargetPendingShots(shots = [], targetInstanceId) {
 // 使用者回報的「怪物攻擊、施放技能不順暢也不正常」就是這個。
 const DEFAULT_STEP_MS = {
   arrow: 430,
+  monsterMove: 520,   // 怪物推進：要看得到牠們逼近，不能瞬間跳位
   catAttack: 360,
   dodge: 300,
   monsterAttack: 560,

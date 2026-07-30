@@ -99,3 +99,20 @@ describe("回合演出時間軸", () => {
     expect(collectDownedIds([])).toEqual([]);
   });
 });
+
+describe("怪物推進演出", () => {
+  test("monsterMove 有自己的步長——沒有的話怪物會瞬間跳位", () => {
+    expect(GUILD_LOG_STEP_MS.monsterMove).toBeGreaterThan(0);
+  });
+
+  test("推進排在射擊之後、怪物攻擊之前（先走近才打得到）", () => {
+    const { timeline } = buildBattleTimeline([
+      { type: "arrow", target: "m1", dmg: 9 },
+      { type: "monsterMove", id: "m1", from: 3, to: 1, lane: 1 },
+      { type: "monsterAttack", from: "m1", dmg: 6, distance: 1 },
+    ]);
+    const [arrow, move, attack] = timeline;
+    expect(arrow.at).toBeLessThan(move.at);
+    expect(move.at).toBeLessThan(attack.at);
+  });
+});
