@@ -24,6 +24,7 @@ import CardArtImage from "./cards/CardArt";
 import EquipmentIcon from "../shared/EquipmentIcon";
 import { MATERIALS } from "../../lib/monsterMaterials";
 import { EXPANSION_MATERIALS } from "../../lib/monsterExpansionCatalog";
+import MemberFeatureArt from "./MemberFeatureArt";
 
 // 材料名稱查詢：涵蓋 legacy 家族素材（ghost_m4…）與擴充素材（mat_ghost_t4_normal_a…）。
 // ⚠️ MATERIALS 是「陣列」不是 map，舊碼寫 MATERIALS[id] 永遠 undefined → 顯示原始 ID。
@@ -172,24 +173,24 @@ export default function MemberProfile({
     {
       title: "📌 常用功能",
       links: [
-        { id:"learn",    icon:"📓", label:"學習紀錄",  desc:"查看教練回饋" },
-        { id:"history",  icon:"📊", label:"成績歷史", desc:"所有參賽紀錄" },
-        { id:"notifications", icon:"🔔", label:"訊息中心", desc:"公告與祝賀" },
+        { id:"learn", art:"learn", label:"學習紀錄",  desc:"查看教練回饋" },
+        { id:"history", art:"history", label:"成績歷史", desc:"所有參賽紀錄" },
+        { id:"notifications", art:"notifications", label:"訊息中心", desc:"公告與祝賀" },
       ],
     },
     {
       title: "🎖️ 檢定與申報",
       links: [
-        { id:"certexam", icon:"🎖️", label:"射手證考試", desc:"檢定・級別晉升" },
-        { id:"external", icon:"🏅", label:"對外比賽", desc:"申報外部成績" },
+        { id:"certexam", art:"certexam", label:"射手證考試", desc:"檢定・級別晉升" },
+        { id:"external", art:"external", label:"對外比賽", desc:"申報外部成績" },
       ],
     },
     {
       title: "✉️ 溝通與設定",
       links: [
-        { id:"msgs",       icon:"✉️", label:"留言教練", desc:"傳送訊息給教練" },
-        { id:"bowsetting", icon:"🏹", label:"我的弓具", desc:"弓具・防具・配件設定" },
-        { id:"guide",      icon:"📘", label:"使用說明", desc:"系統操作指引" },
+        { id:"msgs",       art:"msgs", label:"留言教練", desc:"傳送訊息給教練" },
+        { id:"bowsetting", art:"bowsetting", label:"我的弓具", desc:"弓具・防具・配件設定" },
+        { id:"guide",      art:"guide", label:"使用說明", desc:"系統操作指引" },
       ],
     },
   ];
@@ -826,7 +827,7 @@ export default function MemberProfile({
   <Card className="p-5 border border-white/5 animate-fade-in-up delay-150" style={{ background:"rgba(15,23,42,0.64)", backdropFilter:"blur(12px)" }}>
     <div className="flex items-center justify-between">
       <ST>⚒️ 當前裝備專精技能</ST>
-      <button onClick={() => onPageChange("equipment")} className="text-[10px] font-bold text-violet-300 border border-violet-500/30 px-2 py-0.5 rounded-lg active:scale-95">
+      <button onClick={() => onPageChange("specialization-runes")} className="text-[10px] font-bold text-violet-300 border border-violet-500/30 px-2 py-0.5 rounded-lg active:scale-95">
         管理專精頁面 ›
       </button>
     </div>
@@ -1037,9 +1038,9 @@ export default function MemberProfile({
       const catTotal = CAT_CARDS.length;
 
       const cells = [
-        { icon: "🗺️", label: "地下城圖鑑", owned: dungeonOwned, total: dungeonTotal, color: "#a78bfa", page: "dungeon" },
-        { icon: "🎖️", label: "成就圖鑑", owned: achOwned, total: achTotal, color: "#fbbf24", page: "dex" },
-        { icon: "🐱", label: "貓貓卡片圖鑑", owned: catOwned, total: catTotal, color: "#f472b6", page: "cats" }
+        { art: "adventure", label: "地下城圖鑑", owned: dungeonOwned, total: dungeonTotal, color: "#a78bfa", page: "dungeon" },
+        { art: "certexam", label: "成就圖鑑", owned: achOwned, total: achTotal, color: "#fbbf24", page: "dex" },
+        { art: "collection", label: "貓貓卡片圖鑑", owned: catOwned, total: catTotal, color: "#f472b6", page: "cats" }
       ];
 
       return (
@@ -1047,7 +1048,7 @@ export default function MemberProfile({
           {cells.map(c => (
             <button type="button" key={c.label} onClick={() => onPageChange(c.page)}
               className="flex flex-col items-center bg-slate-950/40 border border-white/5 hover:border-violet-500/25 rounded-2xl p-3 active:scale-95 transition-all text-center">
-              <span className="text-xl mb-1">{c.icon}</span>
+              <MemberFeatureArt name={c.art} size={43} />
               <span className="text-xs font-black" style={{ color: c.color }}>
                 {c.owned}<span className="text-[10px] text-slate-500 font-normal">/{c.total}</span>
               </span>
@@ -1068,7 +1069,7 @@ export default function MemberProfile({
           <button key={l.id} onClick={() => onPageChange(l.id)}
             className="rounded-2xl p-3 text-center active:scale-95 border border-white/10 hover:border-violet-500/25 transition-all shadow-md"
             style={{ background:"rgba(15,23,42,0.55)", backdropFilter:"blur(8px)" }}>
-            <div className="text-2xl mb-1">{l.icon}</div>
+            <MemberFeatureArt name={l.art} size={48} />
             <div className="text-white font-bold text-xs">{l.label}</div>
             <div className="text-white/50 text-[10px] mt-0.5">{l.desc}</div>
           </button>

@@ -9,7 +9,8 @@
 //   本檔亦不得被主線戰鬥（MonsterBattle/dungeon/party/worldBoss）引用。
 // ─────────────────────────────────────────────────────────────
 import { archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
-import { GUILD_SLOTS, resolveEquipStats } from "../data/guildEquipCatalog";
+import { GUILD_SLOTS } from "../data/guildEquipCatalog";
+import { resolveEquipmentV2 } from "./guildEquipmentV2";
 
 // 六維基底（提案值，實作可調）
 export const GUILD_BASE_STATS = Object.freeze({ hp: 100, atk: 10, agi: 10, def: 5, vit: 10, luk: 5 });
@@ -21,7 +22,7 @@ export function sumGuildEquipStats(guildEquip = {}) {
   for (const slot of GUILD_SLOTS) {
     const it = guildEquip[slot];
     if (!it || !it.archetypeId) continue;
-    const s = resolveEquipStats(it.archetypeId, it.grade, it);   // 含 +N 強化與詞綴
+    const s = resolveEquipmentV2(it.archetypeId, it.grade, it).stats;
     for (const k of STAT_KEYS) total[k] += s[k] || 0;
   }
   return total;

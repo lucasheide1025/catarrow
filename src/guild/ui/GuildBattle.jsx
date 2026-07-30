@@ -12,16 +12,18 @@
 // ─────────────────────────────────────────────────────────────
 import { useEffect, useRef, useState } from "react";
 import { createExpeditionState, processRound, aliveTargets } from "../domain/expeditionFlow";
+import { attackRangeLabel, combatRoleLabel, combatStatLabel, counterConditionLabel, targetPolicyLabel } from "../domain/guildCombatLabels";
 import { vibrate } from "../../lib/sound";
 import { guildBattleSound as sound } from "./guildBattleSound";
 import {
   GUILD_TARGET_FACE_OPTIONS,
   guildScoreButtons,
-  initialGuildTargetFace,
-  rememberGuildTargetFace,
 } from "./guildTargetFace";
-import { MonsterArt, CatArt, HeroArt, fieldBg, bgLayer } from "./GuildArt";
-const MAX_DIST = 6;
+import { MonsterArt, CatArt, fieldBg, bgLayer } from "./GuildArt";
+import { GuildPlayerAppearance } from "./GuildItemArt";
+import GuildDefenseLine from "./GuildDefenseLine";
+import { guildBattleFinalizeDelay, retargetPendingShots } from "../domain/guildBattlePresentation";
+const MAX_DIST = 10;
 
 // 演出節奏（毫秒）——調快慢改這裡就好。
 // 2026-07-25 作者回饋「太快了」→ 整體放慢約 1.8 倍；箭要看得到飛行、貓要看得到撲上去。
@@ -77,17 +79,43 @@ function posOf(index, len, distance) {
     scale: 0.8 + near * 0.6,                      // 遠 0.8 → 近 1.4
   };
 }
+function gridPosOf(monster, index, len) {
+  if (!monster.position) return posOf(index, len, monster.distance);
+  return {
+    topPct: 12 + (1 - Math.min(MAX_DIST, monster.position.depth) / MAX_DIST) * 46,
+    leftPct: 25 + monster.position.lane * 25,
+    scale: 0.8 + (1 - Math.min(MAX_DIST, monster.position.depth) / MAX_DIST) * 0.6,
+  };
+}
 const PLAYER_POS = { topPct: 88, leftPct: 50 };
 
 // resumeState：斷線/關頁後回來續戰用（由上層從 localStorage 取出）。
 // onPersist：每回合結束把最新狀態往上報，上層負責存檔——這樣「防斷線」的責任在一個地方，
 //            戰鬥畫面本身不用知道存哪裡。
-export default function GuildBattle({ expedition, guildStats, supplies, cats = [], arrowsPerRound = 3, onEnd, onArrowsShot, resumeState = null, onPersist }) {
-  const [state, setState] = useState(() => resumeState || createExpeditionState(expedition, guildStats, supplies, cats, { arrowsPerRound }));
+export default function GuildBattle({
+  expedition,
+  guildStats,
+  supplies,
+  cats = [],
+  arrowsPerRound = 3,
+  appearanceId = "tabby_ranger",
+  targetFormat: lockedTargetFormat = "full_110",
+  onEnd,
+  onWaveClear,
+  onTemporaryLeave,
+  onArrowsShot,
+  resumeState = null,
+  onPersist,
+  pauseBetweenWaves = false,
+  missionMode = "assault",
+}) {
+  const [state, setState] = useState(() => resumeState || createExpeditionState(expedition, guildStats, supplies, cats, {
+    arrowsPerRound, targetFormat: lockedTargetFormat, combatV2: true, missionMode,
+  }));
   const ARROWS_PER_ROUND = state.arrowsPerRound || arrowsPerRound;
   const [target, setTarget] = useState(null);
   const [shots, setShots] = useState([]);
-  const [targetFormat, setTargetFormat] = useState(initialGuildTargetFace);
+  const targetFormat = state.targetFormat || lockedTargetFormat;
   const scoreButtons = guildScoreButtons(targetFormat);
   const [flash, setFlash] = useState(null);        // 回合摘要橫幅
   const [animating, setAnimating] = useState(false);
@@ -99,6 +127,8 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
   const [pouncing, setPouncing] = useState([]);    // 出爪的貓 id
   const [hurt, setHurt] = useState(false);         // 玩家受擊紅閃
   const [bowPull, setBowPull] = useState(false);   // 拉弓
+  const [showTactics, setShowTactics] = useState(false);
+  const [eventGate, setEventGate] = useState(() => resumeState?.eventGate || null);
   const timersRef = useRef([]);
   const seqRef = useRef(0);
 
@@ -120,7 +150,13 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
     later(() => setShakeIds(s => s.filter(x => x !== instanceId)), 420);
   };
 
-  const selectTarget = id => { if (!animating) { setTarget(id); sound.tap(); } };
+  const selectTarget = id => {
+    if (!animating) {
+      setTarget(id);
+      setShots(current => retargetPendingShots(current, id));
+      sound.tap();
+    }
+  };
 
   const shoot = scoreButton => {
     if (animating || !target || shots.length >= ARROWS_PER_ROUND || state.status !== "fighting") return;
@@ -133,8 +169,8 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
 
   // ── 一回合的演出時間軸 ──
   const fireRound = () => {
-    if (animating || state.status !== "fighting") return;
-    const next = processRound(state, shots, {});
+    if (animating || eventGate || state.status !== "fighting") return;
+    const next = processRound(state, shots, { pauseBetweenWaves });
     // 射出去的箭要計進今日/終身箭數（公會遠征也是真的在射箭）
     if (shots.length) onArrowsShot?.(shots.length);
     setShots([]);
@@ -144,7 +180,7 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
 
     // 動畫要用「開打前」的位置，所以先把當下畫面的座標記下來
     const posMap = {};
-    targets.forEach((m, i) => { posMap[m.instanceId] = { ...posOf(i, targets.length, m.distance), icon: m.icon, monsterId: m.monsterId }; });
+    targets.forEach((m, i) => { posMap[m.instanceId] = { ...gridPosOf(m, i, targets.length), icon: m.icon, monsterId: m.monsterId }; });
     const posOrCenter = id => posMap[id] || { topPct: 40, leftPct: 50, scale: 1, icon: "❓" };
 
     let t = 0;
@@ -155,6 +191,8 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
     const starve = next.log.find(l => l.type === "starve");
     const waveClear = next.log.find(l => l.type === "waveClear");
     const travelEvent = next.log.find(l => l.type === "travelEvent");
+    const villagerAssist = next.log.find(l => l.type === "villagerAssist");
+    const skillEvents = next.log.filter(l => ["skillResolve", "counterSuccess", "effectApply", "effectReplace", "effectRemove"].includes(l.type));
 
     // ① 箭矢逐發飛出 → 命中 → 傷害數字 → 擊殺殘影
     for (const lg of arrowLogs) {
@@ -241,13 +279,36 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
       }, at);
       t = at + T.eventStep;
     }
+    if (villagerAssist) {
+      const at = t;
+      later(() => {
+        sound.waveClear();
+        setFlash(`🏘️ ${villagerAssist.label}：${villagerAssist.summary || "協助完成"}`);
+      }, at);
+      t = at + T.eventStep + 500;
+    }
+    for (const event of skillEvents) {
+      const at = t;
+      later(() => {
+        if (event.type === "counterSuccess") setFlash(`✅ 反制成功：${event.skill}`);
+        else if (event.type === "skillResolve") setFlash(`⚠️ ${event.skill} 發動${event.damage ? `，造成 ${event.damage} 傷害` : ""}`);
+        else if (event.type === "effectRemove") setFlash(`狀態解除：${combatStatLabel(event.effect.stat)}`);
+        else setFlash(`狀態變化：${combatStatLabel(event.effect?.stat)} ${event.effect?.value > 0 ? "+" : ""}${event.effect?.value || ""}`);
+      }, at);
+      t = at + 650;
+    }
 
-    // ⑥ 收尾：套用真實狀態、清掉暫時的視覺傷害，再報結果
+    const visualEnd = t + T.hitLinger;
+    if (next.status === "won") {
+      later(() => setFlash("✅ 已確認全部敵人陣亡"), visualEnd);
+    }
+    // ⑥ 收尾：勝利時先讓玩家看完死亡動畫與全滅確認，再套用空場狀態。
     later(() => {
       setHitMap({});
       setState(next);
       onPersist?.(next);          // 每回合落地一次：關掉 App 再回來能從這一回合續戰
       setAnimating(false);
+      if (villagerAssist) setEventGate(villagerAssist);
       const kills = next.log.filter(l => (l.type === "arrow" || l.type === "catAttack") && l.killed).length;
       if (next.status === "won") { setFlash("🎉 討伐成功，凱旋歸來！"); sound.victory(); }
       else if (next.status === "lost") { setFlash(`💀 ${next.lostReason}`); sound.defeat(); }
@@ -255,11 +316,15 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
         if (waveClear && !travelEvent) { setFlash(`✅ 清空一波！第 ${waveClear.nextWave + 1} 波來了`); sound.waveClear(); }
         else setFlash(`本回合擊殺 ${kills} 隻${catLogs.length ? "（貓貓助攻）" : ""}${monHits.length ? "，你受到攻擊！" : ""}`);
       }
-      if (next.status !== "fighting") later(() => onEnd && onEnd(next), T.endPause + 1200);
-    }, t + T.hitLinger);
+      if (next.status === "waveCleared") {
+        later(() => onWaveClear?.(next), T.endPause + 500);
+      } else if (next.status !== "fighting") {
+        later(() => onEnd?.(next), T.endPause + 1200);
+      }
+    }, guildBattleFinalizeDelay(next.status, visualEnd));
   };
 
-  const canAct = state.status === "fighting" && !animating;
+  const canAct = state.status === "fighting" && !animating && !eventGate;
 
   return (
     <div style={{ minHeight: "100dvh", display: "flex", flexDirection: "column", background: "linear-gradient(180deg,#0a1a0a,#05100a)", color: "#e2e8f0" }}>
@@ -267,29 +332,72 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
 
       {/* 頂列：回合 + 補給 */}
       <div style={{ padding: "8px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(0,0,0,.35)" }}>
-        <div style={{ fontWeight: 900, fontSize: 13 }}>第 {state.round} 回合 · 第 {state.waveIndex + 1}/{state.expedition.totalWaves} 波</div>
-        <div style={{ fontSize: 11, display: "flex", gap: 10 }}>
+        <div style={{ fontWeight: 900, fontSize: 13 }}>第 {state.round} 回合 · {
+          missionMode === "assault"
+            ? `第 ${state.waveIndex + 1}/${state.expedition.totalWaves} 波`
+            : missionMode === "defense"
+              ? "據點防守中"
+              : state.waveIndex + 1 >= state.expedition.totalWaves ? "最終遠征目標" : "隨機戰鬥事件"
+        }</div>
+        <div style={{ fontSize: 11, display: "flex", gap: 8, alignItems: "center" }}>
           <span style={{ color: state.supplies.food <= 1 ? "#f87171" : undefined }}>🍖 {state.supplies.food}</span>
           <span style={{ color: state.supplies.water <= 1 ? "#f87171" : undefined }}>💧 {state.supplies.water}</span>
+          <button
+            type="button"
+            disabled={animating}
+            title={shots.length ? "尚未發動的箭不會計入回合" : "保存進度並回到公會"}
+            onClick={() => onTemporaryLeave?.(state)}
+            style={{ padding: "4px 8px", borderRadius: 7, border: "1px solid rgba(255,255,255,.12)", background: "#334155", color: "#e2e8f0", fontSize: 10, fontWeight: 800, cursor: animating ? "not-allowed" : "pointer", opacity: animating ? .5 : 1 }}
+          >
+            暫時離開
+          </button>
         </div>
       </div>
       <div style={{ padding: "6px 12px", display: "flex", alignItems: "center", gap: 8, background: "rgba(0,0,0,.25)" }}>
         <span style={{ fontSize: 11, fontWeight: 800, color: "#fca5a5", minWidth: 64 }}>❤️ {state.hp}/{state.maxHp}</span>
         <div style={{ flex: 1 }}><Bar cur={state.hp} max={state.maxHp} color="#22c55e" h={7} /></div>
       </div>
+      {Object.values(state.effects || {}).filter(effect => effect.targetId === "player").length > 0 && (
+        <div style={{ padding: "4px 12px", display: "flex", gap: 5, background: "rgba(15,23,42,.92)" }}>
+          {Object.values(state.effects).filter(effect => effect.targetId === "player").map((effect, index) => (
+            <span key={`${effect.stat}-${index}`} style={{ padding: "2px 6px", borderRadius: 999, fontSize: 9.5,
+              background: effect.value > 0 ? "rgba(34,197,94,.22)" : "rgba(239,68,68,.22)",
+              color: effect.value > 0 ? "#86efac" : "#fca5a5" }}>
+              {effect.value > 0 ? "▲" : "▼"} {combatStatLabel(effect.stat)} {effect.value > 0 ? "+" : ""}{effect.value}・剩餘 {effect.duration} 回合
+            </span>
+          ))}
+        </div>
+      )}
+      {missionMode === "defense" && state.defense && (
+        <div style={{ padding: "6px 12px", display: "flex", justifyContent: "space-between", gap: 10, background: "rgba(69,10,10,.72)", fontSize: 10 }}>
+          <b>防守時間 {state.defense.clock}/{state.defense.duration}</b>
+          <span style={{ color: "#cbd5e1" }}>視距外敵軍 {state.defense.queue.length}</span>
+        </div>
+      )}
 
       {/* 2.5D 戰場 */}
       <div style={{ position: "relative", flex: 1, minHeight: 360, overflow: "hidden",
         ...bgLayer(fieldBg(state.expedition?.family || state.monsters?.[0]?.family), { overlay: "rgba(6,10,6,.42)" }) }}>
         {/* 下緣壓暗，讓玩家/貓/UI 跟地面分層 */}
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg,rgba(0,0,0,.15) 0%,transparent 35%,rgba(0,0,0,.65) 100%)", pointerEvents: "none" }} />
+        {state.combatVersion === 2 && (
+          <div style={{ position: "absolute", top: "9%", left: "12.5%", right: "12.5%", height: "52%", display: "grid",
+            gridTemplateColumns: "repeat(3,1fr)", gridTemplateRows: "repeat(6,1fr)", pointerEvents: "none", opacity: .22 }}>
+            {Array.from({ length: 18 }, (_, index) => <div key={index} style={{ border: "1px solid #cbd5e1" }} />)}
+          </div>
+        )}
+        <button type="button" onClick={() => setShowTactics(true)} disabled={animating}
+          style={{ position: "absolute", top: 8, right: 8, zIndex: 97, padding: "6px 9px", borderRadius: 8,
+            border: "1px solid rgba(255,255,255,.2)", background: "rgba(15,23,42,.9)", color: "#e2e8f0", fontSize: 10, fontWeight: 900 }}>
+          📋 怪物情報
+        </button>
 
         {/* 玩家受擊紅閃 */}
         {hurt && <div style={{ position: "absolute", inset: 0, background: "radial-gradient(circle,transparent 30%,#ef4444 130%)", animation: "gb-hurt .52s ease-out", pointerEvents: "none", zIndex: 90 }} />}
 
         {/* 怪物 */}
         {targets.map((m, i) => {
-          const p = posOf(i, targets.length, m.distance);
+          const p = gridPosOf(m, i, targets.length);
           const isSel = target === m.instanceId;
           const shaking = shakeIds.includes(m.instanceId);
           return (
@@ -304,8 +412,19 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
               <div style={{ fontSize: 9, fontWeight: 800, color: "#fecaca", whiteSpace: "nowrap", textShadow: "0 1px 3px #000" }}>{m.name}</div>
               <div style={{ width: 54, margin: "1px auto" }}><Bar cur={visualHp(m)} max={m.maxHp} /></div>
               <div style={{ fontSize: 9, fontWeight: 900, color: m.distance <= 1 ? "#ef4444" : "#fcd34d" }}>
-                {m.distance <= 0 ? "⚔️攻擊!" : `距離 ${m.distance}`}
+                {m.distance <= (m.attackRange || 0) ? "⚔️射程內" : `距離 ${m.distance} 公尺`}
               </div>
+              {m.combatRole && <div style={{ fontSize: 8.5, color: "#bfdbfe", fontWeight: 800 }}>
+                {combatRoleLabel(m.combatRole)}・移動 {m.moveSpeed}・射程 {attackRangeLabel(m.attackRange)}
+              </div>}
+              {m.intent && <div style={{ marginTop: 2, padding: "2px 5px", borderRadius: 999, background: "#991b1b", color: "#fee2e2", fontSize: 8.5, fontWeight: 900 }}>
+                ⚠️ {m.intent.name}<br />破解：{counterConditionLabel(m.intent.counter, targetFormat)}
+              </div>}
+              {Object.values(state.effects || {}).filter(effect => effect.targetId === m.instanceId).map((effect, index) => (
+                <div key={`${effect.stat}-${index}`} style={{ fontSize: 8, color: effect.value > 0 ? "#86efac" : "#fca5a5" }}>
+                  {effect.value > 0 ? "▲" : "▼"}{combatStatLabel(effect.stat)}・剩餘 {effect.duration} 回合
+                </div>
+              ))}
               {isSel && <div style={{ fontSize: 10, color: "#f59e0b", fontWeight: 900 }}>▲鎖定</div>}
             </button>
           );
@@ -336,9 +455,11 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
           </div>
         ))}
 
+        {missionMode === "defense" && <GuildDefenseLine defense={state.defense} />}
+
         {/* 玩家 + 出戰的真貓 */}
         <div style={{ position: "absolute", bottom: 6, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 14, alignItems: "flex-end", zIndex: 70 }}>
-          <HeroArt drawing={bowPull} size={72}
+          <GuildPlayerAppearance appearanceId={appearanceId} size={72}
             style={{ animation: bowPull ? "gb-bowpull .32s ease-out" : "none", filter: "drop-shadow(0 4px 8px rgba(0,0,0,.65))" }} />
           {(state.cats || []).map(c => (
             <div key={c.id} style={{ textAlign: "center", animation: pouncing.includes(c.id) ? "gb-pounce .52s ease-out" : "none" }}>
@@ -355,20 +476,80 @@ export default function GuildBattle({ expedition, guildStats, supplies, cats = [
             {flash}
           </div>
         )}
+        {showTactics && (
+          <div role="dialog" aria-modal="true" aria-label="怪物情報"
+            style={{ position: "absolute", inset: 0, zIndex: 110, background: "rgba(2,6,23,.88)", padding: 14, overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <b style={{ color: "#fbbf24" }}>📋 戰場怪物情報</b>
+              <button type="button" onClick={() => setShowTactics(false)}
+                style={{ padding: "5px 10px", borderRadius: 8, border: "none", background: "#334155", color: "#fff" }}>關閉</button>
+            </div>
+            <div style={{ display: "grid", gap: 8 }}>
+              {targets.slice().sort((a, b) => a.distance - b.distance).map(monster => (
+                <button key={monster.instanceId} type="button" onClick={() => { selectTarget(monster.instanceId); setShowTactics(false); }}
+                  style={{ padding: 10, borderRadius: 10, border: `1px solid ${target === monster.instanceId ? "#f59e0b" : "rgba(255,255,255,.12)"}`,
+                    background: "#111827", color: "#e2e8f0", textAlign: "left" }}>
+                  <div style={{ fontWeight: 900 }}>{monster.icon} {monster.name}</div>
+                  <div style={{ marginTop: 4, fontSize: 10.5, color: "#cbd5e1" }}>
+                    類型：{combatRoleLabel(monster.combatRole)}　路線 {(monster.position?.lane ?? 0) + 1}　距離 {monster.distance} 公尺<br />
+                    移動 {monster.moveSpeed || 1} 格　攻擊射程 {attackRangeLabel(monster.attackRange)}　目標：{targetPolicyLabel(monster.targetPolicy)}<br />
+                    生命 {monster.hp}/{monster.maxHp}　攻擊 {monster.atk}　防禦 {monster.def}
+                  </div>
+                  {monster.intent && <div style={{ marginTop: 5, padding: 7, borderRadius: 8, background: "rgba(127,29,29,.45)", color: "#fecaca", fontSize: 10 }}>
+                    <b>準備發動：{monster.intent.name}</b><br />
+                    目標：{targetPolicyLabel(monster.intent.target)}・結果：{monster.intent.consequence}<br />
+                    破解：{counterConditionLabel(monster.intent.counter, targetFormat)}
+                  </div>}
+                  <div style={{ marginTop: 5, color: monster.distance <= (monster.attackRange || 0) ? "#fca5a5" : "#93c5fd", fontSize: 10, fontWeight: 800 }}>
+                    {monster.distance <= (monster.attackRange || 0) ? "⚠️ 下一次行動可攻擊" : `➡️ 預計前進 ${monster.moveSpeed || 1} 格`}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {eventGate && (
+          <div role="dialog" aria-modal="true" style={{ position: "absolute", inset: 0, zIndex: 120, background: "rgba(2,6,23,.9)",
+            display: "grid", placeItems: "center", padding: 20 }}>
+            <div style={{ maxWidth: 360, padding: 18, borderRadius: 16, background: "#172033", border: "1px solid #fbbf24", textAlign: "center" }}>
+              <div style={{ fontSize: 30 }}>🏘️</div>
+              <div style={{ marginTop: 6, color: "#fbbf24", fontWeight: 900, fontSize: 17 }}>{eventGate.label}</div>
+              <div style={{ marginTop: 7, color: "#cbd5e1", fontSize: 11, lineHeight: 1.6 }}>
+                {eventGate.summary || "村民已完成這次協助。"}
+              </div>
+              {eventGate.targets?.length > 0 && (
+                <div style={{ marginTop: 10, display: "grid", gap: 6, textAlign: "left" }}>
+                  {eventGate.targets.map(result => (
+                    <div key={result.instanceId} style={{ padding: "7px 9px", borderRadius: 8, background: "rgba(15,23,42,.8)", fontSize: 11 }}>
+                      <b>{result.name}</b>
+                      <span style={{ float: "right", color: result.defeated ? "#fca5a5" : "#fde68a", fontWeight: 900 }}>{result.defeated ? "擊倒" : `-${result.damage}`}</span>
+                      <div style={{ marginTop: 3, color: "#94a3b8" }}>生命 {result.hpBefore} → {result.hpAfter}{result.pushed ? `・擊退 ${result.pushed} 格` : ""}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{ marginTop: 9, color: "#94a3b8", fontSize: 10.5 }}>協助結束後村民已離場；確認前戰鬥保持暫停。</div>
+              <button type="button" onClick={() => {
+                const cleared = { ...state, eventGate: null };
+                setState(cleared);
+                setEventGate(null);
+                onPersist?.(cleared);
+              }}
+                style={{ marginTop: 14, width: "100%", padding: 10, borderRadius: 10, border: "none", background: "#b45309", color: "#fff", fontWeight: 900 }}>
+                確認結果・繼續防守
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 操作區 */}
       <div style={{ padding: "10px 12px", background: "rgba(0,0,0,.5)", borderTop: "1px solid rgba(255,255,255,.1)" }}>
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", alignItems: "center", gap: 8, marginBottom: 8 }}>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 9, color: "#64748b", marginBottom: 2 }}>本回合靶紙</div>
-            <select value={targetFormat} disabled={animating} onChange={event => {
-              const next = event.target.value;
-              setTargetFormat(next);
-              setShots([]);
-              rememberGuildTargetFace(next);
-              sound.tap();
-            }} style={{ width: "100%", minHeight: 36, borderRadius: 9, border: "1px solid rgba(255,255,255,.15)", background: "#1e293b", color: "#f8fafc", padding: "0 9px", fontWeight: 800 }}>
+            <div style={{ fontSize: 9, color: "#64748b", marginBottom: 2 }}>本次遠征鎖定靶紙</div>
+            <select value={targetFormat} disabled
+              style={{ width: "100%", minHeight: 36, borderRadius: 9, border: "1px solid rgba(255,255,255,.15)", background: "#1e293b", color: "#f8fafc", padding: "0 9px", fontWeight: 800, opacity: .82 }}>
               {GUILD_TARGET_FACE_OPTIONS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
             </select>
           </div>

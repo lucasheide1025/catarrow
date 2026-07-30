@@ -12,13 +12,14 @@ export default function AdminCostControlBanner() {
   const { policy, recoverTo } = useCostControl();
   const [busy, setBusy] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(isCostAlertSoundEnabled);
+  const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
     const severityRose = observeCostAlertLevel(policy.level);
     if (severityRose && soundEnabled) playCostAlertTone().catch(() => {});
   }, [policy.level, soundEnabled]);
 
-  if (policy.level === "normal") return null;
+  if (dismissed || policy.level === "normal") return null;
   const recoveryLevel = nextRecoveryLevel(policy.level);
 
   async function enableOrTestSound() {
@@ -50,13 +51,16 @@ export default function AdminCostControlBanner() {
         <strong>Firestore 成本{LABELS[policy.level] || policy.level}模式</strong>
         <span style={{ marginLeft:8, fontSize:12 }}>{policy.observedPercent || 0}% · {policy.reason || "成本門檻已觸發"}</span>
       </div>
-      <div style={{ display:"flex", gap:8, flexWrap:"wrap", justifyContent:"flex-end" }}>
+      <div style={{ display:"flex", gap:8, flexWrap:"wrap", justifyContent:"flex-end", alignItems:"center" }}>
         <button type="button" onClick={enableOrTestSound} aria-pressed={soundEnabled} style={{ border:"1px solid #fff8", borderRadius:8, padding:"6px 10px", fontWeight:800, cursor:"pointer", background:"transparent", color:"white" }}>
-          {soundEnabled ? "測試提示音" : "啟用並測試提示音"}
+          {soundEnabled ? "測試提示音" : "啟用與測試提示音"}
         </button>
         {soundEnabled && <button type="button" onClick={disableSound} style={{ border:"1px solid #fff8", borderRadius:8, padding:"6px 10px", fontWeight:800, cursor:"pointer", background:"transparent", color:"white" }}>關閉提示音</button>}
         <button type="button" disabled={busy} onClick={recover} style={{ border:0, borderRadius:8, padding:"6px 10px", fontWeight:800, cursor:"pointer" }}>
           {busy ? "處理中…" : `逐級恢復至${LABELS[recoveryLevel] || recoveryLevel}`}
+        </button>
+        <button type="button" onClick={() => setDismissed(true)} title="關閉此提醒橫幅" style={{ border:0, borderRadius:8, padding:"6px 10px", fontWeight:800, cursor:"pointer", background:"rgba(0,0,0,0.3)", color:"white" }}>
+          ✕ 關閉提醒
         </button>
       </div>
     </div>

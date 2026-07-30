@@ -9,6 +9,7 @@ import {
   setDisplayVillageLv,
 } from "../../lib/db";
 import { CAT_CARD_MAP } from "../../lib/catCardData";
+import { albumXpFromCards } from "../../lib/catVillageAlbums";
 import { subscribeMyCats, upgradeCatEquip, equipCat } from "../../lib/catDb";
 import {
   CATS, getBondLevel,
@@ -26,6 +27,8 @@ import {
   getWorkerCatMultiplier, getStageMultiplier, getMaxSlots, normalizeBuildingAllocation, getVillageLastCollectedMs, MAX_COLLECT_HOURS,
 } from "../../lib/villageData";
 import GachaMachine from "./GachaMachine";
+import CatVillageNavArt from "./CatVillageNavArt";
+import { buildVillageCollectionResult } from "../../lib/villageCollectionResult";
 import CouncilHall  from "./CouncilHall";
 import VillageGoalBanner from "./VillageGoalBanner";
 import { autoSpawnVillageGoal } from "../../lib/villageGoalDb";
@@ -431,7 +434,7 @@ function LevelBadge({ lv, actualLv, onClick }) {
 }
 
 // ── 資源採集列 ───────────────────────────────────────────────
-function ResourceBar({ resources, pending, onCollect, collecting, nextCollectSec, elapsedSec, collectedResult }) {
+function ResourceBar({ resources, pending, onCollect, collecting, nextCollectSec, elapsedSec, collectedResult, onDismissCollected }) {
   const arrowdew = (resources?.arrowdew || 0);
   const hasPending = Object.values(pending || {}).some(v => v > 0);
   const pendingArrow = pending?.arrowdew || 0;
@@ -449,19 +452,10 @@ function ResourceBar({ resources, pending, onCollect, collecting, nextCollectSec
     return h > 0 ? `${h} 小時 ${m} 分` : `${m} 分`;
   }, [elapsedSec]);
 
-  const COLLECT_EMOJI = { ore:'⛏️', melon:'🌿', fish:'🐟', meat:'🥩', driedfish:'🐠', can:'🥫', potion:'🍵', fur:'🐾', archer:'🏹', arrowdew:'💧', gachaCoins:'🎰', gachaToken:'🎰' };
-
-  const collectedItems = useMemo(() => {
-    if (!collectedResult) return [];
-    return Object.entries(collectedResult).map(([key, amt]) => {
-      if (key === 'gachaCoins') return { key, icon:'🎰', name: '扭蛋幣', tier: null, amt };
-      if (key.includes('_t')) {
-        const [res, t] = key.split('_t');
-        return { key, icon: COLLECT_EMOJI[res] || '📦', name: RESOURCE_NAMES[res] || res, tier: `T${t}`, amt };
-      }
-      return { key, icon: COLLECT_EMOJI[key] || '📦', name: RESOURCE_NAMES[key] || key, tier: null, amt };
-    });
-  }, [collectedResult]);
+  const collectionSummary = useMemo(
+    () => buildVillageCollectionResult(collectedResult || {}),
+    [collectedResult],
+  );
 
   const pendingItems = useMemo(() => Object.entries(pending || {})
     .filter(([, amount]) => Number(amount) > 0)
@@ -556,31 +550,64 @@ function ResourceBar({ resources, pending, onCollect, collecting, nextCollectSec
           )) : <span className="text-[10px]" style={{ color:C.muted }}>材料正在累積中…</span>}
         </div>
       </div>
-      {collectedItems.length > 0 && (
-        <div style={{
-          position: "fixed", bottom: 80, left: "50%", transform: "translateX(-50%)",
-          background: "rgba(50,28,10,0.93)", borderRadius: 18, padding: "12px 18px",
-          color: "white", zIndex: 9999, maxWidth: "92vw", minWidth: 200,
-          boxShadow: "0 6px 24px rgba(0,0,0,0.4)",
-        }}>
-          <div className="text-[11px] font-black mb-2 text-center" style={{ color: "#FFD580", letterSpacing: 1 }}>
-            ✦ 採集成功！
-          </div>
-          <div className="flex flex-wrap justify-center gap-2">
-            {collectedItems.map(({ key, icon, name, tier, amt }) => (
-              <div key={key} style={{
-                background: "rgba(255,255,255,0.12)", borderRadius: 12,
-                padding: "6px 12px", display: "flex", alignItems: "center", gap: 6,
-              }}>
-                <span style={{ fontSize: 20 }}>{icon}</span>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 900, color: "#fff", lineHeight: 1.2 }}>
-                    {name}{tier && <span style={{ fontSize: 10, color: "#FFD580", marginLeft: 3 }}>{tier}</span>}
-                  </div>
-                  <div style={{ fontSize: 14, fontWeight: 900, color: "#7CBF70" }}>+{amt}</div>
-                </div>
+      {collectionSummary.totalKinds > 0 && (
+        <div className="fixed inset-0 z-[9999] overflow-y-auto bg-slate-950/95 px-4 py-6 text-white backdrop-blur"
+          role="dialog" aria-modal="true" aria-labelledby="village-collection-title">
+          <style>{`
+            @keyframes villageRewardIn {
+              from { opacity:0; transform:translateY(14px) scale(.96); }
+              to { opacity:1; transform:translateY(0) scale(1); }
+            }
+            .village-reward-item { animation:villageRewardIn .36s both; }
+            @media (prefers-reduced-motion: reduce) {
+              .village-reward-item { animation:none; }
+            }
+          `}</style>
+          <div className="mx-auto flex min-h-full w-full max-w-lg flex-col">
+            <header className="relative overflow-hidden rounded-3xl border border-amber-200/25 bg-gradient-to-br from-amber-700 via-orange-900 to-slate-950 p-5 text-center shadow-2xl">
+              <div className="absolute inset-0 opacity-20" style={{ backgroundImage:"url(/ui/cat-village/explore-map.png)", backgroundSize:"cover", backgroundPosition:"center" }} />
+              <div className="relative">
+                <div className="text-5xl" aria-hidden="true">🧺</div>
+                <h2 id="village-collection-title" className="mt-2 text-2xl font-black text-amber-100">採集完成！</h2>
+                <p className="mt-1 text-xs font-bold text-amber-200/80">
+                  帶回 {collectionSummary.totalKinds} 種資源・所有獎勵已存入村莊倉庫
+                </p>
               </div>
-            ))}
+            </header>
+
+            <div className="mt-4 space-y-5">
+              {collectionSummary.sections.map(section => (
+                <section key={section.id}>
+                  <div className="mb-2 flex items-center gap-2 px-1">
+                    <span className="text-xl" aria-hidden="true">{section.icon}</span>
+                    <h3 className="text-sm font-black text-slate-200">{section.label}</h3>
+                    <span className="ml-auto rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-black text-slate-400">{section.items.length} 項</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {section.items.map((item, index) => (
+                      <article key={item.key} className="village-reward-item relative min-h-36 overflow-hidden rounded-2xl border border-white/10 bg-slate-900 p-3 shadow-lg"
+                        style={{ animationDelay:`${Math.min(index, 8) * 70}ms` }}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="h-16 w-16 overflow-hidden rounded-xl border border-white/10 bg-black/30">
+                            <img src={item.art} alt="" className="h-full w-full object-cover"
+                              onError={event => { event.currentTarget.style.display = "none"; }} />
+                            <span className="flex h-full w-full items-center justify-center text-3xl" aria-hidden="true">{item.icon}</span>
+                          </div>
+                          {item.tier && <span className="rounded-lg bg-amber-400 px-2 py-1 text-xs font-black text-slate-950">T{item.tier}</span>}
+                        </div>
+                        <h4 className="mt-2 text-sm font-black leading-tight text-white">{item.name}</h4>
+                        <div className="mt-1 text-2xl font-black text-emerald-300">+{item.amount.toLocaleString()}</div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+
+            <button type="button" onClick={onDismissCollected}
+              className="sticky bottom-3 mt-6 min-h-14 w-full rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-base font-black text-slate-950 shadow-xl transition-transform active:scale-[.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-100">
+              收下全部資源
+            </button>
           </div>
         </div>
       )}
@@ -1620,7 +1647,7 @@ function ResourceRow({ resources, gachaCoins }) {
         </button>
       </div>
 
-      {/* 常駐核心資源（扭蛋幣 + 貓草藥水 + 貓毛） */}
+      {/* 常駐核心資源（扭蛋幣 + 貓薄荷藥水 + 貓毛） */}
       <div className="flex gap-2 mb-2 flex-wrap">
         <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl" style={{ background:"rgba(251,191,36,0.12)", border:"1px solid rgba(251,191,36,0.3)" }}>
           <span style={{ fontSize:16 }}>🎰</span>
@@ -1633,7 +1660,7 @@ function ResourceRow({ resources, gachaCoins }) {
           <span className="font-black text-xs" style={{ color: C.brown }}>
             {[1,2,3,4,5].reduce((sum, t) => sum + Math.floor(resources?.[`potion_t${t}`] || 0), 0)}
           </span>
-          <span className="text-[10px]" style={{ color: C.muted }}>貓草藥水 (總計)</span>
+          <span className="text-[10px]" style={{ color: C.muted }}>貓薄荷藥水 (總計)</span>
         </div>
 
         <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl" style={{ background:"rgba(168,85,247,0.1)", border:"1px solid rgba(168,85,247,0.25)" }}>
@@ -1706,7 +1733,7 @@ const BATTLE_EXCHANGE = [
   { type:'card_pack',icon:'🃏', label:'怪物卡包',  costs:[{ resource:'ore',   tier:2, count: 8 }, { resource:'driedfish', tier:1, count:20 }] },
   { type:'gold',     icon:'🎁', label:'黃金寶箱',  costs:[{ resource:'ore',   tier:2, count:15 }, { resource:'fish',  tier:2, count:10 }] },
 ];
-const RES_CN = { ore:'礦物', melon:'瓜瓜', fish:'鮮魚', meat:'動物肉', driedfish:'小魚乾', can:'貓罐頭', potion:'藥水', fur:'貓毛' };
+const RES_CN = { ore:'礦物', melon:'瓜瓜', fish:'鮮魚', meat:'動物肉', driedfish:'小魚乾', can:'貓罐頭', potion:'貓薄荷藥水', fur:'貓毛' };
 
 // ── 市集兌換面板 ─────────────────────────────────────────────
 function MarketExchangePanel({ resources, memberId, onDone, battleExchange: bx }) {
@@ -2359,13 +2386,13 @@ const VILLAGE_PRIMARY_NAV = [
 
 const VILLAGE_SECONDARY_NAV = {
   workshop: [
-    { id:"forge", label:"裝備鍛造" },
-    { id:"potioncraft", label:"藥水製作" },
-    { id:"exchange", label:"材料兌換" },
+    { id:"forge", label:"裝備鍛造", art:"forge" },
+    { id:"potioncraft", label:"藥水製作", art:"potioncraft" },
+    { id:"exchange", label:"材料兌換", art:"trade" },
   ],
   trade: [
-    { id:"gacha", label:"貓咪扭蛋" },
-    { id:"cardmarket", label:"卡片市集" },
+    { id:"gacha", label:"貓咪扭蛋", art:"gacha" },
+    { id:"cardmarket", label:"卡片市集", art:"trade" },
   ],
 };
 
@@ -2440,14 +2467,18 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
   }, [myCats]);
 
   const [tick, setTick] = useState(0);
+  const effectiveVillageCardAlbums = useMemo(() => profile?.villageCardAlbums?.version === 1
+    ? profile.villageCardAlbums
+    : { version: 1, xp: albumXpFromCards(catCards || {}) },
+  [profile?.villageCardAlbums, catCards]);
   useEffect(() => {
     const t = setInterval(() => setTick(n => n + 1), 60000);
     return () => clearInterval(t);
   }, []);
 
   const { pending } = useMemo(
-    () => calcPendingResources(village, { myCats }),
-    [village, myCats, tick] // eslint-disable-line
+    () => calcPendingResources(village, { myCats, villageCardAlbums: effectiveVillageCardAlbums }),
+    [village, myCats, effectiveVillageCardAlbums, tick] // eslint-disable-line
   );
 
   const lastCollectedMs = useMemo(() => getVillageLastCollectedMs(village?.lastCollectedAt), [village?.lastCollectedAt]);
@@ -2462,7 +2493,7 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
     sfxVillageCollect();
     setCollecting(true);
     try {
-      const res = await collectVillageResources(profile.id, village, { myCats });
+      const res = await collectVillageResources(profile.id, village, { myCats, villageCardAlbums: effectiveVillageCardAlbums });
       if (res.resources) {
         setLocalVillage(prev => ({
           ...(prev || village),
@@ -2472,7 +2503,6 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
       }
       if (res.collected && Object.keys(res.collected).length > 0) {
         setCollectedResult(res.collected);
-        setTimeout(() => setCollectedResult(null), 3500);
       }
     } catch (e) {
       alert("採集失敗：" + e.message);
@@ -2521,7 +2551,7 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
                 color: isActive ? "#FFF8F0" : C.brown,
                 border: isActive ? "1.5px solid #784F32" : `1px solid ${C.border}`,
               }}>
-              <span aria-hidden="true" className="text-base">{item.icon}</span>
+              <CatVillageNavArt name={item.id} size={34} style={{ filter: isActive ? "drop-shadow(0 3px 5px rgba(0,0,0,.5))" : undefined }} />
               <span>{item.label}</span>
             </button>
           );
@@ -2544,7 +2574,7 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
                   color: isActive ? "#FFF8F0" : C.brown,
                   border: isActive ? "1px solid rgba(255,255,255,0.3)" : "none"
                 }}>
-                {item.label}
+                <span className="flex items-center justify-center gap-2"><CatVillageNavArt name={item.art} size={34} />{item.label}</span>
               </button>
             );
           })}
@@ -2626,6 +2656,7 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
               nextCollectSec={nextCollectSec}
               elapsedSec={elapsedSec}
               collectedResult={collectedResult}
+              onDismissCollected={() => setCollectedResult(null)}
             />
             <div className="px-4 py-2 text-center text-xs"
               style={{ color:C.mid, fontVariantNumeric:"tabular-nums" }}>

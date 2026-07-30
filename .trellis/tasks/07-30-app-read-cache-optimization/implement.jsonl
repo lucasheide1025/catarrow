@@ -1,0 +1,4 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `py -3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/frontend/firestore-cost-optimization.md", "reason": "Firestore 成本與快取契約"}
+{"file": ".trellis/spec/frontend/dungeon-system.md", "reason": "地下城即時同步不可破壞"}
+{"file": ".trellis/tasks/07-30-app-read-cache-optimization/research/read-audit.md", "reason": "讀取稽核證據"}

@@ -22,13 +22,32 @@ export const MAX_DANGER = 6;
 // 危險度 1~6 ＝ 怪物階級 T1~T6。波數與每波隻數隨危險度增加。
 // leader：最後一波的首領（miniBoss/boss）——結構感來自「最後一波有東西壓陣」。
 export const DANGER_META = Object.freeze({
-  1: { label: "例行", skulls: "☠️",         tier: "common", tierNo: 1, waves: 3, waveSize: [1, 2], initDist: [3, 5], leader: null },
-  2: { label: "警戒", skulls: "☠️☠️",       tier: "rare",   tierNo: 2, waves: 3, waveSize: [2, 3], initDist: [3, 5], leader: null },
-  3: { label: "危險", skulls: "☠️×3",       tier: "elite",  tierNo: 3, waves: 4, waveSize: [2, 3], initDist: [3, 6], leader: "miniBoss" },
-  4: { label: "極危", skulls: "☠️×4",       tier: "fierce", tierNo: 4, waves: 4, waveSize: [2, 4], initDist: [4, 6], leader: "miniBoss" },
-  5: { label: "討伐", skulls: "☠️×5",       tier: "boss",   tierNo: 5, waves: 5, waveSize: [2, 4], initDist: [4, 6], leader: "boss" },
-  6: { label: "傳說", skulls: "☠️×6",       tier: "mythic", tierNo: 6, waves: 5, waveSize: [3, 4], initDist: [4, 6], leader: "boss" },
+  1: { label: "例行", skulls: "☠️",         tier: "common", tierNo: 1, waves: 3, waveSize: [1, 2], initDist: [3, 10], leader: null },
+  2: { label: "警戒", skulls: "☠️☠️",       tier: "rare",   tierNo: 2, waves: 3, waveSize: [2, 3], initDist: [3, 10], leader: null },
+  3: { label: "危險", skulls: "☠️×3",       tier: "elite",  tierNo: 3, waves: 4, waveSize: [2, 3], initDist: [3, 10], leader: "miniBoss" },
+  4: { label: "極危", skulls: "☠️×4",       tier: "fierce", tierNo: 4, waves: 4, waveSize: [2, 4], initDist: [3, 10], leader: "miniBoss" },
+  5: { label: "討伐", skulls: "☠️×5",       tier: "boss",   tierNo: 5, waves: 5, waveSize: [2, 4], initDist: [3, 10], leader: "boss" },
+  6: { label: "傳說", skulls: "☠️×6",       tier: "mythic", tierNo: 6, waves: 5, waveSize: [3, 4], initDist: [3, 10], leader: "boss" },
 });
+
+// 每張每日委託在生成時就鎖定首領結果；同一天重整不會換王。
+// 所有階級都有極低至高機率碰到小王／大王，階級越高首領越常見。
+export const LEADER_ODDS = Object.freeze({
+  1: { normal: 0.91, miniBoss: 0.08, boss: 0.01 },
+  2: { normal: 0.84, miniBoss: 0.14, boss: 0.02 },
+  3: { normal: 0.67, miniBoss: 0.28, boss: 0.05 },
+  4: { normal: 0.50, miniBoss: 0.40, boss: 0.10 },
+  5: { normal: 0.25, miniBoss: 0.55, boss: 0.20 },
+  6: { normal: 0.10, miniBoss: 0.50, boss: 0.40 },
+});
+
+export function rollLeaderEncounter(danger = 1, rand = Math.random) {
+  const odds = LEADER_ODDS[normDanger(danger)] || LEADER_ODDS[1];
+  const roll = Math.max(0, Math.min(0.999999999, Number(rand()) || 0));
+  if (roll < odds.boss) return "boss";
+  if (roll < odds.boss + odds.miniBoss) return "miniBoss";
+  return null;
+}
 
 // 公會版縮放：{ hp, atk } 乘在擴充怪原數值上。
 // 高階降得更多，因為公會裝的成長幅度遠小於擴充怪的 HP 成長（等比 vs 等比但斜率不同）。
@@ -78,6 +97,10 @@ function toGuildMonster(raw, danger, instanceId, distance) {
     tierIndex: m.tierIndex,
     encounter: m.encounter,
     artKey: m.artKey,
+    signatureSkillId: raw.signatureSkillId,
+    signatureName: raw.signatureName,
+    commonSkillIds: [...(raw.commonSkillIds || [])],
+    counterSummary: raw.counterSummary,
     maxHp: hp,
     hp,
     atk: Math.max(1, Math.round(m.atk * scale.atk)),
@@ -109,7 +132,10 @@ export function rollExpedition(contract = {}, opts = {}) {
   }
 
   const pool = expeditionMonsterPool({ ...contract, danger });
-  const leaderPool = meta.leader ? expeditionMonsterPool({ ...contract, danger }, { encounter: meta.leader }) : [];
+  const lockedLeader = Object.prototype.hasOwnProperty.call(contract, "leader")
+    ? contract.leader
+    : rollLeaderEncounter(danger, rand);
+  const leaderPool = lockedLeader ? expeditionMonsterPool({ ...contract, danger }, { encounter: lockedLeader }) : [];
   if (!pool.length) return { contractId: contract.id || null, danger, family: null, families: [], totalWaves: 0, waves: [] };
 
   let inst = 0;

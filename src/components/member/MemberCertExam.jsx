@@ -42,7 +42,7 @@ function buildAccessoryOptions(accessorySets) {
 
 const TIER_LABEL = { blue: "藍證（初階）", gold: "金證（高階）" };
 
-export default function MemberCertExam({ onBack }) {
+export default function MemberCertExam({ onBack, certification }) {
   const { profile } = useAuth();
   const [config, setConfig]   = useState(null);
   const [cert, setCert]       = useState(null);
@@ -52,10 +52,16 @@ export default function MemberCertExam({ onBack }) {
   useEffect(() => {
     getCertConfig().then(setConfig);
     if (!profile?.id) return;
-    const unsub = subscribeCertification(profile.id, c => { setCert(c); setLoading(false); });
+    if (certification !== undefined) {
+      setCert(certification);
+      setLoading(false);
+    }
+    const unsub = certification === undefined
+      ? subscribeCertification(profile.id, c => { setCert(c); setLoading(false); })
+      : null;
     getMember(profile.id).then(setMemberData).catch(() => {});
     return () => unsub && unsub();
-  }, [profile?.id]);
+  }, [profile?.id, certification]);
 
   if (loading || !config) return <Spinner />;
 

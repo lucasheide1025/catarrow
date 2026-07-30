@@ -43,15 +43,15 @@ export function isEnrolledMemberDoc(data) {
 
 // 用 email 或 contactHash 找出這個人是否已有學籍/正式帳號（找不到回 null）。
 // email 欄位可能為空（教練建立的舊學員只有 contactHash），所以兩條都查。
-async function findEnrolledMemberDoc(trimmedEmail, contactHash) {
+async function findEnrolledMemberDoc(trimmedEmail, contactHash, workingDb = db) {
   try {
     if (trimmedEmail) {
-      const s1 = await getDocs(query(collection(db, C_MEMBERS), where("email", "==", trimmedEmail), limit(5)));
+      const s1 = await getDocs(query(collection(workingDb, C_MEMBERS), where("email", "==", trimmedEmail), limit(5)));
       const d1 = s1.docs.find(d => isEnrolledMemberDoc(d.data()));
       if (d1) return d1;
     }
     if (contactHash) {
-      const s2 = await getDocs(query(collection(db, C_MEMBERS), where("contactHash", "==", contactHash), limit(5)));
+      const s2 = await getDocs(query(collection(workingDb, C_MEMBERS), where("contactHash", "==", contactHash), limit(5)));
       const d2 = s2.docs.find(d => isEnrolledMemberDoc(d.data()));
       if (d2) return d2;
     }
@@ -72,6 +72,31 @@ async function findEnrolledMemberDoc(trimmedEmail, contactHash) {
 // 徹底跟主要登入身份隔開，絕不能把真實使用者的 uid 寫到別的 members 文件上。
 export async function resolveWebsiteGuestSession(contact, sessionSourceId = null) {
   return resolveLegacyGuestSession(contact, "guest", sessionSourceId);
+}
+
+// 預約中心進入訪客遊戲時沿用同一分頁已驗證的 Firebase 身分。
+// memberId/email 都只是定位提示；真正授權仍由 Firebase Auth 與 Firestore rules 驗證。
+export async function resumeAuthenticatedGuestSession(memberId, expectedEmail) {
+  try {
+    await auth.authStateReady?.();
+    const user = auth.currentUser;
+    const normalizedExpected = normalizeContact(expectedEmail);
+    const normalizedAuthEmail = normalizeContact(user?.email);
+    if (!user || user.isAnonymous || !normalizedAuthEmail || normalizedAuthEmail !== normalizedExpected) {
+      return { ok:false, reason:"登入狀態已失效" };
+    }
+    if (!memberId) return { ok:false, reason:"缺少訪客帳號資料" };
+    const snap = await getDoc(doc(db, C_MEMBERS, memberId));
+    if (!snap.exists()) return { ok:false, reason:"找不到訪客帳號" };
+    const data = snap.data();
+    if (data.accountType !== "guest" || normalizeContact(data.email || data.contactRaw) !== normalizedAuthEmail) {
+      return { ok:false, reason:"訪客帳號資料不相符" };
+    }
+    await updateDoc(snap.ref, { uid:user.uid, lastLoginAt:serverTimestamp() });
+    return { ok:true, id:snap.id, ...data, uid:user.uid, isNew:false };
+  } catch (e) {
+    return { ok:false, reason:e?.message || "無法接續訪客登入" };
+  }
 }
 
 export async function resolveQrGuestSession(nickname, sessionSourceId) {
@@ -281,7 +306,7 @@ export async function registerGuestWithPassword(name, email, phone, password) {
   }
 }
 
-export async function loginGuestWithPassword(email, password) {
+export async function loginGuestWithPassword(email, password, { usePrimaryAuth = false } = {}) {
   const trimmedEmail = (email || "").trim().toLowerCase();
   if (!trimmedEmail || !password) return { ok: false, reason: "Email 與密碼為必填" };
 
@@ -289,12 +314,13 @@ export async function loginGuestWithPassword(email, password) {
   // 同一套根因與修法——只有當主 App 已有人登入時才開隔離臨時 App。
   let tmpApp = null;
   let workingAuth = auth;
-  if (auth.currentUser) {
+  if (auth.currentUser && !usePrimaryAuth) {
     tmpApp = initializeApp(firebaseConfig, "pubbook_login_" + Date.now());
     workingAuth = getAuth(tmpApp);
   }
   try {
     const cred = await signInWithEmailAndPassword(workingAuth, trimmedEmail, password);
+    const workingDb = tmpApp ? getFirestore(tmpApp) : db;
     // 密碼驗證通過後改用 contactHash 找回會員文件（不是靠這次登入拿到的 uid 反查）——
     // 理由同註冊那邊：這樣才能正確接續舊的匿名QR碼記錄，身份認定統一以 email 為準。
     const contactHash = await sha256(normalizeContact(trimmedEmail));
@@ -303,7 +329,7 @@ export async function loginGuestWithPassword(email, password) {
     // ⚠️ 順序很重要（2026-07-23 作者回報「學籍帳號被訪客蓋過去」後修正）：
     //   舊版把學籍偵測放在「查無 guest 文件」之後，導致「同時擁有 guest 舊文件＋學籍」的 email
     //   會先被下面的 guest 分支接走 → 繞過學籍偵測 → 學籍身分被當成訪客登入。把它提前到最前面。
-    const enrolledDoc = await findEnrolledMemberDoc(trimmedEmail, contactHash);
+    const enrolledDoc = await findEnrolledMemberDoc(trimmedEmail, contactHash, workingDb);
     if (enrolledDoc) {
       const mData = enrolledDoc.data();
       await updateDoc(enrolledDoc.ref, { uid: cred.user.uid, lastLoginAt: serverTimestamp() });
@@ -312,7 +338,7 @@ export async function loginGuestWithPassword(email, password) {
 
     // ── 沒有學籍帳號，才走訪客流程 ──
     const snap = await getDocs(query(
-      collection(db, C_MEMBERS),
+      collection(workingDb, C_MEMBERS),
       where("accountType", "==", "guest"),
       where("contactHash", "==", contactHash),
       limit(1)
@@ -326,7 +352,7 @@ export async function loginGuestWithPassword(email, password) {
     // 孤兒自我修復：密碼驗證通過但查無任何文件（前面已確認非學籍）→ 補建 guest 接回，
     // 打破「註冊叫你登入、登入叫你註冊」的死結。登入沒收電話，phone 先留空，之後在會員中心補。
     const displayName = cred.user.displayName || "訪客射手";
-    const ref = await addDoc(collection(db, C_MEMBERS), {
+    const ref = await addDoc(collection(workingDb, C_MEMBERS), {
       accountType: "guest", contactHash, contactRaw: trimmedEmail,
       sessionSourceId: null, uid: cred.user.uid, hasPassword: true,
       name: displayName, email: trimmedEmail, phone: "",
@@ -346,14 +372,14 @@ export async function loginGuestWithPassword(email, password) {
 // 只負責「跳 Google 視窗 → 拿到 email / 姓名 / uid」，不寫資料庫。
 // 為什麼不順便存檔？因為預約還需要「電話」，Google 不會給電話，
 // 電話要留到 UI 那格讓客人自己填，所以存檔（含電話）放到步驟 3。
-export async function signInWithGoogle() {
+export async function signInWithGoogle({ usePrimaryAuth = false } = {}) {
   // ⚠️ 2026-07-11 修復 Missing or insufficient permissions：跟 registerGuestWithPassword
   // 同一套根因與修法——只有當主 App 已有人登入時才開隔離臨時 App。
   // 舊版一律開臨時 App，但 Firestore 查詢（防呆的 getDocs、以及後續 saveGuestFromSocial）
   // 全走主 `db` → request.auth == null → Missing or insufficient permissions。
   // 使用 main auth 時，主 App 上不會覆蓋其他人的登入狀態（因為本來就沒人登入），
   // 且後續 Firestore 查詢能帶入正確的 auth context。
-  const usedTempApp = !!auth.currentUser;
+  const usedTempApp = !!auth.currentUser && !usePrimaryAuth;
   let tmpApp = null;
   let workingAuth = auth;
   if (usedTempApp) {
@@ -368,17 +394,19 @@ export async function signInWithGoogle() {
     const uid   = result.user.uid;
     if (!email) return { ok: false, reason: "無法取得 Google Email，請改用其他方式登入" };
 
+    const workingDb = tmpApp ? getFirestore(tmpApp) : db;
+
     // 防呆（修 2026-07-11 事件）：若這個 Google 帳號的 uid 或 email 已對應到
     // 「正式學員/教練」文件，就擋下來、不讓它走訪客預約——避免跟正式帳號在 members
     // 層混淆，也提醒使用者其實有正式帳號可用（主登入頁現在也支援 Google 登入）。
     // 查不到或查詢失敗就放行（fail-open，這只是額外保護，不能擋住一般新客）。
     try {
       // 用 uid 查（教練/正式學員文件都有 uid）
-      const dupSnap = await getDocs(query(collection(db, C_MEMBERS), where("uid", "==", uid), limit(5)));
+      const dupSnap = await getDocs(query(collection(workingDb, C_MEMBERS), where("uid", "==", uid), limit(5)));
       let isOfficial = dupSnap.docs.some(d => isEnrolledMemberDoc(d.data()));
       // 用 email 查（有些正式學員文件的 uid 欄位可能跟 Google 拿到的 uid 不一致）
       if (!isOfficial && email) {
-        const emailSnap = await getDocs(query(collection(db, C_MEMBERS), where("email", "==", email), limit(5)));
+        const emailSnap = await getDocs(query(collection(workingDb, C_MEMBERS), where("email", "==", email), limit(5)));
         isOfficial = emailSnap.docs.some(d => isEnrolledMemberDoc(d.data()));
       }
       if (isOfficial) {
@@ -393,6 +421,32 @@ export async function signInWithGoogle() {
     return { ok: false, reason: e?.message || "Google 登入失敗，請稍後再試" };
   } finally {
     if (tmpApp) deleteApp(tmpApp).catch(() => {});
+  }
+}
+
+// 訪客遊戲入口的 Google 登入：只接回已在預約中心建立的 guest，
+// 不在這裡建立新帳號（新帳號仍需先完成電話等預約資料）。
+export async function loginGuestWithGoogle() {
+  const google = await signInWithGoogle({ usePrimaryAuth:true });
+  if (!google.ok) return google;
+  try {
+    const contactHash = await sha256(normalizeContact(google.email));
+    const snap = await getDocs(query(
+      collection(db, C_MEMBERS),
+      where("accountType", "==", "guest"),
+      where("contactHash", "==", contactHash),
+      limit(1)
+    ));
+    if (snap.empty) {
+      return { ok:false, reason:"找不到這個 Google 帳號的訪客預約資料，請先從預約入口完成登記。" };
+    }
+    const existing = snap.docs[0];
+    await updateDoc(existing.ref, {
+      uid:google.uid, socialUid:google.uid, socialProvider:"google", lastLoginAt:serverTimestamp(),
+    });
+    return { ok:true, id:existing.id, ...existing.data(), uid:google.uid, isNew:false };
+  } catch (e) {
+    return { ok:false, reason:e?.message || "Google 登入失敗，請稍後再試" };
   }
 }
 

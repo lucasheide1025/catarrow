@@ -33,4 +33,22 @@ describe("公會遠征補給倉庫", () => {
     expect(refundExpeditionSupplies(res.profile).supplyStock).toEqual({ food: 10, water: 8 });
     expect(before.supplyStock).toEqual({ food: 10, water: 8 });
   });
+
+  test("玩家可分別指定攜帶量，剩餘補給依實際數量返還", () => {
+    const before = stocked(10, 10);
+    const loaded = consumeExpeditionSupplies(before, { food: 4, water: 7 });
+
+    expect(loaded.ok).toBe(true);
+    expect(loaded.supplies).toEqual({ food: 4, water: 7 });
+    expect(loaded.profile.supplyStock).toEqual({ food: 6, water: 3 });
+
+    const returned = refundExpeditionSupplies(loaded.profile, { food: 1.5, water: 2 });
+    expect(returned.supplyStock).toEqual({ food: 7.5, water: 5 });
+  });
+
+  test("攜帶量只能是 1 到 10 的整數", () => {
+    const loaded = consumeExpeditionSupplies(stocked(20, 20), { food: 0, water: 12.8 });
+    expect(loaded.supplies).toEqual({ food: 1, water: 10 });
+    expect(loaded.profile.supplyStock).toEqual({ food: 19, water: 10 });
+  });
 });

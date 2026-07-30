@@ -7,27 +7,16 @@ import { startExpedition, collectExpedition } from "../../lib/db";
 import { busyCatIdSet } from "../../lib/catAssignment";
 import {
   EXPEDITION_MISSIONS, calcExpeditionRewards, fmtCountdown,
-  calcCatFullStats, catPowerMult,
+  calcCatFullStats, catPowerMult, buildExpeditionRewardEntries,
 } from "../../lib/expeditionData";
+import CatVillageNavArt from "./CatVillageNavArt";
 
 const TYPE_LABEL = { attack:"⚔️ 攻擊型", defense:"🛡️ 防禦型", allround:"💚 治癒型" };
 const TYPE_COLOR = { attack:"#f87171", defense:"#60a5fa", allround:"#a78bfa" };
 const TIER_COLOR = ["","#9ca3af","#4ade80","#60a5fa","#a78bfa","#fbbf24"];
 
-const RES_CN   = { fur:"貓毛", potion:"貓草藥水", arrowdew:"箭露", gachaToken:"扭蛋幣", archer:"射手", ore:"礦物", melon:"瓜瓜", fish:"鮮魚", meat:"動物肉", driedfish:"小魚乾", can:"貓罐頭" };
+const RES_CN   = { fur:"貓毛", potion:"貓薄荷藥水", arrowdew:"箭露", gachaToken:"扭蛋幣", archer:"射手", ore:"礦物", melon:"瓜瓜", fish:"鮮魚", meat:"動物肉", driedfish:"小魚乾", can:"貓罐頭" };
 const RES_ICON = { fur:"🐾", potion:"🍵", arrowdew:"💧", gachaToken:"🎰", archer:"🏹", ore:"⛏️", melon:"🍈", fish:"🐟", meat:"🍖", driedfish:"🐠", can:"🥫" };
-
-function fmtRewardKey(key, amt) {
-  if (key === "arrowdew")   return `${RES_ICON.arrowdew} 箭露 ×${amt}`;
-  if (key === "gachaToken") return `${RES_ICON.gachaToken} 扭蛋幣 ×${amt}`;
-  if (key === "catXP")      return `⭐ 貓咪經驗 +${amt}`;
-  if (key === "catBond")    return `💛 羈絆 +${amt}`;
-  if (key.includes("_t")) {
-    const [res, t] = key.split("_t");
-    return `${RES_ICON[res] || "📦"} ${RES_CN[res] || res} T${t} ×${amt}`;
-  }
-  return `${key} ×${amt}`;
-}
 
 function ArcherCostRow({ archerCost, villageRes }) {
   return (
@@ -91,22 +80,151 @@ function RewardPreview({ mission, catData }) {
   );
 }
 
+function ExpeditionRewardResult({ result, onClose }) {
+  const mission = EXPEDITION_MISSIONS.find(item => item.tier === result.missionTier);
+  const entries = buildExpeditionRewardEntries(result.rewards);
+  const materials = entries.filter(entry => entry.kind === "material");
+  const specials = entries.filter(entry => entry.kind === "special");
+
+  const renderRewardCard = (entry, index) => (
+    <div
+      key={entry.key}
+      className="expedition-reward-card"
+      style={{ animationDelay: `${520 + index * 90}ms` }}
+    >
+      <div className="h-12 w-12 shrink-0 rounded-2xl flex items-center justify-center bg-black/20 border border-amber-200/20">
+        {entry.image ? (
+          <img src={entry.image} alt="" className="h-10 w-10 object-contain" />
+        ) : (
+          <span className="text-2xl" aria-hidden="true">{entry.icon}</span>
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="font-black text-sm text-amber-50 truncate">{entry.name}</div>
+        <div className="text-[11px] font-bold text-amber-200/70">
+          {entry.tier ? `T${entry.tier} 材料` : "特殊獎勵"}
+        </div>
+      </div>
+      <div className="text-xl font-black text-white tabular-nums">×{entry.count.toLocaleString()}</div>
+    </div>
+  );
+
+  return (
+    <div
+      className="fixed inset-0 z-[120] overflow-y-auto bg-slate-950/95 text-white"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="expedition-result-title"
+    >
+      <style>{`
+        @keyframes expeditionChestOpen {
+          0% { opacity: 0; transform: translateY(18px) scale(.72); filter: brightness(.7); }
+          55% { opacity: 1; transform: translateY(-8px) scale(1.08); filter: brightness(1.45); }
+          100% { opacity: 1; transform: translateY(0) scale(1); filter: brightness(1); }
+        }
+        @keyframes expeditionRewardReveal {
+          from { opacity: 0; transform: translateY(14px) scale(.96); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .expedition-result-chest { animation: expeditionChestOpen .72s cubic-bezier(.2,.85,.25,1) both; }
+        .expedition-reward-card {
+          opacity: 0;
+          animation: expeditionRewardReveal .42s ease-out both;
+          display: flex;
+          align-items: center;
+          gap: .75rem;
+          min-width: 0;
+          border-radius: 1rem;
+          padding: .75rem;
+          background: linear-gradient(135deg, rgba(120,53,15,.7), rgba(51,65,85,.78));
+          border: 1px solid rgba(253,230,138,.22);
+          box-shadow: 0 10px 24px rgba(0,0,0,.22);
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .expedition-result-chest, .expedition-reward-card {
+            animation: none !important;
+            opacity: 1 !important;
+            transform: none !important;
+          }
+        }
+      `}</style>
+
+      <div className="min-h-full px-4 py-7 flex justify-center bg-[radial-gradient(circle_at_top,rgba(245,158,11,.24),transparent_42%)]">
+        <div className="w-full max-w-xl flex flex-col items-center">
+          <div className="text-xs font-black tracking-[.24em] text-amber-300">探險隊凱旋</div>
+          <h2 id="expedition-result-title" className="mt-2 text-2xl font-black text-center text-amber-50">
+            {result.catName} 帶回寶藏！
+          </h2>
+          <div className="mt-1 text-sm font-bold text-slate-300">
+            T{result.missionTier} {mission?.label || "探險任務"}
+          </div>
+
+          <div className="relative mt-5 h-36 w-52 flex items-center justify-center expedition-result-chest">
+            {mission?.image ? (
+              <img src={mission.image} alt="" className="absolute h-32 w-32 object-contain opacity-40 blur-[1px]" />
+            ) : null}
+            <div className="absolute h-24 w-24 rounded-full bg-amber-300/25 blur-2xl" />
+            <span className="relative text-7xl drop-shadow-[0_8px_18px_rgba(245,158,11,.55)]" aria-hidden="true">🎁</span>
+            <img
+              src={`/cats/portraits/${result.catId}.webp`}
+              alt={result.catName}
+              className="absolute -bottom-1 -right-1 h-16 w-16 rounded-full object-cover border-4 border-amber-300 shadow-xl"
+            />
+          </div>
+
+          <div className="mt-3 w-full">
+            <div className="mb-2 text-xs font-black text-amber-300">📦 採集材料</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {materials.map(renderRewardCard)}
+            </div>
+          </div>
+
+          {specials.length > 0 ? (
+            <div className="mt-5 w-full">
+              <div className="mb-2 text-xs font-black text-fuchsia-300">✨ 特別收穫</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {specials.map((entry, index) => renderRewardCard(entry, materials.length + index))}
+              </div>
+            </div>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="mt-7 min-h-12 w-full rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 px-5 py-3 text-base font-black text-white shadow-lg shadow-amber-950/50 active:scale-[.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-200"
+          >
+            收下獎勵
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── 單個槽位卡片 ──────────────────────────────────────
 function SlotCard({ slotIdx, expedition, myCats, now, onSelect, isActive, onCollect, collecting }) {
   if (!expedition) {
     return (
       <button
         onClick={() => onSelect(slotIdx)}
-        className={`flex-1 min-w-0 rounded-2xl p-3.5 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95 border ${
+        className={`relative isolate min-h-[116px] w-full overflow-hidden rounded-2xl border p-3.5 text-left transition-all cursor-pointer active:scale-[.98] ${
           isActive
-            ? "bg-purple-900/30 border-purple-400 shadow-[0_0_12px_rgba(167,139,250,0.3)] ring-2 ring-purple-400/40"
-            : "bg-slate-900/50 border-white/10 hover:border-purple-400/40 hover:bg-slate-800/50"
+            ? "border-amber-300 shadow-[0_0_18px_rgba(251,191,36,.28)] ring-2 ring-amber-300/35"
+            : "border-amber-100/15 hover:border-amber-300/40"
         }`}>
-        <div className="text-3xl mb-0.5">🏕️</div>
-        <div className="text-xs font-black text-slate-300">探險槽 {slotIdx+1}</div>
-        <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isActive ? "bg-purple-500/20 text-purple-300" : "bg-white/5 text-slate-400"}`}>
-          {isActive ? "設定中…" : "+ 點擊派遣"}
-        </div>
+        <img src="/ui/cat-village/explore-map.png" alt="" className="absolute inset-0 h-full w-full object-cover" />
+        <span className="absolute inset-0 bg-gradient-to-r from-[#1b0e06]/95 via-[#251309]/80 to-[#39200e]/40" />
+        <span className="relative flex min-h-[88px] items-center gap-3">
+          <CatVillageNavArt name="tasks" size={64} />
+          <span className="min-w-0 flex-1">
+            <span className="block text-[10px] font-black tracking-[.18em] text-amber-300">EXPEDITION {slotIdx + 1}</span>
+            <span className="mt-1 block text-base font-black text-amber-50">空閒的探險席位</span>
+            <span className="mt-1 block text-[11px] font-bold text-amber-100/65">
+              {isActive ? "正在規劃這次旅程…" : "選擇貓咪與目的地，展開新探險"}
+            </span>
+          </span>
+          <span className={`grid h-9 w-9 place-items-center rounded-full text-xl font-black ${isActive ? "bg-amber-300 text-amber-950" : "bg-white/10 text-amber-100"}`}>＋</span>
+        </span>
       </button>
     );
   }
@@ -124,55 +242,38 @@ function SlotCard({ slotIdx, expedition, myCats, now, onSelect, isActive, onColl
   const catLv      = catData ? catLevelFromXP(catData.catXP || 0) : "?";
 
   return (
-    <div className={`flex-1 min-w-0 rounded-2xl p-2.5 flex flex-col items-center gap-1.5 border transition-all shadow-md relative overflow-hidden ${
+    <div className={`relative isolate min-h-[132px] w-full overflow-hidden rounded-2xl border p-3.5 transition-all shadow-md ${
       isDone
-        ? "bg-gradient-to-b from-emerald-950/80 to-slate-900/90 border-emerald-500/60 shadow-emerald-950/50"
-        : "bg-gradient-to-b from-slate-900/90 to-purple-950/60 border-purple-500/40 shadow-purple-950/50"
+        ? "border-emerald-400/60 shadow-emerald-950/50"
+        : "border-violet-400/35 shadow-violet-950/50"
     }`}>
-      {/* 背景行進微光線條 */}
-      {!isDone && (
-        <div className="absolute inset-0 opacity-15 bg-[radial-gradient(#a78bfa_1px,transparent_1px)] [background-size:8px_8px] pointer-events-none" />
-      )}
+      <img src="/ui/cat-village/explore-map.png" alt="" className="absolute inset-0 h-full w-full object-cover opacity-45" />
+      <div className={`absolute inset-0 ${isDone ? "bg-gradient-to-r from-emerald-950/95 via-slate-950/80 to-emerald-950/35" : "bg-gradient-to-r from-violet-950/95 via-slate-950/80 to-violet-950/35"}`} />
+      <img src={expMission?.image} alt="" className="absolute -bottom-8 -right-3 h-44 w-44 object-contain opacity-65 drop-shadow-2xl" />
 
-      {/* 任務等級 Icon + 探險動畫標籤 */}
-      <div className="relative flex items-center justify-center">
-        <img src={expMission?.image} alt={expMission?.label || "遠征任務"} className="w-12 h-12 object-contain drop-shadow-md" />
-        {!isDone && (
-          <span className="absolute -top-1 -right-2 text-xs animate-bounce" title="探險進行中">
-            🐾
-          </span>
-        )}
-      </div>
-      
-      {/* 貓咪頭像 (探險中加入微呼吸邊框) */}
-      <div className="relative">
+      <div className="relative flex items-start gap-3">
         <img
           src={`/cats/portraits/${expedition.catId}.webp`}
           alt={expedition.catName}
-          className={`w-10 h-10 rounded-full object-cover border-2 shadow-sm ${
-            isDone ? "border-emerald-400" : "border-purple-400 animate-pulse"
+          className={`h-14 w-14 shrink-0 rounded-2xl object-cover border-2 shadow-lg ${
+            isDone ? "border-emerald-400" : "border-violet-400"
           }`}
         />
-        <span className="absolute -bottom-1 -right-1 text-[9px] font-black bg-purple-900 text-purple-200 px-1 rounded-full border border-purple-400/40">
-          Lv.{catLv}
-        </span>
-      </div>
-
-      <div className="text-xs font-black text-white text-center truncate max-w-full leading-tight">
-        {expCatInfo?.name || expedition.catName}
-      </div>
-
-      {/* 即時探險進度條 */}
-      <div className="w-full space-y-1 my-0.5">
-        <div className="flex justify-between items-center text-[9px] font-bold">
-          <span className={isDone ? "text-emerald-400" : "text-purple-300"}>
-            {isDone ? "✓ 探險完成" : `探險中 ${progressPct}%`}
-          </span>
-          <span className="text-slate-400 font-mono">
-            {isDone ? "" : fmtCountdown(msLeft)}
-          </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-[10px] font-black tracking-[.16em] text-amber-300">
+            探險槽 {slotIdx + 1} · T{expedition.missionTier}
+          </div>
+          <div className="mt-0.5 truncate text-base font-black text-white">{expCatInfo?.name || expedition.catName}</div>
+          <div className="text-[11px] font-bold text-white/60">Lv.{catLv} · {expMission?.label || "探險任務"}</div>
         </div>
-        <div className="h-2 w-full rounded-full overflow-hidden p-0.5 bg-black/40 border border-white/10">
+      </div>
+
+      <div className="relative mt-3 max-w-[72%] space-y-1">
+        <div className="flex justify-between text-[10px] font-black">
+          <span className={isDone ? "text-emerald-300" : "text-violet-200"}>{isDone ? "探險完成，可以領取" : `旅程進度 ${progressPct}%`}</span>
+          {!isDone && <span className="font-mono text-white/65">{fmtCountdown(msLeft)}</span>}
+        </div>
+        <div className="h-2.5 w-full overflow-hidden rounded-full border border-white/10 bg-black/45 p-0.5">
           <div
             className="h-full rounded-full transition-all duration-500"
             style={{
@@ -186,13 +287,12 @@ function SlotCard({ slotIdx, expedition, myCats, now, onSelect, isActive, onColl
         </div>
       </div>
 
-      {/* 領取按鈕 */}
       {isDone && (
         <button
           onClick={() => onCollect(slotIdx)}
           disabled={collecting}
-          className="w-full mt-1 py-1.5 rounded-xl font-black text-xs transition-all active:scale-95 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white shadow-md shadow-emerald-950/50 border border-emerald-300/40">
-          {collecting ? "領取中…" : "🎁 領取寶藏"}
+          className="relative mt-3 min-h-10 w-full max-w-[72%] rounded-xl border border-emerald-200/40 bg-gradient-to-r from-emerald-500 to-teal-500 px-3 font-black text-sm text-white shadow-md shadow-emerald-950/50 active:scale-[.98]">
+          {collecting ? "領取中…" : "開啟探險寶箱"}
         </button>
       )}
     </div>
@@ -207,6 +307,7 @@ export default function ExpeditionPanel({ profile }) {
   const [sending,     setSending]     = useState(false);
   const [collecting,  setCollecting]  = useState({});
   const [msg,         setMsg]         = useState("");
+  const [rewardResult,setRewardResult]= useState(null);
   const [now,         setNow]         = useState(Date.now());
   const timerRef = useRef(null);
 
@@ -289,35 +390,57 @@ export default function ExpeditionPanel({ profile }) {
     const result = await collectExpedition(profile.id, slotIdx, rewards, exp.catId);
     setCollecting(prev => ({ ...prev, [slotIdx]: false }));
     if (result.ok) {
-      const lines = Object.entries(rewards).map(([k,v]) => fmtRewardKey(k, v)).join("　");
-      showMsg(`🎉 遠征完成！\n${lines}`);
+      setRewardResult({
+        rewards,
+        catId: exp.catId,
+        catName: CATS[exp.catId]?.name || exp.catName || exp.catId,
+        missionTier: exp.missionTier,
+      });
     } else {
       showMsg(`❌ ${result.reason}`);
     }
   }
 
   return (
-    <div style={{ padding:"12px 12px 80px", color:"white" }}>
+    <div className="px-3 pb-20 pt-3 text-white">
       {msg && (
         <div style={{ background:"#14532d", borderRadius:10, padding:"9px 13px", marginBottom:12, fontWeight:800, fontSize:13, whiteSpace:"pre-line" }}>
           {msg}
         </div>
       )}
 
-      {/* 說明提示卡 */}
-      <div className="rounded-2xl p-3 mb-3.5 bg-gradient-to-r from-purple-950/60 to-slate-900/80 border border-purple-400/20 text-xs text-purple-200/90 shadow-sm flex items-start gap-2.5">
-        <span className="text-xl shrink-0">🐾</span>
-        <div>
-          <div className="font-black text-purple-300">貓貓探險隊須知</div>
-          <div className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">
-            最多可同時派遣 3 隻貓咪去外頭探險帶回豐厚寶物！<br/>
-            <span className="text-amber-300/80">⚠️ 裝備中、正在地下城發掘或正在探險中的貓咪無法重複派遣。</span>
+      {rewardResult ? (
+        <ExpeditionRewardResult result={rewardResult} onClose={() => setRewardResult(null)} />
+      ) : null}
+
+      <div className="relative isolate mb-4 min-h-[178px] overflow-hidden rounded-3xl border border-amber-300/30 shadow-2xl">
+        <img src="/ui/cat-village/explore-map.png" alt="" className="absolute inset-0 h-full w-full object-cover" />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#160b04]/95 via-[#241207]/65 to-transparent" />
+        <div className="relative flex min-h-[178px] items-center gap-3 p-5">
+          <CatVillageNavArt name="tasks" size={78} />
+          <div>
+            <div className="text-[10px] font-black tracking-[.24em] text-amber-300">CAT EXPEDITION</div>
+            <div className="mt-1 text-2xl font-black text-amber-50">貓貓探險隊</div>
+            <div className="mt-2 max-w-[250px] text-xs font-bold leading-relaxed text-amber-100/75">
+              派出最多三隻空閒貓咪，前往不同階級的區域尋找村莊物資與稀有寶藏。
+            </div>
+            <div className="mt-2 text-[10px] font-bold text-amber-300/75">
+              裝備中、發掘中或已出發的貓咪不能重複派遣
+            </div>
           </div>
         </div>
       </div>
 
-      {/* 3 個槽位卡片 */}
-      <div style={{ display:"flex", gap:8, marginBottom:16 }}>
+      <div className="mb-2 flex items-end justify-between px-1">
+        <div>
+          <div className="text-sm font-black text-amber-50">探險席位</div>
+          <div className="text-[10px] font-bold text-amber-100/50">點擊空席位開始安排任務</div>
+        </div>
+        <div className="rounded-full border border-amber-300/20 bg-amber-950/35 px-2.5 py-1 text-[10px] font-black text-amber-200">
+          {Object.values(expeditions).filter(Boolean).length} / 3 出發中
+        </div>
+      </div>
+      <div className="mb-5 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
         {[0, 1, 2].map(idx => (
           <SlotCard
             key={idx}

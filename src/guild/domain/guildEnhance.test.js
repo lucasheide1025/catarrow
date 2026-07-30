@@ -1,5 +1,5 @@
 // src/guild/domain/guildEnhance.test.js
-import { enhanceCost, enhanceTotalCost, enhanceInfo, enhanceEquip, salvageEquip, salvageMany, salvageValue } from "./guildEnhance";
+import { enhanceCost, enhanceTotalCost, enhanceInfo, enhanceEquip, salvageCost, salvageEquip, salvageMany, salvageValue } from "./guildEnhance";
 import { emptyGuildProfile, normalizeGuildProfile, equipFromStash, unequipSlot } from "./guildRewards";
 import { resolveEquipStats, equipDisplayName, plusCapOf, GUILD_AFFIXES } from "../data/guildEquipCatalog";
 
@@ -43,6 +43,15 @@ describe("強化", () => {
     expect(res.profile.stash[0].plus).toBe(1);
     expect(res.profile.shards).toBe(500 - cost.shards);
     expect(res.profile.catCoins).toBe(500 - cost.catCoins);
+    expect(res.coinsSpent).toBe(cost.coins);
+  });
+
+  test("強化金幣不足時不會改動裝備", () => {
+    const p = withStash({}, [item("a")]);
+    const res = enhanceEquip(p, { where: "stash", uid: "a" }, { coins: 0 });
+    expect(res.ok).toBe(false);
+    expect(res.reason).toMatch(/金幣不足/);
+    expect(res.profile.stash[0].plus).toBe(0);
   });
 
   test("裝備中的也能強化（不必先卸下）", () => {
@@ -90,6 +99,14 @@ describe("分解（重複裝備的出口）", () => {
     expect(res.ok).toBe(true);
     expect(res.profile.stash).toHaveLength(0);
     expect(res.profile.shards).toBe(salvageValue(item("a", "boss")));
+    expect(res.coinsSpent).toBe(salvageCost(item("a", "boss")));
+  });
+
+  test("分解也需要金幣，餘額不足不能拆掉裝備", () => {
+    const p = withStash({ shards: 0 }, [item("a", "boss")]);
+    const res = salvageEquip(p, "a", { coins: salvageCost(item("a", "boss")) - 1 });
+    expect(res.ok).toBe(false);
+    expect(res.profile.stash).toHaveLength(1);
   });
 
   test("品級越高回收越多；強化過的回收 8 成投入", () => {

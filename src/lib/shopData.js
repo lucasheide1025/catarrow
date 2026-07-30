@@ -1,38 +1,103 @@
-// 金幣商店商品白名單與全服同步輪替
-const FAMILIES = [
-  ["ghost", "鬼怪族", "👻"], ["mountain", "山林族", "🏔️"], ["insect", "毒蟲族", "🦂"],
-  ["workplace", "職場族", "💼"], ["exam", "考試族", "📝"], ["temple", "西方怪物族", "🏰"],
+// 金幣商店固定商品白名單。商品不輪替，只有個人限購次數按日／週重置。
+export const SPECIAL_TICKET_META = Object.freeze({
+  soloBattleTicket: { name:"單人打怪次數券", icon:"🎯", holdCap:5 },
+  partyBattleTicket: { name:"組隊打怪次數券", icon:"🤝", holdCap:3 },
+  boardDiceTicket: { name:"探索骰子券", icon:"🎲", holdCap:5 },
+});
+
+export const DAILY_SHOP_PRODUCTS = Object.freeze([
+  {
+    id:"solo_battle_ticket", name:"單人打怪次數券", icon:"🎯", price:1000,
+    rarity:"rare", kind:"specialTicket", ticketId:"soloBattleTicket", amount:1,
+    art:"/ui/member-nav/feature-art.png",
+    limit:2, holdCap:5, destination:"背包・特殊", effect:"使用後增加今日單人打怪次數 1 次。",
+    desc:"額外次數保留完整戰鬥獎勵。",
+  },
+  {
+    id:"party_battle_ticket", name:"組隊打怪次數券", icon:"🤝", price:1500,
+    rarity:"rare", kind:"specialTicket", ticketId:"partyBattleTicket", amount:1,
+    art:"/ui/member-nav/feature-art.png",
+    limit:1, holdCap:3, destination:"背包・特殊", effect:"使用後增加今日組隊打怪次數 1 次。",
+    desc:"額外次數保留完整組隊獎勵。",
+  },
+  {
+    id:"board_dice_ticket", name:"探索骰子券", icon:"🎲", price:750,
+    rarity:"uncommon", kind:"specialTicket", ticketId:"boardDiceTicket", amount:1,
+    art:"/ui/cat-village/explore-map.png",
+    limit:2, holdCap:5, destination:"背包・特殊", effect:"使用後立即增加 3 顆探索骰子。",
+    desc:"可超過每日原有的 15 顆骰子上限。",
+  },
+  {
+    id:"potion_chest", name:"藥水箱", icon:"🧪", price:2000,
+    rarity:"uncommon", kind:"chest", chestType:"potion", limit:2,
+    art:"/assets/board/tile_potion.webp",
+    destination:"背包・戰利品", effect:"開啟後獲得 1 個隨機消耗品。",
+    desc:"藥水與一般素材箱分開收納。",
+  },
+]);
+
+const TIER_CONFIG = [
+  { tier:1, price:500, limit:3, rarity:"common" },
+  { tier:2, price:800, limit:3, rarity:"uncommon" },
+  { tier:3, price:1200, limit:2, rarity:"rare" },
+  { tier:4, price:1800, limit:2, rarity:"epic" },
+  { tier:5, price:2500, limit:1, rarity:"legendary" },
+  { tier:6, price:3500, limit:1, rarity:"legendary" },
 ];
 
-const DAILY_BASE = [
-  { id:"chest_iron", name:"鐵寶箱", icon:"🧰", price:350, rarity:"common", kind:"chest", chestType:"iron", limit:2, destination:"戰利品", desc:"開出普通與非凡素材，並有機會獲得藥水。" },
-  { id:"chest_gold", name:"黃金寶箱", icon:"🎁", price:700, rarity:"rare", kind:"chest", chestType:"gold", limit:1, destination:"戰利品", desc:"開出前三階素材，並有機會獲得藥水。" },
-  { id:"potion_chest", name:"藥水箱", icon:"🧪", price:500, rarity:"uncommon", kind:"chest", chestType:"potion", limit:2, destination:"戰利品", desc:"必定開出 1 個隨機消耗品。" },
-];
-
-const MATERIAL_PRODUCTS = FAMILIES.flatMap(([family, label, icon]) => [1, 2, 3].map(tier => ({
-  id:`mat_${family}_t${tier}`,
-  name:`${label} T${tier} 素材包`,
-  icon,
-  price:[200, 450, 800][tier - 1],
-  rarity:["common", "uncommon", "rare"][tier - 1],
-  kind:"material",
-  materialId:`${family}_m${tier}`,
-  amount:[5, 3, 2][tier - 1],
-  limit:2,
-  destination:"怪物素材",
-  desc:`直接獲得 ${[5, 3, 2][tier - 1]} 個指定族系 T${tier} 素材。`,
+export const MATERIAL_SUPPLY_PRODUCTS = Object.freeze(TIER_CONFIG.map(config => ({
+  id:`material_chest_t${config.tier}`,
+  name:`T${config.tier} 隨機族系素材箱`,
+  icon:"📦",
+  price:config.price,
+  rarity:config.rarity,
+  kind:"familyMaterialChest",
+  art:`/assets/chests/chest_treasure_t${config.tier}.webp`,
+  tier:config.tier,
+  limit:config.limit,
+  destination:"背包・戰利品",
+  effect:`固定 T${config.tier}，購買時隨機決定一個族系。`,
+  desc:"開啟獲得 1～3 個同族、同階的一般素材；不含小王與王級素材。",
 })));
 
-const WEEKLY_PRODUCTS = [
-  { id:"chest_epic", name:"史詩寶箱", icon:"💜", price:1200, rarity:"epic", kind:"chest", chestType:"epic", limit:1, destination:"戰利品", desc:"開出前四階素材，25% 機率額外獲得藥水。" },
-  { id:"card_pack", name:"怪物卡包", icon:"🃏", price:1500, rarity:"epic", kind:"chest", chestType:"card_pack", limit:1, destination:"戰利品", desc:"開啟後獲得 3 張隨機怪物卡片。" },
-  { id:"mimi_box", name:"咪咪箱", icon:"😺", price:2500, rarity:"legendary", kind:"chest", chestType:"mimi_box", limit:1, destination:"戰利品", desc:"隨機獲得 1 隻貓咪；重複貓咪轉為羈絆經驗。" },
-  { id:"dungeon_scroll", name:"地下城卷軸", icon:"📜", price:3000, rarity:"legendary", kind:"dungeonScroll", amount:1, limit:1, destination:"特殊道具", desc:"使用後產生 1 個隨機難度地下城。" },
-  { id:"gacha_coins_3", name:"扭蛋幣 ×3", icon:"🎰", price:1400, rarity:"rare", kind:"gachaCoins", amount:3, limit:1, destination:"貓貓村", desc:"獲得 3 枚扭蛋幣；箭露不會在金幣商店販售。" },
-];
+export const WEEKLY_TREASURE_PRODUCTS = Object.freeze([
+  {
+    id:"king_seal", name:"王之印記", icon:"👑", price:20000, rarity:"legendary",
+    kind:"kingSeal", amount:1, limit:2, destination:"裝備資源",
+    art:"/ui/coin-shop/shop-header-v1.webp",
+    effect:"裝備品階突破與打洞使用。", desc:"每週限量供應。",
+  },
+  {
+    id:"rune_fragment_bundle", name:"隨機符文碎片 ×5", icon:"🔮", price:15000, rarity:"epic",
+    kind:"runeFragments", amount:5, limit:2, destination:"裝備資源",
+    art:"/assets/runes/rune_atk_t1.webp",
+    effect:"隨機獲得攻擊、防禦或生命其中一種碎片 ×5。", desc:"同一包只會出現一種屬性。",
+  },
+  {
+    id:"world_boss_dungeon_scroll", name:"世界王地下城卷軸", icon:"📜", price:50000, rarity:"legendary",
+    kind:"worldBossDungeonScroll", amount:1, limit:1, destination:"地下城",
+    art:"/ui/msg-scroll-bg.webp",
+    effect:"增加 1 張世界王地下城探索卷軸。", desc:"存入地下城實際使用的卷軸欄位。",
+  },
+  {
+    id:"cat_box", name:"貓貓箱", icon:"🎐", price:100000, rarity:"legendary",
+    kind:"chest", chestType:"cat_box", limit:1, destination:"背包・戰利品",
+    art:"/assets/chests/chest_treasure_t6.webp",
+    effect:"開啟後取得既有積分系統使用的徽章碎片。", desc:"現實獎勵仍由積分系統處理。",
+  },
+  {
+    id:"card_pack", name:"怪物卡包", icon:"🃏", price:30000, rarity:"epic",
+    kind:"chest", chestType:"card_pack", limit:1, destination:"背包・戰利品",
+    art:"/ui/card-bg.webp",
+    effect:"開啟後獲得 3 張隨機怪物卡片。", desc:"每週限量供應。",
+  },
+]);
 
-export const SHOP_PRODUCTS = [...DAILY_BASE, ...MATERIAL_PRODUCTS, ...WEEKLY_PRODUCTS];
+export const SHOP_PRODUCTS = Object.freeze([
+  ...DAILY_SHOP_PRODUCTS,
+  ...MATERIAL_SUPPLY_PRODUCTS,
+  ...WEEKLY_TREASURE_PRODUCTS,
+]);
 export const SHOP_PRODUCT_MAP = new Map(SHOP_PRODUCTS.map(product => [product.id, product]));
 
 function taipeiParts(date = new Date()) {
@@ -55,33 +120,43 @@ export function getShopWeeklyKey(date = new Date()) {
   return `week-${utc.toISOString().slice(0, 10)}`;
 }
 
-function hash(text) {
-  let value = 2166136261;
-  for (let i = 0; i < text.length; i += 1) {
-    value ^= text.charCodeAt(i);
-    value = Math.imul(value, 16777619);
-  }
-  return value >>> 0;
+export function getDailyShopProducts() {
+  return DAILY_SHOP_PRODUCTS;
 }
 
-function seededSelection(items, count, seed) {
-  return [...items]
-    .map(item => ({ item, score:hash(`${seed}:${item.id}`) }))
-    .sort((a, b) => a.score - b.score)
-    .slice(0, count)
-    .map(entry => entry.item);
+export function getMaterialSupplyProducts() {
+  return MATERIAL_SUPPLY_PRODUCTS;
 }
 
-export function getDailyShopProducts(date = new Date()) {
-  return [...DAILY_BASE, ...seededSelection(MATERIAL_PRODUCTS, 3, getShopDailyKey(date))];
+export function getWeeklyShopProducts() {
+  return WEEKLY_TREASURE_PRODUCTS;
 }
 
-export function getWeeklyShopProduct(date = new Date()) {
-  return seededSelection(WEEKLY_PRODUCTS, 1, getShopWeeklyKey(date))[0];
+// 舊呼叫點相容：固定目錄的第一件珍寶，不再代表輪替商品。
+export function getWeeklyShopProduct() {
+  return WEEKLY_TREASURE_PRODUCTS[0];
 }
 
 export function getShopPeriodKey(product, date = new Date()) {
-  return WEEKLY_PRODUCTS.some(item => item.id === product.id)
+  return WEEKLY_TREASURE_PRODUCTS.some(item => item.id === product?.id)
     ? getShopWeeklyKey(date)
     : getShopDailyKey(date);
+}
+
+export function getMaterialUpgradePlan(materialId, owned, exchanges, keep = 5) {
+  const match = materialId?.match(/^(.+)_m([1-5])$/);
+  if (!match) return null;
+  const available = Math.max(0, Math.floor(Number(owned) || 0) - keep);
+  const maxExchanges = Math.floor(available / 5);
+  const count = exchanges === "all"
+    ? maxExchanges
+    : Math.min(maxExchanges, Math.max(0, Math.floor(Number(exchanges) || 0)));
+  return {
+    sourceId:materialId,
+    targetId:`${match[1]}_m${Number(match[2]) + 1}`,
+    exchanges:count,
+    consume:count * 5,
+    output:count,
+    keep,
+  };
 }

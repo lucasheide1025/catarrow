@@ -60,7 +60,7 @@ const rarityClass = r => ({ common:"rarity-common", uncommon:"rarity-uncommon", 
 const rarityLabelColor = r => ({ common:"#64748b", uncommon:"#16a34a", rare:"#2563eb", epic:"#9333ea", legendary:"#d97706", mythic:"#dc2626" }[r] || "#64748b");
 
 /* ─── 主元件 ─────────────────────────────────────────────── */
-export default function MemberDex({ onBack, onDexViewed }) {
+export default function MemberDex({ onBack, onDexViewed, sharedData }) {
   const { profile } = useAuth();
   const [certRecords, setCertRecords]     = useState([]);
   const [certification, setCertification] = useState(null);
@@ -81,20 +81,39 @@ export default function MemberDex({ onBack, onDexViewed }) {
   const snapshotDoneRef = useRef(false);
 
   useEffect(() => {
+    if (!sharedData) return;
+    if (sharedData.certRecords !== undefined) setCertRecords(sharedData.certRecords);
+    if (sharedData.certification !== undefined) setCertification(sharedData.certification);
+    if (sharedData.dexConfig !== undefined) setConfig(sharedData.dexConfig);
+    if (sharedData.dexGrants !== undefined) setGranted(sharedData.dexGrants);
+    if (sharedData.monsterDex !== undefined) setMonsterDex(sharedData.monsterDex);
+    if (sharedData.craftStats !== undefined) setCraftStats(sharedData.craftStats);
+    if (sharedData.chestStats !== undefined) setChestStats(sharedData.chestStats);
+    if (sharedData.potionDex !== undefined) setPotionDex(sharedData.potionDex);
+    if (sharedData.cardData !== undefined) setCardData(sharedData.cardData);
+    if (sharedData.duelStats !== undefined) setDuelStats(sharedData.duelStats);
+    if (sharedData.cats !== undefined) setCats(sharedData.cats);
+  }, [sharedData]);
+
+  useEffect(() => {
     if (!profile?.id) return;
-    getCertRecords(profile.id).then(setCertRecords).catch(() => {});
-    getCertification(profile.id).then(setCertification).catch(() => {});
-    getDexConfig().then(setConfig).catch(() => {});
-    const unsub        = subscribeDexGrants(profile.id, setGranted);
-    const unsubMon     = subscribeMonsterDex(profile.id, setMonsterDex);
-    const unsubCraft   = subscribeCraftStats(profile.id, setCraftStats);
-    const unsubChest   = subscribeChestStats(profile.id, setChestStats);
-    const unsubPotion  = subscribePotionDex(profile.id, setPotionDex);
-    const unsubCard    = subscribeCardCollection(profile.id, setCardData);
-    const unsubCats    = subscribeMyCats(profile.id, obj => setCats(Object.values(obj || {})));
-    getDuelStats(profile.id).then(setDuelStats).catch(() => {});
-    return () => { unsub && unsub(); unsubMon(); unsubCraft(); unsubChest(); unsubPotion(); unsubCard(); unsubCats && unsubCats(); };
-  }, [profile?.id]);
+    if (sharedData?.certRecords === undefined) getCertRecords(profile.id).then(setCertRecords).catch(() => {});
+    if (sharedData?.certification === undefined) getCertification(profile.id).then(setCertification).catch(() => {});
+    if (sharedData?.dexConfig === undefined) getDexConfig().then(setConfig).catch(() => {});
+    if (sharedData?.duelStats === undefined) getDuelStats(profile.id).then(setDuelStats).catch(() => {});
+    const unsubs = [
+      sharedData?.dexGrants === undefined ? subscribeDexGrants(profile.id, setGranted) : null,
+      sharedData?.monsterDex === undefined ? subscribeMonsterDex(profile.id, setMonsterDex) : null,
+      sharedData?.craftStats === undefined ? subscribeCraftStats(profile.id, setCraftStats) : null,
+      sharedData?.chestStats === undefined ? subscribeChestStats(profile.id, setChestStats) : null,
+      sharedData?.potionDex === undefined ? subscribePotionDex(profile.id, setPotionDex) : null,
+      sharedData?.cardData === undefined ? subscribeCardCollection(profile.id, setCardData) : null,
+      sharedData?.cats === undefined ? subscribeMyCats(profile.id, obj => setCats(Object.values(obj || {}))) : null,
+    ];
+    return () => unsubs.forEach(unsub => unsub?.());
+  }, [profile?.id, sharedData?.certRecords, sharedData?.certification, sharedData?.dexConfig,
+    sharedData?.duelStats, sharedData?.dexGrants, sharedData?.monsterDex, sharedData?.craftStats,
+    sharedData?.chestStats, sharedData?.potionDex, sharedData?.cardData, sharedData?.cats]);
 
   // 卡片相關成就（card_collect / card_mythic / card_all6fam）的 check/getValue 讀的是
   // cardCount / mythicCards / cardFamilies，這裡要從 cardData 推導出來，否則卡片格恆為 0

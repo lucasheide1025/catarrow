@@ -9,6 +9,7 @@ import { rankUnlocks, GUILD_RANKS } from "../domain/guildRank";
 import { STAT_META } from "../domain/guildStats";
 import { sfxShopBuy, sfxError, sfxClose, sfxSwitch } from "../../lib/sound";
 import { hallBg, bgLayer, rankBadge, ArtOrEmoji } from "./GuildArt";
+import GuildIcon from "./GuildIcon";
 import { supplyCapacity } from "../domain/guildBuildings";
 
 const card = { background: "rgba(0,0,0,.3)", borderRadius: 12, padding: 12 };
@@ -60,19 +61,19 @@ export default function GuildShop({ profile, memberCoins = 0, onBuy, onClose }) 
   return (
     <div className="guild-panel-page" style={{ minHeight: "100dvh", ...bgLayer(hallBg(), { overlay: "rgba(8,6,3,.78)" }), backgroundAttachment: "fixed", color: "#e2e8f0", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ fontSize: 18, fontWeight: 900, color: "#fbbf24" }}>🏪 公會商店</div>
+        <div style={{ fontSize: 18, fontWeight: 900, color: "#fbbf24", display: "flex", alignItems: "center", gap: 7 }}><GuildIcon name="shop" size={38} />公會商店</div>
         <button type="button" onClick={() => { sfxClose(); onClose(); }} style={{ padding: "7px 14px", borderRadius: 9, border: "none", background: "#334155", color: "#fff", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>返回</button>
       </div>
 
       <div style={{ ...card, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ fontSize: 14, fontWeight: 900 }}><span style={{ color: "#f0abfc" }}>🐾 {profile.catCoins}</span>　<span style={{ color: "#fcd34d" }}>🪙 {coinBalance}</span></span>
+        <span style={{ fontSize: 14, fontWeight: 900, display: "flex", alignItems: "center", gap: 5 }}><GuildIcon name="catCoin" size={25} /><span style={{ color: "#f0abfc" }}>{profile.catCoins}</span><GuildIcon name="coin" size={25} /><span style={{ color: "#fcd34d" }}>{coinBalance}</span></span>
         <span style={{ fontSize: 12, color: rank.color, fontWeight: 800, display: "flex", alignItems: "center", gap: 6 }}>
           <ArtOrEmoji sources={[rankBadge(rank.id)]} emoji={rank.icon} size={26} />
           {rank.name}（{shopTier} 級貨架）
         </span>
       </div>
       <div style={{ ...card, fontSize: 12, color: "#cbd5e1" }}>
-        公會倉庫　🍖 食物 <b>{profile.supplyStock.food}</b>　💧 飲水 <b>{profile.supplyStock.water}</b>　/ 各 {supplyCapacity(profile)}
+        <span style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>公會倉庫　<GuildIcon name="food" size={24} />食物 <b>{profile.supplyStock.food}</b>　<GuildIcon name="water" size={24} />飲水 <b>{profile.supplyStock.water}</b>　/ 各 {supplyCapacity(profile)}</span>
       </div>
 
       {msg && <div style={{ fontSize: 12, color: msg.startsWith("⚠️") ? "#f87171" : "#6ee7b7" }}>{msg}</div>}
@@ -123,13 +124,13 @@ export default function GuildShop({ profile, memberCoins = 0, onBuy, onClose }) 
             return (
               <div key={item.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "5px 0", borderBottom: "1px solid rgba(255,255,255,.05)" }}>
                 <span style={{ flex: 1, fontSize: 12, minWidth: 0 }}>
-                  {v.icon} <b style={{ color: v.color }}>{v.name}</b>
+                  <GuildIcon name="item" size={30} /> <b style={{ color: v.color }}>{v.name}</b>
                   <span style={{ color: "#94a3b8", marginLeft: 6 }}>{v.note}</span>
                 </span>
                 <button type="button" disabled={!afford} onClick={() => buy(item)}
                   style={{ padding: "4px 10px", borderRadius: 7, border: "none", fontSize: 11, fontWeight: 800, color: "#fff", flexShrink: 0,
                     background: afford ? "linear-gradient(135deg,#a855f7,#6d28d9)" : "#475569", cursor: afford ? "pointer" : "not-allowed" }}>
-                  🐾 {item.costCat}
+                  <span style={{ display: "flex", alignItems: "center", gap: 3 }}><GuildIcon name="catCoin" size={22} />{item.costCat}</span>
                 </button>
               </div>
             );
@@ -155,13 +156,13 @@ export default function GuildShop({ profile, memberCoins = 0, onBuy, onClose }) 
               return (
                 <div key={item.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "5px 0", borderBottom: "1px solid rgba(255,255,255,.05)" }}>
                   <span style={{ flex: 1, fontSize: 12, minWidth: 0 }}>
-                    {v.icon} <b style={{ color: v.color }}>{v.name}</b>
+                    <GuildIcon name={item.kind === "supply" ? (item.id.includes("water") ? "water" : "food") : "item"} size={30} /> <b style={{ color: v.color }}>{v.name}</b>
                     <span style={{ color: "#94a3b8", marginLeft: 6 }}>{v.note}</span>
                   </span>
                   <button type="button" disabled={locked || !afford} onClick={() => buy(item)}
                     style={{ padding: "4px 10px", borderRadius: 7, border: "none", fontSize: 11, fontWeight: 800, color: "#fff", flexShrink: 0,
                       background: locked || !afford ? "#475569" : "linear-gradient(135deg,#a855f7,#6d28d9)", cursor: locked || !afford ? "not-allowed" : "pointer" }}>
-                  {item.kind === "supply" ? `🪙 ${item.costCoins}` : `🐾 ${item.costCat}`}
+                  <span style={{ display: "flex", alignItems: "center", gap: 3 }}><GuildIcon name={item.kind === "supply" ? "coin" : "catCoin"} size={22} />{item.kind === "supply" ? item.costCoins : item.costCat}</span>
                   </button>
                 </div>
               );

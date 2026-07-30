@@ -9,6 +9,7 @@ import equipmentImage from "../../assets/hub/equipment.webp";
 import cardsImage from "../../assets/hub/cards.webp";
 import shopImage from "../../assets/hub/shop.webp";
 import companionsImage from "../../assets/hub/companions.webp";
+import progressionImage from "../../assets/hub/specialization-runes-v1.webp";
 
 const CATEGORIES = [
   { tab:"chests", title:"戰利品", desc:"寶箱・卡包・未開啟獎勵", accent:"#f59e0b", image:lootImage },
@@ -42,6 +43,10 @@ export default function MemberInventoryHub({ onPageChange, badges = {} }) {
       <div className="mt-2 border-t border-white/10 pt-4">
         <div className="mb-2 text-xs font-black text-slate-500">相關功能</div>
         <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2">
+            <HubTile title="專精與符文" desc="戰鬥流派・符文製作・開洞鑲嵌" image={progressionImage}
+              accent="#8b5cf6" onClick={() => onPageChange("specialization-runes")} />
+          </div>
           <HubTile title="我的裝備" desc="穿戴・強化・更換外觀" image={equipmentImage}
             accent="#64748b" onClick={() => onPageChange("equipment")} />
           <HubTile title="怪物卡片" desc="收藏・升星・裝備加成" image={cardsImage}

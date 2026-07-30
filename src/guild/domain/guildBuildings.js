@@ -4,7 +4,7 @@ import { rankIndexOf } from "./guildRank";
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-// Lv1~20。滿級每週 30 份＝5 趟，刻意不能取代金幣購買。
+// Lv1~20。滿級每週 30 份＝5 趟；領地只提供補貼，主要補給仍需用金幣購買。
 export const WEEKLY_OUTPUT = Object.freeze([0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20, 21, 23, 25, 27, 28, 30]);
 export const STORAGE_CAPACITY = Object.freeze([36, 42, 48, 54, 60, 66, 72, 78, 84, 90, 96, 102, 108, 114, 120, 126, 132, 138, 144, 150, 156]);
 

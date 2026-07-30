@@ -2,6 +2,7 @@ import { rankUnlocks, canAcceptDanger, repNeededForDanger, nextRankInfo } from "
 import { currentTitle } from "../domain/guildTitles";
 import { sfxOpen } from "../../lib/sound";
 import { hallBg, paperBg, rankBadge, bgLayer, ArtOrEmoji } from "./GuildArt";
+import GuildIcon from "./GuildIcon";
 
 const paperStyle = {
   borderRadius: 12,
@@ -14,7 +15,7 @@ const paperStyle = {
 
 const dangerColor = danger => (danger >= 5 ? "#7f1d1d" : danger >= 3 ? "#b45309" : "#3f6212");
 
-function MenuButton({ icon, label, note, color, onClick, badge }) {
+function MenuButton({ icon, iconName, label, note, color, onClick, badge }) {
   return (
     <button type="button" onClick={() => { sfxOpen(); onClick?.(); }}
       style={{
@@ -28,7 +29,7 @@ function MenuButton({ icon, label, note, color, onClick, badge }) {
         textAlign: "left",
       }}>
       <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-        <span style={{ fontSize: 20 }}>{icon}</span>
+        {iconName ? <GuildIcon name={iconName} size={42} label={label} /> : <span style={{ fontSize: 20 }}>{icon}</span>}
         <span style={{ minWidth: 0 }}>
           <b style={{ display: "block", fontSize: 12 }}>{label}{badge ? ` · ${badge}` : ""}</b>
           <span style={{ display: "block", marginTop: 1, color: "#cbd5e1", fontSize: 9.5 }}>{note}</span>
@@ -112,7 +113,7 @@ export default function GuildBoard({
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "3px 12px", color: "#c8b89a", fontSize: 10 }}>
               <span>聲望 {profile.rep}</span>
-              <span>CAT {profile.catCoins}</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 3 }}><GuildIcon name="catCoin" size={18} />CAT {profile.catCoins}</span>
               <span>可接 T1–T{maxDanger}</span>
               <span>今日 {doneCount}/{openable.length}</span>
             </div>
@@ -122,11 +123,11 @@ export default function GuildBoard({
         <section style={{ marginTop: 11 }}>
           <div style={{ margin: "0 2px 7px", fontSize: 11, color: "#a89878" }}>公會設施</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(135px,1fr))", gap: 7 }}>
-            <MenuButton icon="🎒" label="裝備倉庫" note="整備與強化" color="rgba(51,65,85,.9)" onClick={onOpenStash} />
-            <MenuButton icon="🏪" label="公會商店" note="補給與材料" color="rgba(76,29,149,.9)" onClick={onOpenShop} />
-            <MenuButton icon="🏘️" label="公會領地" note="建設與生產" color="rgba(22,101,52,.9)" onClick={onOpenTerritory} />
-            <MenuButton icon="📦" label="戰利品庫" note="出售雜物" color="rgba(120,53,15,.9)" onClick={onOpenVault} badge={junkCount || ""} />
-            <MenuButton icon="🤝" label="組隊遠征" note="與同伴出發" color="rgba(21,94,117,.9)" onClick={onOpenTeam} />
+            <MenuButton iconName="stash" label="裝備倉庫" note="整備與強化" color="rgba(51,65,85,.9)" onClick={onOpenStash} />
+            <MenuButton iconName="shop" label="公會商店" note="補給與材料" color="rgba(76,29,149,.9)" onClick={onOpenShop} />
+            <MenuButton iconName="territory" label="公會領地" note="建設與生產" color="rgba(22,101,52,.9)" onClick={onOpenTerritory} />
+            <MenuButton iconName="vault" label="戰利品庫" note="出售雜物" color="rgba(120,53,15,.9)" onClick={onOpenVault} badge={junkCount || ""} />
+            <MenuButton iconName="contracts" label="組隊遠征" note="與同伴出發" color="rgba(21,94,117,.9)" onClick={onOpenTeam} />
           </div>
         </section>
 
@@ -187,7 +188,7 @@ export default function GuildBoard({
                   </div>
                   <b style={{ color: "#241809", fontSize: 13, lineHeight: 1.35 }}>{contract.title}</b>
                   <div style={{ marginTop: "auto", color: "#5b4527", fontSize: 9.5 }}>
-                    {(contract.familyTags || []).map(family => family.icon).join("")}　{contract.waves} 波
+                    {contract.modeMeta?.icon} {contract.modeMeta?.label}　{(contract.familyTags || []).map(family => family.icon).join("")}
                   </div>
                   <div style={{ color: done ? "#57534e" : locked ? "#9a3412" : "#3f6212", fontSize: 9.5, fontWeight: 900 }}>
                     {done ? "今日已完成" : locked ? (need === "trial" ? "需完成晉升試煉" : `尚需 ${need} 聲望`) : "可接受委託"}

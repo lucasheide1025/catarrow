@@ -599,7 +599,15 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
   useEffect(()=>{ void ROUND_EVENTS; void setRoundEvent; },[partyMode,externalBattle,isPlaying,battle.round,dispatch]);
 
   // ─── 擊倒動畫 ⏱ ───
-  useEffect(()=>{if(!isVictoryAnim)return;playBattleSound("victory_fanfare",{monsterName:battle.monsterName,round:battle.round,roundDmg:battle.roundDmg});const t=setTimeout(()=>{playBattleSound("victory_cheer",{});dispatch({type:"SHOW_WON"});},3000);return()=>clearTimeout(t);},[isVictoryAnim,dispatch,battle.monsterName,battle.round,battle.roundDmg]);
+  useEffect(()=>{
+    if(!isVictoryAnim)return;
+    playBattleSound("monster_death",{monsterName:battle.monsterName,round:battle.round,roundDmg:battle.roundDmg});
+    const t=setTimeout(()=>{
+      playBattleSound("victory_fanfare",{monsterName:battle.monsterName,round:battle.round,roundDmg:battle.roundDmg});
+      dispatch({type:"SHOW_WON"});
+    },3000);
+    return()=>clearTimeout(t);
+  },[isVictoryAnim,dispatch,battle.monsterName,battle.round,battle.roundDmg]);
 
   // ─── 勝利回呼 ⏱ ───
   useEffect(()=>{if(!isWon||!onBattleEnd)return;const shootingEnds=shootingEndsRef.current.map(end=>end.slice());const arrowScores=shootingEnds.flat().map(arrow=>arrow.label);onBattleEnd("won",{rounds:battle.round,totalDamage:battle.totalDmgAllRounds||battle.roundDmg,crits:battle.roundCrits,arrows:arrowScores.length,arrowScores,shootingEnds,playerHp:battle.playerHp,monsterHp:battle.monsterHp});},[isWon,onBattleEnd,battle]);

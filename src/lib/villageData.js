@@ -1,4 +1,5 @@
 import { catLevelFromXP } from "./catLevel";
+import { villageAlbumMultiplier } from "./catVillageAlbums";
 
 // src/lib/villageData.js
 
@@ -246,6 +247,7 @@ export function calcPendingResources(village, opts = {}) {
   const workers = village?.workers || {};
   const myCats = opts.myCats || {};
   const catDexMult = opts.catDexMult ?? CATDEX_PRODUCTION_MULT;
+  const albumXp = opts.villageCardAlbums?.xp || opts.albumXp || {};
   const pending = {};
 
   for (const id of BUILDING_LIST) {
@@ -260,8 +262,9 @@ export function calcPendingResources(village, opts = {}) {
     const workerCatId = workers[id];
     const workerCatData = workerCatId ? myCats[workerCatId] : null;
     const workerMult = getWorkerCatMultiplier(workerCatData);
+    const albumMult = villageAlbumMultiplier(albumXp[id]);
 
-    const rate = baseRate * workerMult;
+    const rate = baseRate * workerMult * albumMult;
 
     if (!TIERED_RESOURCES.has(res)) {
       // 非分層資源（箭露、扭蛋代幣）：直接累積速率 × 小時，保留小數

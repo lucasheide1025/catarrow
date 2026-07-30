@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, lazy, Suspense, startTransition, useCallback } from "react";
+import { useState, useEffect, useRef, useMemo, lazy, Suspense, startTransition, useCallback } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { useCostControl } from "../hooks/useCostControl";
 import { subscribeResults, getRegistrations, subscribePendingCertResults, subscribeAllMessages, subscribePendingCertTasks, subscribePendingCheckins, subscribeNotifications, subscribePendingMonthlyRequests, subscribeCertification, subscribeDexGrants, getDexConfig, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection, submitGuildQuestCompletion, subscribeActiveGuildQuests, subscribeGuildSubmissions, subscribeMyCheckin, submitCheckin, approveCheckin, subscribeAppVersion, isMemberRegistered, flushPendingShootingSessions, flushPendingArrowProgress, subscribeLocalTodayArrows, initializeTodayArrows } from "../lib/db";
@@ -20,7 +20,6 @@ import MustReadGate       from "../components/member/MustReadGate";
 import HonorCelebration   from "../components/member/HonorCelebration";
 import BadgeEarnPopup     from "../components/member/BadgeEarnPopup";
 import AdminBookingAlert  from "../components/admin/AdminBookingAlert";
-import AdminCostControlBanner from "../components/admin/AdminCostControlBanner";
 
 const AdminMembers       = lazy(() => import("../components/admin/AdminMembers"));
 const AdminCompetitions  = lazy(() => import("../components/admin/AdminCompetitions"));
@@ -45,6 +44,7 @@ const AdminGuestAccounts = lazy(() => import("../components/admin/AdminGuestAcco
 const AdminTierPermissions = lazy(() => import("../components/admin/AdminTierPermissions"));
 const AdminWebsiteCms    = lazy(() => import("../components/admin/AdminWebsiteCms"));
 const EquipmentPage      = lazy(() => import("../components/member/EquipmentPage"));
+const EquipmentProgressionPage = lazy(() => import("../components/member/EquipmentProgressionPage"));
 const CoinShop           = lazy(() => import("../components/member/CoinShop"));
 const MemberComps        = lazy(() => import("../components/member/MemberComps"));
 const MemberScoring      = lazy(() => import("../components/member/MemberScoring"));
@@ -157,6 +157,8 @@ export default function AdminApp() {
   });
   const setPage = useCallback((p) => startTransition(() => setPageState(p)), []);
   const dungeonImmersive = page === "dungeon";
+  const [guildImmersive, setGuildImmersive] = useState(false);
+  const hideGlobalChrome = dungeonImmersive || guildImmersive;
 
   // 選單次級分頁狀態 (Option A)
   const [dailySub,  setDailySub]  = useState("booking"); // "booking" | "review" | "monthlycard"
@@ -220,6 +222,13 @@ export default function AdminApp() {
   const [chestStats,    setChestStats]    = useState({});
   const [potionDex,     setPotionDex]     = useState({});
   const [cardData,      setCardData]      = useState({ cards:{}, equipped:[] });
+  const [cardDataReady, setCardDataReady] = useState(false);
+  const sharedPlayerData = useMemo(() => ({
+    certification, dexConfig, dexGrants, duelStats,
+    monsterDex, craftStats, chestStats, potionDex,
+    cardData:cardDataReady ? cardData : undefined,
+    todayArrows: todayArrowsGlobal,
+  }), [certification, dexConfig, dexGrants, duelStats, monsterDex, craftStats, chestStats, potionDex, cardData, cardDataReady, todayArrowsGlobal]);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -296,6 +305,7 @@ export default function AdminApp() {
 
   useEffect(() => {
     if (!profile?.id || !archerMode) return;
+    setCardDataReady(false);
     getDexConfig().then(setDexConfig).catch(() => {});
     getDuelStats(profile.id).then(setDuelStats).catch(() => {});
     const u1 = subscribeCertification(profile.id, setCertification);
@@ -304,7 +314,10 @@ export default function AdminApp() {
     const u4 = subscribeCraftStats(profile.id, setCraftStats);
     const u5 = subscribeChestStats(profile.id, setChestStats);
     const u6 = subscribePotionDex(profile.id, setPotionDex);
-    const u7 = subscribeCardCollection(profile.id, setCardData);
+    const u7 = subscribeCardCollection(profile.id, data => {
+      setCardData(data);
+      setCardDataReady(true);
+    });
     return () => { u1?.(); u2?.(); u3?.(); u4?.(); u5?.(); u6?.(); u7?.(); };
   }, [profile?.id, archerMode]); // eslint-disable-line
 
@@ -469,7 +482,7 @@ const adminNav = [
   ];
   const ADMIN_ADVENTURE = ["adventure-hub","monster","party","party-quest","party-battle","duel","duel-room","dungeon","worldboss","guild","monsterdex"];
   const ADMIN_TRAINING  = ["training-hub","comps","comp-detail","practice","performance"];
-  const ADMIN_INVENTORY = ["inventory-hub","coinshop","materials","cats","catbook","story","equipment","cards","gacha"];
+  const ADMIN_INVENTORY = ["inventory-hub","coinshop","materials","cats","catbook","story","equipment","specialization-runes","cards","gacha"];
   const ADMIN_PROFILE   = ["profile","learn","msgs","history","external","achievements","certexam","notifications","dex","guide","leaderboard","bowsetting"];
 
   // ── 射手模式 ──────────────────────────────────────────────
@@ -477,7 +490,6 @@ const adminNav = [
     return (
       <div style={{height:"100dvh",display:"flex",flexDirection:"column",background:"#0f172a",fontFamily:"sans-serif",overflow:"hidden"}}>
         <CatBuddyProvider>
-        <AdminCostControlBanner />
         {/* 版本更新提醒 */}
         {latestVersion && latestVersion !== APP_VERSION && (
           <OverlayModal open={true} zIndex={99999} bg="rgba(0,0,0,0.75)">
@@ -535,7 +547,7 @@ const adminNav = [
           </div>
         </OverlayModal>
 
-        <div style={{ flexShrink:0, position:"sticky", top:0, zIndex:40, display: dungeonImmersive ? "none" : undefined }}>
+        <div style={{ flexShrink:0, position:"sticky", top:0, zIndex:40, display: hideGlobalChrome ? "none" : undefined }}>
           <div style={{ background:appTheme.headerBg, borderBottom:`1px solid ${appTheme.headerBorder}`, padding:"12px 16px", display:"flex", alignItems:"center", justifyContent:"space-between" }}>
             <div>
               <div style={{ fontWeight:"900", color:appTheme.titleColor, fontSize:"14px", letterSpacing:"0.02em" }}>🏹 射手模式</div>
@@ -547,7 +559,7 @@ const adminNav = [
               <span style={{ fontSize:"11px", color:"#86efac" }}>🏹{todayArrowsGlobal}</span>
               <span style={{ fontSize:"11px", color:"#f472b6" }}>⚔️Lv.{archerLevelFromXP(profile?.archerXP||0)}</span>
               <span style={{ fontSize:"12px", color:appTheme.usernameColor }}>👤 {profile?.nickname||profile?.name}</span>
-              <button onClick={()=>{setArcherMode(false);setPage("hub-member");setMemberSub(null);}}
+              <button onClick={()=>{setArcherMode(false);setPage("daily");setDailySub("booking");}}
                 style={{ fontSize:"11px", borderRadius:"8px", padding:"4px 10px", cursor:"pointer", background:"rgba(255,255,255,0.2)", color:"white", border:"none", fontWeight:"bold" }}>
                 ⚙️ 返回後台
               </button>
@@ -601,14 +613,15 @@ const adminNav = [
           {page==="history"     && <MemberHistory/>}
           {page==="external"    && <MemberExternalComp/>}
           {page==="achievements"&& <MemberAchievements/>}
-          {page==="certexam"    && <MemberCertExam onBack={()=>setPage("profile")}/>}
+          {page==="certexam"    && <MemberCertExam onBack={()=>setPage("profile")} certification={certification}/>}
           {page==="notifications" && <MemberNotifications notifications={notifications}/>}
-          {page==="dex"         && <MemberDex onBack={()=>setPage("profile")}/>}
+          {page==="dex"         && <MemberDex onBack={()=>setPage("profile")}
+            sharedData={sharedPlayerData} />}
           {page==="materials"   && <MemberMaterials onBack={()=>setPage("inventory-hub")} onGoVillage={()=>{ setGachaInitTab("potioncraft"); setPage("gacha"); }}/>}
           {page==="guide"       && <MemberGuide      onBack={()=>setPage("profile")}/>}
           {page==="bowsetting"  && <MemberBowSettings onBack={()=>setPage("profile")}/>}
-          {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("adventure-hub")}/>}
-          {page==="cards"       && <CardCollection />}
+          {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("adventure-hub")} monsterDex={monsterDex}/>}
+          {page==="cards"       && <CardCollection cardCollection={sharedPlayerData.cardData} />}
           {page==="handbook"    && <MonsterHandbook onBack={() => setPage("adventure-hub")} />}
           {page==="monster"     && <MonsterBattle
             onBack={() => {
@@ -617,7 +630,7 @@ const adminNav = [
             }}
             questContext={questCtx} onKillForQuest={handleQuestKill}
             monsterDex={monsterDex} craftStats={craftStats} chestStats={chestStats}
-            potionDex={potionDex} duelStats={duelStats} />}
+            potionDex={potionDex} duelStats={duelStats} sharedData={sharedPlayerData} />}
           {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom}/>}
           {page==="party-quest" && partyRoomId && (
             <PartyQuestRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty}/>
@@ -627,22 +640,23 @@ const adminNav = [
           )}
           {page==="duel"        && <DuelLobby profile={profile} onEnterRoom={handleEnterDuelRoom} onBack={()=>setPage("adventure-hub")}/>}
           {page==="duel-room"   && duelRoomId && <DuelRoom roomId={duelRoomId} myTeam={duelMyTeam} isHost={duelIsHost} onLeave={handleLeaveDuel} profile={profile}/>}
-          {page==="dungeon"     && <DungeonLobby onBack={()=>setPage("adventure-hub")} />}
+          {page==="dungeon"     && <DungeonLobby onBack={()=>setPage("adventure-hub")} sharedData={sharedPlayerData} />}
           {page==="equipment"   && <EquipmentPage onPageChange={setPage}/>}
+          {page==="specialization-runes" && <EquipmentProgressionPage onBack={()=>setPage("inventory-hub")}/>}
           {page==="coinshop"    && <CoinShop/>}
-          {page==="gacha"       && <CatVillage catCards={profile?.catCards} gachaCoins={profile?.gachaCoins ?? 0} initialTab={gachaInitTab} key={gachaInitTab} />}
-          {page==="worldboss"   && <div style={{ position:"fixed", inset:0, zIndex:60 }}><WorldBossLobby onBack={()=>setPage("adventure-hub")}/></div>}
+          {page==="gacha"       && <CatVillage catCards={profile?.catCards} gachaCoins={profile?.gachaCoins ?? 0} initialTab={gachaInitTab} />}
+          {page==="worldboss"   && <div style={{ position:"fixed", inset:0, zIndex:60 }}><WorldBossLobby onBack={()=>setPage("adventure-hub")} sharedData={sharedPlayerData}/></div>}
           {page==="cats"        && <CatCollection onBack={()=>setPage("inventory-hub")} onOpenBook={()=>setPage("catbook")} onOpenForge={()=>{ setGachaInitTab("forge"); setPage("gacha"); }}/>}
           {page==="catbook"     && <CatStoryBook  onBack={()=>setPage("cats")}/>}
           {page==="story"       && <StoryBook     onBack={()=>setPage("inventory-hub")}/>}
           {/* 冒險者公會：2026-07-25 起全面換成新的公會遠征介面（射手模式與教練端一致）。
               舊 AdventurerGuild（懸賞任務清單）已下架；擊殺自動提交仍靠下方 handleQuestKill。*/}
-          {page==="guild"       && <GuildExpedition onBack={()=>setPage("adventure-hub")} />}
+          {page==="guild"       && <GuildExpedition onBack={()=>setPage("adventure-hub")} onImmersiveChange={setGuildImmersive} />}
           {page==="booking"     && <MemberBooking />}
         </Suspense>
         </div>
         {/* 底部導覽（深藍主題） */}
-      <div style={{ flexShrink:0, background:"#0f172a", borderTop:"1px solid rgba(255,255,255,0.08)", display:dungeonImmersive ? "none" : "flex", zIndex:40, paddingBottom:"env(safe-area-inset-bottom)", viewTransitionName:"admin-nav" }}>
+      <div style={{ flexShrink:0, background:"#0f172a", borderTop:"1px solid rgba(255,255,255,0.08)", display:hideGlobalChrome ? "none" : "flex", zIndex:40, paddingBottom:"env(safe-area-inset-bottom)", viewTransitionName:"admin-nav" }}>
         {memberNav.map(n => {
           const active = (page===n.id||ADMIN_ADVENTURE.includes(page)&&n.id==="adventure-hub"||ADMIN_TRAINING.includes(page)&&n.id==="training-hub"||ADMIN_INVENTORY.includes(page)&&n.id==="inventory-hub"||ADMIN_PROFILE.includes(page)&&n.id==="profile");
           return (
@@ -672,7 +686,6 @@ const adminNav = [
   return (
     <div style={{minHeight:"100vh",background:"#0f172a",fontFamily:"sans-serif"}} className="flex flex-col text-slate-100">
       <CatBuddyProvider>
-      <AdminCostControlBanner />
       {bossIntroEvent && <WorldBossIntro event={bossIntroEvent} onClose={() => setBossIntroEvent(null)} />}
 
       {/* 👑 全系統橫幅公告：地下城首殺 / 村目標達成（依 kind 切樣式） */}

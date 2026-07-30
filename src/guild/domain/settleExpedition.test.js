@@ -6,6 +6,7 @@ import { evaluateJunk, GUILD_JUNK, JUNK_BY_ID } from "../data/guildJunkCatalog";
 import { EXPANSION_MATERIALS } from "../../lib/monsterExpansionCatalog";
 import { LOOT_BY_DANGER } from "../data/guildLootTable";
 import { GRADES, GUILD_EQUIP_ARCHETYPES } from "../data/guildEquipCatalog";
+import { isAffixCompatible } from "./guildEquipmentV2";
 
 const FIXED = { rand: () => 0.1 };
 const baseStats = { hp: 100, atk: 50, agi: 0, def: 0, vit: 0, luk: 0 };
@@ -171,6 +172,9 @@ describe("詞綴保底（刷詞綴是核心循環）", () => {
         for (const d of r.equipDrops) {
           expect(d.affixes.length).toBeGreaterThanOrEqual(1);
           expect(d.affixes.length).toBeLessThanOrEqual(2);
+          for (const affixId of d.affixes) {
+            expect(isAffixCompatible(d.archetypeId, affixId)).toBe(true);
+          }
         }
       }
     }
@@ -181,4 +185,22 @@ describe("詞綴保底（刷詞綴是核心循環）", () => {
     expect(r.equipDrops.length).toBeGreaterThan(0);
     for (const d of r.equipDrops) expect(d.affixes).toHaveLength(2);
   });
+});
+
+test("探索中付補給避開的遭遇不會被當成擊殺發材料", () => {
+  const state = {
+    status: "won",
+    guildStats: baseStats,
+    derived: deriveGuildCombat(baseStats),
+    shotStats: { count: 1, score: 11 },
+    skippedWaveIndexes: [0],
+    expedition: {
+      danger: 1,
+      families: ["ghost"],
+      waves: [{ monsters: [{ family: "ghost", tier: "common", tierIndex: 1, encounter: "normal" }] }],
+    },
+  };
+  const result = settleExpedition(state, { rand: () => 0 });
+  expect(result.materials).toEqual([]);
+  expect(result.legacyMaterials).toEqual([]);
 });

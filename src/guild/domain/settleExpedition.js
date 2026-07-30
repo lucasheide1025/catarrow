@@ -15,7 +15,8 @@
 // ─────────────────────────────────────────────────────────────
 import { LOOT_BY_DANGER } from "../data/guildLootTable";
 import { junkPoolFor, drawJunk } from "../data/guildJunkCatalog";
-import { GUILD_EQUIP_ARCHETYPES, GRADES, AFFIX_IDS } from "../data/guildEquipCatalog";
+import { GUILD_EQUIP_ARCHETYPES, GRADES } from "../data/guildEquipCatalog";
+import { compatibleAffixIds } from "./guildEquipmentV2";
 import { EXPANSION_MATERIALS } from "../../lib/monsterExpansionCatalog";
 import { deriveGuildCombat } from "./guildStats";
 import { shootingRatio } from "./expeditionFlow";
@@ -63,7 +64,9 @@ export function settleExpedition(state, opts = {}) {
   const lukDrop = (1 + (d.dropBonusPct || 0)) * acc.dropMult;   // LUK × 射擊表現
 
   // 擊敗的怪（勝利＝全滅所有波）
-  const defeated = (state.expedition?.waves || []).flatMap(w => w.monsters || []);
+  const skipped = new Set(state.skippedWaveIndexes || []);
+  const defeated = (state.expedition?.waves || [])
+    .flatMap((wave, index) => skipped.has(index) ? [] : (wave.monsters || []));
 
   // ① 擴充材料：每隻怪機率掉 2~3 個該族該階該 kind 的材料
   const matMap = {};      // { materialId: { id, name, qty, kind, family, tierIndex } }
@@ -116,7 +119,7 @@ export function settleExpedition(state, opts = {}) {
     const maxAffix = danger >= 5 ? 2 : 1 + (rand() < (danger >= 3 ? 0.5 : 0.25) ? 1 : 0);
     // ⚠️ 從「還沒抽中的池子」挑，不要抽到重複就放棄——舊寫法會讓該掉兩條的偶爾只掉一條
     const affixes = [];
-    const pool = [...AFFIX_IDS];
+    const pool = compatibleAffixIds(archetypeId);
     while (affixes.length < maxAffix && pool.length) {
       affixes.push(pool.splice(Math.floor(rand() * pool.length), 1)[0]);
     }

@@ -7,7 +7,7 @@ import { useCatBuddyEvent } from "../cat/CatBuddyContext";
 import {
   getCertRecords, getCertification, subscribeDexGrants, getDexConfig,
   createNotification, saveMonsterLog,
-  getMonsterDailyConfig, subscribeMonsterEventConfig, checkMonsterDailyLimit, recordMonsterSession,
+  getMonsterDailyConfig, subscribeMonsterEventConfig, checkMonsterDailyLimit, recordMonsterSession, useCoinShopSpecialTicket,
   addChests, subscribePotions, usePotions, addPracticeLog, addMaterials,
   addCoins, addMonsterCard, recordPotionUsed,
   subscribeCardCollection, addArcherXP, addRoundArrows, recordGuestBattleStats, finalizeMonsterShootingSession,
@@ -54,7 +54,7 @@ import BattleSoundIndicator from "../shared/BattleSoundIndicator";
 import { getBattleBackgroundUrl } from "../../lib/battleAssets";;
 import { createMonsterBattleSnapshot, normalizeMonsterBattleSnapshot } from "../../lib/monsterBattleSnapshot";
 import { isMonsterExpansionEnabled } from "../../lib/monsterExpansionFeature";
-import { buildSoloExpansionReward } from "../../lib/soloRewardEngine";
+import { buildSoloExpansionReward, normalizeSoloRewardMaterials } from "../../lib/soloRewardEngine";
 import { claimMonsterBattleReward, flushPendingMonsterBattleRewards } from "../../lib/monsterRewardDb";
 
 // 向後相容 alias（逐步取代為直接使用 labelToValue / calcArrowStats）
@@ -125,7 +125,7 @@ function saveMbDefaults(obj) {
   localStorage.setItem("mb_defaults", JSON.stringify(obj));
 }
 
-export default function MonsterBattle({ onBack, isGuest = false, kidMode = false, guestProfile = null, questContext = null, onKillForQuest = null, onImmersiveChange = null, monsterDex = {}, craftStats = {}, chestStats = {}, potionDex = {}, duelStats = null }) {
+export default function MonsterBattle({ onBack, isGuest = false, kidMode = false, guestProfile = null, questContext = null, onKillForQuest = null, onImmersiveChange = null, monsterDex = {}, craftStats = {}, chestStats = {}, potionDex = {}, duelStats = null, sharedData }) {
   const { profile: authProfile } = useAuth();
   const profile = guestProfile || authProfile;
   const checkinActive = useCheckinActive(isGuest ? null : profile?.id);
@@ -148,6 +148,18 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   const [dexConfig, setDexConfig]   = useState({ physicalMax:20, pointMax:20 });
   const [dailyLeft, setDailyLeft]   = useState(null);
   const [dailyMax, setDailyMax]     = useState(5);
+
+  useEffect(() => {
+    if (!sharedData) return;
+    if (sharedData.certRecords !== undefined) setCertRecords(sharedData.certRecords);
+    if (sharedData.certification !== undefined) setCertification(sharedData.certification);
+    if (sharedData.dexGrants !== undefined) setDexGrants(sharedData.dexGrants);
+    if (sharedData.dexConfig !== undefined) setDexConfig(sharedData.dexConfig);
+    if (sharedData.cardData !== undefined) {
+      setCardColl(sharedData.cardData);
+      cardCollRef.current = sharedData.cardData;
+    }
+  }, [sharedData]);
 
   // 匹配怪物（6族各1隻）
   const [matchedMonsters, setMatchedMonsters] = useState([]);
@@ -281,7 +293,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     return () => clearTimeout(t);
   }, [phase]);
 
-  // 進入戰利品畫面：播放凱旋音效
+  // 進入戰利品畫面：播放勝利凱旋音樂 (victory.mp3)
   useEffect(() => {
     if (phase !== "loot") return;
     const t = setTimeout(() => sfxVictoryFanfare(), 80);
@@ -373,16 +385,22 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     const cached_cert = ssGet(`mb_cert_${profile.id}`);
     const cached_dcfg = ssGet("mb_dexCfg");
 
-    if (cached_cr)   setCertRecords(cached_cr);
-    else getCertRecords(profile.id).then(v => { setCertRecords(v); ssSet(`mb_cr_${profile.id}`, v); }).catch(()=>{});
+    if (sharedData?.certRecords === undefined) {
+      if (cached_cr) setCertRecords(cached_cr);
+      else getCertRecords(profile.id).then(v => { setCertRecords(v); ssSet(`mb_cr_${profile.id}`, v); }).catch(()=>{});
+    }
 
-    if (cached_cert) setCertification(cached_cert);
-    else getCertification(profile.id).then(v => { setCertification(v); ssSet(`mb_cert_${profile.id}`, v); }).catch(()=>{});
+    if (sharedData?.certification === undefined) {
+      if (cached_cert) setCertification(cached_cert);
+      else getCertification(profile.id).then(v => { setCertification(v); ssSet(`mb_cert_${profile.id}`, v); }).catch(()=>{});
+    }
 
-    if (cached_dcfg) setDexConfig(cached_dcfg);
-    else getDexConfig().then(v => { setDexConfig(v); ssSet("mb_dexCfg", v); }).catch(()=>{});
+    if (sharedData?.dexConfig === undefined) {
+      if (cached_dcfg) setDexConfig(cached_dcfg);
+      else getDexConfig().then(v => { setDexConfig(v); ssSet("mb_dexCfg", v); }).catch(()=>{});
+    }
 
-    const unsub = subscribeDexGrants(profile.id, setDexGrants);
+    const unsub = sharedData?.dexGrants === undefined ? subscribeDexGrants(profile.id, setDexGrants) : null;
     const unsubPotions = subscribePotions(profile.id, setPotionInv);
 
     const cached_dcnt = ssGet("mb_dailyCfg");
@@ -399,7 +417,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
 
     const unsubEvent = subscribeMonsterEventConfig(setEventConfig);
     return () => { unsub && unsub(); unsubPotions && unsubPotions(); unsubEvent && unsubEvent(); };
-  }, [profile?.id]); // eslint-disable-line
+  }, [profile?.id, sharedData?.certRecords, sharedData?.certification, sharedData?.dexConfig, sharedData?.dexGrants]); // eslint-disable-line
 
   useEffect(() => {
     if (isLimitedAccount || !profile || !certRecords) return;
@@ -410,12 +428,12 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   }, [profile, certification, certRecords, dexGrants, isGuest]); // eslint-disable-line
 
   useEffect(() => {
-    if (!profile?.id) return;
+    if (!profile?.id || sharedData?.cardData !== undefined) return;
     return subscribeCardCollection(profile.id, data => {
       setCardColl(data);
       cardCollRef.current = data;
     });
-  }, [profile?.id]); // eslint-disable-line
+  }, [profile?.id, sharedData?.cardData]); // eslint-disable-line
 
   // ✅ 射手數值就緒後，依戰力匹配6隻怪物
   useEffect(() => {
@@ -1010,8 +1028,8 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
       }).catch(() => {});
     }
     if (result==="win") {
+      sfxMonsterDead();
       playBattleSound("monster_death", { monsterName: monster?.name });
-      setTimeout(() => sfxSuccess(), 600);
 
       // ── 寶箱（固定必掉）────────────────────────────────
       const { mainChest, potionChest } = makeChests(monster, mode);
@@ -1330,14 +1348,22 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
           <div className="bg-red-900/30 border border-red-500/30 rounded-2xl p-6 text-center">
             <div className="text-3xl mb-2">😴</div>
             <div className="font-black text-red-400">今日挑戰次數已用完</div>
-            <div className="text-slate-400 text-sm mt-1">明天再來挑戰！</div>
+            <div className="text-slate-400 text-sm mt-1">可使用特殊道具增加今日次數。</div>
+            <button type="button" disabled={!profile?.specialItems?.soloBattleTicket}
+              onClick={async () => {
+                const result = await useCoinShopSpecialTicket(profile.id, "soloBattleTicket");
+                if (result.ok) setDailyLeft(1);
+              }}
+              className="mt-3 min-h-11 rounded-xl bg-indigo-400 px-4 text-xs font-black text-slate-950 disabled:bg-slate-700 disabled:text-slate-500">
+              🎟️ 使用單人打怪次數券（持有 {profile?.specialItems?.soloBattleTicket || 0}）
+            </button>
           </div>
         ) : (
           <>
 
-            {/* 六族各1隻，依家族排列 */}
+            {/* 七族各1隻，依家族排列 */}
             <div className="flex items-center justify-between mb-1">
-              <div className="text-slate-300 text-sm font-black">今日對手（六族匹配）</div>
+              <div className="text-slate-300 text-sm font-black">今日對手（七族匹配，包含寶箱怪）</div>
               <button onClick={rerollMonsters} className="text-xs text-purple-300 font-bold bg-purple-900/30 px-2.5 py-1 rounded-full border border-purple-500/30">
                 🎲 重新抽怪
               </button>
@@ -1480,7 +1506,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
         </div>
 
         <div className="flex items-center justify-between">
-          <div className="text-slate-300 text-sm font-black">選擇對手（六族匹配）</div>
+          <div className="text-slate-300 text-sm font-black">選擇對手（七族匹配，包含寶箱怪）</div>
           <button onClick={rerollMonsters} className="text-xs text-purple-300 font-bold bg-purple-900/30 px-2.5 py-1 rounded-full border border-purple-500/30">
             🎲 重新抽怪
           </button>
@@ -1491,7 +1517,9 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
             const tier   = TIER_LABEL[m.tier] || {};
             const family = FAMILIES[m.family] || {};
             const isPicked = pickedMonster?.id === m.id;
-            const dropMats = getMaterialPool(`${m.family}_`, m.tier).filter(x => !x.id?.startsWith("frag_"));
+            const dropMats = m.materialId
+              ? [{ id:m.materialId, name:m.materialName || EXPANSION_MATERIAL_BY_ID[m.materialId]?.name || m.materialId, icon:m.family === "treasure" ? "🗝️" : "🪨" }]
+              : getMaterialPool(`${m.family}_`, m.tier).filter(x => !x.id?.startsWith("frag_"));
             const aXP = MONSTER_TIER_XP[m.tier] || 5;
             const cXP = CAT_TIER_XP[m.tier] || 5;
             return (
@@ -2097,7 +2125,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
               crits: critCount,
             }}
             materials={droppedMaterials.map(mat => ({
-              id: mat.id, name: mat.name || mat.id, icon: mat.icon, count: mat.count || 1,
+              id: mat.id, name: mat.name || mat.id, icon: mat.icon, count: mat.count ?? mat.quantity ?? 1,
             }))}
             card={droppedCard}
             /* ⚠️ 金幣寶箱是獨立的 droppedCoinChest，不在 chestList 裡 ——
@@ -2386,10 +2414,10 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
             });
             const trustedReward = claimResult?.reward || {};
             setDroppedCoins(Math.max(0, Number(trustedReward.coins) || 0));
-            const trustedMaterials = Object.entries(trustedReward.materialTotals || {}).map(([id, quantity]) => ({
-              id, quantity,
-              name:EXPANSION_MATERIAL_BY_ID[id]?.name || monster?.materialName || id,
-            }));
+            const trustedMaterials = normalizeSoloRewardMaterials(
+              trustedReward.materialTotals,
+              (id) => EXPANSION_MATERIAL_BY_ID[id] || { name:monster?.materialName || id }
+            );
             setDroppedMaterials(trustedMaterials.length ? trustedMaterials : displayMaterials);
             setDroppedCard(trustedReward.card || null);
           } catch (error) {

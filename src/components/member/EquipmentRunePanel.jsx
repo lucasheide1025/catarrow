@@ -13,7 +13,7 @@ function RuneImg({ rune, size = 32 }) {
   return <span className="shrink-0" style={{ fontSize: size * 0.8 }}>{rune?.icon || "🔮"}</span>;
 }
 
-export default function EquipmentRunePanel({ profile, readOnly = false }) {
+export default function EquipmentRunePanel({ profile, readOnly = false, pageMode = false }) {
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState("");
   const inventory = profile?.equipmentRuneInventory || {};
@@ -37,14 +37,14 @@ export default function EquipmentRunePanel({ profile, readOnly = false }) {
       : "合成失敗：兩枚材料符文與金幣已消耗");
   };
 
-  return <section className="mt-4 rounded-2xl border border-violet-400/30 bg-gradient-to-br from-violet-950/45 to-slate-950 p-4 shadow-xl">
+  return <section className={`${pageMode ? "" : "mt-4"} rounded-3xl border border-violet-400/30 bg-gradient-to-br from-violet-950/55 via-slate-950 to-indigo-950/60 p-4 shadow-2xl sm:p-5`}>
     <div className="flex items-start justify-between gap-3"><div><h2 className="text-sm font-black text-violet-100">🔮 裝備符文</h2><p className="mt-1 text-[11px] text-slate-400">王房碎片製作初階符文；兩枚相同未鑲嵌符文可逐階合成（兩枚都會消耗，失敗不返還）。</p></div><div className="rounded-lg border border-amber-300/25 bg-amber-400/10 px-2 py-1 text-[11px] font-black text-amber-200">👑 {profile?.kingSeals || 0}</div></div>
     {notice && <div role="status" className="mt-3 rounded-xl border border-violet-300/20 bg-violet-400/10 px-3 py-2 text-xs font-bold text-violet-100">{notice}</div>}
-    <div className="mt-4 grid grid-cols-2 gap-2">{Object.entries(EQUIPMENT_RUNE_TYPES).map(([type, meta]) => {
+    <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">{Object.entries(EQUIPMENT_RUNE_TYPES).map(([type, meta]) => {
       const rune = EQUIPMENT_RUNES[`equipment_${type}_t1`]; const enabled = (fragments[type] || 0) >= rune.fragmentCost && (profile?.coins || 0) >= rune.goldCost;
-      return <div key={type} className="rounded-xl border border-white/10 bg-black/20 p-2.5"><div className="flex items-center gap-2"><RuneImg rune={rune} size={40} /><div className="text-xs font-black text-white">{meta.name}</div></div><div className="mt-1 text-[10px] text-slate-400">碎片 {fragments[type] || 0}／{rune.fragmentCost}</div><button type="button" disabled={readOnly || !enabled || Boolean(busy)} onClick={() => craft(rune)} className="mt-2 min-h-9 w-full rounded-lg bg-violet-500/80 px-2 text-[11px] font-black text-white disabled:cursor-not-allowed disabled:opacity-40">{busy === `craft-${rune.id}` ? "製作中…" : `製作 T1・${rune.goldCost} 金幣`}</button></div>;
+      return <div key={type} className="rounded-2xl border border-white/10 bg-black/25 p-3"><div className="flex items-center gap-2"><RuneImg rune={rune} size={46} /><div className="text-xs font-black text-white">{meta.name}</div></div><div className="mt-2 text-[10px] text-slate-400">碎片 {fragments[type] || 0}／{rune.fragmentCost}</div><div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-violet-400" style={{width:`${Math.min(100, (fragments[type] || 0) / rune.fragmentCost * 100)}%`}} /></div><button type="button" disabled={readOnly || !enabled || Boolean(busy)} onClick={() => craft(rune)} className="mt-3 min-h-11 w-full rounded-xl bg-violet-500/80 px-2 text-[11px] font-black text-white disabled:cursor-not-allowed disabled:opacity-40">{busy === `craft-${rune.id}` ? "製作中…" : `製作 T1・${rune.goldCost} 金幣`}</button></div>;
     })}</div>
-    <div className="mt-4 border-t border-white/10 pt-3"><div className="mb-2 text-xs font-black text-violet-200">符文背包</div><div className="space-y-2">{Object.values(EQUIPMENT_RUNES).filter(rune => (inventory[rune.id] || 0) > 0).map(rune => {
+    <div className="mt-5 border-t border-white/10 pt-4"><div className="mb-3 text-sm font-black text-violet-200">符文背包與逐階合成</div><div className="grid gap-2 sm:grid-cols-2">{Object.values(EQUIPMENT_RUNES).filter(rune => (inventory[rune.id] || 0) > 0).map(rune => {
       const next = getNextEquipmentRune(rune.id); const enabled = next && (inventory[rune.id] || 0) >= 2 && (profile?.coins || 0) >= next.goldCost;
       return <div key={rune.id} className="flex items-center gap-2 rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2"><RuneImg rune={rune} size={30} /><div className="min-w-0 flex-1"><div className="text-xs font-black text-white">{rune.name} T{rune.tier} <span className="text-violet-300">×{inventory[rune.id]}</span></div><div className="mt-0.5 text-[10px] text-slate-400">{rune.stat === "all" ? "ATK／DEF／HP" : rune.stat.toUpperCase()} +{Math.round(rune.bonus * 100)}%</div></div>{next && <button type="button" disabled={readOnly || !enabled || Boolean(busy)} onClick={() => combine(rune)} className="min-h-9 rounded-lg border border-violet-300/30 bg-violet-500/15 px-2 text-[10px] font-black text-violet-100 disabled:cursor-not-allowed disabled:opacity-35">{busy === `combine-${rune.id}` ? "合成中…" : `合成 T${next.tier}`}</button>}</div>;
     })}{!Object.values(EQUIPMENT_RUNES).some(rune => (inventory[rune.id] || 0) > 0) && <div className="rounded-xl border border-dashed border-slate-700 px-3 py-4 text-center text-xs text-slate-500">背包尚無符文。完成地下城王房可取得符文碎片。</div>}</div></div>

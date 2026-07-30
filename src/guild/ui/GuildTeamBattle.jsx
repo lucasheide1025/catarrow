@@ -17,6 +17,7 @@
 //   ③ 房主看得到「還在等誰」＋卡超過 20 秒可強制推進（不等斷線的人）
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { aliveTeamTargets, aliveMemberIds } from "../domain/teamExpeditionFlow";
+import { attackRangeLabel, combatRoleLabel, counterConditionLabel } from "../domain/guildCombatLabels";
 import { vibrate } from "../../lib/sound";
 import { guildBattleSound as sound } from "./guildBattleSound";
 import {
@@ -24,8 +25,11 @@ import {
   guildScoreButtons,
   initialGuildTargetFace,
 } from "./guildTargetFace";
-import { MonsterArt, CatArt, HeroArt, fieldBg, bgLayer } from "./GuildArt";
-const MAX_DIST = 6;
+import { MonsterArt, CatArt, fieldBg, bgLayer } from "./GuildArt";
+import { GuildPlayerAppearance } from "./GuildItemArt";
+import { guildBattleFinalizeDelay, retargetPendingShots } from "../domain/guildBattlePresentation";
+import GuildDefenseLine from "./GuildDefenseLine";
+const MAX_DIST = 10;
 const MOB_SIZE = 84;
 
 // 演出節奏（毫秒）。組隊一回合可能有 4 人 × 6 箭 = 24 箭，用單人版的 430ms 會播 10 秒——
@@ -83,7 +87,7 @@ function Bar({ cur, max, color = "#ef4444", h = 5 }) {
 export default function GuildTeamBattle({
   room, battle, myId, isHost, arrowsPerRound,
   initialTargetFormat = "full_110",
-  onSubmitShots, onCommitRound, onLeave,
+  onSubmitShots, onCommitRound, onAcknowledgeEvent, onTemporaryLeave,
 }) {
   // view = 目前畫面上的戰鬥狀態。動畫期間停在「回合前」，播完才跳到最新的。
   const [view, setView] = useState(battle);
@@ -95,6 +99,7 @@ export default function GuildTeamBattle({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [stuck, setStuck] = useState(false);
+  const [showTactics, setShowTactics] = useState(false);
 
   // 動畫用的暫時視覺狀態
   const [hitMap, setHitMap] = useState({});        // 動畫期間先扣的傷害
@@ -291,7 +296,11 @@ export default function GuildTeamBattle({
       t = at + T.eventStep;
     }
 
-    // ⑥ 收尾：套用真實狀態、解鎖輸入
+    const visualEnd = t + T.tailPause;
+    if (next.status === "won") {
+      later(() => setFlash("✅ 已確認全部敵人陣亡"), visualEnd);
+    }
+    // ⑥ 收尾：全隊各自在本機看完死亡與全滅確認，再套用共享結果。
     later(() => {
       finishTo(next, nextSeq);
       if (next.status === "won") { setFlash("🎉 討伐成功，凱旋歸來！"); sound.victory(); }
@@ -302,7 +311,7 @@ export default function GuildTeamBattle({
         setFlash(`本回合擊殺 ${kills} 隻${monHits.length ? "，有人受到攻擊！" : ""}`);
         sound.waveClear();
       }
-    }, t + T.tailPause);
+    }, guildBattleFinalizeDelay(next.status, visualEnd));
   }
 
   // 動畫保險絲：手機切到背景會凍結 timer → 回到前景時若已落後就直接對齊（跟貓貓村同一手法）
@@ -409,10 +418,18 @@ export default function GuildTeamBattle({
 
       <div style={{ padding: "6px 12px", background: "#1a1207", fontSize: 11, fontWeight: 800, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <span style={{ color: "#fcd34d" }}>
-          📜 {room?.contract?.title}　第 {view.round} 回合　波 {view.waveIndex + 1}/{view.expedition?.totalWaves}
+          📜 {room?.contract?.title}　第 {view.round} 回合　{view.missionMode === "assault"
+            ? `波 ${view.waveIndex + 1}/${view.expedition?.totalWaves}`
+            : view.missionMode === "defense" ? "據點防守中" : "探索遭遇"}
         </span>
-        <button type="button" onClick={onLeave} style={{ padding: "3px 9px", borderRadius: 7, border: "none", background: "#334155", color: "#cbd5e1", fontSize: 10.5, fontWeight: 800, cursor: "pointer" }}>離開</button>
+        <button type="button" onClick={onTemporaryLeave} style={{ padding: "3px 9px", borderRadius: 7, border: "none", background: "#334155", color: "#cbd5e1", fontSize: 10.5, fontWeight: 800, cursor: "pointer" }}>暫時離開</button>
       </div>
+      {view.missionMode === "defense" && view.defense && (
+        <div style={{ padding: "5px 12px", background: "rgba(69,10,10,.8)", fontSize: 10, display: "flex", justifyContent: "space-between" }}>
+          <span>防守時間 {view.defense.clock}/{view.defense.duration}</span>
+          <span>視距外敵軍 {view.defense.queue.length}</span>
+        </div>
+      )}
 
       <div style={{ padding: "5px 12px", display: "flex", alignItems: "center", gap: 8, background: "#0f172a" }}>
         <span style={{ fontSize: 11, fontWeight: 800, color: "#fca5a5", minWidth: 62 }}>❤️ {me?.hp ?? 0}/{me?.maxHp ?? 0}</span>
@@ -424,13 +441,24 @@ export default function GuildTeamBattle({
       <div style={{ position: "relative", flex: 1, minHeight: 320, overflow: "hidden",
         ...bgLayer(fieldBg(view.expedition?.family), { overlay: "rgba(6,10,6,.42)" }) }}>
         <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg,rgba(0,0,0,.15) 0%,transparent 35%,rgba(0,0,0,.68) 100%)", pointerEvents: "none" }} />
+        <button type="button" disabled={animating} onClick={() => setShowTactics(true)}
+          style={{ position: "absolute", top: 8, right: 8, zIndex: 95, padding: "5px 8px", borderRadius: 8,
+            border: "1px solid rgba(255,255,255,.2)", background: "#0f172a", color: "#fff", fontSize: 10, fontWeight: 900 }}>
+          📋 怪物情報
+        </button>
 
         {targets.map((m, i) => {
           const p = posOf(i, targets.length, m.distance);
           const isSel = target === m.instanceId;
           const shaking = shakeIds.includes(m.instanceId);
           return (
-            <button key={m.instanceId} type="button" onClick={() => { if (!animating) { sound.tap(); setTarget(m.instanceId); } }}
+            <button key={m.instanceId} type="button" onClick={() => {
+              if (!animating) {
+                sound.tap();
+                setTarget(m.instanceId);
+                setShots(current => retargetPendingShots(current, m.instanceId));
+              }
+            }}
               style={{ position: "absolute", top: `${p.topPct}%`, left: `${p.leftPct}%`, "--s": p.scale,
                 transform: `translate(-50%,-50%) scale(${p.scale})`,
                 transition: "top .45s ease-out, left .45s ease-out",
@@ -441,12 +469,60 @@ export default function GuildTeamBattle({
               <div style={{ fontSize: 9, fontWeight: 800, color: "#fecaca", whiteSpace: "nowrap", textShadow: "0 1px 3px #000" }}>{m.name}</div>
               <div style={{ width: 56, margin: "1px auto" }}><Bar cur={visualHp(m)} max={m.maxHp} /></div>
               <div style={{ fontSize: 9, fontWeight: 900, color: m.distance <= 1 ? "#ef4444" : "#fcd34d" }}>
-                {m.distance <= 0 ? "⚔️攻擊!" : `距離 ${m.distance}`}
+                {m.distance <= (m.attackRange || 0) ? "⚔️射程內" : `距離 ${m.distance} 公尺`}
               </div>
+              {m.intent && <div style={{ padding: "2px 5px", borderRadius: 8, background: "#991b1b", color: "#fee2e2", fontSize: 8, fontWeight: 900 }}>⚠️ {m.intent.name}<br />破解：{counterConditionLabel(m.intent.counter, view.members?.[myId]?.targetFormat)}</div>}
               {isSel && !animating && <div style={{ fontSize: 10, color: "#f59e0b", fontWeight: 900 }}>▲鎖定</div>}
             </button>
           );
         })}
+        {showTactics && (
+          <div role="dialog" aria-modal="true" style={{ position: "absolute", inset: 0, zIndex: 110, background: "rgba(2,6,23,.92)", padding: 14, overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+              <b style={{ color: "#fbbf24" }}>共享戰場情報</b>
+              <button type="button" onClick={() => setShowTactics(false)} style={{ border: "none", borderRadius: 7, background: "#334155", color: "#fff", padding: "4px 9px" }}>關閉</button>
+            </div>
+            {targets.slice().sort((a, b) => a.distance - b.distance).map(monster => (
+              <button key={monster.instanceId} type="button" onClick={() => {
+                setTarget(monster.instanceId);
+                setShots(current => retargetPendingShots(current, monster.instanceId));
+                setShowTactics(false);
+              }}
+                style={{ width: "100%", marginBottom: 7, padding: 9, borderRadius: 9, border: "1px solid rgba(255,255,255,.12)", background: "#111827", color: "#e2e8f0", textAlign: "left" }}>
+                <b>{monster.icon} {monster.name}</b>
+                <div style={{ marginTop: 4, fontSize: 10 }}>類型：{combatRoleLabel(monster.combatRole)}・距離 {monster.distance} 公尺・移動 {monster.moveSpeed} 格・射程 {attackRangeLabel(monster.attackRange)}</div>
+                {monster.intent && <div style={{ marginTop: 5, padding: 7, borderRadius: 8, background: "rgba(127,29,29,.45)", color: "#fecaca", fontSize: 10 }}>
+                  <b>準備發動：{monster.intent.name}</b><br />
+                  破解：{counterConditionLabel(monster.intent.counter, view.members?.[myId]?.targetFormat)}
+                </div>}
+              </button>
+            ))}
+          </div>
+        )}
+        {view.eventGate && (
+          <div role="dialog" aria-modal="true" style={{ position: "absolute", inset: 0, zIndex: 120, background: "rgba(2,6,23,.92)", display: "grid", placeItems: "center", padding: 20 }}>
+            <div style={{ maxWidth: 360, padding: 18, borderRadius: 16, background: "#172033", border: "1px solid #fbbf24", textAlign: "center" }}>
+              <div style={{ fontSize: 30 }}>🏘️</div>
+              <b style={{ color: "#fbbf24" }}>{view.eventGate.label}</b>
+              <p style={{ color: "#cbd5e1", fontSize: 11 }}>{view.eventGate.summary || "村民已完成這次協助。"}</p>
+              {view.eventGate.targets?.length > 0 && (
+                <div style={{ margin: "10px 0", display: "grid", gap: 6, textAlign: "left" }}>
+                  {view.eventGate.targets.map(result => (
+                    <div key={result.instanceId} style={{ padding: "7px 9px", borderRadius: 8, background: "rgba(15,23,42,.8)", fontSize: 11 }}>
+                      <b>{result.name}</b>
+                      <span style={{ float: "right", color: result.defeated ? "#fca5a5" : "#fde68a", fontWeight: 900 }}>{result.defeated ? "擊倒" : `-${result.damage}`}</span>
+                      <div style={{ marginTop: 3, color: "#94a3b8" }}>生命 {result.hpBefore} → {result.hpAfter}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p style={{ color: "#94a3b8", fontSize: 10.5 }}>協助結束後村民已離場；確認前全隊戰鬥保持暫停。</p>
+              {isHost
+                ? <button type="button" onClick={onAcknowledgeEvent} style={{ width: "100%", padding: 9, borderRadius: 9, border: "none", background: "#b45309", color: "#fff", fontWeight: 900 }}>確認結果・全隊繼續</button>
+                : <div style={{ color: "#93c5fd", fontSize: 11 }}>等待房主確認……</div>}
+            </div>
+          </div>
+        )}
 
         {/* 死亡殘影 */}
         {dying.map(d => (
@@ -473,6 +549,8 @@ export default function GuildTeamBattle({
           </div>
         ))}
 
+        {view.missionMode === "defense" && <GuildDefenseLine defense={view.defense} />}
+
         {/* 小隊站位 */}
         <div style={{ position: "absolute", bottom: 6, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 10, alignItems: "flex-end", zIndex: 70 }}>
           {memberIds.map(id => {
@@ -486,9 +564,8 @@ export default function GuildTeamBattle({
                 {hurtIds.includes(id) && (
                   <div style={{ position: "absolute", inset: -8, background: "radial-gradient(circle,#ef4444,transparent 70%)", animation: "gt-hurt .5s ease-out", pointerEvents: "none", borderRadius: 12 }} />
                 )}
-                {isMe
-                  ? <HeroArt size={62} style={{ filter: `drop-shadow(0 4px 8px rgba(0,0,0,.65))${aiming ? " drop-shadow(0 0 8px #fbbf24)" : ""}` }} />
-                  : <div style={{ fontSize: 34, filter: `drop-shadow(0 3px 6px rgba(0,0,0,.6))${aiming ? " drop-shadow(0 0 8px #fbbf24)" : ""}` }}>🏹</div>}
+                <GuildPlayerAppearance appearanceId={room?.loadouts?.[id]?.appearanceId} size={62}
+                  style={{ filter: `drop-shadow(0 4px 8px rgba(0,0,0,.65))${aiming ? " drop-shadow(0 0 8px #fbbf24)" : ""}` }} />
                 <div style={{ fontSize: 9, fontWeight: 900, color: isMe ? "#93c5fd" : "#e2e8f0", whiteSpace: "nowrap" }}>
                   {m.status === "down" ? "💀 " : done ? "✅ " : ""}{m.name}
                 </div>

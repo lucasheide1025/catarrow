@@ -12,7 +12,7 @@ import {
   resetPartyRoom, sendPartyCheer, clearPartyProcessing,
   applyPartyCarryPotion, applyPartyUtilityPotion,
 } from "../../lib/partyDb";
-import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs, addArrowdew, addArcherXP, recordPotionUsed, addRoundArrows, recordGuestBattleStats, finalizeGameShootingSession, addPartyDamage } from "../../lib/db";
+import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, useCoinShopSpecialTicket, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs, addArrowdew, addArcherXP, recordPotionUsed, addRoundArrows, recordGuestBattleStats, finalizeGameShootingSession, addPartyDamage } from "../../lib/db";
 import { MONSTER_TIER_XP, PARTY_XP_MULT, PARTY_BONUS_CHEST_CHANCE, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_TIER_XP } from "../../lib/catLevel";
@@ -1035,7 +1035,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         {isHost && (
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
-              <div className="text-xs font-black text-slate-400 uppercase tracking-widest">系統抽出候選怪物（六族各1）</div>
+              <div className="text-xs font-black text-slate-400 uppercase tracking-widest">系統抽出候選怪物（七族各1，包含寶箱怪）</div>
               <button onClick={handleRedrawMonsters}
                 className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600/60 text-indigo-200 text-xs font-black rounded-lg active:scale-95 transition-transform">
                 🎲 重新抽取
@@ -1049,7 +1049,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 {drawnMonsters.map(m => {
                   const tier = TIER_LABEL[m.tier];
                   const fam  = FAMILIES[m.family];
-                  const dropMats = getMaterialPool(`${m.family}_`, m.tier).filter(x => !x.id?.startsWith("frag_"));
+                  const dropMats = m.materialId
+                    ? [{ id:m.materialId, name:m.materialName || m.materialId, icon:m.family === "treasure" ? "🗝️" : "🪨" }]
+                    : getMaterialPool(`${m.family}_`, m.tier).filter(x => !x.id?.startsWith("frag_"));
                   const aXP = MONSTER_TIER_XP[m.tier] || 5;
                   const cXP = CAT_TIER_XP[m.tier] || 5;
                   return (
@@ -1103,6 +1105,17 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 <span>{partyBattleLeft > 0 ? "⚔️" : "😴"}</span>
                 <span>今日組隊剩餘 {partyBattleLeft}/5 次</span>
               </div>
+            )}
+            {partyBattleLeft === 0 && isHost && (
+              <button type="button" disabled={!profile?.specialItems?.partyBattleTicket}
+                onClick={async () => {
+                  const result = await useCoinShopSpecialTicket(myId, "partyBattleTicket");
+                  if (result.ok) setPartyBattleLeft(1);
+                  else setStartError(result.reason);
+                }}
+                className="min-h-11 rounded-xl bg-indigo-400 px-3 text-xs font-black text-slate-950 disabled:bg-slate-700 disabled:text-slate-500">
+                🎟️ 使用組隊打怪次數券（持有 {profile?.specialItems?.partyBattleTicket || 0}）
+              </button>
             )}
             {startError && (
               <div className="bg-red-900/50 border border-red-500/50 rounded-xl px-3 py-2 text-red-300 text-xs font-bold text-center">

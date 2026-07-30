@@ -56,6 +56,7 @@ export function emptyGuildProfile() {
     construction: null,
     shards: 0,             // 公會裝碎片：分解重複裝備取得，用來強化主力裝（見 guildEnhance）
     title: null,           // 配戴中的稱號 id（純名譽，零戰力加成，見 guildTitles）
+    appearanceId: "tabby_ranger", // 棋盤射手外觀；純造型，組隊同步此 id
     salvagedCount: 0,      // 累計分解過幾件裝備（稱號用；分解本身不留紀錄就算不出來）
     catEarned: 0,          // 累計賺到的 CAT幣（稱號用；現有的 catCoins 會被花掉，算不出「總共賺多少」）
     junkStock: {},         // 雜貨倉庫 { [junkId]: qty }——**不自動賣**，玩家自己決定何時賣
@@ -100,6 +101,8 @@ export function normalizeGuildProfile(raw) {
     catEarned: Math.max(0, Math.floor(Number(raw.catEarned) || 0)),
     partyCats: Array.isArray(raw.partyCats) ? raw.partyCats.filter(id => typeof id === "string") : null,
     arrowsPerRound: Number(raw.arrowsPerRound) === 6 ? 6 : 3,
+    appearanceId: ["tabby_ranger", "black_scout", "white_medic", "calico_hunter", "gray_guard", "cream_wanderer"].includes(raw.appearanceId)
+      ? raw.appearanceId : "tabby_ranger",
     supplyStock: {
       food: Math.max(0, Math.floor(Number(raw.supplyStock?.food) || 0)),
       water: Math.max(0, Math.floor(Number(raw.supplyStock?.water) || 0)),

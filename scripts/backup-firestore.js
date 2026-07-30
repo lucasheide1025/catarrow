@@ -1,7 +1,8 @@
 // scripts/backup-firestore.js
-// 線上 Firestore 完整備份 → backups/firestore-<時間>/<collection>.json
+// 線上 Firestore 完整備份 → <輸出基底>/firestore-<時間>/<collection>.json
 // 唯讀操作，不寫入。使用專案根的 serviceAccountKey.json。
-//   執行：node scripts/backup-firestore.js
+//   執行：node scripts/backup-firestore.js [輸出基底資料夾]
+//   未給參數時預設輸出到專案的 backups/（維持舊行為）。
 const admin = require("firebase-admin");
 const fs = require("fs");
 const path = require("path");
@@ -12,7 +13,8 @@ admin.initializeApp({ credential: admin.credential.cert(svc) });
 const db = admin.firestore();
 
 const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-const outDir = path.join(ROOT, "backups", `firestore-${stamp}`);
+const outBase = process.argv[2] || path.join(ROOT, "backups");
+const outDir = path.join(outBase, `firestore-${stamp}`);
 fs.mkdirSync(outDir, { recursive: true });
 
 let totalDocs = 0;

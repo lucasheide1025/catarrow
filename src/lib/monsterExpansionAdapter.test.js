@@ -5,6 +5,7 @@ import {
   toLegacyBattleMonster,
 } from "./monsterExpansionAdapter";
 import { EXPANSION_MONSTER_BY_ID } from "./monsterExpansionCatalog";
+import { MATERIAL_BY_ID } from "./monsterEconomyCatalog";
 
 describe("monster expansion legacy adapter", () => {
   test("preserves existing ids and exposes the fields used by battle UI", () => {
@@ -19,10 +20,14 @@ describe("monster expansion legacy adapter", () => {
     expect(getExpansionTierPool(400)).toHaveLength(6);
   });
 
-  test("draws one normal monster per solo family and never leaks bosses", () => {
+  test("draws one normal monster per hunt family, including treasure, and never leaks bosses", () => {
     const monsters = drawExpansionSoloMonsters(400, { random: () => 0.5 });
     expect(monsters).toHaveLength(SOLO_HUNT_FAMILIES.length);
-    expect(new Set(monsters.map(monster => monster.family)).size).toBe(6);
+    expect(SOLO_HUNT_FAMILIES).toContain("treasure");
+    expect(new Set(monsters.map(monster => monster.family))).toEqual(new Set(SOLO_HUNT_FAMILIES));
+    const treasure = monsters.find(monster => monster.family === "treasure");
+    expect(treasure?.materialId).toMatch(/^mat_treasure_[1-6](?:_real)?$/);
+    expect(MATERIAL_BY_ID[treasure.materialId]?.family).toBe("treasure");
     expect(monsters.every(monster => monster.encounter === "normal" && !monster.bossTagged)).toBe(true);
     expect(monsters.every(monster => monster.signatureSkillId && monster.materialId && monster.cardId)).toBe(true);
   });

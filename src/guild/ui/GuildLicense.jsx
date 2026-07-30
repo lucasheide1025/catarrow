@@ -10,6 +10,7 @@ import { GUILD_JUNK, JUNK_RARITY } from "../data/guildJunkCatalog";
 import { sfxClose, sfxTap, sfxLevelUp, sfxError } from "../../lib/sound";
 import { hallBg, bgLayer, rankBadge, junkArt, ArtOrEmoji } from "./GuildArt";
 import GuildLicenseCard from "./GuildLicenseCard";
+import { GuildJunkArt } from "./GuildItemArt";
 
 const card = { background: "rgba(12,8,4,.75)", borderRadius: 14, padding: 12, border: "1px solid rgba(251,191,36,.18)" };
 
@@ -156,7 +157,7 @@ export default function GuildLicense({ profile, memberName, onChange, onClose })
                   style={{ background: "rgba(0,0,0,.3)", border: `1px solid ${seen ? `${meta.color}55` : "rgba(255,255,255,.06)"}`,
                     borderRadius: 9, padding: 6, textAlign: "center", opacity: seen ? 1 : 0.35 }}>
                   <div style={{ filter: seen ? "none" : "grayscale(1) brightness(.5)" }}>
-                    <ArtOrEmoji sources={seen ? [junkArt(j.id)] : []} emoji={seen ? j.icon : "❓"} size={30} style={{ margin: "0 auto" }} />
+                    {seen ? <GuildJunkArt junkId={j.id} size={34} style={{ margin: "0 auto" }} /> : <span style={{ fontSize: 30 }}>❓</span>}
                   </div>
                   <div style={{ fontSize: 9, fontWeight: 800, marginTop: 3, color: seen ? "#e2e8f0" : "#64748b", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {seen ? j.name : "？？？"}

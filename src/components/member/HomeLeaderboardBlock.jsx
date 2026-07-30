@@ -13,6 +13,7 @@ import { rankBoard, buildCertMaps, LB_TAB_MAP } from "../../lib/leaderboardData"
 import { readLocal, writeLocal } from "../../lib/localCache";
 import { Card } from "../shared/UI";
 import { SectionHeader } from "../shared/Widgets";
+import MemberFeatureArt from "./MemberFeatureArt";
 
 // 候選榜（皆為 member 文件欄位，無需額外 collection 讀取）
 const CANDIDATES = [
@@ -101,7 +102,8 @@ export default function HomeLeaderboardBlock({ myId, onPageChange }) {
 
   if (mine.length === 0) {
     return (
-      <Card className="p-4" style={{ background: "#101827", border: "1px solid rgba(96,165,250,.18)" }}>
+      <Card className="relative isolate overflow-hidden p-4" style={{ background: "linear-gradient(145deg,#171d31,#101827 70%)", border: "1px solid rgba(96,165,250,.22)" }}>
+        <MemberFeatureArt name="history" size={125} style={{ position:"absolute", right:-24, bottom:-35, opacity:.13, zIndex:-1 }} />
         <SectionHeader icon="🏆" title="排行榜" action={action} />
         <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", textAlign: "center", padding: "10px 0" }}>
           還沒擠進任何榜的前五名，衝一波吧！
@@ -111,7 +113,9 @@ export default function HomeLeaderboardBlock({ myId, onPageChange }) {
   }
 
   return (
-    <Card className="p-4" style={{ background: "#101827", border: "1px solid rgba(251,191,36,.2)", boxShadow: "0 10px 24px rgba(0,0,0,.24), inset 4px 0 #fbbf24" }}>
+    <Card className="relative isolate overflow-hidden p-4" style={{ background: "linear-gradient(145deg,#2b1d09,#101827 72%)", border: "1px solid rgba(251,191,36,.28)", boxShadow: "0 14px 30px rgba(0,0,0,.28)" }}>
+      <MemberFeatureArt name="history" size={145} style={{ position:"absolute", right:-30, top:-36, opacity:.14, zIndex:-1 }} />
+      <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-yellow-200 via-amber-400 to-orange-600" />
       <SectionHeader icon="🏆" title="我的排行榜" action={action} />
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {mine.map(({ boardId, rank, value, total }) => {
@@ -119,7 +123,7 @@ export default function HomeLeaderboardBlock({ myId, onPageChange }) {
           return (
             <button key={boardId} type="button" onClick={() => goBoard(onPageChange, boardId)}
               style={{ display: "flex", alignItems: "center", gap: 8, textAlign: "left", width: "100%",
-                background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
+                background: "linear-gradient(90deg,rgba(251,191,36,.09),rgba(255,255,255,.035))", border: "1px solid rgba(251,191,36,.14)",
                 borderRadius: 12, padding: "9px 12px", cursor: "pointer" }}>
               <span style={{ fontSize: 15 }}>{tab?.icon}</span>
               <span style={{ fontSize: 13, fontWeight: 900, color: "#f1f5f9", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

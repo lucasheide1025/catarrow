@@ -168,7 +168,7 @@ function makeRareRewards({ site, tierNo, completion, xCount }) {
     rewards.push({
       type: "villageResource",
       resourceKey: getResourceKey("potion", Math.min(5, Math.max(1, tierNo - 1))),
-      name: "貓草藥水材料",
+      name: "貓薄荷藥水",
       count: 1,
     });
   }

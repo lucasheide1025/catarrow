@@ -20,6 +20,7 @@ import { calculateGatheringRound } from "../../lib/catVillageGathering";
 import { addRoundArrows, addVillageLap } from "../../lib/db";
 import { getCatSpeech } from "../cat/catSpeeches";
 import { sfxTap, sfxSuccess, sfxCast } from "../../lib/sound";
+import CatVillageNavArt from "./CatVillageNavArt";
 
 const ASSET = "/assets/board";
 // 新怪材料（無 icon）＋舊材料（有 icon）；舊材料放後面覆蓋同 id，保留其 icon
@@ -535,16 +536,43 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
         <div className="w-full max-w-lg mx-auto p-4">
           <div className="flex items-center justify-between mb-4">
             <button onClick={onClose} className="w-9 h-9 rounded-full bg-black/40 text-amber-200 font-black">←</button>
-            <div className="text-amber-100 font-black">👥 組隊探索</div>
+            <div className="text-amber-100 font-black">組隊探索大廳</div>
             <div className="w-9" />
+          </div>
+          <div className="relative isolate overflow-hidden rounded-3xl border border-amber-300/35 mb-4 min-h-[148px] shadow-xl">
+            <img src="/ui/cat-village/explore-map.png" alt="" className="absolute inset-0 h-full w-full object-cover" />
+            <div className="absolute inset-0 bg-gradient-to-r from-[#160b04]/95 via-[#241207]/55 to-transparent" />
+            <div className="relative flex min-h-[148px] items-center gap-3 p-5">
+              <CatVillageNavArt name="village" size={70} />
+              <div>
+                <div className="text-xl font-black text-amber-50">和其他玩家一起出發</div>
+                <div className="mt-1 max-w-[240px] text-xs font-bold leading-relaxed text-amber-100/75">
+                  建立指定地圖的房間，或從下方搜尋正在等待隊友的隊伍。
+                </div>
+              </div>
+            </div>
           </div>
           {err && <div className="mb-3 text-rose-300 text-xs font-bold">{err}</div>}
           <div className="rounded-2xl bg-black/30 border border-amber-500/25 p-4 mb-4">
-            <div className="text-amber-200/80 text-xs font-bold mb-2">建立房間・選地圖</div>
-            <div className="grid grid-cols-3 gap-1.5 mb-3">
+            <div className="flex items-center gap-2 text-amber-100 font-black mb-3">
+              <CatVillageNavArt name="tasks" size={42} />
+              <div>
+                <div className="text-sm">建立探索隊伍</div>
+                <div className="text-[10px] font-bold text-amber-200/55">先選採集地圖與階級</div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2 mb-3">
               {BOARD_MODES.map(mo => (
                 <button key={mo.id} onClick={() => { setSelMode(mo.id); setSelTier(1); }}
-                  className={`rounded-xl p-2 text-[11px] font-bold border ${mo.id===selMode ? "border-amber-300 bg-amber-400/20 text-amber-100" : "border-amber-500/20 text-amber-100/70"}`}>{mo.icon}{mo.familyName}</button>
+                  className={`relative isolate min-h-[94px] overflow-hidden rounded-xl border-2 text-left shadow-md transition active:scale-[.98] ${mo.id===selMode ? "border-amber-300 ring-2 ring-amber-200/20" : "border-amber-500/20"}`}>
+                  <img src={`${ASSET}/map_${mo.id}.webp`} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                  <span className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/35 to-transparent" />
+                  {mo.id === selMode && <span className="absolute right-2 top-2 grid h-5 w-5 place-items-center rounded-full bg-amber-300 text-[10px] font-black text-amber-950">✓</span>}
+                  <span className="relative flex min-h-[90px] flex-col justify-end p-2.5">
+                    <span className="text-xs font-black text-white">{mo.familyName}</span>
+                    <span className="text-[10px] font-bold text-amber-100/70">{mo.name}・{mo.resourceName}</span>
+                  </span>
+                </button>
               ))}
             </div>
             <div className="flex flex-wrap gap-1.5 mb-3">
@@ -553,7 +581,13 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
             <button disabled={busy || tiers.length===0} onClick={create} className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-900 font-black disabled:opacity-40">建立 {m.familyName} T{selTier} 房間</button>
           </div>
           <div className="rounded-2xl bg-black/30 border border-amber-500/25 p-4">
-            <div className="text-amber-200/80 text-xs font-bold mb-2">加入房間（{openRooms.length}）</div>
+            <div className="flex items-center gap-2 mb-3">
+              <CatVillageNavArt name="village" size={42} />
+              <div className="flex-1">
+                <div className="text-sm font-black text-amber-100">搜尋可加入的隊伍</div>
+                <div className="text-[10px] font-bold text-amber-200/55">目前找到 {openRooms.length} 間等待中的房間</div>
+              </div>
+            </div>
             {openRooms.length === 0 ? (
               <div className="text-center text-amber-100/50 text-xs py-6">目前沒有開放的房間，建立一個吧！</div>
             ) : (

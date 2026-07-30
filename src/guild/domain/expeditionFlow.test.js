@@ -1,5 +1,15 @@
 // src/guild/domain/expeditionFlow.test.js
-import { createExpeditionState, processRound, resolveTravelEvent, normalizeArrowsPerRound, GUILD_ARROWS_OPTIONS, DEFAULT_GUILD_ARROWS } from "./expeditionFlow";
+import {
+  createExpeditionState,
+  consumeTravelSupplies,
+  prepareExpeditionWave,
+  processRound,
+  resolveShotTarget,
+  resolveTravelEvent,
+  normalizeArrowsPerRound,
+  GUILD_ARROWS_OPTIONS,
+  DEFAULT_GUILD_ARROWS,
+} from "./expeditionFlow";
 
 const NO_LUCK = { rand: () => 0.99 }; // 不爆擊、不閃避（機率都很小）
 
@@ -17,6 +27,54 @@ describe("expeditionFlow — 戰鬥核心狀態機", () => {
     expect(s.waveIndex).toBe(1);
     expect(s.monsters[0].instanceId).toBe("b");
     expect(s.log.some(l => l.type === "travelEvent")).toBe(true);
+  });
+
+  test("地圖模式清波後暫停，不直接載入下一波或觸發旅行事件", () => {
+    const exp = { totalWaves: 2, waves: [{ monsters: [mon("a")] }, { monsters: [mon("b")] }] };
+    const state = createExpeditionState(exp, STATS, { food: 6, water: 6 });
+    const next = processRound(
+      state,
+      [{ targetInstanceId: "a", score: 11 }],
+      { ...NO_LUCK, pauseBetweenWaves: true },
+    );
+
+    expect(next.status).toBe("waveCleared");
+    expect(next.waveIndex).toBe(0);
+    expect(next.monsters).toHaveLength(0);
+    expect(next.log).toContainEqual(expect.objectContaining({ type: "waveClear", nextWave: 1 }));
+    expect(next.log.some(entry => entry.type === "travelEvent")).toBe(false);
+    expect(next.supplies).toEqual({ food: 5, water: 5 });
+  });
+
+  test("地圖每前進一格會依 VIT 節省率消耗食物與水", () => {
+    const state = createExpeditionState(
+      { totalWaves: 1, waves: [{ monsters: [mon("a")] }] },
+      { ...STATS, vit: 10 },
+      { food: 4, water: 4 },
+    );
+    const next = consumeTravelSupplies(state);
+
+    expect(next.supplies).toEqual({ food: 3.77, water: 3.77 });
+    expect(next.log).toContainEqual(expect.objectContaining({
+      type: "travelSupply",
+      food: -0.23,
+      water: -0.23,
+    }));
+  });
+
+  test("走到下一個事件格才套用事件並準備下一波", () => {
+    const exp = { totalWaves: 2, waves: [{ monsters: [mon("a")] }, { monsters: [mon("b")] }] };
+    const cleared = processRound(
+      createExpeditionState(exp, STATS, { food: 6, water: 6 }),
+      [{ targetInstanceId: "a", score: 11 }],
+      { ...NO_LUCK, pauseBetweenWaves: true },
+    );
+    const prepared = prepareExpeditionWave(cleared, 1, { eventRand: () => 0 });
+
+    expect(prepared.status).toBe("fighting");
+    expect(prepared.waveIndex).toBe(1);
+    expect(prepared.monsters[0].instanceId).toBe("b");
+    expect(prepared.log).toContainEqual(expect.objectContaining({ type: "travelEvent", id: "lost_trail" }));
   });
 
   test("清波旅途事件會消耗補給或改變 HP", () => {
@@ -54,6 +112,51 @@ describe("expeditionFlow — 戰鬥核心狀態機", () => {
     let s = createExpeditionState(exp, STATS, { food: 6, water: 6 });
     s = processRound(s, [{ targetInstanceId: "a", score: 11 }], NO_LUCK);
     expect(s.status).toBe("won");
+    expect(s.supplies).toEqual({ food: 5, water: 5 });
+  });
+
+  test("原目標被前一箭擊殺時，剩餘箭自動轉向存活怪物", () => {
+    const exp = {
+      totalWaves: 1,
+      waves: [{ monsters: [
+        mon("a", { hp: 120, maxHp: 120, distance: 4 }),
+        mon("b", { hp: 100, maxHp: 100, distance: 2 }),
+      ] }],
+    };
+    const state = createExpeditionState(exp, STATS, { food: 9, water: 9 });
+    const shots = [1, 2, 3].map(() => ({ targetInstanceId: "a", score: 11 }));
+    const next = processRound(state, shots, NO_LUCK);
+
+    expect(next.log.filter(entry => entry.type === "arrow").map(entry => entry.target))
+      .toEqual(["a", "a", "b"]);
+    expect(next.monsters.find(monster => monster.instanceId === "b")?.hp).toBe(25);
+  });
+
+  test("轉向依距離、目前 HP、戰場順序決定，原目標存活時不轉向", () => {
+    const monsters = [
+      mon("first", { hp: 30, distance: 2 }),
+      mon("selected", { hp: 90, distance: 9 }),
+      mon("lower-hp", { hp: 20, distance: 2 }),
+      mon("dead", { hp: 0, distance: 1 }),
+    ];
+
+    expect(resolveShotTarget(monsters, "selected")?.instanceId).toBe("selected");
+    expect(resolveShotTarget(monsters, "dead")?.instanceId).toBe("lower-hp");
+    monsters[0].hp = 20;
+    expect(resolveShotTarget(monsters, "missing")?.instanceId).toBe("first");
+  });
+
+  test("所有怪物死亡後，剩餘箭不產生傷害紀錄", () => {
+    const state = createExpeditionState(
+      { totalWaves: 1, waves: [{ monsters: [mon("only", { hp: 10 })] }] },
+      STATS,
+      { food: 9, water: 9 },
+    );
+    const shots = [1, 2, 3].map(() => ({ targetInstanceId: "only", score: 11 }));
+    const next = processRound(state, shots, NO_LUCK);
+
+    expect(next.log.filter(entry => entry.type === "arrow")).toHaveLength(1);
+    expect(next.status).toBe("won");
   });
 
   test("怪距離歸零會攻擊玩家（DEF 減傷）", () => {
@@ -119,6 +222,104 @@ describe("每回合箭數 3/6（作者要求提供選擇）", () => {
     const used3 = 9 - s3.supplies.food;
     const used6 = 9 - s6.supplies.food;
     expect(used6).toBeCloseTo(used3 * 2, 5);
+  });
+
+  test("v2 怪物冷卻完成後仍以機率預告技能，玩家可用分數反制", () => {
+    const skillExp = {
+      ...exp,
+      totalWaves: 1,
+      waves: [{ monsters: [mon("mage", { hp: 999, maxHp: 999, distance: 5, combatRole: "caster", cooldown: 1 })] }],
+    };
+    let state = createExpeditionState(skillExp, stats, { food: 9, water: 9 }, [], { combatV2: true });
+    state = processRound(state, [], { rand: () => 0.99, skillRand: () => 0 });
+    expect(state.monsters[0].intent).toBeTruthy();
+    expect(state.log).toContainEqual(expect.objectContaining({ type: "skillIntent" }));
+
+    state = processRound(state, [{ targetInstanceId: "mage", score: 3, rawScore: 3 }], { rand: () => 0.99 });
+    expect(state.log).toContainEqual(expect.objectContaining({ type: "counterSuccess" }));
+    expect(state.monsters[0].intent).toBeNull();
+  });
+
+  test("技能判定未通過時不會在固定回合必定預告", () => {
+    const skillExp = {
+      ...exp,
+      totalWaves: 1,
+      waves: [{ monsters: [mon("mage", { hp:999, maxHp:999, distance:5, combatRole:"caster", cooldown:1, skillChance:0.3 })] }],
+    };
+    let state = createExpeditionState(skillExp, stats, { food:9, water:9 }, [], { combatV2:true });
+    state = processRound(state, [], { rand:() => 0.99, skillRand:() => 0.99 });
+    expect(state.monsters[0].intent).toBeNull();
+    expect(state.log).not.toContainEqual(expect.objectContaining({ type:"skillIntent" }));
+  });
+
+  test("指定環數只採用進場前鎖定的靶紙，射擊資料不能偷換", () => {
+    const skillExp = {
+      ...exp,
+      totalWaves: 1,
+      waves: [{ monsters: [mon("mage", { hp: 999, maxHp: 999, distance: 5, combatRole: "caster", cooldown: 1 })] }],
+    };
+    let state = createExpeditionState(skillExp, stats, { food: 9, water: 9 }, [], {
+      combatV2: true,
+      targetFormat: "half_610",
+    });
+    state = processRound(state, [], { rand: () => 0.99, skillRand: () => 0 });
+
+    const cheating = processRound(state, [{ targetInstanceId: "mage", score: 3, rawScore: 3, targetFormat: "full_110" }], { rand: () => 0.99 });
+    expect(cheating.log).not.toContainEqual(expect.objectContaining({ type: "counterSuccess" }));
+    expect(cheating.log).toContainEqual(expect.objectContaining({ type: "skillResolve" }));
+
+    const valid = processRound(state, [{ targetInstanceId: "mage", score: 7, rawScore: 7, targetFormat: "full_110" }], { rand: () => 0.99 });
+    expect(valid.log).toContainEqual(expect.objectContaining({ type: "counterSuccess" }));
+  });
+
+  test("防守戰保存城門、時間、視距外隊列並觸發一次性村民助戰", () => {
+    const defenseExp = {
+      ...exp,
+      totalWaves: 2,
+      waves: [
+        { monsters: [mon("a", { hp: 999, maxHp: 999, distance: 5 }), mon("b", { hp: 999, maxHp: 999, distance: 5 })] },
+        { monsters: [mon("c", { hp: 999, maxHp: 999, distance: 5 }), mon("d", { hp: 999, maxHp: 999, distance: 5 })] },
+      ],
+    };
+    let state = createExpeditionState(defenseExp, stats, { food: 9, water: 9 }, [], {
+      combatV2: true, missionMode: "defense",
+    });
+    expect(state.defense.queue).toHaveLength(1);
+    for (let i = 0; i < 3; i += 1) state = processRound(state, [], { rand: () => 0.99 });
+    expect(state.defense.clock).toBe(3);
+    expect(state.defense.assistanceUsed).toEqual(["hunter_volley"]);
+    expect(state.log).toContainEqual(expect.objectContaining({ type: "villagerAssist", id: "hunter_volley" }));
+    expect(state.eventGate).toMatchObject({
+      id: "hunter_volley",
+      summary: expect.stringMatching(/造成.*傷害/),
+      targets: expect.arrayContaining([
+        expect.objectContaining({
+          name: expect.any(String),
+          hpBefore: expect.any(Number),
+          hpAfter: expect.any(Number),
+          damage: expect.any(Number),
+        }),
+      ]),
+    });
+    const frozen = processRound(state, [{ targetInstanceId: "a", score: 11 }]);
+    expect(frozen).toBe(state);
+  });
+
+  test("防守戰視距外與場上都沒有敵軍時立即勝利，不會卡在空戰場", () => {
+    const defenseExp = {
+      ...exp,
+      totalWaves: 1,
+      waves: [{ monsters: [mon("last", { hp: 1, maxHp: 1, def: 0, distance: 5 })] }],
+    };
+    const state = createExpeditionState(defenseExp, stats, { food: 9, water: 9 }, [], {
+      combatV2: true, missionMode: "defense",
+    });
+    const next = processRound(state, [{ targetInstanceId: "last", score: 11, rawScore: 10 }], { rand: () => 0.99 });
+
+    expect(next.defense.clock).toBeLessThan(next.defense.duration);
+    expect(next.defense.queue).toHaveLength(0);
+    expect(next.monsters).toHaveLength(0);
+    expect(next.status).toBe("won");
   });
 
   test("6 箭模式一回合能射 6 箭、傷害照算", () => {

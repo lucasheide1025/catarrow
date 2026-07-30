@@ -39,6 +39,15 @@ describe("rollExpedition — 委託遠征生成", () => {
     expect(m.instanceId).toBeTruthy();
   });
 
+  test("所有階級怪物都在 3～10 公尺間隨機進場", () => {
+    for (let danger = 1; danger <= MAX_DANGER; danger++) {
+      const near = rollExpedition({ danger }, { rand: () => 0 }).waves.flatMap(wave => wave.monsters);
+      const far = rollExpedition({ danger }, { rand: () => 0.999999 }).waves.flatMap(wave => wave.monsters);
+      expect(near.every(monster => monster.distance === 3)).toBe(true);
+      expect(far.every(monster => monster.distance === 10)).toBe(true);
+    }
+  });
+
   test("指定 family 時只出該族怪", () => {
     const exp = rollExpedition({ danger: 2, family: "ghost" }, { rand: seededRand(99) });
     const fams = exp.waves.flatMap(w => w.monsters.map(m => m.family));

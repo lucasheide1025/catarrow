@@ -1,6 +1,6 @@
 import { EXPANSION_MONSTERS } from "./monsterExpansionCatalog";
 
-export const SOLO_HUNT_FAMILIES = Object.freeze(["ghost", "mountain", "insect", "workplace", "exam", "temple"]);
+export const SOLO_HUNT_FAMILIES = Object.freeze(["ghost", "mountain", "insect", "workplace", "exam", "temple", "treasure"]);
 const TIER_ORDER = Object.freeze(["common", "rare", "elite", "fierce", "boss", "mythic"]);
 const TIER_HP_MULTIPLIER = Object.freeze({ common: 0.95, rare: 1, elite: 1.05, fierce: 1.1, boss: 1, mythic: 1.1 });
 const FAMILY_ICONS = Object.freeze({ ghost: "👻", mountain: "🏔️", insect: "🦂", workplace: "💼", exam: "📝", temple: "🏰", treasure: "📦" });
@@ -24,6 +24,7 @@ export function toLegacyBattleMonster(monster) {
     signatureName: monster.signatureName,
     commonSkillIds: [...monster.commonSkillIds],
     materialId: monster.material.id,
+    materialName: monster.material.name,
     cardId: monster.card.id,
     artKey: monster.artKey,
     bossTagged: monster.encounter !== "normal",
@@ -43,9 +44,9 @@ export function getExpansionTierPool(power) {
 // ── 挑戰強度（2026-07-18 方案A：取代隨機變體,玩家進場自選）─────────
 // 單一數值來源：怪物強度與掉落全查這張表;UI 直接引用顯示給玩家。
 export const SOLO_CHALLENGE_LEVELS = Object.freeze({
-  easy:     { id: "easy",     label: "😌 輕鬆", statMult: 0.8, materialQty: 3, coinMult: 0.8, coinChestChance: 0.2, cardChance: 0.12, desc: "怪物 -20%｜素材×3｜金幣×0.8｜金幣寶箱 20%｜掉卡 12%" },
-  standard: { id: "standard", label: "⚔️ 標準", statMult: 1.0, materialQty: 5, coinMult: 1.0, coinChestChance: 0.5, cardChance: 0.2,  desc: "怪物原值｜素材×5｜金幣×1.0｜金幣寶箱 50%｜掉卡 20%" },
-  hard:     { id: "hard",     label: "🔥 挑戰", statMult: 1.2, materialQty: 7, coinMult: 1.5, coinChestChance: 1.0, cardChance: 0.3,  desc: "怪物 +20%｜素材×7｜金幣×1.5｜金幣寶箱必掉｜掉卡 30%" },
+  easy:     { id: "easy",     label: "😌 輕鬆", statMult: 0.8, materialQty: 3, guaranteedMaterialChests: 1, xpRule: "tier_fixed", coinMult: 0.8, coinChestChance: 0.2, cardChance: 0.12, desc: "怪物 -20%｜指定素材×3｜素材箱×1必得｜金幣×0.8｜金幣寶箱 20%｜藥水箱依階級機率｜掉卡 12%｜XP依怪物階級" },
+  standard: { id: "standard", label: "⚔️ 標準", statMult: 1.0, materialQty: 5, guaranteedMaterialChests: 1, xpRule: "tier_fixed", coinMult: 1.0, coinChestChance: 0.5, cardChance: 0.2,  desc: "怪物原值｜指定素材×5｜素材箱×1必得｜金幣×1.0｜金幣寶箱 50%｜藥水箱依階級機率｜掉卡 20%｜XP依怪物階級" },
+  hard:     { id: "hard",     label: "🔥 挑戰", statMult: 1.2, materialQty: 7, guaranteedMaterialChests: 1, xpRule: "tier_fixed", coinMult: 1.5, coinChestChance: 1.0, cardChance: 0.3,  desc: "怪物 +20%｜指定素材×7｜素材箱×1必得｜金幣×1.5｜金幣寶箱必掉｜藥水箱依階級機率｜掉卡 30%｜XP依怪物階級" },
 });
 
 // ── 組隊人數加成（使用者規格 2026-07-18）─────────────────────

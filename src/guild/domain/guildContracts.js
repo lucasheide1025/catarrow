@@ -7,11 +7,17 @@
 // ─────────────────────────────────────────────────────────────
 import { FAMILIES, TIER_LABEL, TIER_ORDER } from "../../lib/monsterData";
 import { LOOT_BY_DANGER } from "../data/guildLootTable";
-import { DANGER_META, MAX_DANGER, expeditionMonsterPool } from "./rollExpedition";
+import { DANGER_META, LEADER_ODDS, MAX_DANGER, expeditionMonsterPool, rollLeaderEncounter } from "./rollExpedition";
 import { CONTRACT_CLIENTS, CONTRACT_STORIES, DANGER_TONE, CONTRACTS_PER_DANGER } from "../data/guildContractPool";
 import { normalizeGuildProfile } from "./guildRewards";
 
 const FAMILY_IDS = Object.keys(CONTRACT_STORIES); // 六族（不含寶箱族）
+export const MISSION_MODE_META = Object.freeze({
+  exploration: { label: "探索遠征", icon: "🗺️", description: "移動、事件、遭遇，最後完成遠征目標" },
+  assault: { label: "連續進攻", icon: "⚔️", description: "連續擊破多批敵人，中途不返回地圖" },
+  defense: { label: "防守戰", icon: "🏰", description: "守住據點，敵人會持續從視距外逼近" },
+});
+const MISSION_MODES = Object.freeze(Object.keys(MISSION_MODE_META));
 
 // 字串 → 32bit seed（同輸入必同輸出）
 function hashSeed(str) {
@@ -55,6 +61,7 @@ export function rollDailyContracts({ dateKey = todayKey(), memberId = "guest" } 
   const out = [];
   for (let i = 0; i < DANGER_SLOTS.length; i++) {
     const danger = DANGER_SLOTS[i] || 1;
+    const mode = MISSION_MODES[i % CONTRACTS_PER_DANGER] || "assault";
     const family = pick(FAMILY_IDS);                       // 主族：決定故事與戰場底圖
     const [fMin, fMax] = FAMILY_COUNT[danger] || [1, 1];
     const famCount = fMin + Math.floor(rand() * (fMax - fMin + 1));
@@ -67,6 +74,8 @@ export function rollDailyContracts({ dateKey = todayKey(), memberId = "guest" } 
     const client = pick(CONTRACT_CLIENTS);
     out.push({
       id: `${dateKey}-${i}`,
+      mode,
+      modeMeta: MISSION_MODE_META[mode],
       danger,
       family,
       families,
@@ -81,7 +90,9 @@ export function rollDailyContracts({ dateKey = todayKey(), memberId = "guest" } 
         label: TIER_LABEL[DANGER_META[danger].tier]?.label || DANGER_META[danger].tier,
         color: TIER_LABEL[DANGER_META[danger].tier]?.color || "#94a3b8",
       }],
-      leader: DANGER_META[danger].leader,   // miniBoss/boss：最後一波的壓陣首領
+      // 結果以每日 seed 鎖死，重整不能洗王；UI 只顯示機率，不提前暴雷。
+      leader: rollLeaderEncounter(danger, rand),
+      leaderOdds: { ...LEADER_ODDS[danger] },
       waveSize: DANGER_META[danger].waveSize,
       client,
       title: story.title,

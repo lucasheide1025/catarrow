@@ -20,14 +20,27 @@
 import { deriveGuildCombat } from "./guildStats";
 import {
   arrowDamage,
+  resolveShotTarget,
   normalizeArrowsPerRound,
   MAX_ARROW_SCORE,
   pickTravelEvent,
   resolveTravelEvent,
 } from "./expeditionFlow";
+import { advanceCounter, createCounter, toGridMonster } from "./guildCombatV2";
 
 export const MAX_TEAM_SIZE = 4;          // 遠征是精銳小隊；人越多怪也越硬（見 partyHpScale）
 const BASE_ARROWS = 3;
+const teamCounterFor = monster => monster.combatRole === "caster"
+  ? createCounter("exactRing", {
+    targetId: monster.instanceId,
+    exactRing: 3,
+    exactRings: { full_110: 3, indoor_40: 3, compound_510: 6, half_610: 7, triple: 7, field_16: 3 },
+  })
+  : monster.combatRole === "support"
+    ? createCounter("defeatCaster", { targetId: monster.instanceId })
+    : monster.combatRole === "heavy"
+      ? createCounter("totalScore", { targetId: monster.instanceId, threshold: 20 })
+      : createCounter("minScore", { targetId: monster.instanceId, threshold: 9 });
 
 // 人數加成：4 人打單人份的怪會三回合清場，沒有挑戰。怪物 HP 隨人數放大，
 // 但**放大幅度小於人數**（1 人 1.0 → 4 人 2.8，不是 4.0），讓組隊仍然比較輕鬆——
@@ -57,7 +70,10 @@ export function scaleExpeditionForParty(expedition, size) {
 }
 
 function cloneWaveMonsters(wave) {
-  return (wave?.monsters || []).map(m => ({ ...m }));
+  return (wave?.monsters || []).map((m, index) => {
+    const grid = toGridMonster(m, index);
+    return { ...grid, distance: grid.position.depth };
+  });
 }
 
 // members: [{ id, name, guildStats, supplies, cats, arrowsPerRound, avatarId? }]
@@ -78,21 +94,39 @@ export function createTeamState(expedition, members = [], opts = {}) {
       supplies: { food: m.supplies?.food ?? 6, water: m.supplies?.water ?? 6 },
       cats: (m.cats || []).map(c => ({ ...c })),
       arrowsPerRound: normalizeArrowsPerRound(m.arrowsPerRound),
+      targetFormat: m.targetFormat || opts.targetFormat || "full_110",
       shotStats: { count: 0, score: 0 },
       status: "alive",                 // alive | down
     };
   }
+  const missionMode = opts.missionMode || "assault";
+  const defenseRoster = missionMode === "defense"
+    ? (scaled.waves || []).flatMap(wave => cloneWaveMonsters(wave))
+    : [];
   return {
     expedition: scaled,
+    missionMode,
     partySize: roster.length,
+    combatVersion: 2,
     members: memberMap,
     order: roster.map(m => m.id),
     waveIndex: 0,
-    monsters: cloneWaveMonsters(scaled.waves[0]),
+    monsters: missionMode === "defense" ? defenseRoster.slice(0, 3) : cloneWaveMonsters(scaled.waves[0]),
+    defense: missionMode === "defense" ? {
+      clock: 0,
+      duration: Math.max(6, defenseRoster.length + 2),
+      gateHp: 150 + roster.length * 50,
+      gateMaxHp: 150 + roster.length * 50,
+      queue: defenseRoster.slice(3).map((monster, index) => ({
+        ...monster, distance: 11 + index, position: { ...monster.position, depth: 11 + index },
+      })),
+      assistanceUsed: [],
+    } : null,
     round: 1,
     status: "fighting",                // fighting | won | lost
     lostReason: null,
     log: [],
+    effects: {},
   };
 }
 
@@ -130,14 +164,16 @@ export function memberSettleState(teamState, memberId) {
     expedition: teamState.expedition,
     hp: m.hp,
     maxHp: m.maxHp,
+    supplies: { ...m.supplies },
   };
 }
 
 // shotsByMember: { [memberId]: [{ targetInstanceId, score }] }
 export function processTeamRound(state, shotsByMember = {}, opts = {}) {
-  if (state.status !== "fighting") return state;
+  if (state.status !== "fighting" || state.eventGate) return state;
   const rand = opts.rand || Math.random;
-  const s = {
+  const skillRand = opts.skillRand || rand;
+    const s = {
     ...state,
     monsters: state.monsters.map(m => ({ ...m })),
     members: Object.fromEntries(Object.entries(state.members).map(([id, m]) => [id, {
@@ -145,7 +181,9 @@ export function processTeamRound(state, shotsByMember = {}, opts = {}) {
       supplies: { ...m.supplies },
       shotStats: { ...(m.shotStats || { count: 0, score: 0 }) },
     }])),
-    log: [],
+      log: [],
+      effects: { ...(state.effects || {}) },
+      defense: state.defense ? { ...state.defense, queue: state.defense.queue.map(monster => ({ ...monster })) } : null,
   };
 
   // 1. 全隊射箭（每人用自己的 ATK 與爆擊率；已 down 的人射出的箭一律忽略）
@@ -156,15 +194,51 @@ export function processTeamRound(state, shotsByMember = {}, opts = {}) {
       // 射擊表現照算（射空的也是射出去的箭），這樣掉落加成才誠實
       me.shotStats.count += 1;
       me.shotStats.score += Math.max(0, Math.min(MAX_ARROW_SCORE, Number(shot?.score) || 0));
-      const mon = s.monsters.find(m => m.instanceId === shot.targetInstanceId && m.hp > 0);
-      if (!mon) continue;
+      const mon = resolveShotTarget(s.monsters, shot.targetInstanceId);
+      if (!mon) break;
       const crit = rand() < me.derived.critChance;
       const dmg = arrowDamage(shot.score, me.guildStats.atk, mon.def, crit);
       mon.hp = Math.max(0, mon.hp - dmg);
-      s.log.push({ type: "arrow", by: memberId, byName: me.name, target: mon.instanceId, dmg, crit, killed: mon.hp <= 0 });
+      s.log.push({
+        type: "arrow",
+        by: memberId,
+        byName: me.name,
+        target: mon.instanceId,
+        redirected: mon.instanceId !== shot.targetInstanceId,
+        selectedTarget: shot.targetInstanceId,
+        dmg,
+        crit,
+        killed: mon.hp <= 0,
+      });
     }
   }
   s.monsters = s.monsters.filter(m => m.hp > 0);
+
+  const allShots = s.order.flatMap(memberId =>
+    (shotsByMember[memberId] || []).map(shot => ({
+      ...shot,
+      targetFormat: s.members[memberId]?.targetFormat || "full_110",
+    }))
+  );
+  const livingMonsterIds = s.monsters.map(monster => monster.instanceId);
+  for (const monster of s.monsters) {
+    if (!monster.intent?.counter) continue;
+    const counter = advanceCounter(monster.intent.counter, allShots, livingMonsterIds);
+    if (counter.success) {
+      s.log.push({ type: "counterSuccess", monsterId: monster.instanceId, skill: monster.intent.name, counter });
+    } else {
+      const victims = aliveMemberIds(s);
+      const victimId = victims[0];
+      if (victimId) {
+        const victim = s.members[victimId];
+        const damage = Math.max(1, Math.round(monster.atk * 1.35));
+        victim.hp = Math.max(0, victim.hp - damage);
+        s.log.push({ type: "skillResolve", monsterId: monster.instanceId, skill: monster.intent.name, by: victimId, damage, counter });
+      }
+    }
+    monster.intent = null;
+    monster.cooldownLeft = monster.cooldown;
+  }
 
   // 2. 全隊的貓助攻（各自鎖定最近/低血怪）
   for (const memberId of s.order) {
@@ -184,19 +258,27 @@ export function processTeamRound(state, shotsByMember = {}, opts = {}) {
   // 3. 波次清空 → 勝利 / 進下一波
   let clearedWave = false;
   if (s.monsters.length === 0) {
-    if (s.waveIndex + 1 >= s.expedition.totalWaves) {
-      s.status = "won";
-      return s;
-    }
-    s.waveIndex += 1;
-    s.monsters = cloneWaveMonsters(s.expedition.waves[s.waveIndex]);
-    s.log.push({ type: "waveClear", nextWave: s.waveIndex });
     clearedWave = true;
+    if (s.missionMode === "defense" && s.defense.queue.length) {
+      // 還有視距外增援時，暫時清場不結算。
+    } else if (s.missionMode === "defense") {
+      s.status = "won";
+    } else if (s.waveIndex + 1 >= s.expedition.totalWaves) {
+      s.status = "won";
+    } else if (s.missionMode === "exploration") {
+      s.awaitingMap = true;
+      s.log.push({ type:"mapEncounterClear", waveIndex:s.waveIndex });
+    } else {
+      s.waveIndex += 1;
+      s.monsters = cloneWaveMonsters(s.expedition.waves[s.waveIndex]);
+      s.log.push({ type: "waveClear", nextWave: s.waveIndex });
+    }
 
     // 全隊共同遭遇同一個旅途事件，但依各自補給與 HP 套用結果。
-    const event = pickTravelEvent(opts.eventRand || rand);
+    const event = s.status === "won" ? null : pickTravelEvent(opts.eventRand || rand);
     for (const memberId of aliveMemberIds(s)) {
       const me = s.members[memberId];
+      if (!event) continue;
       const resolved = resolveTravelEvent({
         supplies: me.supplies,
         hp: me.hp,
@@ -220,20 +302,69 @@ export function processTeamRound(state, shotsByMember = {}, opts = {}) {
   // 4. 怪物推進 → 距離歸零時隨機挑一個還活著的隊員打（用該員的閃避/減傷）
   if (!clearedWave) {
     for (const mon of s.monsters) {
-      mon.distance = Math.max(0, mon.distance - 1);
-      if (mon.distance !== 0) continue;
+      mon.distance = Math.max(0, mon.distance - (mon.moveSpeed || 1));
+      if (mon.position) mon.position = { ...mon.position, depth: mon.distance };
+      if (mon.distance > (mon.attackRange || 0)) continue;
       const targets = aliveMemberIds(s);
       if (!targets.length) break;
       const victimId = targets[Math.floor(rand() * targets.length)];
       const victim = s.members[victimId];
-      mon.distance = 2;   // 攻擊後退回，避免每回合連打
       if (rand() < victim.derived.dodgeChance) {
         s.log.push({ type: "dodge", by: victimId, byName: victim.name, from: mon.instanceId });
         continue;
       }
-      const dmg = Math.max(1, Math.round(mon.atk * (1 - victim.derived.dmgReducePct / 100)));
-      victim.hp = Math.max(0, victim.hp - dmg);
+        const dmg = Math.max(1, Math.round(mon.atk * (1 - victim.derived.dmgReducePct / 100)));
+        if (s.missionMode === "defense" && mon.targetPolicy === "gate") s.defense.gateHp = Math.max(0, s.defense.gateHp - dmg);
+        else victim.hp = Math.max(0, victim.hp - dmg);
       s.log.push({ type: "monsterAttack", by: victimId, byName: victim.name, from: mon.instanceId, dmg });
+    }
+  }
+
+  if (s.missionMode === "defense" && s.status === "fighting") {
+    s.defense.clock += 1;
+    if (s.defense.clock <= s.defense.duration && s.defense.queue.length && s.monsters.length < 8) {
+      const arriving = { ...s.defense.queue.shift(), distance: 10 };
+      arriving.position = { ...arriving.position, depth: 10 };
+      s.monsters.push(arriving);
+      s.log.push({ type: "defenseSpawn", monsterId: arriving.instanceId, remaining: s.defense.queue.length });
+    }
+    if (s.defense.clock === 3) {
+      s.defense.assistanceUsed.push("hunter_volley");
+      const targets = s.monsters.map(monster => {
+        const hpBefore = monster.hp;
+        monster.hp = Math.max(0, monster.hp - 10);
+        return { instanceId: monster.instanceId, name: monster.name, hpBefore, hpAfter: monster.hp, damage: hpBefore - monster.hp, defeated: monster.hp <= 0 };
+      });
+      s.monsters = s.monsters.filter(monster => monster.hp > 0);
+      const totalDamage = targets.reduce((sum, target) => sum + target.damage, 0);
+      const assistEvent = { type: "villagerAssist", id: "hunter_volley", label: "獵人齊射", summary: `命中 ${targets.length} 隻怪物，共造成 ${totalDamage} 傷害`, totalDamage, targets, leaves: true };
+      s.log.push(assistEvent);
+      s.eventGate = { ...assistEvent };
+    }
+    if (s.defense.gateHp <= 0) {
+      s.status = "lost";
+      s.lostReason = "城門遭到摧毀，防守失敗";
+    } else if (!s.defense.queue.length && !s.monsters.length) {
+      s.status = "won";
+    }
+  }
+
+  if (s.status === "fighting") {
+    const resolvedThisRound = new Set(s.log.filter(event =>
+      event.type === "counterSuccess" || event.type === "skillResolve"
+    ).map(event => event.monsterId));
+    for (const monster of s.monsters) {
+      if (monster.intent || resolvedThisRound.has(monster.instanceId)) continue;
+      monster.cooldownLeft = Math.max(0, (monster.cooldownLeft ?? monster.cooldown) - 1);
+      if (monster.cooldownLeft === 0 && skillRand() < (monster.skillChance ?? 0.25)) {
+        monster.intent = {
+          name: monster.signatureName || `${monster.combatRole}技能`,
+          target: monster.targetPolicy,
+          consequence: "對隊伍或據點造成強力效果",
+          counter: teamCounterFor(monster),
+        };
+        s.log.push({ type: "skillIntent", monsterId: monster.instanceId, intent: monster.intent });
+      }
     }
   }
 
@@ -266,4 +397,16 @@ export function processTeamRound(state, shotsByMember = {}, opts = {}) {
     s.lostReason = "全隊倒地，遠征失敗";
   }
   return s;
+}
+
+export function prepareTeamExpeditionWave(state, waveIndex) {
+  if (!state?.expedition?.waves?.[waveIndex]) return state;
+  return {
+    ...state,
+    status:"fighting",
+    awaitingMap:false,
+    waveIndex,
+    monsters:cloneWaveMonsters(state.expedition.waves[waveIndex]),
+    log:[],
+  };
 }

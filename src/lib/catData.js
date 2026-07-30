@@ -277,7 +277,7 @@ export const CAT_EQUIP_SLOTS = [
   { id: "armor",     label: "護胸",     icon: "🛡️", image: "/assets/cat_equip/armor.jpg",     stat: "def", matKey: "meat" },
   { id: "shoulder",  label: "肩甲",     icon: "🦺", image: "/assets/cat_equip/shoulder.jpg",  stat: "def", matKey: "driedfish" },
   { id: "herbBag",   label: "貓草包",   icon: "🌿", image: "/assets/cat_equip/herbBag.jpg",   stat: "def", matKey: "can" },
-  { id: "potion",    label: "貓草藥水", icon: "🍵", image: "/assets/cat_equip/potion.jpg",    stat: "hp",  matKey: "potion" },
+  { id: "potion",    label: "貓薄荷藥水", icon: "🍵", image: "/assets/cat_equip/potion.jpg",    stat: "hp",  matKey: "potion" },
 ];
 
 // 六品質：普通→稀有→精英→頭目→傳說→神話（史詩改為頭目/Boss）
@@ -349,10 +349,10 @@ export function calcForgeCost(slotId, currentGrade, currentPlus) {
   if (currentPlus < CAT_EQUIP_MAX_PLUS) {
     const { amount } = CAT_FORGE_COSTS.plusUpgrades[currentPlus];
     const scaledAmount = Math.max(1, Math.round(amount * Math.pow(1.3, gIdx)));
-    const matKeyName = slot.matKey === "potion" ? "potion" : `${slot.matKey}_t${tier}`;
+    const matKeyName = `${slot.matKey}_t${tier}`;
     return { [matKeyName]: scaledAmount };
   }
-  const breakMatKey = slot.matKey === "potion" ? "potion" : `${slot.matKey}_t${tier}`;
+  const breakMatKey = `${slot.matKey}_t${tier}`;
   const breakAmount = Math.round(120 * Math.pow(1.4, gIdx));
   return {
     [breakMatKey]: breakAmount,

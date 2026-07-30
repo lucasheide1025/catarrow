@@ -63,7 +63,7 @@ async function retryWrite(fn, label) {
   return { ok: false, reason: last };
 }
 
-export async function createGuildTeamRoom({ hostId, hostName, contract }) {
+export async function createGuildTeamRoom({ hostId, hostName, contract, targetFormat = "full_110" }) {
   if (!hostId || !contract) return { ok: false, reason: "參數錯誤" };
   try {
     const ref = await addDoc(collection(db, R), {
@@ -71,7 +71,7 @@ export async function createGuildTeamRoom({ hostId, hostName, contract }) {
       status: "waiting",
       contract: prune(contract),
       battle: null, submits: {}, claims: {}, seq: 0,
-      settings: { arrowsPerRound: 3, targetFormat: "full_110" },
+      settings: { arrowsPerRound: 3, targetFormat },
       loadouts: {},
       members: { [hostId]: { name: hostName || "房主", ready: false, joinedAt: serverTimestamp() } },
       createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
@@ -139,7 +139,7 @@ export async function setGuildTeamSettings(roomId, hostId, settings) {
 }
 
 // 房主出發：把 domain 算好的初始 battle 狀態寫進房間
-export async function startGuildTeamExpedition(roomId, hostId, battle) {
+export async function startGuildTeamExpedition(roomId, hostId, battle, journey = null) {
   try {
     await runTransaction(db, async tx => {
       const s = await tx.get(roomRef(roomId));
@@ -147,10 +147,33 @@ export async function startGuildTeamExpedition(roomId, hostId, battle) {
       const d = s.data();
       if (d.hostId !== hostId) throw new Error("只有房主可以出發");
       if (d.status !== "waiting") throw new Error("遠征已經出發了");
-      tx.update(roomRef(roomId), { status: "active", battle: prune(battle), seq: 1, submits: {}, updatedAt: serverTimestamp() });
+      tx.update(roomRef(roomId), {
+        status:"active", battle:prune(battle), journey:journey ? prune(journey) : null,
+        stage:journey ? "map" : "battle", seq:1, submits:{}, updatedAt:serverTimestamp(),
+      });
     });
     return { ok: true };
   } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+export async function advanceGuildTeamJourney(roomId, hostId, journey, battle, stage) {
+  try {
+    await runTransaction(db, async tx => {
+      const ref = roomRef(roomId);
+      const snap = await tx.get(ref);
+      if (!snap.exists()) throw new Error("房間不存在");
+      const room = snap.data();
+      if (room.hostId !== hostId) throw new Error("只有房主可以推進探索");
+      if (room.status !== "active") throw new Error("遠征目前不能推進");
+      tx.update(ref, {
+        journey:prune(journey), battle:prune(battle), stage,
+        seq:(room.seq || 0) + 1, submits:{}, updatedAt:serverTimestamp(),
+      });
+    });
+    return { ok:true };
+  } catch (error) {
+    return { ok:false, reason:error?.message };
+  }
 }
 
 // 成員交箭（帶 seq：避免上一回合的箭被算進這一回合）
@@ -173,6 +196,7 @@ export async function commitGuildTeamRound(roomId, hostId, battle, nextSeq) {
       tx.update(roomRef(roomId), {
         battle: prune(battle), seq: nextSeq, submits: {},
         status: battle.status === "fighting" ? "active" : "done",
+        ...(battle.awaitingMap ? { stage:"map" } : {}),
         updatedAt: serverTimestamp(),
       });
     });

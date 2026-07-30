@@ -35,7 +35,7 @@ const GATHERING_RESOURCE_TARGETS = [
   { key: "driedfish_t1", label: "小魚乾 T1" },
   { key: "can_t1", label: "罐頭 T1" },
   { key: "fur_t1", label: "陪練貓毛 T1" },
-  { key: "potion_t1", label: "貓草藥水材料 T1" },
+  { key: "potion_t1", label: "貓薄荷藥水 T1" },
 ];
 
 function pickGatheringTarget(goalType) {

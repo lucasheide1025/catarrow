@@ -17,25 +17,25 @@ describe("階級（聲望 → 解鎖，零戰力加成）", () => {
 
   test("rep → 階級", () => {
     expect(repToRank(0).id).toBe("apprentice");
-    expect(repToRank(99).id).toBe("apprentice");
-    expect(repToRank(100).id).toBe("bronze");
-    expect(repToRank(3000).id).toBe("legend");
+    expect(repToRank(299).id).toBe("apprentice");
+    expect(repToRank(300).id).toBe("bronze");
+    expect(repToRank(15000).id).toBe("legend");
     expect(repToRank(999999).id).toBe("legend");
   });
 
   test("下一階進度", () => {
     const a = nextRankInfo(0);
     expect(a.next.id).toBe("bronze");
-    expect(a.need).toBe(100);
+    expect(a.need).toBe(300);
     expect(a.progressPct).toBe(0);
-    expect(nextRankInfo(50).progressPct).toBe(50);
-    const max = nextRankInfo(5000);
+    expect(nextRankInfo(150).progressPct).toBe(50);
+    const max = nextRankInfo(15000);
     expect(max.next).toBeNull();
     expect(max.progressPct).toBe(100);
   });
 
   test("危險度 gate：6 階一階開一個危險度（T1~T6）", () => {
-    const cases = [[0, 1], [100, 2], [300, 3], [700, 4], [1500, 5], [3000, 6]];
+    const cases = [[0, 1], [300, 2], [900, 3], [2400, 4], [6000, 5], [15000, 6]];
     for (const [rep, maxD] of cases) {
       expect(canAcceptDanger(rep, maxD)).toBe(true);              // 剛好開到這階
       if (maxD < 6) expect(canAcceptDanger(rep, maxD + 1)).toBe(false);  // 更上一階要更高聲望
@@ -43,16 +43,16 @@ describe("階級（聲望 → 解鎖，零戰力加成）", () => {
   });
 
   test("鎖住時算得出還差多少聲望；已解鎖回 null", () => {
-    expect(repNeededForDanger(0, 2)).toBe(100);
-    expect(repNeededForDanger(250, 3)).toBe(50);      // 銀牌 300 才能接 T3
-    expect(repNeededForDanger(300, 3)).toBeNull();
-    expect(repNeededForDanger(0, 6)).toBe(3000);      // T6 要傳說
+    expect(repNeededForDanger(0, 2)).toBe(300);
+    expect(repNeededForDanger(850, 3)).toBe(50);      // 銀牌 900 才能接 T3
+    expect(repNeededForDanger(900, 3)).toBeNull();
+    expect(repNeededForDanger(0, 6)).toBe(15000);     // T6 要傳說
   });
 
   test("商店層級跟著階級走", () => {
     expect(rankUnlocks(0).shopTier).toBe(1);
-    expect(rankUnlocks(300).shopTier).toBe(2);
-    expect(rankUnlocks(1500).shopTier).toBe(3);
+    expect(rankUnlocks(900).shopTier).toBe(2);
+    expect(rankUnlocks(6000).shopTier).toBe(3);
     expect(shopItemsForTier(1).every(i => i.tier === 1)).toBe(true);
     expect(shopItemsForTier(3).length).toBeGreaterThan(shopItemsForTier(1).length);
   });

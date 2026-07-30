@@ -131,7 +131,8 @@ export function resolveEquipStats(archetypeId, grade, item = {}) {
   const mult = 1 + plus * PLUS_PCT_PER_LEVEL;
 
   const out = {};
-  for (const [k, v] of Object.entries(base)) out[k] = Math.round(v * mult);
+  // v2：精煉只強化正面能力，負面代價維持原值，不會越精煉懲罰越重。
+  for (const [k, v] of Object.entries(base)) out[k] = Math.round(v > 0 ? v * mult : v);
   return out;
 }
 
@@ -167,6 +168,7 @@ export function enhanceCost(grade, currentPlus) {
   return {
     shards: Math.round(tier * 3 * next * (1 + (next - 1) * 0.25)),
     catCoins: Math.round(tier * 6 * next),
+    coins: Math.round(tier * 30 * next * (1 + (next - 1) * 0.15)),
     next,
   };
 }
@@ -188,4 +190,10 @@ export function salvageValue(item) {
   const base = SALVAGE_BY_TIER[tier] || 2;
   const invested = enhanceTotalCost(item?.grade, item?.plus).shards;
   return base + Math.floor(invested * 0.8);
+}
+
+export function salvageCost(item) {
+  const tier = GRADE_META[item?.grade]?.tier || 1;
+  const plus = Math.max(0, Math.floor(Number(item?.plus) || 0));
+  return Math.round((10 + tier * 10 + plus * tier * 5) / 5) * 5;
 }

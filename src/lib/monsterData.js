@@ -594,11 +594,11 @@ export function applyVariant(monster, variant) {
   };
 }
 
-// ── 六族各抽1隻（依射手戰力匹配，不烙單）────────────────
-// 每族保證有1隻，每隻隨機賦予弱化/普通/強化變體，共6隻選怪
+// ── 七族各抽1隻（依射手戰力匹配，不烙單）────────────────
+// 含寶箱族；王怪仍只會在王房出現。
 export function drawMatchedMonsters(archerPower) {
   const tierPool = getTierPoolByPower(archerPower);
-  const families = ["ghost","mountain","insect","workplace","exam","temple"];
+  const families = ["ghost","mountain","insect","workplace","exam","temple","treasure"];
   const result = [];
 
   families.forEach(family => {

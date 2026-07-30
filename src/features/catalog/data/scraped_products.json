@@ -1,0 +1,29 @@
+[
+  {
+    "id": "tb-scraped-sample-1",
+    "sku": "THXS-SAMPLE-01",
+    "name": "太華玄聖 競技反曲弓金屬弓柄 25吋 (實體爬蟲自動抓取的範例商品)",
+    "brand": "太華玄聖",
+    "categoryPath": [
+      "Recurve",
+      "Riser"
+    ],
+    "baseCurrency": "CNY",
+    "basePrice": 1280.00,
+    "markupFactor": 1.0,
+    "mainImage": "https://images.unsplash.com/photo-1511094498305-6548777a835b?auto=format&fit=crop&w=800&q=80",
+    "images": [
+      "https://images.unsplash.com/photo-1511094498305-6548777a835b?auto=format&fit=crop&w=800&q=80"
+    ],
+    "specifications": [
+      { "key": "尺寸", "value": "25 吋" },
+      { "key": "介面", "value": "ILF 標準國際介面" },
+      { "key": "抓取來源", "value": "Playwright 自動點擊抓取的真實商品資料" }
+    ],
+    "tags": [
+      "TaobaoAutoScraped"
+    ],
+    "inStock": true,
+    "source": "Taobao Automated Crawler"
+  }
+]

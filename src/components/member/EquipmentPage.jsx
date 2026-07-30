@@ -9,9 +9,6 @@ import {
 } from "../../lib/constants";
 import { GRADE_PREFIX } from "../../lib/equipData";
 import RPGEquipPanel from "./RPGEquipPanel";
-import EquipmentRunePanel from "./EquipmentRunePanel";
-import EquipSpecializationPanel from "./EquipSpecializationPanel";
-import { isMonsterExpansionEnabled } from "../../lib/monsterExpansionFeature";
 import GuestEquipmentShop from "./GuestEquipmentShop";
 
 export default function EquipmentPage({ onPageChange, guestProfile }) {
@@ -22,7 +19,6 @@ export default function EquipmentPage({ onPageChange, guestProfile }) {
   const bonus     = calcEquipBonus(equipment);
   const equipped  = EQUIP_SLOT_DEFS.filter(s => equipment[s.id]?.itemId).length;
   const completionPct = Math.round(equipped / EQUIP_SLOT_DEFS.length * 100);
-  const expansionEnabled = isMonsterExpansionEnabled();
   function goToShop() {
     if (!guestProfile) { onPageChange?.("coinshop"); return; }
     guestShopRef.current?.scrollIntoView({ behavior:"smooth", block:"start" });
@@ -107,12 +103,6 @@ export default function EquipmentPage({ onPageChange, guestProfile }) {
           />
         </div>
         {guestProfile ? <div ref={guestShopRef} tabIndex={-1} aria-label="基礎裝備商店" className="scroll-mt-20 focus:outline-none"><GuestEquipmentShop profile={profile} /></div> : null}
-
-      {/* 品級說明 */}
-        <EquipmentRunePanel profile={profile} readOnly={Boolean(guestProfile)} />
-
-        {/* 裝備專精（訪客不顯示;DLC Phase 7） */}
-        {!guestProfile && expansionEnabled ? <EquipSpecializationPanel /> : null}
 
       <section className="mt-1">
         <h2 className="text-xs text-slate-400 font-bold mb-2">品級基礎加成</h2>

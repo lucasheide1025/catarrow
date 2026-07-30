@@ -8,6 +8,7 @@ import {
   getUnlockedGatheringTiers,
 } from "../../lib/catVillageGathering";
 import ExpeditionPanel from "./ExpeditionPanel";
+import CatVillageNavArt from "./CatVillageNavArt";
 import GatheringPartyPanel from "./GatheringPartyPanel";
 import GatheringRun from "./GatheringRun";
 import CatVillageBoard from "./CatVillageBoard";
@@ -228,23 +229,27 @@ export default function CouncilHall({ profile, village, onBack }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
         {[
-          ["collect", "🎲 探索地圖"],
+          ["collect", "探索地圖"],
           ["expedition", "探險隊"],
         ].map(([key, label]) => (
           <button
             key={key}
             onClick={() => setTab(key)}
             style={{
-              minHeight: 42,
+              minHeight: key === "collect" ? 96 : 72,
               border: "none",
               borderRadius: 8,
-              background: tab === key ? "linear-gradient(90deg,#facc15,#fb923c)" : "rgba(255,255,255,0.08)",
-              color: tab === key ? "#1f1300" : "#cbd5e1",
+              background: key === "collect"
+                ? `linear-gradient(0deg,rgba(15,23,42,.82),rgba(15,23,42,.12)),url(/ui/cat-village/explore-map.png) center/cover`
+                : tab === key ? "linear-gradient(90deg,#facc15,#fb923c)" : "rgba(255,255,255,0.08)",
+              color: key === "collect" ? "#fff7d6" : tab === key ? "#1f1300" : "#cbd5e1",
               fontWeight: 950,
               cursor: "pointer",
+              display: "flex", alignItems: "flex-end", justifyContent: "center", gap: 6, padding: 10,
+              boxShadow: tab === key ? "0 0 0 2px #facc15,0 8px 18px rgba(0,0,0,.3)" : "none",
             }}
           >
-            {label}
+            {key === "collect" ? <><CatVillageNavArt name="tasks" size={38} /><span>{label}</span></> : label}
           </button>
         ))}
       </div>

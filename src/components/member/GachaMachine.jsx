@@ -1,7 +1,12 @@
 // src/components/member/GachaMachine.jsx
 import { useState, useEffect, useRef } from "react";
-import { drawGachaCards } from "../../lib/db";
+import { drawGachaCards, upgradeCatCard } from "../../lib/db";
 import { CAT_CARD_MAP, CAT_CARD_CATEGORIES, CAT_CARDS } from "../../lib/catCardData";
+import {
+  ALBUM_CARD_IDS, VILLAGE_ALBUM_IDS, VILLAGE_ALBUM_META, albumXpFromCards,
+  catCardUpgradeCost, villageAlbumBonusPct, villageAlbumLevel, villageAlbumThreshold,
+} from "../../lib/catVillageAlbums";
+import CatVillageNavArt from "./CatVillageNavArt";
 import { useAuth } from "../../hooks/useAuth";
 import { sfxGachaRoll, sfxGachaReveal } from "../../lib/sound";
 import Confetti from "../shared/Confetti";
@@ -269,6 +274,9 @@ function RevealOverlay({ results, onDone }) {
                 {CAT_CARD_CATEGORIES[card.cat]?.emoji} {CAT_CARD_CATEGORIES[card.cat]?.label}
                 {isNew && <span style={{color:"#fbbf24",marginLeft:6,fontWeight:800}}>新收藏！</span>}
               </div>
+              {result.albumId && <div style={{ fontSize: 11, color: "#fde68a", marginTop: 6, fontWeight: 800 }}>
+                {VILLAGE_ALBUM_META[result.albumId]?.icon} {VILLAGE_ALBUM_META[result.albumId]?.name} EXP +{result.albumXpGain || 1}
+              </div>}
             </div>
           </div>
 
@@ -439,6 +447,82 @@ function CardDex({ catCards }) {
   );
 }
 
+function VillageAlbums({ catCards, catCardStars = {}, savedAlbums, onChanged }) {
+  const { profile } = useAuth();
+  const [selected, setSelected] = useState(null);
+  const [busy, setBusy] = useState(null);
+  const [message, setMessage] = useState("");
+  const owned = catCards || {};
+  const xp = savedAlbums?.version === 1 ? (savedAlbums.xp || {}) : albumXpFromCards(owned);
+
+  const upgrade = async cardId => {
+    setBusy(cardId); setMessage("");
+    const result = await upgradeCatCard(profile.id, cardId);
+    setBusy(null);
+    setMessage(result.ok ? `升星成功：${"★".repeat(result.stars)}` : result.reason);
+    if (result.ok) onChanged?.();
+  };
+
+  if (selected) {
+    const meta = VILLAGE_ALBUM_META[selected];
+    const cards = ALBUM_CARD_IDS[selected].map(id => CAT_CARD_MAP[id]);
+    const level = villageAlbumLevel(xp[selected]);
+    return <div>
+      <button onClick={() => { setSelected(null); setMessage(""); }} className="mb-3 rounded-xl px-3 py-2 text-xs font-black"
+        style={{ background: "rgba(92,61,46,.1)", color: C.brown }}>← 返回九冊</button>
+      <div className="mb-3 rounded-2xl p-3" style={{ background: "rgba(255,255,255,.72)", border: `1px solid ${C.border}` }}>
+        <div className="text-lg font-black" style={{ color: C.brown }}>{meta.icon} {meta.name}</div>
+        <div className="mt-1 text-xs font-bold" style={{ color: C.mid }}>
+          Lv.{level}/20 ・產量 +{villageAlbumBonusPct(xp[selected]).toFixed(2)}% ・EXP {xp[selected] || 0}/{villageAlbumThreshold(Math.min(20, level + 1))}
+        </div>
+        {message && <div className="mt-2 text-xs font-bold text-amber-700">{message}</div>}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8 }}>
+        {cards.map(card => {
+          const count = Number(owned[card.id]) || 0;
+          const stars = count > 0 ? Math.max(1, Number(catCardStars[card.id]) || 1) : 0;
+          const cost = catCardUpgradeCost(stars);
+          const canUpgrade = count > 0 && cost && count - 1 >= cost;
+          return <div key={card.id} style={{ borderRadius: 11, padding: 6, background: count ? (card.bg || "#fff5e8") : "rgba(92,61,46,.05)", opacity: count ? 1 : .42, border: `1px solid ${C.border}` }}>
+            <img loading="lazy" decoding="async" src={`/cats/cat-cards/${card.id}.webp`} alt={count ? card.name : "未取得卡片"}
+              style={{ width: "100%", aspectRatio: "3/4", objectFit: "cover", borderRadius: 7, filter: count ? "none" : "grayscale(1)" }} />
+            <div className="mt-1 truncate text-center text-[9px] font-black" style={{ color: C.brown }}>{count ? card.name : "???"}</div>
+            {count > 0 && <>
+              <div className="text-center text-[9px] text-amber-600">{"★".repeat(stars)}　×{count}</div>
+              {stars < 5 && <button disabled={!canUpgrade || busy === card.id} onClick={() => upgrade(card.id)}
+                className="mt-1 w-full rounded-lg py-1 text-[9px] font-black text-white disabled:opacity-40" style={{ background: C.sage }}>
+                {busy === card.id ? "升星中…" : `升星 ${count - 1}/${cost}`}
+              </button>}
+            </>}
+          </div>;
+        })}
+      </div>
+    </div>;
+  }
+
+  return <div>
+    <div className="mb-3 text-xs font-bold" style={{ color: C.mid }}>九冊各自累積，升級後永久增加對應建築產量。</div>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10 }}>
+      {VILLAGE_ALBUM_IDS.map(albumId => {
+        const meta = VILLAGE_ALBUM_META[albumId];
+        const value = xp[albumId] || 0;
+        const level = villageAlbumLevel(value);
+        const next = villageAlbumThreshold(Math.min(20, level + 1));
+        const current = villageAlbumThreshold(level);
+        const pct = level >= 20 ? 100 : Math.max(0, Math.min(100, ((value - current) / Math.max(1, next - current)) * 100));
+        const collected = ALBUM_CARD_IDS[albumId].filter(id => (owned[id] || 0) > 0).length;
+        return <button key={albumId} onClick={() => setSelected(albumId)} className="rounded-2xl p-3 text-left"
+          style={{ background: "rgba(255,255,255,.78)", border: `1px solid ${C.border}`, boxShadow: C.shadow }}>
+          <div className="text-sm font-black" style={{ color: C.brown }}>{meta.icon} {meta.name}</div>
+          <div className="mt-1 text-xs font-black text-amber-700">Lv.{level}/20　+{villageAlbumBonusPct(value).toFixed(2)}%</div>
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-amber-100"><div className="h-full rounded-full bg-amber-500" style={{ width: `${pct}%` }} /></div>
+          <div className="mt-1 text-[9px]" style={{ color: C.muted }}>{level >= 20 ? "已滿級" : `${value}/${next} EXP`}　收集 {collected}/{ALBUM_CARD_IDS[albumId].length}</div>
+        </button>;
+      })}
+    </div>
+  </div>;
+}
+
 // ── 主元件 ───────────────────────────────────────────────────
 export default function GachaMachine({ catCards, gachaCoins, onCoinsUpdated }) {
   const { profile }    = useAuth();
@@ -454,29 +538,7 @@ export default function GachaMachine({ catCards, gachaCoins, onCoinsUpdated }) {
     setSpinning(false);
     if (!res.ok) { alert(res.reason || "抽卡失敗"); return; }
 
-    let results = res.results;
-
-    // 10連保底：確保最後一張是玩家沒有的卡
-    if (type === "multi") {
-      const ownedIds = new Set(Object.keys(catCards||{}).filter(id=>(catCards[id]||0)>0));
-      const lastIdx  = results.length - 1;
-      if (!results[lastIdx].isNew) {
-        const newIdx = results.findIndex(r => r.isNew);
-        if (newIdx >= 0) {
-          // swap 到最後
-          [results[newIdx], results[lastIdx]] = [results[lastIdx], results[newIdx]];
-        } else {
-          // 全都重複 → 客製化保底：隨機選一張玩家未擁有的
-          const unowned = CAT_CARDS.filter(c => !ownedIds.has(c.id));
-          if (unowned.length > 0) {
-            const pick = unowned[Math.floor(Math.random() * unowned.length)];
-            results[lastIdx] = { id: pick.id, isNew: true };
-          }
-        }
-      }
-    }
-
-    setRevealQueue(results);
+    setRevealQueue(res.results);
     onCoinsUpdated?.();
   }
 
@@ -491,11 +553,11 @@ export default function GachaMachine({ catCards, gachaCoins, onCoinsUpdated }) {
       {/* 頁籤 */}
       <div className="flex rounded-2xl overflow-hidden"
         style={{border:`1px solid ${C.border}`,background:"rgba(255,255,255,0.5)"}}>
-        {[["gacha","🎰 扭蛋機"],["dex","📖 圖鑑"]].map(([id,label])=>(
+        {[["gacha","扭蛋"],["albums","九冊"],["dex","全圖鑑"]].map(([id,label])=>(
           <button key={id} onClick={()=>setTab(id)}
-            className="flex-1 py-2 text-sm font-black transition-colors"
+            className="flex min-h-16 flex-1 items-center justify-center gap-1 py-2 text-xs font-black transition-colors sm:text-sm"
             style={{background:tab===id?C.brown:"transparent",color:tab===id?"white":C.muted}}>
-            {label}
+            <CatVillageNavArt name={id} size={38} style={{ filter: tab===id ? "drop-shadow(0 3px 5px rgba(0,0,0,.5))" : undefined }} />{label}
           </button>
         ))}
       </div>
@@ -538,6 +600,8 @@ export default function GachaMachine({ catCards, gachaCoins, onCoinsUpdated }) {
       )}
 
       {tab === "dex" && <CardDex catCards={catCards} />}
+      {tab === "albums" && <VillageAlbums catCards={catCards} catCardStars={profile?.catCardStars}
+        savedAlbums={profile?.villageCardAlbums} onChanged={onCoinsUpdated} />}
 
       {/* 逐張揭示 Overlay */}
       {revealQueue && (

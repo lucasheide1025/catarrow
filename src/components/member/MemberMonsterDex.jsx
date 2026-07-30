@@ -8,7 +8,7 @@ import { MonsterImage } from "../MonsterSVG";
 const TIER_ORDER = ["common", "rare", "elite", "fierce", "boss", "mythic"];
 const HP_MAX = 1200, ATK_MAX = 160, DEF_MAX = 120;
 
-export default function MemberMonsterDex({ onBack }) {
+export default function MemberMonsterDex({ onBack, monsterDex }) {
   const { profile } = useAuth();
   const [dexData,      setDexData]      = useState({});
   const [loading,      setLoading]      = useState(true);
@@ -17,13 +17,18 @@ export default function MemberMonsterDex({ onBack }) {
   const [selected,     setSelected]     = useState(null);
 
   useEffect(() => {
+    if (monsterDex !== undefined) {
+      setDexData(monsterDex || {});
+      setLoading(false);
+      return undefined;
+    }
     if (!profile?.id) { setLoading(false); return; }
     const unsub = subscribeMonsterDex(profile.id, data => {
       setDexData(data);
       setLoading(false);
     });
     return () => unsub && unsub();
-  }, [profile?.id]);
+  }, [profile?.id, monsterDex]);
 
   const defeated   = MONSTERS.filter(m => (dexData[m.id]?.wins  || 0) > 0).length;
   const seen       = MONSTERS.filter(m => (dexData[m.id]?.wins  || 0) > 0 || (dexData[m.id]?.losses || 0) > 0).length;

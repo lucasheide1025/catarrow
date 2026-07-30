@@ -31,6 +31,9 @@ tmp/
 .staging/
 .vercel/
 .vercel-cli-cache/
+.local-tools/
+.firebase-emulators/
+.worktrees/
 node_modules/
 
 # Firebase-only configuration and local maintenance utilities

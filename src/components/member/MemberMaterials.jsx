@@ -2,7 +2,7 @@
 // v3：材料庫存 + 升級系統 + 章碎片 tab + 合成銀章
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { subscribeMaterials, upgradeMaterial, subscribeFragments, craftFragment, subscribeChests, openChest, openChestsBulk, migrateOldFragments, subscribePotions, updateChestOpenStats, refreshMaterials, refreshFragments, refreshPotions } from "../../lib/db";
+import { subscribeMaterials, upgradeMaterial, subscribeFragments, craftFragment, subscribeChests, openChest, openChestsBulk, migrateOldFragments, subscribePotions, updateChestOpenStats, refreshMaterials, refreshFragments, refreshPotions, useCoinShopSpecialTicket } from "../../lib/db";
 import { MATERIALS, RARITY_CONFIG } from "../../lib/monsterMaterials";
 import { FRAGMENTS, POTIONS, openChestContents, CHEST_TYPES } from "../../lib/itemData";
 import { useToast } from "../shared/UI";
@@ -10,6 +10,7 @@ import { sfxBuff, sfxEpic, sfxSuccess, sfxCast, sfxCoinDrop } from "../../lib/so
 import Confetti from "../shared/Confetti";
 import ExpansionMaterialsPanel from "./ExpansionMaterialsPanel";
 import { isMonsterExpansionEnabled } from "../../lib/monsterExpansionFeature";
+import { SPECIAL_TICKET_META } from "../../lib/shopData";
 
 const FAMILY_CONFIG = {
   ghost:     { label: "鬼怪族",    icon: "👻", color: "#7c3aed" },
@@ -65,6 +66,7 @@ export default function MemberMaterials({ onBack, onGoVillage, guestProfile }) {
       ? requested
       : "chests";
   });
+  const [usingTicket, setUsingTicket] = useState("");
 
   // ── 材料庫存 ─────────────────────────────────────────────
   const [inventory,      setInventory]      = useState({});
@@ -783,10 +785,35 @@ export default function MemberMaterials({ onBack, onGoVillage, guestProfile }) {
       )}
 
       {tab === "special" && (
-        <div className="rounded-2xl border border-dashed border-indigo-400/25 bg-indigo-500/5 px-4 py-12 text-center">
-          <div className="mb-3 text-5xl" aria-hidden="true">🎟️</div>
-          <h3 className="font-black text-gray-200">目前沒有特殊道具</h3>
-          <p className="mt-1 text-xs text-gray-500">活動券與任務道具會收納在這裡。</p>
+        <div className="flex flex-col gap-3">
+          <div className="rounded-xl border border-indigo-400/25 bg-indigo-500/10 px-3 py-2 text-xs leading-relaxed text-indigo-200">
+            次數券不會跨日消失。單人／組隊券增加今日額外挑戰次數；探索骰子券立即增加 3 顆骰子。
+          </div>
+          {Object.entries(SPECIAL_TICKET_META).map(([ticketId, meta]) => {
+            const count = profile?.specialItems?.[ticketId] || 0;
+            return (
+              <article key={ticketId} className="flex items-center gap-3 rounded-2xl border border-indigo-300/20 bg-indigo-500/10 p-3">
+                <span className="text-4xl" aria-hidden="true">{meta.icon}</span>
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-sm font-black text-white">{meta.name}</h3>
+                  <p className="mt-0.5 text-xs text-indigo-200">持有 {count}/{meta.holdCap}</p>
+                </div>
+                <button type="button" disabled={!count || Boolean(usingTicket)}
+                  onClick={async () => {
+                    if (!window.confirm(`確定使用 1 張${meta.name}？`)) return;
+                    setUsingTicket(ticketId);
+                    const result = await useCoinShopSpecialTicket(profile.id, ticketId);
+                    setUsingTicket("");
+                    toast(result.ok
+                      ? ticketId === "boardDiceTicket" ? "已增加 3 顆探索骰子" : "已增加今日 1 次額外挑戰"
+                      : result.reason);
+                  }}
+                  className="min-h-11 rounded-xl bg-indigo-400 px-4 text-xs font-black text-slate-950 transition-colors hover:bg-indigo-300 disabled:bg-slate-700 disabled:text-slate-500">
+                  {usingTicket === ticketId ? "使用中…" : count ? "使用" : "未持有"}
+                </button>
+              </article>
+            );
+          })}
         </div>
       )}
 

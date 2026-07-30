@@ -7,6 +7,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { normalizeDungeonRunSettings } from "./dungeonRunSettings";
+import { buildExpeditionBattleMemberSnapshot } from "./expeditionMemberData";
 
 const D = "dungeonRooms";
 
@@ -22,36 +23,7 @@ export async function createExpeditionBattleRoom({
 }) {
   try {
     const settings = normalizeDungeonRunSettings({ arrowsPerRound, targetFmt });
-    const member = {
-      name: memberName,
-      hp: memberData?.hp ?? 500,
-      maxHP: memberData?.maxHP ?? 500,
-      atk: memberData?.atk ?? 10,
-      def: memberData?.def ?? 10,
-      alive: true,
-      ready: false,
-      arrows: [],
-      contract: { type: "standard", param: null },
-      // 帶入遠征途中累積的 buff（商店符/事件/陷阱），未提供時維持預設
-      buffs: {
-        atkMult: memberData?.buffs?.atkMult ?? 1,
-        defMult: memberData?.buffs?.defMult ?? 1,
-        dmgMult: memberData?.buffs?.dmgMult ?? 1,
-        hasRevival: memberData?.buffs?.hasRevival ?? false,
-      },
-      revived: false,
-      role: "front",
-      displayGroup: "front",
-      rearChoice: null,
-      catId: memberData?.catId || "",
-      catName: memberData?.catName || "",
-      catType: memberData?.catType || "",
-      catXP: memberData?.catXP ?? 0,
-      catBond: memberData?.catBond ?? 0,
-      archerStyle: memberData?.archerStyle || "baobao",
-      catAtk: memberData?.catAtk ?? 0,
-      wbBonus: memberData?.wbBonus || null,
-    };
+    const member = buildExpeditionBattleMemberSnapshot({ memberName, memberData });
 
     const floorScale = [1.0, 1.05, 1.2][Math.min(floorIndex, 2)] || 1.0;
     const finalMonster = {
@@ -223,20 +195,48 @@ export async function grantExpeditionRewards(memberId, rewards) {
 
 /**
  * 單人遠征進度持久化（斷線/重整後可復原或結算，見 dungeon 穩定性任務）
- * members/{memberId}.activeExpedition = { family, difficultyTier, isHidden, floorsCleared, startedAt } | 不存在
+ * 保存開圖時鎖定的 lootMult、玩家狀態與地圖，讓存檔／重整／斷線重連
+ * 不會重骰倍率或遺失休息區、商人區加成。
  */
 export async function setActiveExpeditionProgress(memberId, {
-  family, difficultyTier, isHidden, floorsCleared, hp, maxHP, arrowsPerRound, targetFmt,
-  expansionRunId, bossEncounter, mapState,
+  family, difficultyTier, isHidden, floorsCleared, hp, maxHP, atk, def, wbBonus, combatSnapshotVersion, arrowsPerRound, targetFmt,
+  lootMult, restBonuses, merchantBonuses, expansionRunId, bossEncounter, mapState,
 }) {
   if (!memberId) return { ok: false, reason: "缺少會員 id" };
   try {
     const data = { family, difficultyTier, isHidden: !!isHidden, floorsCleared, startedAt: serverTimestamp() };
     if (Number.isFinite(hp))    data.hp    = Math.max(0, Math.round(hp));
     if (Number.isFinite(maxHP)) data.maxHP = Math.max(1, Math.round(maxHP));
+    if (Number.isFinite(atk))   data.atk   = Math.max(0, Math.round(atk));
+    if (Number.isFinite(def))   data.def   = Math.max(0, Math.round(def));
+    if (wbBonus && typeof wbBonus === "object") {
+      data.wbBonus = {
+        dmgBonusPct:Number(wbBonus.dmgBonusPct) || 0,
+        dmgReducePct:Number(wbBonus.dmgReducePct) || 0,
+        healBonusPct:Number(wbBonus.healBonusPct) || 0,
+      };
+    }
+    if (Number.isFinite(Number(combatSnapshotVersion))) {
+      data.combatSnapshotVersion = Math.max(1, Math.round(Number(combatSnapshotVersion)));
+    }
     const settings = normalizeDungeonRunSettings({ arrowsPerRound, targetFmt });
     data.arrowsPerRound = settings.arrowsPerRound;
     data.targetFmt = settings.targetFmt;
+    if (Number.isFinite(Number(lootMult))) {
+      data.lootMult = Math.max(1, Math.round(Number(lootMult)));
+    }
+    if (restBonuses && typeof restBonuses === "object") {
+      data.restBonuses = {
+        atkPct: Math.max(0, Number(restBonuses.atkPct) || 0),
+        defPct: Math.max(0, Number(restBonuses.defPct) || 0),
+      };
+    }
+    if (merchantBonuses && typeof merchantBonuses === "object") {
+      data.merchantBonuses = {
+        atkPct: Math.max(0, Number(merchantBonuses.atkPct) || 0),
+        defPct: Math.max(0, Number(merchantBonuses.defPct) || 0),
+      };
+    }
     if (expansionRunId && bossEncounter?.monsterId) {
       data.expansionRunId = expansionRunId;
       data.runVersion = bossEncounter.runVersion;

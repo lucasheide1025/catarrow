@@ -6,13 +6,13 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { MATERIALS } from "./monsterMaterials";
-import { POTIONS, FRAGMENTS } from "./itemData";
+import { POTIONS, FRAGMENTS, makeFamilyMaterialChest } from "./itemData";
 import { migratePotionInventory } from "./consumableSystem";
 import { makeCoinChest, COIN_CHEST_TIERS } from "./lootTable";
 import { EQUIP_GRADES, EQUIP_SLOT_DEFS } from "./constants";
 import { EQUIP_UPGRADE_COST, generateRandomMats, KING_SEAL_BREAKTHROUGH_COST } from "./equipData";
 import { getEquipmentRune, getNextEquipmentRune } from "./equipmentRuneData";
-import { SHOP_PRODUCT_MAP, getShopPeriodKey, getShopDailyKey } from "./shopData";
+import { SHOP_PRODUCT_MAP, SPECIAL_TICKET_META, getMaterialUpgradePlan, getShopPeriodKey, getShopDailyKey, getShopWeeklyKey } from "./shopData";
 import { levelFromXP, xpToReachLevel, makeSeedRand } from "./adventurerSystem";
 import { BUILDING_LIST, BUILDINGS as VB, getProductionRate, getUpgradeRequirements, DEFAULT_VILLAGE, MAX_COLLECT_HOURS, isBuildingUnlocked, getBuildingStage, getStageMultiplier, normalizeBuildingAllocation, getVillageLastCollectedMs, getResourceKey, TIERED_RESOURCES, getWorkerCatMultiplier, CATDEX_PRODUCTION_MULT } from "./villageData";
 import { getCardStat, maxEquippedForStat, MAX_WB_EQUIPPED } from "./monsterCards";
@@ -21,6 +21,7 @@ import { getMilestonesReached, getRewardsForMilestone } from "./arrowMilestone";
 import { openVillagePacks } from "./villagePack";
 import { addCatBond, addCatXP } from "./catDb";
 import { catBusyElsewhere, catBusyReason } from "./catAssignment";
+import { albumForCard, albumXpForCard, albumXpFromCards, villageAlbumMultiplier } from "./catVillageAlbums";
 import { SHOOTING_SCHEMA_VERSION, buildMonsterShootingRecord, buildPracticeShootingRecord, buildShootingEnds, calculateSessionMetrics } from "./shootingPerformance";
 import { assertCostCapability, COST_CAPABILITIES, isCostCapabilityAllowed } from "./costControl";
 import {
@@ -236,6 +237,11 @@ export async function finalizeMonsterShootingSession(input) {
   // 貢獻打怪傷害到村目標（fire-and-forget，只在交易成功後觸發）
   if (input.memberId && Number(input.totalDamage || 0) > 0) {
     import("./villageGoalDb").then(m => m.contributeDamageToGoal(input.memberId, Number(input.totalDamage))).catch(() => {});
+  }
+  if (input.memberId && input.result === "win" && Number(input.finalMonsterHp) <= 0) {
+    import("./worldBossDb").then(module => module.contributeWorldBossSpawnProgress({
+      memberId:input.memberId, type:"monsterKills", amount:1, operationId:`monster:${record.session.id}`,
+    })).catch(() => {});
   }
   return record.session.id;
 }
@@ -982,6 +988,9 @@ async function applyArrowOperation(operation) {
     });
     transaction.set(operationRef, { memberId:operation.memberId, arrowCount:operation.count, deviceId:arrowDeviceId(), createdAt:serverTimestamp() });
   });
+  import("./worldBossDb").then(module => module.contributeWorldBossSpawnProgress({
+    memberId:operation.memberId, type:"arrows", amount:operation.count, operationId:`arrows:${operation.id}`,
+  })).catch(() => {});
 }
 // 供 UI 顯示「待同步箭數」筆數（同步卡住時使用者才看得見,可手動重試 flushPendingArrowProgress）
 export function getPendingArrowOperationCount(memberId) {
@@ -2724,8 +2733,8 @@ export async function checkMonsterDailyLimit(memberId, dailyMax) {
   try {
     const id = `${memberId}_${monsterTodayStr()}`;
     const snap = await getDoc(doc(db, C_MONSTER_SESSION, id));
-    const used = snap.exists() ? (snap.data().count || 0) : 0;
-    return Math.max(0, (dailyMax || 5) - used);
+    const data = snap.exists() ? snap.data() : {};
+    return Math.max(0, (dailyMax || 5) + Math.floor(data.soloBonus || 0) - Math.floor(data.count || 0));
   } catch { return dailyMax || 5; }
 }
  
@@ -2768,8 +2777,8 @@ export async function checkPartyBattleLimit(memberId) {
   try {
     const id   = `${memberId}_${monsterTodayStr()}`;
     const snap = await getDoc(doc(db, C_MONSTER_SESSION, id));
-    const used = snap.exists() ? (snap.data().partyCount || 0) : 0;
-    return Math.max(0, 5 - used);
+    const data = snap.exists() ? snap.data() : {};
+    return Math.max(0, 5 + Math.floor(data.partyBonus || 0) - Math.floor(data.partyCount || 0));
   } catch { return 5; }
 }
 export async function recordPartyBattleSession(memberId) {
@@ -3365,9 +3374,14 @@ export async function addVillageLap(memberId, n = 1) {
   catch (e) { console.warn("addVillageLap:", e?.message); }
 }
 // 突破地下城（打贏 boss）：分族累計
-export async function addDungeonClear(memberId, family, n = 1) {
+export async function addDungeonClear(memberId, family, n = 1, operationId = null) {
   if (!memberId || !family || n <= 0) return;
-  try { await updateDoc(doc(db, "members", memberId), { [`dungeonClears.${family}`]: increment(n) }); }
+  try {
+    await updateDoc(doc(db, "members", memberId), { [`dungeonClears.${family}`]: increment(n) });
+    if (operationId) import("./worldBossDb").then(module => module.contributeWorldBossSpawnProgress({
+      memberId, type:"dungeonClears", amount:n, operationId:`dungeon:${operationId}`,
+    })).catch(() => {});
+  }
   catch (e) { console.warn("addDungeonClear:", e?.message); }
 }
 // 組隊打怪個人累計傷害
@@ -4111,17 +4125,23 @@ export async function shopBuyProduct(memberId, productId) {
 
   const periodKey = getShopPeriodKey(product);
   const memberRef = doc(db, C.members, memberId);
-  const destination = product.kind === "chest"
-    ? doc(db, C_CHESTS, memberId)
-    : product.kind === "material"
-      ? doc(db, C_MATERIALS, memberId)
-      : null;
+  const chestRef = doc(db, C_CHESTS, memberId);
+  const needsChest = product.kind === "chest" || product.kind === "familyMaterialChest";
+  const families = ["ghost", "mountain", "insect", "workplace", "exam", "temple"];
+  const family = product.kind === "familyMaterialChest"
+    ? families[Math.floor(Math.random() * families.length)]
+    : null;
+  const runeType = product.kind === "runeFragments"
+    ? ["atk", "def", "hp"][Math.floor(Math.random() * 3)]
+    : null;
 
   try {
     await runTransaction(db, async transaction => {
-      const memberSnap = await transaction.get(memberRef);
+      const [memberSnap, chestSnap] = await Promise.all([
+        transaction.get(memberRef),
+        needsChest ? transaction.get(chestRef) : Promise.resolve(null),
+      ]);
       if (!memberSnap.exists()) throw new Error("找不到會員資料");
-      const destinationSnap = destination ? await transaction.get(destination) : null;
       const member = memberSnap.data();
       const coins = Math.floor(member.coins || 0);
       const purchases = member.coinShopPurchases || {};
@@ -4130,6 +4150,16 @@ export async function shopBuyProduct(memberId, productId) {
 
       if (purchased >= product.limit) throw new Error("本期已達購買上限");
       if (coins < product.price) throw new Error(`金幣不足（需要 ${product.price.toLocaleString()}）`);
+      if (product.kind === "specialTicket") {
+        const held = Math.floor(member.specialItems?.[product.ticketId] || 0);
+        if (held + product.amount > product.holdCap) {
+          throw new Error(`持有上限為 ${product.holdCap} 張，請先使用後再購買`);
+        }
+      }
+
+      const dailyKey = getShopDailyKey();
+      const weeklyKey = getShopWeeklyKey();
+      const spending = member.coinShopSpending || {};
 
       const memberUpdate = {
         coins: coins - product.price,
@@ -4137,33 +4167,48 @@ export async function shopBuyProduct(memberId, productId) {
           ...purchases,
           [periodKey]: { ...periodPurchases, [product.id]: purchased + 1 },
         },
+        coinShopSpending:{
+          dailyKey,
+          dailySpent:(spending.dailyKey === dailyKey ? Math.floor(spending.dailySpent || 0) : 0) + product.price,
+          weeklyKey,
+          weeklySpent:(spending.weeklyKey === weeklyKey ? Math.floor(spending.weeklySpent || 0) : 0) + product.price,
+        },
         updatedAt: serverTimestamp(),
       };
 
-      if (product.kind === "gachaCoins") {
-        memberUpdate.gachaCoins = Math.floor(member.gachaCoins || 0) + product.amount;
-      } else if (product.kind === "dungeonScroll") {
-        memberUpdate.dungeonScrollCount = Math.floor(member.dungeonScrollCount || 0) + product.amount;
-      } else if (product.kind === "chest") {
-        const current = destinationSnap?.exists() ? (destinationSnap.data().chests || []) : [];
-        const chest = {
+      if (product.kind === "specialTicket") {
+        memberUpdate.specialItems = {
+          ...(member.specialItems || {}),
+          [product.ticketId]:Math.floor(member.specialItems?.[product.ticketId] || 0) + product.amount,
+        };
+      } else if (product.kind === "kingSeal") {
+        memberUpdate.kingSeals = Math.floor(member.kingSeals || 0) + product.amount;
+      } else if (product.kind === "runeFragments") {
+        memberUpdate.equipmentRuneFragments = {
+          ...(member.equipmentRuneFragments || {}),
+          [runeType]:Math.floor(member.equipmentRuneFragments?.[runeType] || 0) + product.amount,
+        };
+      } else if (product.kind === "worldBossDungeonScroll") {
+        memberUpdate.dungeonExcavation = {
+          ...(member.dungeonExcavation || {}),
+          scrolls:Math.floor(member.dungeonExcavation?.scrolls || 0) + product.amount,
+        };
+      } else if (needsChest) {
+        const current = chestSnap?.exists() ? (chestSnap.data().chests || []) : [];
+        const chest = product.kind === "familyMaterialChest"
+          ? makeFamilyMaterialChest(family, product.tier, "金幣商店")
+          : {
           id:`chest_shop_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
           type:product.chestType, family:"shop", tier:"common", from:"金幣商店", ts:Date.now(),
         };
-        transaction.set(destination, { chests:[...current, chest], updatedAt:serverTimestamp() }, { merge:true });
-      } else if (product.kind === "material") {
-        const items = destinationSnap?.exists() ? (destinationSnap.data().items || {}) : {};
-        transaction.set(destination, {
-          items:{ ...items, [product.materialId]:(items[product.materialId] || 0) + product.amount },
-          updatedAt:serverTimestamp(),
-        }, { merge:true });
+        transaction.set(chestRef, { chests:[...current, chest], updatedAt:serverTimestamp() }, { merge:true });
       } else {
         throw new Error("尚未支援這種商品");
       }
 
       transaction.update(memberRef, memberUpdate);
     });
-    return { ok:true, product, periodKey };
+    return { ok:true, product, periodKey, family, runeType };
   } catch (error) {
     console.warn("shopBuyProduct:", error?.message);
     return { ok:false, reason:error?.message || "購買失敗，請稍後再試" };
@@ -4812,24 +4857,143 @@ export async function checkAndGrantArrowMilestones(memberId, sessionArrowCount) 
 export async function drawGachaCards(memberId, type = "single") {
   const count = type === "single" ? 1 : 11;
   const cost  = type === "single" ? 1 : 10;
+  const { rollGacha, CAT_CARDS } = await import("./catCardData");
+  const { albumForCard, albumXpForCard, albumXpFromCards, albumXpGains, villageAlbumLevel } = await import("./catVillageAlbums");
+  try {
+    return await runTransaction(db, async tx => {
+      const ref = doc(db, C.members, memberId);
+      const snap = await tx.get(ref);
+      if (!snap.exists()) return { ok: false, reason: "找不到會員資料" };
+      const member = snap.data();
+      if ((Number(member.gachaCoins) || 0) < cost) return { ok: false, reason: `需要 ${cost} 枚扭蛋幣` };
+      const prevCards = member.catCards || {};
+      const drawn = Array.from({ length: count }, () => rollGacha());
+      if (type === "multi" && drawn.every(id => (prevCards[id] || 0) > 0)) {
+        const unowned = CAT_CARDS.filter(card => !(prevCards[card.id] > 0));
+        if (unowned.length) drawn[drawn.length - 1] = unowned[Math.floor(Math.random() * unowned.length)].id;
+      }
+      const quantities = drawn.reduce((map, id) => ({ ...map, [id]: (map[id] || 0) + 1 }), {});
+      const previousXp = member.villageCardAlbums?.version === 1
+        ? { ...(member.villageCardAlbums.xp || {}) }
+        : albumXpFromCards(prevCards);
+      const gains = albumXpGains(drawn);
+      const nextXp = { ...previousXp };
+      Object.entries(gains).forEach(([albumId, gain]) => { nextXp[albumId] = (nextXp[albumId] || 0) + gain; });
+      const updates = {
+        gachaCoins: (Number(member.gachaCoins) || 0) - cost,
+        villageCardAlbums: { version: 1, xp: nextXp },
+        updatedAt: serverTimestamp(),
+      };
+      Object.entries(quantities).forEach(([id, qty]) => { updates[`catCards.${id}`] = increment(qty); });
+      tx.update(ref, updates);
+      return {
+        ok: true,
+        results: drawn.map(id => ({ id, isNew: !(prevCards[id] > 0), albumId: albumForCard(id), albumXpGain: albumXpForCard(id) })),
+        albumChanges: Object.fromEntries(Object.entries(gains).map(([albumId, gain]) => [albumId, {
+          gain, beforeXp: previousXp[albumId] || 0, afterXp: nextXp[albumId],
+          beforeLevel: villageAlbumLevel(previousXp[albumId]), afterLevel: villageAlbumLevel(nextXp[albumId]),
+        }])),
+      };
+    });
+  } catch (error) {
+    console.warn("drawGachaCards:", error?.message);
+    return { ok: false, reason: "抽卡失敗，請稍後再試" };
+  }
+}
 
-  const member = await getMember(memberId);
-  const coins  = member?.gachaCoins || 0;
-  if (coins < cost) return { ok: false, reason: `需要 ${cost} 枚扭蛋幣` };
+export async function shopUpgradeMaterial(memberId, materialId, exchanges = 1) {
+  if (!memberId) return { ok:false, reason:"會員資料錯誤" };
+  const inventoryRef = doc(db, C_MATERIALS, memberId);
+  try {
+    let plan = null;
+    await runTransaction(db, async transaction => {
+      const inventorySnap = await transaction.get(inventoryRef);
+      const items = inventorySnap.exists() ? (inventorySnap.data().items || {}) : {};
+      plan = getMaterialUpgradePlan(materialId, items[materialId] || 0, exchanges);
+      if (!plan?.exchanges) throw new Error("素材不足；批量升級後必須保留 5 個原素材");
+      transaction.set(inventoryRef, {
+        items:{
+          ...items,
+          [plan.sourceId]:(items[plan.sourceId] || 0) - plan.consume,
+          [plan.targetId]:(items[plan.targetId] || 0) + plan.output,
+        },
+        updatedAt:serverTimestamp(),
+      }, { merge:true });
+    });
+    return { ok:true, plan };
+  } catch (error) {
+    return { ok:false, reason:error?.message || "素材升級失敗，請稍後再試" };
+  }
+}
 
-  const { rollGacha } = await import("./catCardData");
-  const drawn = Array.from({ length: count }, () => rollGacha());
+export async function useCoinShopSpecialTicket(memberId, ticketId) {
+  const meta = SPECIAL_TICKET_META[ticketId];
+  if (!memberId || !meta) return { ok:false, reason:"特殊道具不存在" };
+  const memberRef = doc(db, C.members, memberId);
+  const sessionRef = doc(db, C_MONSTER_SESSION, `${memberId}_${monsterTodayStr()}`);
+  try {
+    let remaining = 0;
+    await runTransaction(db, async transaction => {
+      const [memberSnap, sessionSnap] = await Promise.all([
+        transaction.get(memberRef),
+        ticketId === "boardDiceTicket" ? Promise.resolve(null) : transaction.get(sessionRef),
+      ]);
+      if (!memberSnap.exists()) throw new Error("找不到會員資料");
+      const member = memberSnap.data();
+      const held = Math.floor(member.specialItems?.[ticketId] || 0);
+      if (held < 1) throw new Error(`沒有${meta.name}`);
+      remaining = held - 1;
+      const memberUpdate = {
+        specialItems:{ ...(member.specialItems || {}), [ticketId]:remaining },
+        updatedAt:serverTimestamp(),
+      };
+      if (ticketId === "boardDiceTicket") {
+        memberUpdate.villageBoard = {
+          ...(member.villageBoard || {}),
+          dice:Math.floor(member.villageBoard?.dice || 0) + 3,
+        };
+      } else {
+        const data = sessionSnap?.exists() ? sessionSnap.data() : {};
+        const field = ticketId === "soloBattleTicket" ? "soloBonus" : "partyBonus";
+        transaction.set(sessionRef, {
+          memberId,
+          date:monsterTodayStr(),
+          [field]:Math.floor(data[field] || 0) + 1,
+          updatedAt:serverTimestamp(),
+        }, { merge:true });
+      }
+      transaction.update(memberRef, memberUpdate);
+    });
+    return { ok:true, ticketId, remaining, diceAdded:ticketId === "boardDiceTicket" ? 3 : 0 };
+  } catch (error) {
+    return { ok:false, reason:error?.message || "使用失敗，請稍後再試" };
+  }
+}
 
-  const updates = { gachaCoins: increment(-cost) };
-  const prevCards = member?.catCards || {};
-  const results = drawn.map(id => {
-    const isNew = !prevCards[id];
-    updates[`catCards.${id}`] = increment(1);
-    return { id, isNew };
-  });
-
-  await updateDoc(doc(db, C.members, memberId), updates);
-  return { ok: true, results };
+export async function upgradeCatCard(memberId, cardId) {
+  const { catCardUpgradeCost } = await import("./catVillageAlbums");
+  try {
+    return await runTransaction(db, async tx => {
+      const ref = doc(db, C.members, memberId);
+      const snap = await tx.get(ref);
+      if (!snap.exists()) return { ok: false, reason: "找不到會員資料" };
+      const data = snap.data();
+      const owned = Math.max(0, Math.floor(Number(data.catCards?.[cardId]) || 0));
+      const stars = Math.max(1, Math.min(5, Math.floor(Number(data.catCardStars?.[cardId]) || 1)));
+      const cost = catCardUpgradeCost(stars);
+      if (!cost) return { ok: false, reason: "已達五星" };
+      if (owned - 1 < cost) return { ok: false, reason: `需要 ${cost} 張重複卡` };
+      tx.update(ref, {
+        [`catCards.${cardId}`]: owned - cost,
+        [`catCardStars.${cardId}`]: stars + 1,
+        updatedAt: serverTimestamp(),
+      });
+      return { ok: true, stars: stars + 1, remaining: owned - cost };
+    });
+  } catch (error) {
+    console.warn("upgradeCatCard:", error?.message);
+    return { ok: false, reason: "升星失敗，請稍後再試" };
+  }
 }
 
 // ─── 貓貓村 ────────────────────────────────────────────────
@@ -4849,6 +5013,7 @@ export async function collectVillageResources(memberId, village, opts) {
   // myCats 由呼叫端傳入（cats 子集合資料），collectVillageResources 本身不讀子集合。
   var myCats       = (opts && opts.myCats) || {};
   var catDexMult   = CATDEX_PRODUCTION_MULT;
+  var albumXp      = (opts && opts.villageCardAlbums?.xp) || (opts && opts.albumXp) || {};
 
   for (var id of BUILDING_LIST) {
     if (!isBuildingUnlocked(id, buildings)) continue;
@@ -4858,12 +5023,13 @@ export async function collectVillageResources(memberId, village, opts) {
     // 該建築駐紮貓的產能加成（無貓＝1.0）
     var workerCat0 = workers[id];
     var wMult      = workerCat0 ? getWorkerCatMultiplier(myCats[workerCat0]) : 1.0;
+    var albumMult  = villageAlbumMultiplier(albumXp[id]);
 
     // Gacha: accumulate to top-level gachaCoins
     if (id === "gacha") {
       var fracKey  = "gachaTokenFrac";
       var prevFrac = village?.resources?.[fracKey] || 0;
-      var rawAmt   = getProductionRate(id, lv) * wMult * hours * catDexMult + prevFrac;
+      var rawAmt   = getProductionRate(id, lv) * wMult * albumMult * hours * catDexMult + prevFrac;
       var amt      = Math.floor(rawAmt);
       var remain   = Math.round((rawAmt - amt) * 1000) / 1000;
       updates["village.resources." + fracKey] = remain;
@@ -4882,7 +5048,7 @@ export async function collectVillageResources(memberId, village, opts) {
       var resKey  = res;
       var fracKey = resKey + "Frac";
       var prevFrac = village?.resources?.[fracKey] || 0;
-      var rawAmt   = rate * hours * catDexMult + prevFrac;
+      var rawAmt   = rate * albumMult * hours * catDexMult + prevFrac;
       var amt      = Math.floor(rawAmt);
       var remain   = Math.round((rawAmt - amt) * 1000) / 1000;
       updates["village.resources." + fracKey] = remain;
@@ -4893,7 +5059,7 @@ export async function collectVillageResources(memberId, village, opts) {
     } else {
       // Tiered resources: pool * stageMult, split by allocation%
       var stageMult = getStageMultiplier(lv);
-      var pool      = rate * stageMult * hours * catDexMult;
+    var pool      = rate * stageMult * hours * catDexMult * albumMult;
       var alloc     = normalizeBuildingAllocation(lv, allocations[id]);
       if (JSON.stringify(allocations[id] || null) !== JSON.stringify(alloc)) {
         updates["village.allocations." + id] = alloc;
@@ -5099,6 +5265,11 @@ export async function buyCardListing(buyerId, buyerName, listing, offeredCardId 
   if (!lSnap.exists() || lSnap.data()?.status !== "active") throw new Error('此掛賣已下架');
   const bData = bSnap.data() || {};
   const batch = writeBatch(db);
+  const buyerAlbumXp = bData.villageCardAlbums?.version === 1
+    ? { ...(bData.villageCardAlbums.xp || {}) }
+    : albumXpFromCards(bData.catCards || {});
+  const boughtAlbumId = albumForCard(listing.cardId);
+  if (boughtAlbumId) buyerAlbumXp[boughtAlbumId] = (buyerAlbumXp[boughtAlbumId] || 0) + albumXpForCard(listing.cardId);
 
   if (listing.priceType === "arrowdew") {
     const have = bData?.village?.resources?.arrowdew || 0;
@@ -5116,7 +5287,10 @@ export async function buyCardListing(buyerId, buyerName, listing, offeredCardId 
     batch.update(doc(db, C.members, buyerId), { [`catCards.${offeredCardId}`]: increment(-1) });
   }
 
-  batch.update(doc(db, C.members, buyerId), { [`catCards.${listing.cardId}`]: increment(1) });
+  batch.update(doc(db, C.members, buyerId), {
+    [`catCards.${listing.cardId}`]: increment(1),
+    villageCardAlbums: { version: 1, xp: buyerAlbumXp },
+  });
   batch.update(listingRef, {
     status: "sold", buyerId, buyerName, soldAt: serverTimestamp(),
     sellerClaimed: false,
@@ -5180,6 +5354,14 @@ export async function claimCardSaleProceeds(sellerId, listingId) {
       updates.gachaCoins = increment(listing.priceAmount);
     } else if (listing.priceType === 'card' && listing.offeredCardId) {
       updates[`catCards.${listing.offeredCardId}`] = increment(1);
+      const sellerSnap = await getDoc(doc(db, C.members, sellerId));
+      const sellerData = sellerSnap.data() || {};
+      const sellerAlbumXp = sellerData.villageCardAlbums?.version === 1
+        ? { ...(sellerData.villageCardAlbums.xp || {}) }
+        : albumXpFromCards(sellerData.catCards || {});
+      const albumId = albumForCard(listing.offeredCardId);
+      if (albumId) sellerAlbumXp[albumId] = (sellerAlbumXp[albumId] || 0) + albumXpForCard(listing.offeredCardId);
+      updates.villageCardAlbums = { version: 1, xp: sellerAlbumXp };
     }
     if (Object.keys(updates).length === 0) {
       return { ok: false, reason: 'invalid_proceeds' };

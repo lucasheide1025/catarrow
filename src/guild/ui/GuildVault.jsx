@@ -9,6 +9,8 @@ import { deriveGuildCombat } from "../domain/guildStats";
 import { calcGuildExpeditionStats } from "../domain/guildStats";
 import { sfxCoinDrop, sfxError, sfxClose, sfxTap } from "../../lib/sound";
 import { hallBg, bgLayer, junkArt, ArtOrEmoji } from "./GuildArt";
+import GuildIcon from "./GuildIcon";
+import { GuildJunkArt } from "./GuildItemArt";
 
 const card = { background: "rgba(12,8,4,.72)", borderRadius: 12, padding: 12, border: "1px solid rgba(251,191,36,.18)" };
 const RARITY_ORDER = ["legend", "prize", "rare", "fine", "common"];
@@ -40,7 +42,7 @@ export default function GuildVault({ member, profile, onSell, onClose }) {
   return (
     <div className="guild-panel-page" style={{ minHeight: "100dvh", ...bgLayer(hallBg(), { overlay: "rgba(8,6,3,.78)" }), backgroundAttachment: "fixed", color: "#f1e7d5", padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ fontSize: 18, fontWeight: 900, color: "#fbbf24" }}>🧺 雜貨倉庫</div>
+        <div style={{ fontSize: 18, fontWeight: 900, color: "#fbbf24", display: "flex", alignItems: "center", gap: 7 }}><GuildIcon name="vault" size={38} />雜貨倉庫</div>
         <button type="button" onClick={() => { sfxClose(); onClose(); }} style={{ padding: "7px 14px", borderRadius: 9, border: "none", background: "#334155", color: "#fff", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>返回</button>
       </div>
 
@@ -49,7 +51,7 @@ export default function GuildVault({ member, profile, onSell, onClose }) {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
           <div>
             <div style={{ fontSize: 12, color: "#c8b89a" }}>庫存 {totalQty} 件・{rows.length} 種</div>
-            <div style={{ fontSize: 15, fontWeight: 900, color: "#fbbf24", marginTop: 2 }}>💰 {totalCoins}　🐾 {totalCat}</div>
+            <div style={{ fontSize: 15, fontWeight: 900, color: "#fbbf24", marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}><GuildIcon name="coin" size={24} />{totalCoins}<GuildIcon name="catCoin" size={24} />{totalCat}</div>
             <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>
               🍀 LUK 評估加成 ×{valuationMult.toFixed(2)}（LUK 越高賣越貴，可以先囤）
             </div>
@@ -92,7 +94,7 @@ export default function GuildVault({ member, profile, onSell, onClose }) {
         const meta = JUNK_RARITY[r.rarity] || JUNK_RARITY.common;
         return (
           <div key={r.id} style={{ ...card, display: "flex", alignItems: "center", gap: 10, borderColor: `${meta.color}44` }}>
-            <ArtOrEmoji sources={[junkArt(r.id)]} emoji={r.icon} size={38} style={{ flexShrink: 0 }} />
+            <GuildJunkArt junkId={r.id} size={48} style={{ flexShrink: 0 }} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
                 <span style={{ fontSize: 13, fontWeight: 900 }}>{r.name}</span>
@@ -100,7 +102,7 @@ export default function GuildVault({ member, profile, onSell, onClose }) {
                 <span style={{ fontSize: 11, color: "#fbbf24", fontWeight: 900 }}>×{r.qty}</span>
               </div>
               <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>{r.desc}</div>
-              <div style={{ fontSize: 10, color: "#c8b89a", marginTop: 2 }}>單價 💰{r.unitCoins} 🐾{r.unitCatCoins}　合計 💰{r.totalCoins} 🐾{r.totalCatCoins}</div>
+              <div style={{ fontSize: 10, color: "#c8b89a", marginTop: 2, display: "flex", alignItems: "center", gap: 3, flexWrap: "wrap" }}>單價 <GuildIcon name="coin" size={18} />{r.unitCoins}<GuildIcon name="catCoin" size={18} />{r.unitCatCoins}　合計 <GuildIcon name="coin" size={18} />{r.totalCoins}<GuildIcon name="catCoin" size={18} />{r.totalCatCoins}</div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 4, flexShrink: 0 }}>
               <button type="button" disabled={busy} onClick={() => sell({ [r.id]: 1 }, `${r.name} ×1`)}

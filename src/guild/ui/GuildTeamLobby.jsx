@@ -25,10 +25,10 @@ const btn = (bg, extra = {}) => ({
 export default function GuildTeamLobby({
   room, openRooms = [], myId, isHost, contract, stats, guildEquip = {}, partyCats, arrowsPerRound,
   targetFormat = "full_110", onChangeSettings,
-  supplyStock = { food: 0, water: 0 }, onNeedShop,
+  supplyStock = { food: 0, water: 0 }, supplyLoad = EXPEDITION_SUPPLY_LOAD, onChangeSupplyLoad, onNeedShop,
   onCreate, onJoinRoom, onReady, onUnready, onDepart, onLeave, onClose, busy,
 }) {
-  const { food, water } = EXPEDITION_SUPPLY_LOAD;
+  const { food, water } = supplyLoad;
   const [msg, setMsg] = useState("");
   const lacksStock = supplyStock.food < food || supplyStock.water < water;
 
@@ -184,9 +184,30 @@ export default function GuildTeamLobby({
           房主設定，全隊共用。原野靶會換算為標準戰鬥分數，不會因最高只有 5 分而降低傷害。
         </div>
         <div style={{ fontSize: 12, lineHeight: 1.8, marginBottom: 6 }}>
-          自動裝入　🍖 {food}　💧 {water}<br />
+          本次攜帶　🍖 {food}　💧 {water}<br />
           倉庫庫存　🍖 {supplyStock.food}　💧 {supplyStock.water}
         </div>
+        {!meReady && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7, marginBottom: 8 }}>
+            {[
+              { key: "food", label: "🍖 食物", value: food },
+              { key: "water", label: "💧 飲水", value: water },
+            ].map(item => (
+              <div key={item.key} style={{ padding: 7, borderRadius: 9, background: "rgba(255,255,255,.05)" }}>
+                <div style={{ fontSize: 10, fontWeight: 800, marginBottom: 5 }}>{item.label}</div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <button type="button" disabled={item.value <= 1}
+                    onClick={() => onChangeSupplyLoad?.({ ...supplyLoad, [item.key]: Math.max(1, item.value - 1) })}
+                    style={{ ...btn("#334155"), padding: 0, width: 27, height: 27 }}>−</button>
+                  <b>{item.value}</b>
+                  <button type="button" disabled={item.value >= 10}
+                    onClick={() => onChangeSupplyLoad?.({ ...supplyLoad, [item.key]: Math.min(10, item.value + 1) })}
+                    style={{ ...btn("#92400e"), padding: 0, width: 27, height: 27 }}>＋</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         {lacksStock && !meReady && <div style={{ fontSize: 10.5, color: "#f87171", marginBottom: 6 }}>⚠️ 補給不足，請先到商店購買。</div>}
         {/* 負重：這才是「帶多少糧」的取捨所在 */}
         <div style={{ marginTop: 4 }}>
@@ -217,7 +238,7 @@ export default function GuildTeamLobby({
         <button type="button" disabled={busy || (!meReady && carry.over)}
           onClick={() => lacksStock && !meReady ? onNeedShop?.() : act(() => (meReady ? onUnready() : onReady()))}
           style={{ ...btn(meReady ? "#334155" : lacksStock ? "#6d28d9" : "linear-gradient(135deg,#22c55e,#15803d)"), marginTop: 10, width: "100%" }}>
-          {meReady ? "↩ 取消準備（退回補給）" : carry.over ? "⚠️ 超重，無法準備" : lacksStock ? "🏪 補給不足，前往購買" : "✅ 自動補滿並準備"}
+          {meReady ? "↩ 取消準備（退回補給）" : carry.over ? "⚠️ 超重，無法準備" : lacksStock ? "🏪 補給不足，前往購買" : "✅ 攜帶補給並準備"}
         </button>
       </div>
 

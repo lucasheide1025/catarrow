@@ -95,6 +95,9 @@ function CatVillage() {
 - Contract rewards use the selected tier's matching material, family chest, and coin chest.
 - Reward preview and granted quantities must use the same checkpoint multiplier.
 - Keep legacy `completeCouncilSession()` behavior for records without `contractVersion`.
+- Cat expedition collection opens its full-screen reward result only after `collectExpedition()` succeeds.
+- The result presentation must render the exact persisted reward payload; never roll rewards again for display.
+- Reward results identify the returning cat and mission, show every known reward with stable player-facing metadata, remain open until explicitly dismissed, and respect `prefers-reduced-motion`.
 
 ## Cat equipment forging
 
@@ -102,6 +105,8 @@ function CatVillage() {
 - The cumulative value is `gradeIndex * 10 + plusLevel`; mythic `+0` is the normal `+50` cap. Legacy data above that cap keeps its stats but cannot forge further.
 - Ten-level bands use matching village resource tiers: T1 through `+10`, T2 through `+20`, continuing through T5 at `+50`.
 - Grade promotion consumes the matching tier of both the slot's primary resource and cat fur. Never hard-code high-grade promotions to `fur_t1`.
+- Catnip potion is one tiered village resource family. Expeditions grant `potion_tN`, and the catnip-potion equipment slot must consume the matching `potion_tN`; never special-case it to the flat `potion` key.
+- Use `貓薄荷藥水` as the canonical player-facing name for this resource family. Do not introduce separate `貓草藥水` or `貓草藥水材料` identities.
 - Forge UI derives costs and cap state from `calcForgeCost()` rather than reproducing tier rules in components.
 
 ## Potion crafting
@@ -111,6 +116,18 @@ function CatVillage() {
 - Every card directly exposes the item art, name, rarity, effect, owned quantity, recipe requirements, gold cost, output quantity, and craft action without requiring a detail view.
 - Material rows show required and owned quantities in a compact layout. Craft actions keep a minimum 44px touch target and remain anchored at the bottom of each card.
 - Items that depend on unfinished combat systems remain craftable only when intended and must be visibly labeled as preview items whose use is not yet available.
+
+## Cat card village albums
+
+- The 200 cat cards retain their existing theme categories and also have exactly one stable village-album assignment.
+- Nine albums map one-to-one to village buildings and remain balanced at 23, 23, and seven groups of 22 cards.
+- Album XP is lifetime acquisition progress. Drawing, buying, or receiving a card increases XP; upgrading, listing, selling, or exchanging away a card never decreases it.
+- Existing numeric `member.catCards` quantities remain unchanged for marketplace compatibility. Per-card stars and lifetime album XP use separate fields.
+- Album levels derive from XP and auto-upgrade. They do not consume cards, coins, or village materials.
+- Every album level adds only 0.25% production to its matching building, capped at 5% at level 20.
+- Passive preview and persisted collection must call the same per-building album multiplier. When a legacy member lacks the versioned XP field, both paths derive the same initial value from current holdings until migration persists it.
+- The gacha result must be finalized in the data layer before writing quantities and album XP. UI-only guaranteed-card replacement is forbidden because it makes displayed cards diverge from persisted ownership.
+- The student UI separates Gacha, Village Albums, and Full Collection. Album overview uses two columns on compact screens and an album detail limits the card grid to that album's 22–23 cards.
 
 ## Raster artwork
 

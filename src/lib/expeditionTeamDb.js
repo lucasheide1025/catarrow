@@ -15,6 +15,11 @@ import {
 import { normalizeDungeonRunSettings } from "./dungeonRunSettings";
 import { isMonsterExpansionEnabled } from "./monsterExpansionFeature";
 import { getDungeonDewMultiplier } from "./dungeonKillRewards";
+import {
+  COLLECTIBLE_MAP,
+  rollBossDrops,
+  rollFamilyDrop,
+} from "./dungeonCollectibles";
 
 const D = "dungeonRooms";
 
@@ -375,6 +380,8 @@ export async function createTeamExpeditionBattleRoom({
         validRounds: 0,
         contract: { type: "standard", param: null },
         buffs: m.buffs || { atkMult: 1, defMult: 1, dmgMult: 1, hasRevival: false },
+        restBonuses: m.restBonuses || { atkPct:0, defPct:0 },
+        merchantBonuses: m.merchantBonuses || { atkPct:0, defPct:0 },
         revived: false,
         role: m.role || "front",
         displayGroup: m.displayGroup || m.role || "front",
@@ -460,6 +467,8 @@ export async function syncTeamExpeditionMembers(roomId, battleMembers, battleSum
           role: battleMember.role || member.role || "front",
           displayGroup: battleMember.displayGroup || battleMember.role || member.displayGroup || member.role || "front",
           buffs: battleMember.buffs || member.buffs || { atkMult: 1, defMult: 1, dmgMult: 1, hasRevival: false },
+          restBonuses: member.restBonuses || battleMember.restBonuses || { atkPct:0, defPct:0 },
+          merchantBonuses: member.merchantBonuses || battleMember.merchantBonuses || { atkPct:0, defPct:0 },
           ready: false,
         } : member;
       }
@@ -526,6 +535,31 @@ export async function claimTeamExpeditionResult(roomId, memberId, record = {}) {
         memberId,
       );
       const kingVault = isGuestMember ? null : data.expeditionResult.loot?.kingVault;
+      const difficultyLabel = ["normal", "advanced", "hard", "hell"][
+        Math.min(3, Math.max(0, (Number(data.dungeonDifficulty) || 1) - 1))
+      ];
+      const collectibleDrops = isGuestMember ? [] : (
+        data.expeditionResult.loot?.defeated || []
+      ).flatMap(monster => {
+        const dropFamily = monster.family || data.dungeonFamily || "ghost";
+        if (monster.roomType === "boss") {
+          return rollBossDrops(dropFamily, difficultyLabel);
+        }
+        return [rollFamilyDrop(
+          dropFamily,
+          monster.roomType === "elite" ? "elite" : "monster",
+        )].filter(Boolean);
+      });
+      const treasureCollectibleId = data.expeditionTreasureLoot?.extraItem?.id;
+      if (!isGuestMember && treasureCollectibleId && COLLECTIBLE_MAP[treasureCollectibleId]) {
+        collectibleDrops.push({ itemId: treasureCollectibleId });
+      }
+      const collectibleCounts = collectibleDrops.reduce((counts, drop) => {
+        if (drop?.itemId && COLLECTIBLE_MAP[drop.itemId]) {
+          counts[drop.itemId] = (counts[drop.itemId] || 0) + 1;
+        }
+        return counts;
+      }, {});
       const materialItems = { ...(materialSnap.data()?.items || {}) };
       (kingVault?.materials || []).forEach(material => {
         if (material?.id) materialItems[material.id] = (materialItems[material.id] || 0) + 1;
@@ -554,6 +588,8 @@ export async function claimTeamExpeditionResult(roomId, memberId, record = {}) {
         ...Object.fromEntries((kingVault?.runeFragments || [])
           .filter(fragment => fragment?.type && fragment.count > 0)
           .map(fragment => [`equipmentRuneFragments.${fragment.type}`, increment(fragment.count)])),
+        ...Object.fromEntries(Object.entries(collectibleCounts)
+          .map(([itemId, qty]) => [`dungeonCollectibles.${itemId}`, increment(qty)])),
         expeditionRecords: [newRecord, ...previousRecords].slice(0, 20),
       });
       if (chests.length > 0) {
@@ -568,6 +604,10 @@ export async function claimTeamExpeditionResult(roomId, memberId, record = {}) {
       return {
         alreadyClaimed: false,
         allClaimed: activeIds.every(id => nextClaims[id]),
+        collectibles: Object.entries(collectibleCounts).map(([itemId, qty]) => ({
+          ...COLLECTIBLE_MAP[itemId],
+          qty,
+        })),
         rewards,
         chestCount: chests.length,
       };

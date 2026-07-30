@@ -24,7 +24,7 @@ describe("公會晉升試煉", () => {
       availablePromotionTrial({
         ...emptyGuildProfile(),
         rankId: "apprentice",
-        rep: 99,
+        rep: 299,
       })
     ).toBeNull();
 
@@ -32,7 +32,7 @@ describe("公會晉升試煉", () => {
       availablePromotionTrial({
         ...emptyGuildProfile(),
         rankId: "apprentice",
-        rep: 100,
+        rep: 300,
       }).targetRankId
     ).toBe("bronze");
   });
@@ -41,7 +41,7 @@ describe("公會晉升試煉", () => {
     const before = {
       ...emptyGuildProfile(),
       rankId: "apprentice",
-      rep: 100,
+      rep: 300,
       catCoins: 77,
     };
     const result = completePromotionTrial(before, "bronze");

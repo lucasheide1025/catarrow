@@ -38,6 +38,7 @@ import MemberHome         from "../components/member/MemberHome";
 import MustReadGate       from "../components/member/MustReadGate";
 import HonorCelebration   from "../components/member/HonorCelebration";
 import BadgeEarnPopup     from "../components/member/BadgeEarnPopup";
+import MemberFeatureArt   from "../components/member/MemberFeatureArt";
 
 const MemberComps        = lazy(() => import("../components/member/MemberComps"));
 const MemberScoring      = lazy(() => import("../components/member/MemberScoring"));
@@ -65,6 +66,7 @@ const MonsterBattle      = lazy(() => import("../components/member/MonsterBattle
 const MonsterHandbook    = lazy(() => import("../components/member/MonsterHandbook"));
 const CardCollection     = lazy(() => import("../components/member/CardCollectionModern"));
 const EquipmentPage      = lazy(() => import("../components/member/EquipmentPage"));
+const EquipmentProgressionPage = lazy(() => import("../components/member/EquipmentProgressionPage"));
 const CoinShop           = lazy(() => import("../components/member/CoinShop"));
 // 冒險者公會遠征（2026-07-25 全面取代舊 AdventurerGuild，射手與教練都走這個）
 const GuildExpedition    = lazy(() => import("../guild/GuildTestApp"));
@@ -85,7 +87,7 @@ const MemberBooking      = lazy(() => import("../components/member/MemberBooking
 const CAN_SCORE = ["upcoming","open","ongoing"];
 const ADVENTURE_PAGES = ["adventure-hub","monster","party","party-quest","party-battle","duel","duel-room","dungeon","worldboss","guild","monsterdex"];
 const TRAINING_PAGES  = ["training-hub","comps","comp-detail","practice","performance"];
-const INVENTORY_PAGES = ["inventory-hub","coinshop","materials","cats","catbook","story","equipment","cards","gacha"];
+const INVENTORY_PAGES = ["inventory-hub","coinshop","materials","cats","catbook","story","equipment","specialization-runes","cards","gacha"];
 const PROFILE_PAGES   = ["profile","learn","msgs","history","external","achievements","certexam","notifications","dex","guide","records-hub","leaderboard","bowsetting"];
 
 // hover / touch 預載：使用者碰到導覽按鈕時就開始下載對應 chunk
@@ -200,6 +202,7 @@ export default function MemberApp() {
   const [chestStats,    setChestStats]    = useState({});
   const [potionDex,     setPotionDex]     = useState({});
   const [cardData,      setCardData]      = useState({ cards:{}, equipped:[] });
+  const [cardDataReady, setCardDataReady] = useState(false);
   const [cats,          setCats]          = useState([]);   // 貓咪子集合（成就偵測用）
   const [certRecords,   setCertRecords]   = useState([]);   // 年度檢定紀錄（成就偵測用）
   const [dexUnlockToast, setDexUnlockToast] = useState(null); // App 層成就解鎖提示
@@ -209,6 +212,13 @@ export default function MemberApp() {
   const [specialAlert, setSpecialAlert]  = useState(null);  // 緊急任務浮動通知
   const [badgePopup,   setBadgePopup]   = useState(null);  // 徽章獲得彈窗
   const [todayArrowsGlobal, setTodayArrowsGlobal] = useState(0); // 今日全域練箭數（含所有來源）
+  const sharedPlayerData = useMemo(() => ({
+    certification, certRecords, dexConfig, dexGrants, duelStats,
+    monsterDex, craftStats, chestStats, potionDex,
+    cardData: cardDataReady ? cardData : undefined,
+    cats,
+    todayArrows: todayArrowsGlobal,
+  }), [certification, certRecords, dexConfig, dexGrants, duelStats, monsterDex, craftStats, chestStats, potionDex, cardData, cardDataReady, cats, todayArrowsGlobal]);
   const [todayCheckin, setTodayCheckin] = useState(undefined);  // 今日報到狀態
   const [showCheckinPopup, setShowCheckinPopup] = useState(false);
   const [checkinBusy, setCheckinBusy] = useState(false);
@@ -237,6 +247,7 @@ export default function MemberApp() {
   // 今日報到訂閱（供浮動視窗判斷）— 一天只彈一次
   useEffect(() => {
     if (!profile?.id) return;
+    setCardDataReady(false);
     // 歷史負值一次性修復（村莊資源被舊 increment(-n) 競態扣成負數）
     if (profile.village?.resources) repairNegativeVillageResources(profile.id, profile.village.resources).catch(() => {});
     const unsub = subscribeMyCheckin(profile.id, c => {
@@ -412,7 +423,10 @@ export default function MemberApp() {
     const u4 = subscribeCraftStats(profile.id, setCraftStats);
     const u5 = subscribeChestStats(profile.id, setChestStats);
     const u6 = subscribePotionDex(profile.id, setPotionDex);
-    const u7 = subscribeCardCollection(profile.id, setCardData);
+    const u7 = subscribeCardCollection(profile.id, data => {
+      setCardData(data);
+      setCardDataReady(true);
+    });
     const u8 = subscribeMyCats(profile.id, obj => setCats(Object.values(obj || {})));
     return () => { u1?.(); u2?.(); u3?.(); u4?.(); u5?.(); u6?.(); u7?.(); u8?.(); };
   }, [profile?.id]); // eslint-disable-line
@@ -508,13 +522,13 @@ export default function MemberApp() {
   // 線上約課分頁：正式開放給所有已登入學生，教練/管理員在射手模式也可使用。
   const canSeeBooking = !!profile?.id || role === "admin";
   const nav = [
-    { id:"home",          icon:"🏠", label:"首頁" },
-    { id:"adventure-hub", icon:"🗺️", label:"冒險" },
-    { id:"training-hub",  icon:"🏹", label:"練箭" },
-    { id:"gacha",         icon:"🏡", label:"貓村" },
-    { id:"inventory-hub", icon:"🎒", label:"背包" },
-    ...(canSeeBooking ? [{ id:"booking", icon:"📅", label:"約課" }] : []),
-    { id:"profile",       icon:"👤", label:"我的" },
+    { id:"home",          art:"home",      label:"首頁" },
+    { id:"adventure-hub", art:"adventure", label:"冒險" },
+    { id:"training-hub",  art:"training",  label:"練箭" },
+    { id:"gacha",         art:"village",   label:"貓村" },
+    { id:"inventory-hub", art:"inventory", label:"背包" },
+    ...(canSeeBooking ? [{ id:"booking", art:"booking", label:"約課" }] : []),
+    { id:"profile",       art:"profile",   label:"我的" },
   ];
 
   function handleSelectComp(comp) { setSelComp(comp); setScoring(false); setPage("comp-detail"); }
@@ -806,9 +820,10 @@ export default function MemberApp() {
         {page==="history"     && <MemberHistory />}
         {page==="external"    && <MemberExternalComp />}
         {page==="achievements" && <MemberAchievements />}
-        {page==="certexam"    && <MemberCertExam onBack={()=>setPage("profile")} />}
+        {page==="certexam"    && <MemberCertExam onBack={()=>setPage("profile")} certification={certification} />}
         {page==="notifications" && <MemberNotifications notifications={notifications} />}
-        {page==="dex"         && <MemberDex onBack={()=>setPage("profile")} onDexViewed={()=>setDexSeenTick(t=>t+1)} />}
+        {page==="dex"         && <MemberDex onBack={()=>setPage("profile")} onDexViewed={()=>setDexSeenTick(t=>t+1)}
+          sharedData={sharedPlayerData} />}
         {/* ── 冒險 Hub ── */}
         {page==="adventure-hub" && <MemberAdventureHub onPageChange={setPage} />}
         {page==="training-hub"  && <MemberTrainingHub  onPageChange={setPage} onJoinParty={handleEnterPartyRoom} />}
@@ -825,23 +840,23 @@ export default function MemberApp() {
           onImmersiveChange={setBattleImmersive}
           questContext={questCtx} onKillForQuest={handleQuestKill}
           monsterDex={monsterDex} craftStats={craftStats} chestStats={chestStats}
-          potionDex={potionDex} duelStats={duelStats} />}
+          potionDex={potionDex} duelStats={duelStats} sharedData={sharedPlayerData} />}
         {page==="duel"        && <DuelLobby profile={profile} onEnterRoom={handleEnterDuelRoom} onBack={()=>setPage("adventure-hub")} />}
         {page==="duel-room"   && duelRoomId && <DuelRoom roomId={duelRoomId} myTeam={duelMyTeam} isHost={duelIsHost} onLeave={handleLeaveDuel} profile={profile} />}
         {page==="materials"   && <MemberMaterials onBack={()=>setPage("inventory-hub")} onGoVillage={()=>{ setGachaInitTab("potioncraft"); setPage("gacha"); }} />}
         {page==="guide"       && <MemberGuide      onBack={()=>setPage("profile")} />}
         {page==="bowsetting"  && <MemberBowSettings onBack={()=>setPage("profile")} />}
         {page==="equipment"   && <EquipmentPage onPageChange={setPage} />}
+        {page==="specialization-runes" && <EquipmentProgressionPage onBack={()=>setPage("inventory-hub")} />}
         {page==="coinshop"    && <CoinShop />}
-        {page==="cards"       && <CardCollection />}
+        {page==="cards"       && <CardCollection cardCollection={sharedPlayerData.cardData} />}
         {page==="gacha"       && <div className="no-override"><CatVillage
           catCards={profile?.catCards}
           gachaCoins={profile?.gachaCoins ?? 0}
-          initialTab={gachaInitTab}
-          key={gachaInitTab} /></div>}
-        {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("adventure-hub")} />}
-        {page==="dungeon"     && <DungeonLobby onBack={()=>setPage("adventure-hub")} autoReconnectRoomId={teamDungeonRecovery?.id || null} />}
-        {page==="worldboss"   && <div style={{ position:"fixed", inset:0, zIndex:60 }}><WorldBossLobby onBack={()=>setPage("adventure-hub")}/></div>}
+          initialTab={gachaInitTab} /></div>}
+        {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("adventure-hub")} monsterDex={monsterDex} />}
+        {page==="dungeon"     && <DungeonLobby onBack={()=>setPage("adventure-hub")} autoReconnectRoomId={teamDungeonRecovery?.id || null} sharedData={sharedPlayerData} />}
+        {page==="worldboss"   && <div style={{ position:"fixed", inset:0, zIndex:60 }}><WorldBossLobby onBack={()=>setPage("adventure-hub")} sharedData={sharedPlayerData}/></div>}
         {page==="cats"        && <CatCollection onBack={()=>setPage("inventory-hub")} onOpenBook={()=>setPage("catbook")} onOpenForge={()=>{ setGachaInitTab("forge"); setPage("gacha"); }}/>}
         {page==="catbook"     && <CatStoryBook  onBack={()=>setPage("cats")}/>}
         {page==="story"       && <StoryBook     onBack={()=>setPage("inventory-hub")}/>}
@@ -851,7 +866,7 @@ export default function MemberApp() {
             仍保留 `questCtx`/`handleQuestKill`：若有進行中的舊任務，擊殺照樣會自動
             提交完成（`submitGuildQuestCompletion` 本來就在 MemberApp，不在舊元件裡）。
             教練後台的懸賞管理在 AdminApp，不受影響。*/}
-        {page==="guild"       && <GuildExpedition onBack={()=>setPage("adventure-hub")} />}
+        {page==="guild"       && <GuildExpedition onBack={()=>setPage("adventure-hub")} onImmersiveChange={setBattleImmersive} />}
         {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom} onBack={()=>setPage("adventure-hub")} />}
         {page==="party-quest" && partyRoomId && (
           <PartyQuestRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty} />
@@ -876,8 +891,10 @@ export default function MemberApp() {
               <div style={{ height:"3px", width: active ? "24px" : "0px", background:"var(--accent)", borderRadius:"0 0 3px 3px", marginBottom:"4px", transition:"width 0.2s ease" }} />
               <div style={{ position:"relative", display:"inline-block" }}>
                 {/* key 換值讓 icon 在變 active 時重掛，重播 fx-bounce 彈跳 */}
-                <span key={active ? "on" : "off"} className={active ? "fx-bounce" : ""}
-                  style={{ fontSize: active ? "20px" : "18px", display:"inline-block", transition:"font-size 0.15s ease", filter: active ? "none" : "grayscale(35%)", opacity: active ? 1 : 0.85 }}>{n.icon}</span>
+                <span key={active ? "on" : "off"} className={active ? "fx-bounce" : ""} style={{ display:"inline-flex" }}>
+                  <MemberFeatureArt name={n.art} size={active ? 29 : 26}
+                    style={{ transition:"width .15s ease,height .15s ease", opacity:active ? 1 : .72, filter:active ? "drop-shadow(0 3px 6px rgba(245,158,11,.35))" : "grayscale(35%) drop-shadow(0 2px 3px rgba(0,0,0,.3))" }} />
+                </span>
                 {n.id === "profile" && (profile?.hasUnreadReply || profile?.hasNewLearnLog || dexUnseenCount > 0) && (
                   <span style={{ position:"absolute", top:"-2px", right:"-5px", width:"8px", height:"8px", background:"#ef4444", borderRadius:"50%", border:"2px solid var(--bg-deep)", display:"block" }} />
                 )}

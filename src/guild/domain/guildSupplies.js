@@ -1,12 +1,23 @@
 import { normalizeGuildProfile } from "./guildRewards";
 
 export const EXPEDITION_SUPPLY_LOAD = Object.freeze({ food: 6, water: 6 });
+export const EXPEDITION_SUPPLY_MIN = 1;
+export const EXPEDITION_SUPPLY_MAX = 10;
+
+export function normalizeExpeditionSupplyLoad(load = EXPEDITION_SUPPLY_LOAD) {
+  const normalize = value => Math.max(
+    EXPEDITION_SUPPLY_MIN,
+    Math.min(EXPEDITION_SUPPLY_MAX, Math.floor(Number(value) || EXPEDITION_SUPPLY_MIN)),
+  );
+  return { food: normalize(load.food), water: normalize(load.water) };
+}
 
 export function supplyShortage(profile, load = EXPEDITION_SUPPLY_LOAD) {
+  const selected = normalizeExpeditionSupplyLoad(load);
   const stock = normalizeGuildProfile(profile).supplyStock;
   return {
-    food: Math.max(0, load.food - stock.food),
-    water: Math.max(0, load.water - stock.water),
+    food: Math.max(0, selected.food - stock.food),
+    water: Math.max(0, selected.water - stock.water),
   };
 }
 
@@ -17,7 +28,8 @@ export function hasExpeditionSupplies(profile, load = EXPEDITION_SUPPLY_LOAD) {
 
 export function consumeExpeditionSupplies(profile, load = EXPEDITION_SUPPLY_LOAD) {
   const p = normalizeGuildProfile(profile);
-  const missing = supplyShortage(p, load);
+  const selected = normalizeExpeditionSupplyLoad(load);
+  const missing = supplyShortage(p, selected);
   if (missing.food || missing.water) {
     const parts = [
       missing.food ? `食物 ${missing.food}` : "",
@@ -30,11 +42,11 @@ export function consumeExpeditionSupplies(profile, load = EXPEDITION_SUPPLY_LOAD
     profile: {
       ...p,
       supplyStock: {
-        food: p.supplyStock.food - load.food,
-        water: p.supplyStock.water - load.water,
+        food: p.supplyStock.food - selected.food,
+        water: p.supplyStock.water - selected.water,
       },
     },
-    supplies: { ...load },
+    supplies: selected,
     missing,
   };
 }

@@ -3,7 +3,7 @@
 import { useState, useEffect, lazy, Suspense } from "react";
 import { onSnapshot, doc, updateDoc, increment } from "firebase/firestore";
 import { db } from "../lib/firebase";
-import { resolveQrGuestSession, resolveWebsiteGuestSession } from "../lib/guestAuth";
+import { loginGuestWithGoogle, loginGuestWithPassword, resolveQrGuestSession, resumeAuthenticatedGuestSession } from "../lib/guestAuth";
 import { formatQrRemaining, getGuestEquipmentPageAction, getGuestNavTab, getQrTimeState } from "../lib/guestShellState";
 import PartyLobby      from "../components/party/PartyLobby";
 import WorldBossLobby  from "../components/worldboss/WorldBossLobby";
@@ -117,6 +117,9 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
     } catch { return null; }
   });
   const [nameInput, setNameInput] = useState("");
+  const [emailInput, setEmailInput] = useState("");
+  const [passwordInput, setPasswordInput] = useState("");
+  const [checkingHandoff, setCheckingHandoff] = useState(accountType === "guest");
   const [busy, setBusy]         = useState(false);
   const [err, setErr]           = useState("");
   const [tab, setTab]           = useState("home");
@@ -211,14 +214,15 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
     let pref = null;
     try { pref = JSON.parse(sessionStorage.getItem(prefKey) || 'null'); } catch { /* ignore */ }
     sessionStorage.removeItem(prefKey);
-    if (!pref?.email) { setErr("這個預約連結缺少綁定資料，請回到會員中心重新取得連結。"); return; }
+    if (!pref?.email) { setCheckingHandoff(false); return; }
+    setEmailInput(pref.email);
     setBusy(true);
-    resolveWebsiteGuestSession(pref.email).then(res => {
-      if (!res.ok) { setErr(res.reason || "預約連結無法驗證，請重新取得連結。"); return; }
+    resumeAuthenticatedGuestSession(pref.memberId, pref.email).then(res => {
+      if (!res.ok) { setErr("登入狀態已失效，請選擇原本使用的登入方式。"); return; }
       const profileObj = { id:res.id, name:res.name || pref.name || "訪客射手", accountType:"guest", coins:res.coins || 0 };
       sessionStorage.setItem(sessionKey, JSON.stringify(profileObj));
       setGuestProfile(profileObj);
-    }).finally(() => setBusy(false));
+    }).finally(() => { setBusy(false); setCheckingHandoff(false); });
   }, [accountType, guestProfile, sessionKey]);
 
   async function handleEnter() {
@@ -232,6 +236,36 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
     const finalName = res.isNew ? (nameInput.trim() || res.name) : (res.name || "訪客射手");
     const profileObj = { id:res.id, name:finalName, accountType, coins:res.coins || 0,
       expiresAt:res.expiresAt?.toMillis?.() || null, sessionSourceId };
+    sessionStorage.setItem(sessionKey, JSON.stringify(profileObj));
+    setGuestProfile(profileObj);
+  }
+
+  async function handleGuestLogin() {
+    setErr("");
+    if (!emailInput.trim() || !passwordInput) {
+      setErr("請輸入 Email 與密碼");
+      return;
+    }
+    setBusy(true);
+    const res = await loginGuestWithPassword(emailInput, passwordInput, { usePrimaryAuth:true });
+    setBusy(false);
+    if (!res.ok) { setErr(res.reason || "登入失敗，請稍後再試"); return; }
+    const profileObj = {
+      id:res.id, name:res.name || "訪客射手", accountType:"guest", coins:res.coins || 0,
+    };
+    sessionStorage.setItem(sessionKey, JSON.stringify(profileObj));
+    setGuestProfile(profileObj);
+  }
+
+  async function handleGoogleGuestLogin() {
+    setErr("");
+    setBusy(true);
+    const res = await loginGuestWithGoogle();
+    setBusy(false);
+    if (!res.ok) { setErr(res.reason || "Google 登入失敗，請稍後再試"); return; }
+    const profileObj = {
+      id:res.id, name:res.name || "訪客射手", accountType:"guest", coins:res.coins || 0,
+    };
     sessionStorage.setItem(sessionKey, JSON.stringify(profileObj));
     setGuestProfile(profileObj);
   }
@@ -302,17 +336,17 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
     ? "linear-gradient(135deg,#f59e0b,#ef4444)"
     : "linear-gradient(135deg,#7c3aed,#2563eb)";
 
-  // QR guests choose only a nickname. Website guests enter through a trusted
-  // booking hand-off and never see a public contact lookup form.
+  // QR guests choose a nickname. Website guests first accept a same-tab
+  // booking hand-off, then fall back to their registered Email/password.
   if (!guestProfile) {
     return (
       <div className={`guest-login ${isKid ? "kid" : "guest"}`}>
         <div className="guest-login-panel">
-          <div className="guest-login-badge">{isKid ? "現場訪客模式" : "預約訪客通行證"}</div>
+          <div className="guest-login-badge">{isKid ? "現場訪客模式" : "訪客帳號登入"}</div>
           <div className="guest-login-hero">
-            <h1 className="guest-login-title">{isKid ? "設定射手暱稱" : "正在驗證預約資料"}</h1>
+            <h1 className="guest-login-title">{isKid ? "設定射手暱稱" : (checkingHandoff ? "正在驗證預約資料" : "繼續訪客冒險")}</h1>
             <div className="guest-login-copy">
-              {isKid ? "不需信箱或電話。兩小時內可以戰鬥、收集與強化，時間到後本次進度會失效。" : "此入口只接受會員中心提供的綁定資料，不會要求你再次輸入聯絡方式。"}
+              {isKid ? "不需信箱或電話。兩小時內可以戰鬥、收集與強化，時間到後本次進度會失效。" : (checkingHandoff ? "正在安全接續你的預約帳號。" : "使用預約時註冊的 Email 與密碼登入。")}
             </div>
           </div>
           {isKid && <input
@@ -323,11 +357,39 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
             className="guest-input"
             autoFocus
           />}
+          {!isKid && !checkingHandoff && <>
+            <input
+              type="email"
+              value={emailInput}
+              onChange={e => setEmailInput(e.target.value)}
+              placeholder="Email"
+              className="guest-input"
+              autoComplete="email"
+              autoFocus
+            />
+            <input
+              type="password"
+              value={passwordInput}
+              onChange={e => setPasswordInput(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") handleGuestLogin(); }}
+              placeholder="密碼"
+              className="guest-input"
+              autoComplete="current-password"
+            />
+          </>}
           {err && <div style={{ color: "#f87171", fontSize: 13, fontWeight: 700 }}>{err}</div>}
           {isKid ? <button onClick={handleEnter} disabled={busy} className="guest-primary" style={{ background: themeGrad }}>
             {busy ? "建立體驗中…" : "🚀 開始冒險"}
-          </button> : <button onClick={() => { window.location.href = "/"; }} className="guest-primary" style={{ background:themeGrad }}>
-            返回入口重新取得連結
+          </button> : <button onClick={handleGuestLogin} disabled={busy || checkingHandoff} className="guest-primary" style={{ background:themeGrad }}>
+            {checkingHandoff ? "驗證中…" : (busy ? "登入中…" : "登入訪客模式")}
+          </button>}
+          {!isKid && !checkingHandoff && <button
+            onClick={handleGoogleGuestLogin}
+            disabled={busy}
+            className="guest-primary"
+            style={{ background:"#fff", color:"#1f2937", border:"1px solid #d1d5db" }}
+          >
+            <span style={{ color:"#4285f4", fontWeight:1000 }}>G</span> 使用 Google 繼續
           </button>}
         </div>
       </div>

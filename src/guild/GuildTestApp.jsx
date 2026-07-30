@@ -5,10 +5,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { rollExpedition } from "./domain/rollExpedition";
+import { consumeTravelSupplies, createExpeditionState, prepareExpeditionWave } from "./domain/expeditionFlow";
+import {
+  advanceExpeditionJourney,
+  completeExpeditionJourneyBattle,
+  createExpeditionJourney,
+} from "./domain/expeditionGridEvents";
 import { calcGuildExpeditionStats, STAT_META } from "./domain/guildStats";
 import { settleExpedition } from "./domain/settleExpedition";
-import { normalizeGuildProfile } from "./domain/guildRewards";
-import { consumeExpeditionSupplies, refundExpeditionSupplies } from "./domain/guildSupplies";
+import { equipFromStash, normalizeGuildProfile } from "./domain/guildRewards";
+import { consumeExpeditionSupplies, EXPEDITION_SUPPLY_LOAD, refundExpeditionSupplies } from "./domain/guildSupplies";
 import { claimBuildingProduction, finishConstruction, startConstruction } from "./domain/guildBuildings";
 import { buildCatRoster, pickPartyCats, togglePartyCat } from "./domain/guildCats";
 import { subscribeMyCats } from "../lib/catDb";
@@ -19,22 +25,25 @@ import { rollDailyContracts, contractsStateFor, todayKey } from "./domain/guildC
 import {
   createGuildTeamRoom, joinGuildTeamRoomById, setGuildTeamLoadout, unreadyGuildTeamMember,
   setGuildTeamSettings,
-  startGuildTeamExpedition, submitGuildTeamShots, commitGuildTeamRound,
+  startGuildTeamExpedition, advanceGuildTeamJourney, submitGuildTeamShots, commitGuildTeamRound,
   markGuildTeamClaimed, leaveGuildTeamRoom, subscribeGuildTeamRoom, subscribeOpenGuildTeamRooms,
   findReconnectableGuildTeamRoom,
 } from "./db/guildTeamDb";
 import {
-  createTeamState, processTeamRound, memberSettleState, scaleExpeditionForParty,
+  createTeamState, prepareTeamExpeditionWave, processTeamRound, memberSettleState, scaleExpeditionForParty,
 } from "./domain/teamExpeditionFlow";
-import { loadGuildProfile, saveGuildProfileDebounced, flushGuildSave, grantExpeditionRewards, buyGuildShopItem, sellGuildJunk } from "./db/guildDb";
+import { loadGuildProfile, saveGuildProfileDebounced, flushGuildSave, grantExpeditionRewards, buyGuildShopItem, sellGuildJunk, mutateGuildEquipment } from "./db/guildDb";
 import { equipDisplayName, GRADE_META } from "./data/guildEquipCatalog";
 import GuildBattle from "./ui/GuildBattle";
 import { fieldBg, bgLayer, rankBadge, junkArt, ArtOrEmoji, HeroArt, CatArt } from "./ui/GuildArt";
+import { GuildJunkArt } from "./ui/GuildItemArt";
 import GuildBoard from "./ui/GuildBoard";
 import GuildContractSheet from "./ui/GuildContractSheet";
 import GuildLoadout from "./ui/GuildLoadout";
 import GuildTeamLobby from "./ui/GuildTeamLobby";
 import GuildTeamBattle from "./ui/GuildTeamBattle";
+import ExpeditionMapView from "./ui/ExpeditionMapView";
+import { initialGuildTargetFace, rememberGuildTargetFace } from "./ui/guildTargetFace";
 import GuildStash from "./ui/GuildStash";
 import GuildShop from "./ui/GuildShop";
 import GuildVault from "./ui/GuildVault";
@@ -42,6 +51,7 @@ import GuildLicense from "./ui/GuildLicense";
 import GuildTerritory from "./ui/GuildTerritory";
 import "./ui/guild-ui.css";
 import { availablePromotionTrial, completePromotionTrial } from "./domain/guildPromotion";
+import { normalizeSavedMission } from "./domain/guildMission";
 
 const MOCK_MEMBER = { archerXP: 8000 };
 // 離線試玩（未登入直接開 ?guild）才用的假貓；登入後一律用 members/{id}/cats 的真貓
@@ -63,14 +73,16 @@ const runKey = memberId => `catarrow.guild.run.v${RUN_KEY_VERSION}.${memberId ||
 function loadSavedRun(memberId) {
   try {
     const v = JSON.parse(localStorage.getItem(runKey(memberId)) || "null");
-    if (!v?.battle || !v?.contract || !v?.exp) return null;
-    if (v.battle.status !== "fighting") return null;              // 已經結束的不算續戰
+    if (!v?.contract || !v?.exp) return null;
+    if (v.stage !== "map" && v.battle?.status !== "fighting") return null;
     if (Date.now() - (v.at || 0) > 24 * 3600 * 1000) return null; // 隔一天以上就別留了
-    return v;
+    return normalizeSavedMission(v);
   } catch { return null; }
 }
 function saveRun(memberId, data) {
-  try { localStorage.setItem(runKey(memberId), JSON.stringify({ at: Date.now(), ...data })); } catch { /* 滿了就算了 */ }
+  try {
+    localStorage.setItem(runKey(memberId), JSON.stringify(normalizeSavedMission({ at: Date.now(), ...data })));
+  } catch { /* 滿了就算了 */ }
 }
 function clearSavedRun(memberId) {
   try { localStorage.removeItem(runKey(memberId)); } catch { /* ignore */ }
@@ -78,10 +90,10 @@ function clearSavedRun(memberId) {
 
 // 一趟遠征 = 一張委託（委託決定族群與危險度）
 function newRun(contract) {
-  return { exp: rollExpedition({ id: contract.id, danger: contract.danger, family: contract.family }), key: Date.now() };
+  return { exp: rollExpedition({ id: contract.id, danger: contract.danger, family: contract.family, families: contract.families }), key: Date.now() };
 }
 
-export default function GuildTestApp({ onBack, onLegacy }) {
+export default function GuildTestApp({ onBack, onLegacy, onImmersiveChange }) {
   const { profile, loading } = useAuth();
   const memberId = profile?.id || null;
   const member = profile || MOCK_MEMBER;
@@ -95,6 +107,8 @@ export default function GuildTestApp({ onBack, onLegacy }) {
   const [phase, setPhase] = useState("board");   // board | loadout | battle | stash | shop | vault | license
   const [shopReturnPhase, setShopReturnPhase] = useState("board");
   const [supplies, setSupplies] = useState({ food: 6, water: 6 });
+  const [supplyLoad, setSupplyLoad] = useState({ ...EXPEDITION_SUPPLY_LOAD });
+  const [soloTargetFormat, setSoloTargetFormat] = useState(initialGuildTargetFace);
   const [catRoster, setCatRoster] = useState(MOCK_CATS);
   const [rankUp, setRankUp] = useState(null);    // 這趟升階了 → 顯示橫幅
   const [sheet, setSheet] = useState(null);      // 正在看詳情的委託（點小卡才開）
@@ -105,12 +119,18 @@ export default function GuildTestApp({ onBack, onLegacy }) {
   const [teamBusy, setTeamBusy] = useState(false);
   const [openTeamRooms, setOpenTeamRooms] = useState([]);   // 正在招人的隊伍（取代房號）
   const [resumeState, setResumeState] = useState(null);    // 單人續戰用的戰鬥狀態
+  const [journey, setJourney] = useState(null);            // 單人地圖目前所在節點
   const [savedRun, setSavedRun] = useState(null);          // 本機找到的未完成遠征（顯示續戰橫幅）
   const [teamResume, setTeamResume] = useState(null);      // 雲端找到的未完成組隊
   const teamCommitRef = useRef(0);               // 房主推進的防重複（同一 seq 只推一次）
+  const immersiveBattle = phase === "battle" || phase === "defense" || phase === "teamBattle";
 
   // Web Audio 需要使用者手勢才能出聲；進公會就先解鎖，第一個音效才不會被吃掉
   useEffect(() => { unlockAudio(); }, []);
+  useEffect(() => {
+    onImmersiveChange?.(immersiveBattle);
+  }, [immersiveBattle, onImmersiveChange]);
+  useEffect(() => () => onImmersiveChange?.(false), [onImmersiveChange]);
 
   // ── 防斷線：進公會就掃「有沒有沒打完的」──────────────────────
   // 單人 → 本機 localStorage；組隊 → 雲端房間（狀態本來就在那，只是沒人去找回來）
@@ -155,7 +175,10 @@ export default function GuildTestApp({ onBack, onLegacy }) {
     // 組隊時委託額度**只算房主那張**（鼓勵揪人）：隊員不傳 contractId，自己的每日委託不被消耗
     const inTeam = !!teamRoom?.battle;
     const promotion = rolled.won && contract?.isPromotion ? completePromotionTrial(gp, contract.targetRankId) : null;
-    const rewardProfile = promotion?.ok ? promotion.profile : gp;
+    const promotedProfile = promotion?.ok ? promotion.profile : gp;
+    const rewardProfile = result.supplies
+      ? refundExpeditionSupplies(promotedProfile, result.supplies)
+      : promotedProfile;
     grantExpeditionRewards(memberId, rolled, {
       danger: contract?.danger || 1, profile: rewardProfile,
       contractId: contract?.isPromotion || (inTeam && !isTeamHost) ? undefined : contract?.id, dateKey,
@@ -191,11 +214,12 @@ export default function GuildTestApp({ onBack, onLegacy }) {
     clearSavedRun(memberId);   // 這趟結束/放棄了 → 續戰存檔作廢
     setResumeState(null);
     setTeamRoomId(null); setTeamRoom(null);   // 順手收掉房間監聽（打完的房間沒必要繼續訂閱）
-    setResult(null); setLoot(null); setGrantMsg(""); setContract(null); setRun(null); setRankUp(null); setPhase("board");
+    setResult(null); setLoot(null); setGrantMsg(""); setContract(null); setRun(null); setJourney(null); setRankUp(null); setPhase("board");
   };
   // 組隊：帶這張委託進等待室（開房前先記住委託，開房那步才真的寫 Firestore）
   const startTeamFrom = c => {
     setSheet(null);
+    setSupplyLoad({ ...EXPEDITION_SUPPLY_LOAD });
     setContract(c); setRun(null); setResult(null); setLoot(null); setGrantMsg("");
     setTeamRoomId(null); setTeamRoom(null); setPhase("team");
   };
@@ -204,12 +228,15 @@ export default function GuildTestApp({ onBack, onLegacy }) {
     if (!savedRun) return;
     setContract(savedRun.contract);
     setRun({ exp: savedRun.exp, key: savedRun.key || `resume_${Date.now()}` });
-    setSupplies(savedRun.battle.supplies || { food: 6, water: 6 });
-    setResumeState(savedRun.battle);
+    setSupplies(savedRun.stage === "map"
+      ? (savedRun.supplies || { food: 6, water: 6 })
+      : (savedRun.battle.supplies || { food: 6, water: 6 }));
+    setResumeState(savedRun.battle || null);
+    setJourney(savedRun.journey || createExpeditionJourney(savedRun.exp));
     grantedRef.current = null;
     setResult(null); setLoot(null); setGrantMsg("");
     setSavedRun(null);
-    setPhase("battle");
+    setPhase(savedRun.stage === "map" ? "map" : "battle");
   };
   const dropSavedRun = () => { clearSavedRun(memberId); setSavedRun(null); };
 
@@ -229,7 +256,8 @@ export default function GuildTestApp({ onBack, onLegacy }) {
   const acceptContract = c => {
     setSheet(null);
     clearSavedRun(memberId); setResumeState(null); setSavedRun(null);   // 開新的一趟 → 舊續戰作廢
-    setContract(c); setRun(newRun(c)); setResult(null); setLoot(null); setGrantMsg(""); setPhase("loadout");
+    setSupplyLoad({ ...EXPEDITION_SUPPLY_LOAD });
+    setContract(c); setRun(newRun(c)); setJourney(null); setResult(null); setLoot(null); setGrantMsg(""); setPhase("loadout");
   };
 
   // 存檔寫入**合併**：UI 連續操作（整理倉庫、按過濾器）只寫最後一次，
@@ -284,7 +312,12 @@ export default function GuildTestApp({ onBack, onLegacy }) {
 
   const teamCreate = () => teamAct(async () => {
     if (!contract) return { ok: false, reason: "先從委託板選一張委託" };
-    const res = await createGuildTeamRoom({ hostId: memberId, hostName: member?.nickname || member?.name || "房主", contract });
+    const res = await createGuildTeamRoom({
+      hostId: memberId,
+      hostName: member?.nickname || member?.name || "房主",
+      contract,
+      targetFormat: initialGuildTargetFace(),
+    });
     if (res.ok) { setTeamRoomId(res.roomId); setPhase("team"); }
     return res;
   });
@@ -297,7 +330,7 @@ export default function GuildTestApp({ onBack, onLegacy }) {
 
   // 備包完成：六維/貓/箭數直接沿用自己的存檔，只有食水是這一場現場決定的
   const teamReady = () => teamAct(async () => {
-    const consumed = consumeExpeditionSupplies(gp);
+    const consumed = consumeExpeditionSupplies(gp, supplyLoad);
     if (!consumed.ok) return consumed;
     changeProfile(consumed.profile);
     const res = await setGuildTeamLoadout(teamRoomId, memberId, {
@@ -306,16 +339,19 @@ export default function GuildTestApp({ onBack, onLegacy }) {
       suppliesReserved: true,
       cats: partyCats.map(c => ({ id: c.id, name: c.name, icon: c.icon || null, atk: c.atk, def: c.def })),
       arrowsPerRound: teamRoom?.settings?.arrowsPerRound || gp.arrowsPerRound,
+      targetFormat: teamRoom?.settings?.targetFormat || "full_110",
+      appearanceId: gp.appearanceId,
       name: member?.nickname || member?.name || "隊員",
     });
-    if (res?.ok === false) changeProfile(refundExpeditionSupplies(consumed.profile));
+    if (res?.ok === false) changeProfile(refundExpeditionSupplies(consumed.profile, consumed.supplies));
     return res;
   });
 
   const teamUnready = () => teamAct(async () => {
     const reserved = !!teamRoom?.loadouts?.[memberId]?.suppliesReserved;
     const res = await unreadyGuildTeamMember(teamRoomId, memberId);
-    if (res?.ok !== false && reserved) changeProfile(refundExpeditionSupplies(gp));
+    const reservedSupplies = teamRoom?.loadouts?.[memberId]?.supplies;
+    if (res?.ok !== false && reserved) changeProfile(refundExpeditionSupplies(gp, reservedSupplies));
     return res;
   });
 
@@ -333,19 +369,32 @@ export default function GuildTestApp({ onBack, onLegacy }) {
         supplies: lo.supplies,
         cats: lo.cats || [],
         arrowsPerRound: hostArrows,
+        targetFormat: teamRoom.settings?.targetFormat || "full_110",
       };
     });
     if (roster.some(r => !r.guildStats)) return { ok: false, reason: "有人還沒備包完成" };
     // 委託 → 遠征（怪物依人數放大血量，見 partyHpScale）
     const exp = scaleExpeditionForParty(
-      rollExpedition({ id: teamRoom.contract.id, danger: teamRoom.contract.danger, family: teamRoom.contract.family }),
+      rollExpedition({ id: teamRoom.contract.id, danger: teamRoom.contract.danger, family: teamRoom.contract.family, families: teamRoom.contract.families }),
       roster.length,
     );
-    const battle = createTeamState(exp, roster, { alreadyScaled: true });
+    const battle = createTeamState(exp, roster, {
+      alreadyScaled: true,
+      missionMode: teamRoom.contract.mode,
+      targetFormat: teamRoom.settings?.targetFormat || "full_110",
+    });
     // ⚠️ 不在這裡 setPhase：房主與隊員都由下面的 effect 依「房間狀態」進場，
     //    否則只有按按鈕的那個人會進去（隊員的 phase 沒人改 → 卡在等待室）。
-    return startGuildTeamExpedition(teamRoomId, memberId, battle);
+    const teamJourney = teamRoom.contract.mode === "exploration" ? createExpeditionJourney(exp) : null;
+    return startGuildTeamExpedition(teamRoomId, memberId, battle, teamJourney);
   });
+
+  const temporarilyLeaveTeamBattle = () => {
+    if (teamRoom) setTeamResume({ id: teamRoomId, ...teamRoom });
+    setTeamRoomId(null);
+    setTeamRoom(null);
+    setPhase("board");
+  };
 
   // 🐛 2026-07-26 修：房主點出發後**隊員沒有跟著進場**。
   // 原因：出發只有房主自己 setPhase，隊員的房間快照雖然更新了（status→active、battle 有值），
@@ -360,9 +409,10 @@ export default function GuildTestApp({ onBack, onLegacy }) {
       setContract(teamRoom.contract || null);
       // key 用房間 id：一個房間＝一趟遠征＝只結算一次（grantedRef 靠這個防重複）
       setRun(prev => (prev?.key === `team_${teamRoom.id}` ? prev : { exp: teamRoom.battle.expedition, key: `team_${teamRoom.id}` }));
-      setPhase(p => (p === "team" || p === "teamBattle" ? "teamBattle" : p));
+      const destination = teamRoom.stage === "map" ? "teamMap" : "teamBattle";
+      setPhase(p => (p === "team" || p === "teamMap" || p === "teamBattle" ? destination : p));
     }
-  }, [teamRoom?.status, teamRoom?.id]); // eslint-disable-line
+  }, [teamRoom?.status, teamRoom?.id, teamRoom?.stage]); // eslint-disable-line
 
   const teamSubmit = async shots => {
     try {
@@ -374,6 +424,15 @@ export default function GuildTestApp({ onBack, onLegacy }) {
       return { ok: false, reason: e?.message || "送出時發生錯誤" };
     }
   };
+  const teamAcknowledgeEvent = () => teamAct(async () => {
+    if (!isTeamHost || !teamRoom?.battle?.eventGate) return { ok: false, reason: "等待房主確認" };
+    return commitGuildTeamRound(
+      teamRoomId,
+      memberId,
+      { ...teamRoom.battle, eventGate: null, log: [] },
+      (teamRoom.seq || 0) + 1,
+    );
+  });
 
   // 房主推進一回合：全員交齊（或強制）→ processTeamRound → 寫回房間
   const teamCommit = ({ force = false } = {}) => teamAct(async () => {
@@ -392,7 +451,11 @@ export default function GuildTestApp({ onBack, onLegacy }) {
     teamCommitRef.current = seq;
     try {
       const next = processTeamRound(battle, shotsByMember);
-      const res = await commitGuildTeamRound(teamRoomId, memberId, next, seq + 1);
+      const res = next.awaitingMap
+        ? await advanceGuildTeamJourney(
+          teamRoomId, memberId, completeExpeditionJourneyBattle(teamRoom.journey), next, "map",
+        )
+        : await commitGuildTeamRound(teamRoomId, memberId, next, seq + 1);
       if (!res.ok) teamCommitRef.current = 0;      // 寫失敗 → 讓它可以再試
       return res;
     } catch (e) {
@@ -405,9 +468,10 @@ export default function GuildTestApp({ onBack, onLegacy }) {
 
   const teamLeave = () => teamAct(async () => {
     const reserved = teamRoom?.status === "waiting" && !!teamRoom?.loadouts?.[memberId]?.suppliesReserved;
+    const reservedSupplies = teamRoom?.loadouts?.[memberId]?.supplies;
     const res = await leaveGuildTeamRoom(teamRoomId, memberId);
     if (res.ok === false) return res;
-    if (reserved) changeProfile(refundExpeditionSupplies(gp));
+    if (reserved) changeProfile(refundExpeditionSupplies(gp, reservedSupplies));
     setTeamRoomId(null); setTeamRoom(null); setPhase("board");
     return { ok: true };
   });
@@ -481,7 +545,9 @@ export default function GuildTestApp({ onBack, onLegacy }) {
       }
     : savedRun
       ? {
-          label: `🏹 單人：${savedRun.contract?.title || "遠征"}（第 ${savedRun.battle?.round || 1} 回合・波 ${(savedRun.battle?.waveIndex || 0) + 1}）`,
+          label: savedRun.stage === "map"
+            ? `🗺️ 單人：${savedRun.contract?.title || "遠征"}（路線整備中）`
+            : `🏹 單人：${savedRun.contract?.title || "遠征"}（第 ${savedRun.battle?.round || 1} 回合・波 ${(savedRun.battle?.waveIndex || 0) + 1}）`,
           onResume: resumeSavedRun, onDrop: dropSavedRun,
         }
       : null;
@@ -496,13 +562,49 @@ export default function GuildTestApp({ onBack, onLegacy }) {
         room={teamRoom} openRooms={openTeamRooms} myId={memberId} isHost={isTeamHost} contract={contract}
         stats={teamStats || {}} guildEquip={gp.equipped} partyCats={partyCats}
         arrowsPerRound={teamRoom?.settings?.arrowsPerRound || gp.arrowsPerRound}
-        targetFormat={teamRoom?.settings?.targetFormat || "full_110"}
-        onChangeSettings={settings => teamAct(() => setGuildTeamSettings(teamRoomId, memberId, settings))}
-        supplyStock={gp.supplyStock} onNeedShop={() => { setShopReturnPhase("team"); setPhase("shop"); }}
+        targetFormat={teamRoom?.settings?.targetFormat || initialGuildTargetFace()}
+        onChangeSettings={settings => {
+          if (settings?.targetFormat) rememberGuildTargetFace(settings.targetFormat);
+          return teamAct(() => setGuildTeamSettings(teamRoomId, memberId, settings));
+        }}
+        supplyStock={gp.supplyStock} supplyLoad={supplyLoad} onChangeSupplyLoad={setSupplyLoad}
+        onNeedShop={() => { setShopReturnPhase("team"); setPhase("shop"); }}
         busy={teamBusy}
         onCreate={teamCreate} onJoinRoom={teamJoinRoom} onReady={teamReady} onUnready={teamUnready}
         onDepart={teamDepart} onLeave={teamLeave}
         onClose={() => { setTeamRoomId(null); setPhase("board"); }}
+      />
+    );
+  }
+
+  if (phase === "teamMap" && teamRoom?.battle && teamRoom?.journey) {
+    const myBattle = teamRoom.battle.members?.[memberId] || {};
+    return (
+      <ExpeditionMapView
+        contract={teamRoom.contract}
+        expedition={teamRoom.battle.expedition}
+        supplies={myBattle.supplies || { food:0, water:0 }}
+        partyCats={myBattle.cats || []}
+        journey={teamRoom.journey}
+        event={teamRoom.journey.phase === "event"
+          ? { label:"全隊停下來確認路況；閱讀完成後由房主繼續前進。" }
+          : null}
+        onAdvance={() => {
+          if (!isTeamHost || teamBusy) return;
+          teamAct(async () => {
+            const nextJourney = advanceExpeditionJourney(teamRoom.journey);
+            const nextBattle = nextJourney.phase === "battle"
+              ? prepareTeamExpeditionWave(teamRoom.battle, nextJourney.waveIndex)
+              : teamRoom.battle;
+            return advanceGuildTeamJourney(
+              teamRoomId, memberId, nextJourney, nextBattle,
+              nextJourney.phase === "battle" ? "battle" : "map",
+            );
+          });
+        }}
+        onBack={temporarilyLeaveTeamBattle}
+        isHost={isTeamHost}
+        waitingLabel={!isTeamHost ? "等待房主推進全隊路線" : ""}
       />
     );
   }
@@ -512,14 +614,25 @@ export default function GuildTestApp({ onBack, onLegacy }) {
       <GuildTeamBattle
         room={teamRoom} battle={teamRoom.battle} myId={memberId} isHost={isTeamHost}
         arrowsPerRound={teamRoom.battle.members?.[memberId]?.arrowsPerRound || gp.arrowsPerRound}
-        initialTargetFormat={teamRoom?.settings?.targetFormat || "full_110"}
-        onSubmitShots={teamSubmit} onCommitRound={teamCommit} onLeave={teamLeave}
+        initialTargetFormat={teamRoom?.settings?.targetFormat || initialGuildTargetFace()}
+          onSubmitShots={teamSubmit} onCommitRound={teamCommit}
+          onAcknowledgeEvent={teamAcknowledgeEvent}
+        onTemporaryLeave={temporarilyLeaveTeamBattle}
       />
     );
   }
 
   if (phase === "stash") {
-    return <GuildStash member={member} profile={gp} onChange={changeProfile} onClose={closePanel} />;
+    const mutateEquipment = async action => {
+      const res = await mutateGuildEquipment(memberId, gp, action, member?.coins || 0);
+      if (res.ok) setGp(res.profile);
+      return res;
+    };
+    return <GuildStash member={member} profile={gp} onChange={changeProfile}
+      onEnhance={target => mutateEquipment({ type: "enhance", target })}
+      onSalvage={uid => mutateEquipment({ type: "salvage", uid })}
+      onSalvageMany={uids => mutateEquipment({ type: "salvageMany", uids })}
+      onClose={closePanel} />;
   }
 
   if (phase === "shop") {
@@ -599,7 +712,7 @@ export default function GuildTestApp({ onBack, onLegacy }) {
                 🧺 入庫雜貨：
                 {loot.junk.map((j, i) => (
                   <span key={`${j.id}-${i}`} style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                    <ArtOrEmoji sources={[junkArt(j.id)]} emoji={j.icon} size={22} />
+                    <GuildJunkArt junkId={j.id} size={26} />
                     <span style={{ fontSize: 11 }}>{j.name}</span>
                   </span>
                 ))}
@@ -677,17 +790,116 @@ export default function GuildTestApp({ onBack, onLegacy }) {
           </span>
           <button type="button" onClick={backToBoard} style={{ padding: "4px 10px", borderRadius: 7, border: "none", background: "#334155", color: "#cbd5e1", fontSize: 11, fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>放棄</button>
         </div>
-        <GuildLoadout member={member} guildEquip={gp.equipped} profile={gp} catRoster={catRoster} partyCatIds={partyCatIds} onToggleCat={toggleCat}
+        <GuildLoadout member={member} expedition={run.exp} guildEquip={gp.equipped} profile={gp} catRoster={catRoster} partyCatIds={partyCatIds} onToggleCat={toggleCat}
+          onEquip={uid => changeProfile(equipFromStash(gp, uid))}
           arrowsPerRound={gp.arrowsPerRound} onChangeArrows={n => changeProfile({ ...gp, arrowsPerRound: n })}
+          appearanceId={gp.appearanceId} onChangeAppearance={appearanceId => changeProfile({ ...gp, appearanceId })}
+          targetFormat={soloTargetFormat} onChangeTargetFormat={format => {
+            setSoloTargetFormat(format);
+            rememberGuildTargetFace(format);
+          }}
+          supplyLoad={supplyLoad} onChangeSupplyLoad={setSupplyLoad}
           onNeedShop={() => { setShopReturnPhase("loadout"); setPhase("shop"); }}
-          onDepart={() => {
-            const consumed = consumeExpeditionSupplies(gp);
+          onDepart={load => {
+            const consumed = consumeExpeditionSupplies(gp, load);
             if (!consumed.ok) { setShopReturnPhase("loadout"); setPhase("shop"); return; }
             changeProfile(consumed.profile);
             setSupplies(consumed.supplies);
-            setPhase("battle");
+            const nextJourney = createExpeditionJourney(run.exp);
+            const nextBattle = createExpeditionState(
+              run.exp,
+              teamStats,
+              consumed.supplies,
+              partyCats,
+              { arrowsPerRound: gp.arrowsPerRound, targetFormat: soloTargetFormat, combatV2: true, missionMode: contract?.mode },
+            );
+            setJourney(nextJourney);
+            setResumeState(nextBattle);
+            saveRun(memberId, {
+              stage: contract?.mode === "exploration" ? "map" : "battle",
+              contract,
+              exp: run.exp,
+              supplies: consumed.supplies,
+              journey: nextJourney,
+              battle: nextBattle,
+              key: run.key,
+            });
+            setPhase(contract?.mode === "exploration" ? "map" : contract?.mode === "defense" ? "defense" : "battle");
           }} />
       </div>
+    );
+  }
+
+  if (phase === "map") {
+    return (
+      <ExpeditionMapView
+        contract={contract}
+        expedition={run.exp}
+        supplies={supplies}
+        partyCats={partyCats}
+        journey={journey || createExpeditionJourney(run.exp)}
+        event={resumeState?.log?.find(entry => entry.type === "travelEvent") || null}
+        onAdvance={() => {
+          const currentJourney = journey || createExpeditionJourney(run.exp);
+          const nextJourney = advanceExpeditionJourney(currentJourney);
+            let nextBattle = resumeState || createExpeditionState(
+            run.exp,
+            teamStats,
+            supplies,
+            partyCats,
+              { arrowsPerRound: gp.arrowsPerRound, targetFormat: resumeState?.targetFormat || soloTargetFormat },
+            );
+            nextBattle = consumeTravelSupplies(nextBattle);
+
+            if (nextJourney.phase === "event" && nextBattle.status !== "lost") {
+              nextBattle = prepareExpeditionWave(nextBattle, nextJourney.waveIndex);
+            }
+            setSupplies(nextBattle.supplies);
+
+          setJourney(nextJourney);
+          setResumeState(nextBattle);
+          saveRun(memberId, {
+            stage: nextJourney.phase === "battle" ? "battle" : "map",
+            contract,
+            exp: run.exp,
+            supplies: nextBattle.supplies,
+            journey: nextJourney,
+            battle: nextBattle,
+            key: run.key,
+          });
+          if (nextBattle.status === "lost") {
+            clearSavedRun(memberId);
+            setResult(nextBattle);
+            return;
+          }
+          if (nextJourney.phase === "battle") setPhase("battle");
+        }}
+        onAvoid={() => {
+          const currentJourney = journey || createExpeditionJourney(run.exp);
+          const encounterJourney = advanceExpeditionJourney(currentJourney);
+          const encounterNode = encounterJourney.nodes?.[encounterJourney.nodeIndex];
+          if (encounterNode?.type !== "battle") return;
+          const rate = Math.round((1 - (resumeState?.derived?.supplySavePct || 0)) * 100) / 100;
+          const nextBattle = {
+            ...resumeState,
+            supplies: {
+              food: Math.max(0, Math.round((resumeState.supplies.food - rate) * 100) / 100),
+              water: Math.max(0, Math.round((resumeState.supplies.water - rate) * 100) / 100),
+            },
+            skippedWaveIndexes: [...new Set([...(resumeState.skippedWaveIndexes || []), encounterJourney.waveIndex])],
+            log: [{ type: "encounterAvoided", waveIndex: encounterJourney.waveIndex, food: -rate, water: -rate }],
+          };
+          const nextJourney = completeExpeditionJourneyBattle(encounterJourney);
+          setSupplies(nextBattle.supplies);
+          setResumeState(nextBattle);
+          setJourney(nextJourney);
+          saveRun(memberId, { stage: "map", contract, exp: run.exp, supplies: nextBattle.supplies, journey: nextJourney, battle: nextBattle, key: run.key });
+        }}
+        onBack={() => {
+          changeProfile(refundExpeditionSupplies(gp, supplies));
+          backToBoard();
+        }}
+      />
     );
   }
 
@@ -703,7 +915,7 @@ export default function GuildTestApp({ onBack, onLegacy }) {
     );
   }
 
-  const stats = calcGuildExpeditionStats(member, gp.equipped);
+  const stats = teamStats;
   return (
     <div>
       <div style={{ padding: "6px 12px", background: "#1a1207", color: "#fcd34d", fontSize: 11, fontWeight: 800, display: "flex", justifyContent: "space-between" }}>
@@ -713,11 +925,55 @@ export default function GuildTestApp({ onBack, onLegacy }) {
         </span>
       </div>
       <GuildBattle key={run.key} expedition={run.exp} guildStats={stats} supplies={supplies} cats={partyCats}
+        appearanceId={gp.appearanceId}
+        missionMode={contract?.mode || "assault"}
+        targetFormat={resumeState?.targetFormat || soloTargetFormat}
         arrowsPerRound={gp.arrowsPerRound} onArrowsShot={recordArrows} onEnd={setResult}
         resumeState={resumeState}
+        pauseBetweenWaves={contract?.mode === "exploration"}
+        onTemporaryLeave={battle => {
+          const saved = {
+            stage: "battle",
+            contract,
+            exp: run.exp,
+            journey,
+            battle,
+            key: run.key,
+          };
+          saveRun(memberId, saved);
+          setSavedRun(saved);
+          setResumeState(null);
+          setContract(null);
+          setRun(null);
+          setJourney(null);
+          setPhase("board");
+        }}
+        onWaveClear={battle => {
+          const nextJourney = completeExpeditionJourneyBattle(journey);
+          setJourney(nextJourney);
+          setResumeState(battle);
+          setSupplies(battle.supplies);
+          saveRun(memberId, {
+            stage: "map",
+            contract,
+            exp: run.exp,
+            supplies: battle.supplies,
+            journey: nextJourney,
+            battle,
+            key: run.key,
+          });
+          setPhase("map");
+        }}
         onPersist={battle => {
           // 每回合落地一次：關掉 App 再回來能從這一回合續戰；打完就清掉
-          if (battle.status === "fighting") saveRun(memberId, { contract, exp: run.exp, battle, key: run.key });
+          if (battle.status === "fighting") saveRun(memberId, {
+            stage: "battle",
+            contract,
+            exp: run.exp,
+            journey,
+            battle,
+            key: run.key,
+          });
           else clearSavedRun(memberId);
         }} />
     </div>

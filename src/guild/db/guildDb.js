@@ -18,6 +18,7 @@ import { normalizeGuildProfile, applyLootToProfile, expandLootMaterials, expandE
 import { purchaseFromShop } from "../domain/guildShopPurchase";
 import { markContractDone } from "../domain/guildContracts";
 import { shopItemById } from "../data/guildShop";
+import { enhanceEquip, salvageEquip, salvageMany } from "../domain/guildEnhance";
 
 const C_GUILD = "guildProfiles";
 
@@ -171,6 +172,37 @@ export async function sellGuildJunk(memberId, profile, sell, valuationMult = 1) 
   } catch (e) {
     console.warn("sellGuildJunk:", e?.message);
     return { ok: false, reason: e?.message || "賣出失敗", profile: normalizeGuildProfile(profile), coins: 0, catCoins: 0, sold: [] };
+  }
+}
+
+export async function mutateGuildEquipment(memberId, profile, action, memberCoins = 0) {
+  const apply = (current, coins) => {
+    if (action?.type === "enhance") return enhanceEquip(current, action.target, { coins });
+    if (action?.type === "salvage") return salvageEquip(current, action.uid, { coins });
+    if (action?.type === "salvageMany") return salvageMany(current, action.uids, { coins });
+    return { ok: false, reason: "未知的裝備操作", profile: normalizeGuildProfile(current) };
+  };
+  const preview = apply(profile, memberCoins);
+  if (!preview.ok || !memberId) return { ...preview, offline: !memberId };
+  cancelGuildSave();
+  try {
+    let result = null;
+    await runTransaction(db, async tx => {
+      const memberRef = doc(db, "members", memberId);
+      const guildRef = ref(memberId);
+      const [memberSnap, guildSnap] = await Promise.all([tx.get(memberRef), tx.get(guildRef)]);
+      if (!memberSnap.exists()) throw new Error("找不到會員資料");
+      result = apply(
+        normalizeGuildProfile(guildSnap.exists() ? guildSnap.data() : profile),
+        memberSnap.data().coins,
+      );
+      if (!result.ok) throw new Error(result.reason);
+      tx.set(guildRef, toDoc(result.profile), { merge: true });
+      tx.update(memberRef, { coins: increment(-result.coinsSpent), updatedAt: serverTimestamp() });
+    });
+    return { ...result, offline: false };
+  } catch (e) {
+    return { ok: false, reason: e?.message || "裝備操作失敗", profile: normalizeGuildProfile(profile) };
   }
 }
 

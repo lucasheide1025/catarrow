@@ -26,7 +26,7 @@
 
 ## Equipment runes and sockets
 
-- The player-facing rune inventory and socket controls belong below the RPG equipment grid on the equipment page; a backend-only reward field is not a complete feature.
+- Equipment page owns wear, replace, and upgrade only. Player-facing specialization, rune inventory, crafting, combining, socket opening, insertion, and removal belong to the dedicated `specialization-runes` progression page linked from the inventory hub.
 - King-vault fragments only craft T1 runes. Higher tiers are produced sequentially by combining two matching, uninstalled runes; the second rune and gold are consumed, while a failed combine keeps the source rune.
 - Socketing is limited to Elite or higher equipment. Each slot has at most three sockets, with King-Seal costs and success rates of `1 / 85%`, `2 / 65%`, and `3 / 45%` respectively. A failed socket attempt must state that the equipment was not damaged.
 - Removing a rune returns it to `equipmentRuneInventory`; installed runes cannot be used as combine materials.

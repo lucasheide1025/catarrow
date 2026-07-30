@@ -1,16 +1,30 @@
 // src/guild/ui/GuildLoadout.jsx
 // 出發前「備包」畫面：顯示六維、裝備、並在「背包容量」限制下抉擇帶多少食/水。
 // 核心張力：裝備佔重、補給也佔重；容量 = 基礎 + VIT 加成。帶太多裝就帶不了糧。
+import { useState } from "react";
 import { calcGuildExpeditionStats, deriveGuildCombat, STAT_META, BASE_CAPACITY, SUPPLY_WEIGHT } from "../domain/guildStats";
-import { GUILD_SLOTS, SLOT_META, resolveEquipWeight, equipDisplayName, GRADE_META } from "../data/guildEquipCatalog";
+import { GUILD_SLOTS, SLOT_META, GUILD_EQUIP_ARCHETYPES, resolveEquipWeight, equipDisplayName, GRADE_META } from "../data/guildEquipCatalog";
+import { equipmentDefinition, resolveEquipmentV2 } from "../domain/guildEquipmentV2";
 import { MAX_PARTY_CATS } from "../domain/guildCats";
 import { sfxTap, sfxSwitch, sfxCast } from "../../lib/sound";
-import { hallBg, bgLayer, CatArt, HeroArt } from "./GuildArt";
+import { hallBg, bgLayer, CatArt } from "./GuildArt";
 import { EXPEDITION_SUPPLY_LOAD, supplyShortage } from "../domain/guildSupplies";
+import { GUILD_TARGET_FACE_OPTIONS } from "./guildTargetFace";
+import GuildIcon, { GUILD_SLOT_ICON } from "./GuildIcon";
+import { GuildEquipmentArt, GuildPlayerAppearance, PLAYER_APPEARANCES } from "./GuildItemArt";
 
 // 負重常數已搬到 domain/guildStats（組隊等待室也要用同一組，見 carryStatus）
 
-export default function GuildLoadout({ member, guildEquip, profile, onDepart, onNeedShop, catRoster = [], partyCatIds = [], onToggleCat, arrowsPerRound = 3, onChangeArrows }) {
+export default function GuildLoadout({
+  member, expedition, guildEquip, profile, onDepart, onNeedShop,
+  onEquip,
+  catRoster = [], partyCatIds = [], onToggleCat,
+  arrowsPerRound = 3, onChangeArrows,
+  appearanceId = "tabby_ranger", onChangeAppearance,
+  targetFormat = "full_110", onChangeTargetFormat,
+  supplyLoad = EXPEDITION_SUPPLY_LOAD, onChangeSupplyLoad,
+}) {
+  const [selectedSlot, setSelectedSlot] = useState(null);
   const stats = calcGuildExpeditionStats(member, guildEquip);
   const derived = deriveGuildCombat(stats);
   const capacity = Math.round((BASE_CAPACITY + derived.carryBonus) * 10) / 10;
@@ -20,21 +34,45 @@ export default function GuildLoadout({ member, guildEquip, profile, onDepart, on
   }, 0) * 10) / 10;
 
   const party = partyCatIds; // 已由上層解析成「實際出戰」的 id（空選單時上層會自動填最強的）
-  const { food, water } = EXPEDITION_SUPPLY_LOAD;
-  const missing = supplyShortage(profile);
+  const { food, water } = supplyLoad;
+  const missing = supplyShortage(profile, supplyLoad);
   const lacksStock = missing.food > 0 || missing.water > 0;
   const supplyWeight = (food + water) * SUPPLY_WEIGHT;
   const used = Math.round((gearWeight + supplyWeight) * 10) / 10;
   const over = used > capacity;
   const pct = Math.min(100, (used / capacity) * 100);
+  const waveCount = Math.max(1, expedition?.totalWaves || expedition?.waves?.length || 1);
+  const roundRate = arrowsPerRound === 6 ? 2 : 1;
+  const estimatedSupply = {
+    min: Math.round((waveCount * roundRate + waveCount * 0.5) * (1 - derived.supplySavePct) * 10) / 10,
+    max: Math.round((waveCount * roundRate * 2 + waveCount) * (1 - derived.supplySavePct) * 10) / 10,
+  };
 
   return (
     <div className="guild-panel-page" style={{ minHeight: "100dvh", ...bgLayer(hallBg(), { overlay: "rgba(8,6,3,.74)" }), backgroundAttachment: "fixed", color: "#e2e8f0", padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
-      <div style={{ fontSize: 18, fontWeight: 900, color: "#fbbf24" }}>🎒 出發前備包</div>
+      <div style={{ fontSize: 18, fontWeight: 900, color: "#fbbf24", display: "flex", alignItems: "center", gap: 7 }}><GuildIcon name="stash" size={38} />出發前備包</div>
 
       {/* 六維（旁邊放射手本人，出發前看得到自己的角色）*/}
       <div style={{ background: "rgba(0,0,0,.3)", borderRadius: 12, padding: 12, display: "flex", gap: 10, alignItems: "center" }}>
-        <HeroArt size={84} style={{ flex: "0 0 auto", filter: "drop-shadow(0 4px 10px rgba(0,0,0,.6))" }} />
+        <div style={{ flex: "0 0 168px", textAlign: "center" }}>
+          <div style={{ color: "#fbbf24", fontSize: 11, fontWeight: 900, marginBottom: 5 }}>🎨 玩家棋盤外觀</div>
+          <GuildPlayerAppearance appearanceId={appearanceId} size={84} />
+          <div role="group" aria-label="選擇冒險者外觀" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 4, marginTop: 6 }}>
+            {PLAYER_APPEARANCES.map(option => {
+              const selected = option.id === appearanceId;
+              return (
+                <button key={option.id} type="button" aria-pressed={selected} title={option.name}
+                  onClick={() => onChangeAppearance?.(option.id)}
+                  style={{ borderRadius: 7, padding: 3, border: `1px solid ${selected ? "#fbbf24" : "#475569"}`,
+                    background: selected ? "rgba(245,158,11,.18)" : "#111827", color: "#e2e8f0", cursor: "pointer" }}>
+                  <GuildPlayerAppearance appearanceId={option.id} size={34} />
+                  <span style={{ display: "block", fontSize: 8, lineHeight: 1.2 }}>{option.name}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ color: "#94a3b8", fontSize: 9, marginTop: 4 }}>點選後自動保存・組隊會讀取此外觀</div>
+        </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 12, fontWeight: 900, color: "#c7d2fe", marginBottom: 8 }}>六維（射手Lv{stats._archerLevel} + 貓 + 公會裝）</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
@@ -47,18 +85,67 @@ export default function GuildLoadout({ member, guildEquip, profile, onDepart, on
 
       {/* 裝備 */}
       <div style={{ background: "rgba(0,0,0,.3)", borderRadius: 12, padding: 12 }}>
-        <div style={{ fontSize: 12, fontWeight: 900, color: "#c7d2fe", marginBottom: 8 }}>裝備</div>
-        {GUILD_SLOTS.map(slot => {
-          const it = guildEquip[slot];
+        <div style={{ fontSize: 12, fontWeight: 900, color: "#c7d2fe", marginBottom: 8 }}>裝備配置　<span style={{ color: "#64748b" }}>點擊槽位可比較並直接更換</span></div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(145px,1fr))", gap: 7 }}>
+          {GUILD_SLOTS.map(slot => {
+            const it = guildEquip[slot];
+            const def = it?.archetypeId ? equipmentDefinition(it.archetypeId) : null;
+            const active = selectedSlot === slot;
+            return (
+              <button key={slot} type="button" aria-expanded={active} onClick={() => setSelectedSlot(active ? null : slot)}
+                style={{ padding: 9, borderRadius: 10, textAlign: "left", color: "#e2e8f0", cursor: "pointer",
+                  border: `1px solid ${active ? "#fbbf24" : "rgba(255,255,255,.1)"}`,
+                  background: active ? "rgba(245,158,11,.14)" : "rgba(255,255,255,.04)" }}>
+                <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 5, display: "flex", alignItems: "center", gap: 6 }}>
+                  {it?.archetypeId ? <GuildEquipmentArt archetypeId={it.archetypeId} grade={it.grade} size={38} /> : <GuildIcon name={GUILD_SLOT_ICON[slot]} size={27} />}
+                  {SLOT_META[slot].name}・{def?.role || "未裝備"}
+                </div>
+                {it?.archetypeId ? <>
+                  <div style={{ color: GRADE_META[it.grade]?.color || "#fff", fontSize: 11, fontWeight: 900 }}>{equipDisplayName(it.archetypeId, it.grade, it)}</div>
+                  <div style={{ fontSize: 9.5, color: "#cbd5e1", marginTop: 4 }}>{def?.trait?.name}・{resolveEquipWeight(it.archetypeId, it.grade)}kg</div>
+                </> : <div style={{ color: "#64748b", fontSize: 11 }}>空槽位</div>}
+              </button>
+            );
+          })}
+        </div>
+        {selectedSlot && (() => {
+          const current = guildEquip[selectedSlot];
+          const currentStats = current?.archetypeId ? resolveEquipmentV2(current.archetypeId, current.grade, current).stats : {};
+          const candidates = (profile.stash || []).filter(item => GUILD_EQUIP_ARCHETYPES[item.archetypeId]?.slot === selectedSlot);
           return (
-            <div key={slot} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "3px 0" }}>
-              <span>{SLOT_META[slot].icon} {SLOT_META[slot].name}</span>
-              {it && it.archetypeId
-                ? <span style={{ color: GRADE_META[it.grade]?.color || "#fff", fontWeight: 800 }}>{equipDisplayName(it.archetypeId, it.grade)}（{resolveEquipWeight(it.archetypeId, it.grade)}kg）</span>
-                : <span style={{ color: "#64748b" }}>空</span>}
+            <div style={{ marginTop: 9, borderTop: "1px solid rgba(255,255,255,.1)", paddingTop: 9 }}>
+              <div style={{ fontSize: 11, fontWeight: 900, color: "#fbbf24", marginBottom: 6 }}>{SLOT_META[selectedSlot].icon} 可替換裝備</div>
+              {!candidates.length && <div style={{ fontSize: 10.5, color: "#64748b" }}>倉庫目前沒有這個槽位的其他裝備。</div>}
+              <div style={{ display: "grid", gap: 6 }}>
+                {candidates.map(item => {
+                  const next = resolveEquipmentV2(item.archetypeId, item.grade, item);
+                  const stats = Array.from(new Set([...Object.keys(currentStats), ...Object.keys(next.stats)]));
+                  const weightDelta = Math.round((resolveEquipWeight(item.archetypeId, item.grade) - (current?.archetypeId ? resolveEquipWeight(current.archetypeId, current.grade) : 0)) * 10) / 10;
+                  return (
+                    <button key={item.uid} type="button" onClick={() => { onEquip?.(item.uid); setSelectedSlot(null); }}
+                      style={{ padding: 8, borderRadius: 9, border: "1px solid rgba(255,255,255,.1)", background: "#111827", color: "#e2e8f0", textAlign: "left", cursor: "pointer" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+                        <GuildEquipmentArt archetypeId={item.archetypeId} grade={item.grade} size={42} />
+                        <b style={{ color: GRADE_META[item.grade]?.color || "#fff", fontSize: 11 }}>{equipDisplayName(item.archetypeId, item.grade, item)}</b>
+                        <span style={{ color: weightDelta > 0 ? "#fca5a5" : "#6ee7b7", fontSize: 10 }}>{weightDelta > 0 ? "+" : ""}{weightDelta}kg</span>
+                      </div>
+                      <div style={{ fontSize: 9.5, color: "#cbd5e1", marginTop: 4 }}>{next.definition.trait.name}：{next.definition.trait.description}</div>
+                      <div style={{ fontSize: 9.5, color: weightDelta > 0 ? "#fca5a5" : "#6ee7b7", marginTop: 3 }}>
+                        補給空間 {weightDelta === 0 ? "不變" : `${weightDelta > 0 ? "-" : "+"}${Math.abs(weightDelta)} 份`}
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 4 }}>
+                        {stats.map(stat => {
+                          const delta = (next.stats[stat] || 0) - (currentStats[stat] || 0);
+                          return delta ? <span key={stat} style={{ fontSize: 9.5, color: delta > 0 ? "#6ee7b7" : "#fca5a5" }}>{STAT_META[stat]?.short || stat} {delta > 0 ? "+" : ""}{delta}</span> : null;
+                        })}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           );
-        })}
+        })()}
       </div>
 
       {/* 出戰貓貓（貓的等級/羈絆/裝備沿用主線養成 → 在貓村養貓會讓遠征變強）*/}
@@ -114,14 +201,50 @@ export default function GuildLoadout({ member, guildEquip, profile, onDepart, on
         </div>
       </div>
 
+      <div style={{ background: "rgba(0,0,0,.3)", borderRadius: 12, padding: 12 }}>
+        <div style={{ fontSize: 12, fontWeight: 900, color: "#c7d2fe", marginBottom: 8 }}>
+          本次遠征靶紙
+          <span style={{ color: "#fca5a5", fontWeight: 700, marginLeft: 6 }}>（出發後鎖定，途中不能更換）</span>
+        </div>
+        <select value={targetFormat} onChange={event => { sfxSwitch(); onChangeTargetFormat?.(event.target.value); }}
+          style={{ width: "100%", minHeight: 42, borderRadius: 10, border: "1px solid rgba(255,255,255,.15)", background: "#1e293b", color: "#f8fafc", padding: "0 10px", fontWeight: 800 }}>
+          {GUILD_TARGET_FACE_OPTIONS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
+        </select>
+        <div style={{ marginTop: 7, color: "#94a3b8", fontSize: 10.5 }}>
+          怪物的指定環數反制會依這張靶紙產生，請在出發前確認。
+        </div>
+      </div>
+
       {/* 補給 + 容量 */}
       <div style={{ background: "rgba(0,0,0,.3)", borderRadius: 12, padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-        <div style={{ fontSize: 12, fontWeight: 900, color: "#c7d2fe" }}>補給（每回合消耗，撐不住強迫撤退）</div>
+        <div style={{ fontSize: 12, fontWeight: 900, color: "#c7d2fe" }}>補給（戰鬥與地圖移動都會消耗）</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          {[
+            { key: "food", icon: "food", label: "食物", value: food },
+            { key: "water", icon: "water", label: "飲水", value: water },
+          ].map(item => (
+            <div key={item.key} style={{ padding: 9, borderRadius: 10, background: "rgba(255,255,255,.05)" }}>
+              <div style={{ fontSize: 11, fontWeight: 800, marginBottom: 6, display: "flex", alignItems: "center", gap: 5 }}><GuildIcon name={item.icon} size={28} />{item.label}</div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                <button type="button" disabled={item.value <= 1}
+                  onClick={() => onChangeSupplyLoad?.({ ...supplyLoad, [item.key]: Math.max(1, item.value - 1) })}
+                  style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "#334155", color: "#fff", fontWeight: 900 }}>−</button>
+                <b style={{ fontSize: 17 }}>{item.value}</b>
+                <button type="button" disabled={item.value >= 10}
+                  onClick={() => onChangeSupplyLoad?.({ ...supplyLoad, [item.key]: Math.min(10, item.value + 1) })}
+                  style={{ width: 30, height: 30, borderRadius: 8, border: "none", background: "#92400e", color: "#fff", fontWeight: 900 }}>＋</button>
+              </div>
+            </div>
+          ))}
+        </div>
         <div style={{ fontSize: 12, lineHeight: 1.8 }}>
-          系統自動裝入　🍖 食物 <b>{food}</b>　💧 飲水 <b>{water}</b><br />
+          本次攜帶　🍖 食物 <b>{food}</b>　💧 飲水 <b>{water}</b><br />
           倉庫庫存　🍖 {profile.supplyStock.food}　💧 {profile.supplyStock.water}
         </div>
         {lacksStock && <div style={{ fontSize: 11, color: "#f87171" }}>補給不足：還缺{missing.food ? ` 食物 ${missing.food}` : ""}{missing.water ? ` 飲水 ${missing.water}` : ""}</div>}
+        <div style={{ fontSize: 10.5, color: food < estimatedSupply.min || water < estimatedSupply.min ? "#fca5a5" : "#93c5fd" }}>
+          預估本趟各消耗 {estimatedSupply.min}～{estimatedSupply.max} 份（事件與實際戰鬥回合會改變結果）
+        </div>
         <div style={{ marginTop: 4 }}>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 3 }}>
             <span>背包負重</span>
@@ -134,10 +257,10 @@ export default function GuildLoadout({ member, guildEquip, profile, onDepart, on
         </div>
       </div>
 
-      <button type="button" disabled={over} onClick={() => { if (lacksStock) { sfxTap(); onNeedShop?.(); } else { sfxCast(); onDepart(); } }}
+      <button type="button" disabled={over} onClick={() => { if (lacksStock) { sfxTap(); onNeedShop?.(); } else { sfxCast(); onDepart(supplyLoad); } }}
         style={{ marginTop: "auto", padding: "13px 0", borderRadius: 12, fontWeight: 900, fontSize: 15, color: "#fff", border: "none",
           background: over ? "#475569" : lacksStock ? "linear-gradient(135deg,#7c3aed,#4c1d95)" : "linear-gradient(135deg,#f59e0b,#b45309)", cursor: over ? "not-allowed" : "pointer" }}>
-        {over ? "超重，請卸下或更換較輕裝備" : lacksStock ? "🏪 補給不足，前往購買" : "🚩 自動補滿並出發"}
+        {over ? "超重，請卸下或更換較輕裝備" : lacksStock ? "🏪 補給不足，前往購買" : "🚩 攜帶補給並出發"}
       </button>
     </div>
   );

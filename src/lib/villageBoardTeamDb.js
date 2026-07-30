@@ -276,6 +276,9 @@ export async function roomRollAndMove(roomId, hostId) {
       result = { ok: true, roll, from, to, lapped, tile };
     });
     if (result.lapped) import("./villageGoalDb").then(m => m.contributeLapToGoal(hostId, 1)).catch(() => {});
+    if (result.ok) import("./worldBossDb").then(module => module.contributeWorldBossSpawnProgress({
+      memberId:hostId, type:"villageDice", amount:1, operationId:`village-team-dice:${roomId}:${result.from}:${result.to}:${Date.now()}`,
+    })).catch(() => {});
     return result;
   } catch (e) { return { ok: false, reason: e?.message }; }
 }

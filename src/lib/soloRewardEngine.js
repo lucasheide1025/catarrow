@@ -4,6 +4,23 @@ function seededRoll(key) {
   return (hash >>> 0) / 4294967296;
 }
 
+export function normalizeSoloRewardMaterials(materialTotals = {}, resolveMaterial = () => null) {
+  return Object.entries(materialTotals || {})
+    .map(([id, rawQuantity]) => {
+      const quantity = Math.max(0, Math.floor(Number(rawQuantity) || 0));
+      const material = resolveMaterial(id) || {};
+      const normalized = {
+        id,
+        quantity,
+        count: quantity,
+        name: material.name || id,
+      };
+      if (material.icon) normalized.icon = material.icon;
+      return normalized;
+    })
+    .filter((material) => material.quantity > 0);
+}
+
 export function buildSoloExpansionReward({ battleId, memberId, monster, materialQty = 5, cardChance = 0.2 }) {
   if (!battleId || !memberId || monster?.expansionVersion !== 1 || monster?.encounter !== "normal" || !monster?.materialId) return null;
   const cardDropped = seededRoll(`${battleId}:${memberId}:${monster.id}:card`) < cardChance;
@@ -19,4 +36,3 @@ export function buildSoloExpansionReward({ battleId, memberId, monster, material
     } : null,
   };
 }
-

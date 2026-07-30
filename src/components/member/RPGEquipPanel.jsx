@@ -1,24 +1,13 @@
 // src/components/member/RPGEquipPanel.jsx — RPG 裝備面板
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { equipItem, changeEquipBrand, unequipSlot, upgradeEquipSlot, saveEquipNextMats, subscribeEquipItems, subscribeMaterials, setEquipSocketRune, trySocketEquip } from "../../lib/db";
+import { equipItem, changeEquipBrand, unequipSlot, upgradeEquipSlot, saveEquipNextMats, subscribeEquipItems, subscribeMaterials } from "../../lib/db";
 import { EQUIP_GRADES, EQUIP_SLOT_DEFS, calcEquipBonus, getEquipSlotBonus } from "../../lib/constants";
 import { MATERIALS, RARITY_CONFIG } from "../../lib/monsterMaterials";
 import { MATERIAL_BY_ID as EXPANSION_MATERIAL_BY_ID } from "../../lib/monsterEconomyCatalog";
 import { EQUIP_UPGRADE_COST, GRADE_PREFIX, generateRandomMats, isMatsCurveCurrent, KING_SEAL_BREAKTHROUGH_COST } from "../../lib/equipData";
 import { sfxLevelUp } from "../../lib/sound";
 import EquipmentIcon from "../shared/EquipmentIcon";
-import { EQUIPMENT_RUNES, getEquipmentRune, getEquipmentRuneBonus } from "../../lib/equipmentRuneData";
-
-// 符文立繪（有 img 用圖，缺圖 fallback emoji）
-function RuneImg({ rune, size = 26 }) {
-  const [failed, setFailed] = useState(false);
-  if (rune?.img && !failed) {
-    return <img src={rune.img} alt="" width={size} height={size} onError={() => setFailed(true)}
-      className="inline-block shrink-0 object-contain align-middle" style={{ filter: "drop-shadow(0 1px 2px rgba(0,0,0,.5))" }} />;
-  }
-  return <span className="shrink-0" style={{ fontSize: size * 0.8 }}>{rune?.icon || "🔮"}</span>;
-}
 
 const STAT_SECTIONS = [
   { stat: "atk", label: "⚔️ 攻擊裝備", color: "text-orange-400", border: "border-orange-500/30", bg: "bg-orange-900/10" },
@@ -37,46 +26,6 @@ function gradeName(gradeId) {
 
 function gradeIdx(gradeId) {
   return EQUIP_GRADES.findIndex(x => x.id === gradeId);
-}
-
-function EquipmentSocketControls({ memberId, slotId, equipped, kingSeals, inventory, readOnly }) {
-  const [busy, setBusy] = useState("");
-  const [picker, setPicker] = useState(null);
-  const [notice, setNotice] = useState("");
-  const sockets = Array.isArray(equipped?.sockets) ? equipped.sockets : [];
-  const gradeIndex = gradeIdx(equipped?.grade);
-  const bonus = getEquipmentRuneBonus(sockets);
-  const availableRunes = Object.values(EQUIPMENT_RUNES).filter(rune => (inventory?.[rune.id] || 0) > 0);
-  const notify = text => { setNotice(text); window.setTimeout(() => setNotice(""), 3200); };
-
-  async function socket() {
-    if (readOnly || busy || !memberId) return;
-    setBusy("socket");
-    const result = await trySocketEquip(memberId, slotId);
-    setBusy("");
-    notify(result.ok ? (result.success ? `打洞成功，目前 ${result.sockets} 洞` : `打洞失敗，消耗 ${result.sealCost} 枚王之印記；裝備未受損`) : result.reason);
-  }
-
-  async function setRune(index, runeId) {
-    if (readOnly || busy || !memberId) return;
-    setBusy(`rune-${index}`);
-    const result = await setEquipSocketRune(memberId, slotId, index, runeId);
-    setBusy("");
-    if (result.ok) { setPicker(null); notify(runeId ? "符文已鑲嵌" : "符文已卸下並放回背包"); }
-    else notify(result.reason);
-  }
-
-  return <section className="mb-3 rounded-xl border border-violet-400/25 bg-violet-950/25 p-3">
-    <div className="flex items-center justify-between gap-2"><h3 className="text-xs font-black text-violet-100">🔮 打洞與符文鑲嵌</h3><span className="text-[10px] font-bold text-amber-200">👑 {kingSeals || 0}</span></div>
-    {notice && <div role="status" className="mt-2 rounded-lg bg-violet-400/10 px-2 py-1.5 text-[10px] font-bold text-violet-100">{notice}</div>}
-    <div className="mt-2 flex gap-2">{[0, 1, 2].map(index => {
-      const rune = getEquipmentRune(sockets[index]);
-      return <button key={index} type="button" disabled={readOnly || index >= sockets.length || Boolean(busy)} onClick={() => setPicker(index)} className="min-h-14 flex-1 flex flex-col items-center justify-center gap-0.5 whitespace-pre-line rounded-xl border border-dashed border-violet-300/35 bg-black/20 px-1 text-center text-[10px] font-bold text-violet-100 disabled:opacity-45">{index >= sockets.length ? "未開洞" : rune ? <><RuneImg rune={rune} size={30} /><span className="text-[9px]">T{rune.tier}</span></> : "空洞\n鑲嵌"}</button>;
-    })}</div>
-    <div className="mt-2 text-[10px] text-slate-400">符文加成：ATK +{Math.round(bonus.atk * 100)}%／DEF +{Math.round(bonus.def * 100)}%／HP +{Math.round(bonus.hp * 100)}%</div>
-    {gradeIndex >= 2 && sockets.length < 3 ? <button type="button" disabled={readOnly || Boolean(busy) || (kingSeals || 0) < sockets.length + 1} onClick={socket} className="mt-3 min-h-10 w-full rounded-xl bg-amber-400 px-3 text-xs font-black text-slate-950 disabled:cursor-not-allowed disabled:opacity-40">{busy === "socket" ? "打洞中…" : `使用 ${sockets.length + 1} 枚王之印記打第 ${sockets.length + 1} 洞（成功率 ${[85, 65, 45][sockets.length]}%）`}</button> : <div className="mt-3 text-[10px] text-slate-500">{sockets.length >= 3 ? "此裝備已開滿 3 洞。" : "精良（Elite）以上裝備才能打洞。"}</div>}
-    {picker !== null && <div className="mt-2 rounded-xl border border-violet-300/25 bg-slate-950 p-2"><div className="flex items-center justify-between"><span className="text-[11px] font-black text-white">選擇第 {picker + 1} 洞的符文</span><button type="button" onClick={() => setPicker(null)} className="text-[10px] text-slate-400">關閉</button></div><button type="button" onClick={() => setRune(picker, null)} className="mt-2 min-h-9 w-full rounded-lg border border-white/10 px-2 text-left text-[11px] font-bold text-slate-300">卸下符文，放回背包</button>{availableRunes.map(rune => <button key={rune.id} type="button" onClick={() => setRune(picker, rune.id)} className="mt-2 min-h-9 w-full flex items-center gap-2 rounded-lg border border-violet-300/20 bg-violet-400/10 px-2 text-left text-[11px] font-bold text-violet-100"><RuneImg rune={rune} size={24} /><span>{rune.name} T{rune.tier} ×{inventory[rune.id]}</span></button>)}</div>}
-  </section>;
 }
 
 // ── 單一槽位卡片 ───────────────────────────────────────────
@@ -240,22 +189,59 @@ function matTierIndex(id) {
   return m ? Number(m[1]) : null;
 }
 
+const MATERIAL_FAMILY_META = {
+  ghost:{ label:"鬼怪", color:"#cbd5e1" },
+  mountain:{ label:"山林", color:"#4ade80" },
+  insect:{ label:"毒蟲", color:"#a3e635" },
+  workplace:{ label:"職場", color:"#60a5fa" },
+  exam:{ label:"考試", color:"#f87171" },
+  temple:{ label:"西方", color:"#fb923c" },
+  treasure:{ label:"寶箱", color:"#fbbf24" },
+};
+
+function materialFamilyFromId(id = "") {
+  return id.match(/^mat_([^_]+)_/)?.[1] || id.match(/^([^_]+)_m[1-6]$/)?.[1] || null;
+}
+
+function MaterialFamilyBadge({ material, size = 46 }) {
+  const family = material?.family || materialFamilyFromId(material?.id);
+  const meta = MATERIAL_FAMILY_META[family];
+  if (!meta) return <span className="text-2xl">{material?.icon || "🪨"}</span>;
+  return (
+    <div className="relative shrink-0 overflow-hidden rounded-xl border bg-slate-950"
+      title={`${meta.label}族素材`}
+      style={{ width:size, height:size, borderColor:`${meta.color}88`, boxShadow:`0 0 12px ${meta.color}22` }}>
+      <img src={`/ui/material-families/${family}.webp`} alt={`${meta.label}族`}
+        className="h-full w-full object-cover" />
+      <span className="absolute inset-x-0 bottom-0 bg-black/75 py-0.5 text-center text-[8px] font-black leading-none"
+        style={{ color:meta.color }}>{meta.label}</span>
+      {material?.kind === "boss" || material?.kind === "miniBoss" ? (
+        <span className="absolute right-0 top-0 rounded-bl-md bg-black/80 px-1 text-[9px]" aria-label={material.kind === "boss" ? "王級素材" : "小王素材"}>
+          {material.kind === "boss" ? "👑" : "🔱"}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 function resolveMatMeta(id) {
   const legacy = MATERIALS.find(x => x.id === id);
-  if (legacy) return { ...legacy, tierIndex: matTierIndex(id) };
+  if (legacy) return { ...legacy, family:legacy.family || materialFamilyFromId(id), tierIndex: matTierIndex(id) };
   const expansion = EXPANSION_MATERIAL_BY_ID[id];
   if (!expansion) return null;
   return {
     id: expansion.id,
     name: expansion.name,
     icon: expansion.kind === "boss" ? "👑" : expansion.kind === "miniBoss" ? "🔱" : "🧱",
+    family: expansion.family,
+    kind: expansion.kind,
     rarity: null,
     tierIndex: expansion.tierIndex ?? matTierIndex(id),
   };
 }
 
 // ── 裝備選擇 Modal ─────────────────────────────────────────
-function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose, upgrading, itemsMap, matInv, coins, kingSeals, runeInventory, memberId, readOnly, upgradeErr, nextMats, equipMaxGradeAllowed = 99 }) {
+function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose, upgrading, itemsMap, matInv, coins, kingSeals, upgradeErr, nextMats, equipMaxGradeAllowed = 99 }) {
   const [tab, setTab] = useState("info"); // "info" | "change"
   const isEmpty   = !equipped?.itemId;
   const grade     = equipped?.grade     || "common";
@@ -371,16 +357,6 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
                   )}
                 </div>
 
-                {/* 升級進度條 */}
-                <EquipmentSocketControls
-                  memberId={memberId}
-                  slotId={slotDef.id}
-                  equipped={equipped}
-                  kingSeals={kingSeals}
-                  inventory={runeInventory}
-                  readOnly={readOnly}
-                />
-
                 {!isMax && (
                   <div className="mb-3">
                     <div className="flex items-center justify-between mb-1.5">
@@ -425,10 +401,10 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
                       const ok   = has >= m.count;
                       const nameColor = RARITY_CONFIG[mat?.rarity]?.color || (m.note ? "#fbbf24" : "#9ca3af");
                       return (
-                        <div key={m.id} className="flex items-center gap-1.5 mb-1">
-                          <span>{mat?.icon || (m.note ? "👑" : "🪨")}</span>
+                        <div key={m.id} className="mb-2 flex min-h-14 items-center gap-2 rounded-xl border border-white/5 bg-slate-950/45 px-2 py-1.5">
+                          <MaterialFamilyBadge material={mat || { id:m.id, icon:m.note ? "👑" : "🪨" }} />
                           {mat?.tierIndex && (
-                            <span className="text-[9px] font-black px-1 rounded bg-slate-700 text-slate-300 shrink-0">
+                            <span className="shrink-0 rounded-md border border-white/10 bg-slate-700 px-1.5 py-1 text-[10px] font-black text-slate-200">
                               T{mat.tierIndex}
                             </span>
                           )}
@@ -453,8 +429,13 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
                       const ok   = has >= mats.keyItem.count;
                       const nameColor = RARITY_CONFIG[mat?.rarity]?.color || "#fbbf24";
                       return (
-                        <div className="flex items-center gap-1.5 mt-1.5 pt-1.5 border-t border-slate-700">
-                          <span>{mat?.icon || "⭐"}</span>
+                        <div className="mt-2 flex min-h-14 items-center gap-2 rounded-xl border border-amber-300/20 bg-amber-400/5 px-2 py-1.5">
+                          <MaterialFamilyBadge material={mat || { id:mats.keyItem.id, icon:"⭐" }} />
+                          {mat?.tierIndex && (
+                            <span className="shrink-0 rounded-md border border-amber-200/20 bg-amber-950/70 px-1.5 py-1 text-[10px] font-black text-amber-200">
+                              T{mat.tierIndex}
+                            </span>
+                          )}
                           <span style={{ color: nameColor }} className="font-black text-[11px]">
                             {mat?.name || mats.keyItem.id}
                           </span>
@@ -554,9 +535,6 @@ export default function RPGEquipPanel({ onGoShop, showSummary = true, guestProfi
   // 吃到新材料。升級前先等這筆寫入完成，race 就消失。
   const pendingMatsSaveRef = useRef(null);
   // 訪客可裝備/更換品項，並可強化至稀有（含）以下；兒童維持唯讀
-  const isGuestEquipReadOnly = false; // 訪客/兒童皆可操作裝備
-
-  useEffect(() => subscribeEquipItems(setRawItems), []);
 
   useEffect(() => subscribeEquipItems(setRawItems), []);
   useEffect(() => {
@@ -731,9 +709,6 @@ export default function RPGEquipPanel({ onGoShop, showSummary = true, guestProfi
           matInv={matInv}
           coins={profile?.coins || 0}
           kingSeals={profile?.kingSeals || 0}
-          runeInventory={profile?.equipmentRuneInventory || {}}
-          memberId={profile?.id}
-          readOnly={isGuestEquipReadOnly}
           upgradeErr={upgradeErr}
           nextMats={displayNextMats}
         />

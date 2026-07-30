@@ -12,7 +12,7 @@ import TalentEffectPanel from "./cards/TalentEffectPanel";
 
 const EMPTY_COLLECTION = { cards:{}, wbCards:{}, equipped:[] };
 
-export default function CardCollectionModern({ guestProfile }) {
+export default function CardCollectionModern({ guestProfile, cardCollection }) {
   const { profile:authProfile } = useAuth();
   const profile=guestProfile||authProfile;
   const [collection, setCollection] = useState(EMPTY_COLLECTION);
@@ -21,10 +21,15 @@ export default function CardCollectionModern({ guestProfile }) {
   const noticeTimer = useRef(null);
 
   useEffect(() => {
+    if (cardCollection !== undefined) {
+      setCollection(cardCollection || EMPTY_COLLECTION);
+      setCollectionReady(true);
+      return undefined;
+    }
     if (!profile?.id) return undefined;
     setCollectionReady(false);
     return subscribeCardCollection(profile.id, data => { setCollection(data); setCollectionReady(true); });
-  }, [profile?.id]);
+  }, [profile?.id, cardCollection]);
 
   useEffect(() => () => clearTimeout(noticeTimer.current), []);
 

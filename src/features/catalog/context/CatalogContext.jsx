@@ -3,11 +3,18 @@ import { MOCK_ARCHERY_PRODUCTS, MOCK_FLIPBOOK_PAGES } from '../data/mockArcheryP
 import { THXS_TAOBAO_STORE_PRODUCTS } from '../data/mockTaobaoThxsProducts';
 import { parseTaobaoRealHtml } from '../api/taobaoRealScraper';
 import { exchangeRateService } from '../api/exchangeRateService';
+import scrapedProductsData from '../data/scraped_products.json';
+
 
 const CatalogContext = createContext();
 
 export const CatalogProvider = ({ children }) => {
-  const [products, setProducts] = useState(MOCK_ARCHERY_PRODUCTS);
+  const [products, setProducts] = useState(() => {
+    return Array.isArray(scrapedProductsData) && scrapedProductsData.length > 0
+      ? [...scrapedProductsData, ...MOCK_ARCHERY_PRODUCTS]
+      : MOCK_ARCHERY_PRODUCTS;
+  });
+
   const [flipbookPages] = useState(MOCK_FLIPBOOK_PAGES);
   const [viewMode, setViewMode] = useState('grid');
   const [targetCurrency, setTargetCurrency] = useState('TWD');

@@ -60,6 +60,24 @@ describe("組隊回合處理", () => {
     expect(new Set(arrows.map(a => a.by))).toEqual(new Set(["p1", "p2"]));
   });
 
+  test("隊員的原目標死亡時，剩餘箭自動轉向存活怪物", () => {
+    const exp = {
+      family: "ghost",
+      totalWaves: 1,
+      waves: [{ monsters: [
+        { instanceId: "a", name: "怪一", hp: 70, maxHp: 70, atk: 1, def: 0, distance: 4 },
+        { instanceId: "b", name: "怪二", hp: 100, maxHp: 100, atk: 1, def: 0, distance: 2 },
+      ] }],
+    };
+    const state = createTeamState(exp, members(1));
+    const shots = [1, 2, 3].map(() => ({ targetInstanceId: "a", score: 11 }));
+    const next = processTeamRound(state, { p1: shots }, { rand: () => 0.99 });
+
+    expect(next.log.filter(entry => entry.type === "arrow").map(entry => entry.target))
+      .toEqual(["a", "a", "b"]);
+    expect(next.monsters.find(monster => monster.instanceId === "b")?.hp).toBe(55);
+  });
+
   test("射擊表現分開累計（自己的命中率只算自己的箭）", () => {
     const st = createTeamState(expedition(), members(2));
     const mon = st.monsters[0];
@@ -137,6 +155,98 @@ describe("組隊回合處理", () => {
     }, { rand: () => 0.99, eventRand: () => 0 });
     expect(next.status).toBe("lost");
     expect(next.lostReason).toMatch(/強迫撤退/);
+  });
+
+  test("防守村民事件形成共享 gate，確認前整個隊伍狀態凍結", () => {
+    const base = expedition();
+    const defenseExp = {
+      ...base,
+      totalWaves: 2,
+      waves: [
+        { monsters: [
+          { ...base.waves[0].monsters[0], instanceId: "a" },
+          { ...base.waves[0].monsters[0], instanceId: "b" },
+        ] },
+        { monsters: [
+          { ...base.waves[1].monsters[0], instanceId: "c" },
+          { ...base.waves[1].monsters[0], instanceId: "d" },
+        ] },
+      ],
+    };
+    let state = createTeamState(defenseExp, members(2), { missionMode: "defense" });
+    for (let i = 0; i < 3; i += 1) state = processTeamRound(state, {});
+    expect(state.eventGate).toMatchObject({
+      id: "hunter_volley",
+      summary: expect.stringMatching(/造成.*傷害/),
+      targets: expect.arrayContaining([
+        expect.objectContaining({
+          name: expect.any(String),
+          hpBefore: expect.any(Number),
+          hpAfter: expect.any(Number),
+          damage: 10,
+        }),
+      ]),
+    });
+    expect(processTeamRound(state, {})).toBe(state);
+  });
+
+  test("組隊防守沒有任何剩餘敵軍時立即勝利", () => {
+    const base = expedition();
+    const defenseExp = {
+      ...base,
+      totalWaves: 1,
+      waves: [{ monsters: [{ ...base.waves[0].monsters[0], instanceId: "last", hp: 1, maxHp: 1, def: 0 }] }],
+    };
+    const state = createTeamState(defenseExp, members(1), { missionMode: "defense", alreadyScaled: true });
+    const next = processTeamRound(state, {
+      p1: [{ targetInstanceId: "last", score: 11, rawScore: 10 }],
+    }, { rand: () => 0.99 });
+
+    expect(next.defense.clock).toBeLessThan(next.defense.duration);
+    expect(next.defense.queue).toHaveLength(0);
+    expect(next.monsters).toHaveLength(0);
+    expect(next.status).toBe("won");
+  });
+
+  test("組隊指定環數使用房主出發時鎖定的靶紙", () => {
+    const base = expedition();
+    const skillExp = {
+      ...base,
+      waves: [{ monsters: [{ ...base.waves[0].monsters[0], instanceId: "mage", hp: 999, maxHp: 999, combatRole: "caster", cooldown: 1 }] }],
+      totalWaves: 1,
+    };
+    let state = createTeamState(skillExp, members(1).map(member => ({ ...member, targetFormat: "half_610" })), { alreadyScaled: true });
+    state = processTeamRound(state, {}, { rand: () => 0.99, skillRand: () => 0 });
+
+    const next = processTeamRound(state, {
+      p1: [{ targetInstanceId: "mage", score: 3, rawScore: 3, targetFormat: "full_110" }],
+    }, { rand: () => 0.99, skillRand: () => 0 });
+    expect(next.log).not.toContainEqual(expect.objectContaining({ type: "counterSuccess" }));
+    expect(next.log).toContainEqual(expect.objectContaining({ type: "skillResolve" }));
+  });
+
+  test("組隊怪物技能在冷卻結束後仍按機率發生", () => {
+    const base = expedition();
+    const skillExp = {
+      ...base,
+      waves: [{
+        monsters: [{
+          ...base.waves[0].monsters[0],
+          instanceId: "mage",
+          hp: 999,
+          maxHp: 999,
+          combatRole: "caster",
+          cooldown: 1,
+          skillChance: 0.3,
+        }],
+      }],
+      totalWaves: 1,
+    };
+    const state = createTeamState(skillExp, members(1), { alreadyScaled: true });
+    const next = processTeamRound(state, {}, { rand: () => 0.99, skillRand: () => 0.99 });
+
+    expect(next.monsters[0].intent).toBeNull();
+    expect(next.log).not.toContainEqual(expect.objectContaining({ type: "skillIntent" }));
   });
 
   test("純函數：不修改傳入的狀態", () => {

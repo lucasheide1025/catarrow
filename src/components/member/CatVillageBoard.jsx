@@ -13,8 +13,9 @@ import { sfxTap, sfxSuccess, sfxCast } from "../../lib/sound";
 import { MATERIALS } from "../../lib/monsterMaterials";
 import { NORMAL_MATERIALS } from "../../lib/monsterEconomyCatalog";
 import { RESOURCE_NAMES } from "../../lib/villageData";
-import { addRoundArrows } from "../../lib/db";
+import { addRoundArrows, useCoinShopSpecialTicket } from "../../lib/db";
 import { getCatSpeech } from "../cat/catSpeeches";
+import CatVillageNavArt from "./CatVillageNavArt";
 
 // 新怪材料（無 icon）＋舊材料（有 icon）；舊材料覆蓋同 id 以保留 icon
 const MAT_BY_ID = { ...Object.fromEntries(NORMAL_MATERIALS.map(m => [m.id, m])), ...Object.fromEntries(MATERIALS.map(m => [m.id, m])) };
@@ -230,17 +231,34 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
         <div className="w-full max-w-lg mx-auto p-4">
           <div className="flex items-center justify-between mb-4">
             <button onClick={onClose} className="w-9 h-9 rounded-full bg-black/40 text-amber-200 font-black">←</button>
-            <div className="text-amber-100 font-black">🗺️ 選擇採集地圖</div>
+            <div className="text-amber-100 font-black">選擇採集地圖</div>
             <div className="rounded-xl bg-amber-500/20 border border-amber-400/40 px-2.5 py-1 text-amber-200 text-xs font-black">🎲 {board.dice}</div>
+          </div>
+          <div className="relative isolate overflow-hidden rounded-3xl border border-amber-300/35 mb-5 min-h-[150px] shadow-xl">
+            <img src="/ui/cat-village/explore-map.png" alt="" className="absolute inset-0 h-full w-full object-cover" />
+            <div className="absolute inset-0 bg-gradient-to-r from-[#160b04]/90 via-[#241207]/45 to-transparent" />
+            <div className="relative flex min-h-[150px] items-center gap-3 p-5">
+              <CatVillageNavArt name="tasks" size={72} />
+              <div>
+                <div className="text-xl font-black text-amber-50">今天要去哪裡採集？</div>
+                <div className="mt-1 max-w-[230px] text-xs font-bold leading-relaxed text-amber-100/75">
+                  選擇資源區域與階級，再帶著骰子踏上探索路線。
+                </div>
+              </div>
+            </div>
           </div>
           <div className="text-amber-200/80 text-xs font-bold mb-2">① 要刷哪一族的資源？</div>
           <div className="grid grid-cols-2 gap-2 mb-5">
             {BOARD_MODES.map(mo => (
               <button key={mo.id} onClick={() => { setSelMode(mo.id); setSelTier(1); }}
-                className={`rounded-2xl p-3 text-left border-2 transition ${mo.id === selMode ? "border-amber-300 scale-[1.02]" : "border-amber-500/20"}`}
-                style={{ background: `linear-gradient(135deg, ${mo.palette?.[0] || "#334155"}, ${mo.palette?.[1] || "#0f172a"})` }}>
-                <div className="text-white font-black text-sm">{mo.icon} {mo.familyName}</div>
-                <div className="text-white/70 text-[11px] mt-0.5">{mo.name}・{mo.resourceName}</div>
+                className={`relative isolate min-h-[112px] overflow-hidden rounded-2xl border-2 p-3 text-left shadow-lg transition active:scale-[.98] ${mo.id === selMode ? "border-amber-300 scale-[1.02] ring-2 ring-amber-200/25" : "border-amber-500/20"}`}>
+                <img src={`${ASSET}/map_${mo.id}.webp`} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                <span className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-black/5" />
+                {mo.id === selMode && <span className="absolute right-2 top-2 grid h-6 w-6 place-items-center rounded-full bg-amber-300 text-xs font-black text-amber-950 shadow-md">✓</span>}
+                <span className="relative flex min-h-[84px] flex-col justify-end">
+                  <span className="text-sm font-black text-white drop-shadow-md">{mo.familyName}</span>
+                  <span className="mt-0.5 text-[11px] font-bold text-amber-100/80">{mo.name}・採集{mo.resourceName}</span>
+                </span>
               </button>
             ))}
           </div>
@@ -260,8 +278,17 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
             🎲 進入 {m.familyName} T{selTier} 探索
           </button>
           {onTeam && (
-            <button onClick={onTeam} className="w-full mt-2 py-2.5 rounded-2xl bg-black/30 border border-amber-400/30 text-amber-100 font-black text-sm active:scale-95">
-              👥 改玩組隊探索
+            <button onClick={onTeam} className="relative isolate w-full mt-3 min-h-[82px] overflow-hidden rounded-2xl border border-emerald-300/35 text-left shadow-lg active:scale-[.98]">
+              <img src="/ui/cat-village/explore-map.png" alt="" className="absolute inset-0 h-full w-full object-cover object-center" />
+              <span className="absolute inset-0 bg-gradient-to-r from-emerald-950/95 via-emerald-950/75 to-slate-950/35" />
+              <span className="relative flex items-center gap-3 px-4 py-3">
+                <CatVillageNavArt name="village" size={58} />
+                <span>
+                  <span className="block text-base font-black text-emerald-50">進入組隊探索大廳</span>
+                  <span className="mt-0.5 block text-[11px] font-bold text-emerald-100/70">搜尋現有隊伍，或建立自己的採集房間</span>
+                </span>
+                <span className="ml-auto text-xl text-emerald-100">›</span>
+              </span>
             </button>
           )}
         </div>
@@ -312,6 +339,13 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
                 className="mt-3 px-6 py-2.5 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-900 font-black text-sm shadow-lg disabled:opacity-40 active:scale-95">
                 {rolling ? "🎲 前進中…" : board.dice <= 0 ? "骰子用完了" : "🎲 擲骰前進"}
               </button>
+              {board.dice <= 0 && (
+                <button type="button" disabled={!profile?.specialItems?.boardDiceTicket}
+                  onClick={() => useCoinShopSpecialTicket(profile.id, "boardDiceTicket")}
+                  className="mt-2 min-h-10 rounded-xl bg-indigo-400 px-3 text-xs font-black text-slate-950 disabled:bg-slate-700 disabled:text-slate-500">
+                  🎟️ 使用探索骰子券 +3（持有 {profile?.specialItems?.boardDiceTicket || 0}）
+                </button>
+              )}
             </div>
           </div>
 
