@@ -71,6 +71,9 @@ const normDanger = d => (DANGER_META[d] ? d : 1);
 // 委託可能遭遇的怪物池（畫面預覽與實際抽怪共用同一份規則，預覽才不會騙人）。
 // contract.families = 多元種族；沒給就退回單一 family；都沒給＝不限族。
 // opts.encounter：預設只出雜兵（"normal"）；要首領時傳 "miniBoss"/"boss"。
+// 2026-07-30：寶箱族加入輪替。原本這裡排除 treasure（它在主線是隱藏地下城專屬），
+// 但公會委託是獨立的世界觀，作者要求把第七族也放進來——牠們在擴充圖鑑有完整的
+// 18 一般／12 小王／6 大王，數值規格與其他六族一致，不需要特別處理。
 export function expeditionMonsterPool(contract = {}, opts = {}) {
   const danger = normDanger(contract.danger);
   const meta = DANGER_META[danger];
@@ -78,7 +81,7 @@ export function expeditionMonsterPool(contract = {}, opts = {}) {
   const wanted = contract.families?.length ? contract.families : (contract.family ? [contract.family] : null);
 
   const base = EXPANSION_MONSTERS.filter(m =>
-    m.tier === meta.tier && m.encounter === encounter && m.family !== "treasure");
+    m.tier === meta.tier && m.encounter === encounter);
   if (wanted) {
     const famPool = base.filter(m => wanted.includes(m.family));
     if (famPool.length) return famPool;

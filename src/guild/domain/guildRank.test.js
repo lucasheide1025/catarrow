@@ -1,10 +1,7 @@
 // src/guild/domain/guildRank.test.js
 import {
   GUILD_RANKS,
-  archerDangerCap,
   canAcceptDanger,
-  dangerUnlockSource,
-  effectiveMaxDanger,
   nextRankInfo,
   rankUnlocks,
   repNeededForDanger,
@@ -12,6 +9,7 @@ import {
 } from "./guildRank";
 import { purchaseFromShop } from "./guildShopPurchase";
 import { emptyGuildProfile, GUILD_STASH_LIMIT } from "./guildRewards";
+import { supplyCapacity } from "./guildBuildings";
 import { shopItemById, shopItemsForTier, GUILD_SHOP_ITEMS, validateGuildShop, SHOP_MATERIALS, MAT_FAMILIES } from "../data/guildShop";
 import { EXPANSION_MATERIALS } from "../../lib/monsterExpansionCatalog";
 
@@ -92,7 +90,8 @@ describe("公會商店購買", () => {
 
   test("補給金幣不足或超過倉庫容量時不能購買", () => {
     expect(purchaseFromShop(rich(0), "supply_food_x6", { coins: 0 }).ok).toBe(false);
-    const full = { ...rich(0), supplyStock: { food: 36, water: 0 } };
+    // 用實際容量推導，不要硬編——容量是平衡數值，2026-07-30 已上調過一次
+    const full = { ...rich(0), supplyStock: { food: supplyCapacity(rich(0)), water: 0 } };
     expect(purchaseFromShop(full, "supply_food_x6", { coins: 999 }).reason).toMatch(/容量/);
   });
 
@@ -178,51 +177,13 @@ describe("公會商店購買", () => {
   });
 });
 
-describe("射手等級解鎖危險度（2026-07-30）", () => {
-  test("等級門檻：25/50/80/110 各開一階，未達門檻只有 T1", () => {
-    expect(archerDangerCap(0)).toBe(1);
-    expect(archerDangerCap(24)).toBe(1);
-    expect(archerDangerCap(25)).toBe(2);
-    expect(archerDangerCap(50)).toBe(3);
-    expect(archerDangerCap(80)).toBe(4);
-    expect(archerDangerCap(110)).toBe(5);
-    expect(archerDangerCap(200)).toBe(5);   // 封頂 5
-  });
-
-  test("☠️6 永遠不能靠射手等級解鎖，必須有公會資歷", () => {
-    expect(archerDangerCap(999)).toBeLessThan(6);
-    expect(canAcceptDanger({ rep: 0 }, 6, 999)).toBe(false);
-    expect(canAcceptDanger({ rankId: "legend" }, 6, 0)).toBe(true);
-  });
-
-  test("實際上限取公會階級與射手等級的高者", () => {
-    expect(effectiveMaxDanger({ rep: 0 }, 114)).toBe(5);      // 聲望 0 但老射手
-    expect(effectiveMaxDanger({ rankId: "legend" }, 1)).toBe(6);    // 傳說但新射手
-    expect(effectiveMaxDanger({ rankId: "silver" }, 25)).toBe(3);   // 銀牌 3 > 射手 2
-  });
-
-  test("老射手剛入會（聲望 0）可以直接接 T5，不必先輾 T1", () => {
-    expect(canAcceptDanger({ rep: 0 }, 5, 114)).toBe(true);
-    expect(canAcceptDanger({ rep: 0 }, 5, 20)).toBe(false);
-  });
-
-  test("已用射手等級解鎖時不再顯示「還差多少聲望」", () => {
-    expect(repNeededForDanger({ rep: 0 }, 5, 114)).toBeNull();
-    expect(repNeededForDanger({ rep: 0 }, 5, 10)).not.toBeNull();
-  });
-
-  test("解鎖來源分得出來（UI 要據此說明）", () => {
-    expect(dangerUnlockSource({ rep: 0 }, 5, 114)).toBe("archer");
-    expect(dangerUnlockSource({ rankId: "legend" }, 5, 1)).toBe("rank");
-    expect(dangerUnlockSource({ rankId: "legend" }, 5, 114)).toBe("both");
-    expect(dangerUnlockSource({ rep: 0 }, 6, 114)).toBeNull();
-  });
-});
-
-// ⚠️ currentRank 對「物件」是讀 rankId，對「數字」才走 repToRank——
-// 傳 { rep: 15000 } 會被當成沒有 rankId 而退回見習，很容易寫錯測試或呼叫端。
-test("階級判定：物件看 rankId、數字看聲望", () => {
-  expect(effectiveMaxDanger({ rankId: "legend" }, 0)).toBe(6);
-  expect(effectiveMaxDanger(15000, 0)).toBe(6);
-  expect(effectiveMaxDanger({ rep: 15000 }, 0)).toBe(1);   // 沒有 rankId → 見習
+// 射手等級解鎖危險度已於 2026-07-30 當天移除（作者決定）。保留這條測試當護欄：
+// 射手等級上限 500，用它開危險度會讓主線進度直接買斷公會養成線。
+test("可接危險度只看公會聲望，不受任何主線等級影響", () => {
+  expect(canAcceptDanger({ rankId: "apprentice" }, 2)).toBe(false);
+  expect(canAcceptDanger({ rankId: "apprentice" }, 1)).toBe(true);
+  expect(canAcceptDanger({ rankId: "legend" }, 6)).toBe(true);
+  // 多傳參數也不該改變結果（避免有人又把等級接回來）
+  expect(canAcceptDanger({ rankId: "apprentice" }, 5, 500)).toBe(false);
+  expect(repNeededForDanger({ rankId: "apprentice" }, 5, 500)).not.toBeNull();
 });

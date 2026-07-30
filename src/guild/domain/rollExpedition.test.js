@@ -79,12 +79,16 @@ describe("rollExpedition — 委託遠征生成", () => {
       expect(m.artKey).toBeTruthy();                  // 有立繪 key 可畫圖
     }
   });
-
-  test("寶箱族不會出現在委託裡", () => {
-    for (let d = 1; d <= MAX_DANGER; d++) {
-      const exp = rollExpedition({ danger: d }, { rand: seededRand(50 + d) });
-      expect(exp.waves.flatMap(w => w.monsters).some(m => m.family === "treasure")).toBe(false);
+  // 2026-07-30 作者要求把第七族加入輪替（原本刻意排除，因為它在主線是隱藏地下城專屬）
+  test("寶箱族已加入委託輪替", () => {
+    const families = new Set();
+    for (let seed = 1; seed <= 60; seed += 1) {
+      let x = seed;
+      const rand = () => { x = (x * 1103515245 + 12345) % 2147483648; return x / 2147483648; };
+      const exp = rollExpedition({ danger: 2, family: "treasure" }, { rand });
+      exp.waves.forEach(w => w.monsters.forEach(mon => families.add(mon.family)));
     }
+    expect(families.has("treasure")).toBe(true);
   });
 });
 

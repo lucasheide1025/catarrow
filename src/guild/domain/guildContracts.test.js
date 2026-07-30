@@ -205,8 +205,8 @@ describe("委託故事依模式分組（2026-07-30）", () => {
   const FAMILIES = Object.keys(CONTRACT_STORIES);
   const MODES = ["exploration", "assault", "defense"];
 
-  test("六族 × 三模式都有故事，不會開天窗", () => {
-    expect(FAMILIES).toHaveLength(6);
+  test("七族 × 三模式都有故事，不會開天窗", () => {
+    expect(FAMILIES).toHaveLength(7);   // 2026-07-30 加入寶箱族
     for (const family of FAMILIES) {
       for (const mode of MODES) {
         const pool = storiesFor(family, mode);
@@ -231,7 +231,7 @@ describe("委託故事依模式分組（2026-07-30）", () => {
   test("全庫標題不重複", () => {
     const all = FAMILIES.flatMap(f => MODES.flatMap(m => storiesFor(f, m).map(s => s.title)));
     expect(new Set(all).size).toBe(all.length);
-    expect(all.length).toBeGreaterThanOrEqual(54);
+    expect(all.length).toBeGreaterThanOrEqual(63);
   });
 
   test("未知模式退回該族合併池，不會回空", () => {
@@ -239,7 +239,7 @@ describe("委託故事依模式分組（2026-07-30）", () => {
   });
 
   test("未知族系回空陣列，不丟例外", () => {
-    expect(storiesFor("treasure", "assault")).toEqual([]);
+    expect(storiesFor("不存在的族", "assault")).toEqual([]);
     expect(storiesFor(undefined, undefined)).toEqual([]);
   });
 

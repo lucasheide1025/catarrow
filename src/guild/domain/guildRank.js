@@ -59,49 +59,20 @@ export function rankUnlocks(input = 0) {
   return { rank: cur, maxDanger: cur.maxDanger, shopTier: cur.shopTier, title: cur.name };
 }
 
-// ── 射手等級也能解鎖危險度（2026-07-30）────────────────────────────────────
-// 問題：可接危險度只看公會聲望，但戰力有一半來自射手等級（主線累積）。老射手剛加入
-// 公會時聲望 0，被鎖在 ☠️1 卻能一箭兩箭解決雜兵——輾螞蟻沒有樂趣，也沒有進度感。
-//
-// 射手等級證明的是「射得準、輸出夠」，所以讓它也開危險度；但**最高只開到 5**，
-// ☠️6 傳說委託仍必須靠公會自己的資歷（聲望）取得，公會養成線的頂端才有意義。
-export const ARCHER_DANGER_TIERS = Object.freeze([
-  { level: 110, maxDanger: 5 },
-  { level: 80,  maxDanger: 4 },
-  { level: 50,  maxDanger: 3 },
-  { level: 25,  maxDanger: 2 },
-]);
-
-export function archerDangerCap(archerLevel = 0) {
-  const lv = Math.max(0, Math.floor(Number(archerLevel) || 0));
-  for (const tier of ARCHER_DANGER_TIERS) if (lv >= tier.level) return tier.maxDanger;
-  return 1;
-}
-
-// 實際可接的危險度上限＝公會階級與射手等級取高者
-export function effectiveMaxDanger(input = 0, archerLevel = 0) {
-  return Math.max(currentRank(input).maxDanger, archerDangerCap(archerLevel));
-}
-
 // 能不能接這個危險度的委託
-export function canAcceptDanger(input = 0, danger = 1, archerLevel = 0) {
-  return danger <= effectiveMaxDanger(input, archerLevel);
-}
-
-// 這個危險度是靠什麼解鎖的（UI 要講清楚，否則玩家不知道為何突然能接）
-export function dangerUnlockSource(input = 0, danger = 1, archerLevel = 0) {
-  const byRank = danger <= currentRank(input).maxDanger;
-  const byArcher = danger <= archerDangerCap(archerLevel);
-  if (byRank && byArcher) return "both";
-  if (byRank) return "rank";
-  if (byArcher) return "archer";
-  return null;
+//
+// ⚠️ 這裡刻意**只看公會聲望**。2026-07-30 曾短暫加入「射手等級也能解鎖危險度」，
+// 作者當天就要求移除：射手等級上限是 500，用 114 等就開到 ☠️5 等於讓主線進度直接
+// 買斷公會養成線，公會自己的階級就沒有意義了。要放寬難度請調 waveSize／詞綴，
+// 不要再把主線等級接回這道門。
+export function canAcceptDanger(input = 0, danger = 1) {
+  return danger <= currentRank(input).maxDanger;
 }
 
 // 危險度被鎖住時，要多少聲望才解鎖（已解鎖 → null）
-export function repNeededForDanger(input = 0, danger = 1, archerLevel = 0) {
+export function repNeededForDanger(input = 0, danger = 1) {
   const rep = Number(input && typeof input === "object" ? input.rep : input) || 0;
-  if (canAcceptDanger(input, danger, archerLevel)) return null;
+  if (canAcceptDanger(input, danger)) return null;
   const unlock = GUILD_RANKS.find(x => x.maxDanger >= danger);
   if (!unlock) return null;
   const missing = Math.max(0, unlock.rep - rep);

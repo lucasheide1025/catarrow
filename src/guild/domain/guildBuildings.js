@@ -4,9 +4,12 @@ import { rankIndexOf } from "./guildRank";
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-// Lv1~20。滿級每週 30 份＝5 趟；領地只提供補貼，主要補給仍需用金幣購買。
-export const WEEKLY_OUTPUT = Object.freeze([0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20, 21, 23, 25, 27, 28, 30]);
-export const STORAGE_CAPACITY = Object.freeze([36, 42, 48, 54, 60, 66, 72, 78, 84, 90, 96, 102, 108, 114, 120, 126, 132, 138, 144, 150, 156]);
+// Lv1~20 每週產量。2026-07-30 全面上調（作者要求「農田跟水的供應增加多一點」）：
+// 舊表滿級每週 30 份，一趟遠征吃掉 10~20 份，等於蓋滿了也只夠跑兩趟，領地幾乎沒有回饋感。
+// 新表滿級 72 份／週，低階也從 2 起跳改成 6，早期就感覺得到「蓋了有用」。
+export const WEEKLY_OUTPUT = Object.freeze([0, 6, 9, 12, 15, 18, 21, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 70, 72]);
+// 倉庫容量同步放大，否則產量拉高只是溢出浪費。滿級 156 → 320。
+export const STORAGE_CAPACITY = Object.freeze([60, 76, 92, 108, 124, 140, 156, 172, 188, 204, 220, 232, 244, 256, 268, 280, 292, 300, 308, 314, 320]);
 
 const COSTS = Object.freeze(Array.from({ length: 20 }, (_, i) => Math.round((30 + i * 18 + i * i * 2.2) / 5) * 5));
 const DURATIONS = Object.freeze(Array.from({ length: 20 }, (_, i) => {

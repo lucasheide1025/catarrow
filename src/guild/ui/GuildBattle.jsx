@@ -158,6 +158,11 @@ export default function GuildBattle({
   // posOf(index, len) 會吃 index 與長度，若邊播邊從清單移除，活著的怪會跳位）。
   // 動畫期間「已倒下」只在渲染時跳過，不從清單移除。
   const targets = aliveTargets(state);
+  // 詞綴「夜戰」：距離超過 visionDepth 的敵人只看得到輪廓，不顯示名稱與血量。
+  // 仍然可以鎖定——你知道那裡有東西，只是不知道是什麼，這才是壓力來源；
+  // 全部藏起來會變成無法出手，那是懲罰不是設計。
+  const visionDepth = Number(state.affixMods?.visionDepth) || 0;
+  const isVeiled = m => visionDepth > 0 && (m.distance ?? 0) > visionDepth;
   const visualHp = m => Math.max(0, m.hp - (hitMap[m.instanceId] || 0));
 
   const addFloater = (pos, text, color) => {
@@ -448,6 +453,7 @@ export default function GuildBattle({
           const p = movedPos[m.instanceId] || gridPosOf(m, i, targets.length);
           const isSel = target === m.instanceId;
           const shaking = shakeIds.includes(m.instanceId);
+          const veiled = isVeiled(m);
           return (
             <button key={m.instanceId} type="button" onClick={() => selectTarget(m.instanceId)}
               style={{ position: "absolute", top: `${p.topPct}%`, left: `${p.leftPct}%`,
@@ -456,12 +462,21 @@ export default function GuildBattle({
                 animation: lunging.includes(m.instanceId) ? "gb-lunge .48s ease-out"
                   : shaking ? "gb-shake .3s ease-in-out" : "none",
                 background: "none", border: "none", cursor: canAct ? "pointer" : "default", textAlign: "center", zIndex: Math.round(p.topPct) }}>
-              <MonsterArt monsterId={m.monsterId} icon={m.icon} size={MOB_SIZE}
-                style={{ filter: isSel ? "drop-shadow(0 0 8px #f59e0b)" : "drop-shadow(0 3px 6px rgba(0,0,0,.6))" }} />
-              <div style={{ fontSize: 9, fontWeight: 800, color: "#fecaca", whiteSpace: "nowrap", textShadow: "0 1px 3px #000" }}>{m.name}</div>
-              <div style={{ width: 54, margin: "1px auto" }}><Bar cur={visualHp(m)} max={m.maxHp} /></div>
+              {veiled ? (
+                <div style={{ width: MOB_SIZE, height: MOB_SIZE, display: "grid", placeItems: "center",
+                  fontSize: MOB_SIZE * 0.5, color: "#1e293b",
+                  filter: "drop-shadow(0 0 10px rgba(129,140,248,.55))" }}>❔</div>
+              ) : (
+                <MonsterArt monsterId={m.monsterId} icon={m.icon} size={MOB_SIZE}
+                  style={{ filter: isSel ? "drop-shadow(0 0 8px #f59e0b)" : "drop-shadow(0 3px 6px rgba(0,0,0,.6))" }} />
+              )}
+              <div style={{ fontSize: 9, fontWeight: 800, color: veiled ? "#818cf8" : "#fecaca", whiteSpace: "nowrap", textShadow: "0 1px 3px #000" }}>
+                {veiled ? "？？？" : m.name}
+              </div>
+              {!veiled && <div style={{ width: 54, margin: "1px auto" }}><Bar cur={visualHp(m)} max={m.maxHp} /></div>}
               <div style={{ fontSize: 9, fontWeight: 900, color: m.distance === 0 ? "#dc2626" : m.distance <= 1 ? "#ef4444" : "#fcd34d" }}>
-                {m.distance === 0 ? "‼️貼身（重擊）"
+                {veiled ? "🌙 視線之外"
+                  : m.distance === 0 ? "‼️貼身（重擊）"
                   : m.distance <= (m.attackRange || 0) ? `⚔️射程內（距離 ${m.distance}）`
                   : `距離 ${m.distance} 公尺`}
               </div>
