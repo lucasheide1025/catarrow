@@ -60,13 +60,13 @@ describe("每日次數（各扣各的）", () => {
 });
 
 describe("出發前檢查", () => {
-  test("人數要在 2~4 之間", () => {
-    expect(canTeamDepart([member("a")], DAY).ok).toBe(false);
-    expect(canTeamDepart([member("a"), member("b")], DAY).ok).toBe(true);
-    const five = ["a", "b", "c", "d", "e"].map(id => member(id));
-    expect(canTeamDepart(five, DAY).ok).toBe(false);
+  test("人數要在 2~8 之間（8＝射箭場容量）", () => {
     expect(RAID_MIN_TEAM).toBe(2);
-    expect(RAID_MAX_TEAM).toBe(4);
+    expect(RAID_MAX_TEAM).toBe(8);
+    expect(canTeamDepart([member("a")], DAY).ok).toBe(false);          // 1 人不算組隊
+    const eight = Array.from({ length: 8 }, (_, i) => member(`m${i}`));
+    expect(canTeamDepart(eight, DAY).ok).toBe(true);                    // 剛好 8 人可以
+    expect(canTeamDepart([...eight, member("x")], DAY).ok).toBe(false); // 9 人不行
   });
 
   test("⚠️ 有人次數用完就不能一起打（作者指定）", () => {
@@ -119,16 +119,20 @@ describe("房主要等全隊送出", () => {
 describe("門檻依人數放大（組隊要有好處，但不能免費）", () => {
   test("打斷需求人多才變高，但比人數線性成長慢", () => {
     const solo = teamInterruptRequired(1, 1);
-    const four = teamInterruptRequired(1, 4);
     expect(solo).toBe(INTERRUPT_REQUIRED[1]);
-    expect(four).toBeGreaterThan(solo);
-    expect(four).toBeLessThan(solo * 4);       // ← 次線性＝組隊真的比較容易
+    for (const n of [2, 4, 8]) {
+      expect(teamInterruptRequired(1, n)).toBeGreaterThan(solo);
+      expect(teamInterruptRequired(1, n)).toBeLessThan(solo * n);   // ← 次線性＝組隊真的比較容易
+    }
   });
 
-  test("破防槽同理", () => {
+  test("破防槽同理，而且 8 人也不會失控", () => {
     expect(teamGaugeMax(1)).toBe(BREAK_GAUGE_MAX);
-    expect(teamGaugeMax(4)).toBeGreaterThan(BREAK_GAUGE_MAX);
-    expect(teamGaugeMax(4)).toBeLessThan(BREAK_GAUGE_MAX * 4);
+    for (const n of [2, 4, 8]) {
+      expect(teamGaugeMax(n)).toBeGreaterThan(BREAK_GAUGE_MAX);
+      expect(teamGaugeMax(n)).toBeLessThan(BREAK_GAUGE_MAX * n);
+    }
+    expect(teamBreakSpeedup(8)).toBeGreaterThan(teamBreakSpeedup(4));
   });
 
   test("階段越後面越難斷，組隊也一樣", () => {
@@ -216,8 +220,8 @@ describe("組隊實際結算", () => {
     expect(log.filter(e => e.type === "catAssist")).toHaveLength(2);
   });
 
-  test("四人一場能打完五回合不會爆", () => {
-    let state = { ...teamState(4), spots: [spotAt()] };
+  test("滿編八人一場能打完五回合不會爆", () => {
+    let state = { ...teamState(RAID_MAX_TEAM), spots: [spotAt()] };
     for (let i = 0; i < RAID_TOTAL_ROUNDS; i += 1) {
       const arrows = state.members.flatMap(m => shots(m.memberId, 6));
       state = resolveRaidRound({ state, arrows }).state;
@@ -238,15 +242,15 @@ describe("組隊三維加成（作者 2026-07-31）", () => {
 
   test("人越多三維越高，且三種都會漲", () => {
     const two = teamStatBonus(2);
-    const four = teamStatBonus(4);
+    const eight = teamStatBonus(RAID_MAX_TEAM);
     expect(two.atk).toBeGreaterThan(1);
-    expect(four.atk).toBeGreaterThan(two.atk);
-    expect(four.def).toBeGreaterThan(two.def);
-    expect(four.hp).toBeGreaterThan(two.hp);
+    expect(eight.atk).toBeGreaterThan(two.atk);
+    expect(eight.def).toBeGreaterThan(two.def);
+    expect(eight.hp).toBeGreaterThan(two.hp);
   });
 
   test("超過上限不會繼續疊", () => {
-    expect(teamStatBonus(9).atk).toBe(teamStatBonus(RAID_MAX_TEAM).atk);
+    expect(teamStatBonus(99).atk).toBe(teamStatBonus(RAID_MAX_TEAM).atk);
   });
 
   test("加成真的套進隊員數值（不是只有標籤）", () => {

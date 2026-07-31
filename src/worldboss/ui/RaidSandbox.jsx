@@ -208,8 +208,8 @@ export default function RaidSandbox() {
       </div>
 
       <div style={cardStyle}>
-        <div style={labelStyle}>組隊人數（各扣各的每日次數）</div>
-        <div style={{ display: "grid", gridTemplateColumns: `repeat(${RAID_MAX_TEAM},1fr)`, gap: 6 }}>
+        <div style={labelStyle}>組隊人數（上限 {RAID_MAX_TEAM} 人＝射箭場容量．各扣各的每日次數）</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6 }}>
           {Array.from({ length: RAID_MAX_TEAM }, (_, i) => i + 1).map(n => (
             <button key={n} type="button" onClick={() => { setTeamCount(n); setSpentIdx(-1); }}
               style={{

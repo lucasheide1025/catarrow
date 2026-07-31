@@ -150,10 +150,15 @@ export function RaidSpotTable() {
    一排四個人在手機上根本看不清是誰。傷害留到結算頁再看。 */
 export function RaidTeamBar({ members = [], submitted = {}, meId = null }) {
   if (members.length < 2) return null;
+  // ⚠️ 上限是 8 人（射箭場容量），一排 8 個 58px 在手機上排不下。
+  //    人多就縮小並允許換行——寧可小一點也不要被切掉。
+  const n = members.length;
+  const art = n <= 4 ? 58 : n <= 6 ? 46 : 38;
+  const bar = n <= 4 ? 46 : n <= 6 ? 38 : 32;
   return (
     <div style={{
-      display: "flex", gap: 12, alignItems: "flex-end", justifyContent: "center",
-      pointerEvents: "none",
+      display: "flex", gap: n <= 4 ? 12 : 7, alignItems: "flex-end", justifyContent: "center",
+      flexWrap: "wrap", rowGap: 2, padding: "0 6px", pointerEvents: "none",
     }}>
       {members.map(m => {
         const done = Array.isArray(submitted[m.memberId]) && submitted[m.memberId].length > 0;
@@ -166,18 +171,18 @@ export function RaidTeamBar({ members = [], submitted = {}, meId = null }) {
               src={raidArcherArt(m.appearance || archerForMember(m.memberId))} alt=""
               onError={e => { e.currentTarget.style.visibility = "hidden"; }}
               style={{
-                width: 58, height: 58, objectFit: "contain", display: "block",
+                width: art, height: art, objectFit: "contain", display: "block",
                 filter: `drop-shadow(0 4px 8px rgba(0,0,0,.65))${isMe ? " drop-shadow(0 0 7px #60a5fa)" : ""}`,
               }}
             />
             <div style={{
-              fontSize: 9, fontWeight: 900, whiteSpace: "nowrap",
+              fontSize: n <= 6 ? 9 : 8, fontWeight: 900, whiteSpace: "nowrap",
               color: isMe ? "#93c5fd" : "#e2e8f0", textShadow: "0 1px 4px rgba(0,0,0,.9)",
             }}>
               {dead ? "💀 " : done ? "✅ " : ""}{m.name}
             </div>
             <div style={{
-              width: 46, height: 4, margin: "2px auto 0", borderRadius: 3,
+              width: bar, height: 4, margin: "2px auto 0", borderRadius: 3,
               background: "rgba(0,0,0,.55)", overflow: "hidden",
             }}>
               <div style={{

@@ -19,7 +19,10 @@ import { BREAK_GAUGE_MAX } from "./breakGauge";
 import { INTERRUPT_REQUIRED } from "./bossIntent";
 import { canRaid, remainingAttempts, todayKey } from "./raidQuota";
 
-export const RAID_MAX_TEAM = 4;      // 比照公會遠征的 MAX_TEAM_SIZE
+// ⚠️ 8 人＝**射箭場的實際容量**（作者 2026-07-31）。
+//    這不是隨便訂的數字：一次最多就是 8 個人同時在場上射，上限跟現實對齊。
+//    （公會遠征是 4 人，那是「精銳小隊」的設定，兩邊不必一致。）
+export const RAID_MAX_TEAM = 8;
 export const RAID_MIN_TEAM = 2;
 
 // ⚠️ 門檻用**次線性**放大：線性放大等於組隊完全沒有好處，
@@ -61,6 +64,10 @@ export function teamGaugeMax(teamSize = 1) {
  * 組隊三維加成。單人時全部是 1（不會偷偷加成）。
  *   2 人 → ATK+10% DEF+8% HP+12%
  *   4 人 → ATK+30% DEF+24% HP+36%
+ *   8 人 → ATK+70% DEF+56% HP+84%
+ *
+ * ⚠️ 刻意保持線性：湊滿 8 個人同時到館本身就很難，那個協調成本就是它的代價。
+ *    而且每個人各扣各的每日次數，不是白拿。
  */
 export function teamStatBonus(teamSize = 1) {
   const extra = Math.max(0, Math.min(RAID_MAX_TEAM, teamSize) - 1);

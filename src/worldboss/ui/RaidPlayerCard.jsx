@@ -58,18 +58,19 @@ export default function RaidPlayerCard({
           </span>
         </div>
 
-        {!compact && (
-          <div style={{ fontSize: 9.5, color: "#94a3b8", marginTop: 2 }}>
+        <div style={{ fontSize: 9.5, color: "#94a3b8", marginTop: 2 }}>
             ⚔️{baseStats && baseStats.atk !== atk
               ? <><s style={{ opacity: .5 }}>{baseStats.atk}</s> <b style={{ color: "#4ade80" }}>{atk}</b></>
               : atk}
             　🛡️{baseStats && baseStats.def !== def
               ? <><s style={{ opacity: .5 }}>{baseStats.def}</s> <b style={{ color: "#4ade80" }}>{def}</b></>
               : def}
-          </div>
-        )}
+        </div>
         {teamLabel && (
-          <div style={{ fontSize: 9, color: "#4ade80", fontWeight: 900, marginTop: 2 }}>🤝 {teamLabel}</div>
+          <div style={{
+            fontSize: 8.5, color: "#4ade80", fontWeight: 900, marginTop: 1,
+            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+          }}>🤝 {teamLabel}</div>
         )}
       </div>
 

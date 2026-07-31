@@ -266,13 +266,6 @@ export default function RaidScreen({
           spots={spots} charging={intent.charging} staggered={state.staggered}
           anim={bossAnim}
         />
-        {/* 小隊站位：擺在戰場底部，跟公會一樣不佔操作區的高度 */}
-        {teamSize > 1 && (
-          <div style={{ position: "absolute", left: 0, right: 0, bottom: -6, zIndex: 4 }}>
-            <RaidTeamBar members={shown?.members || state.members} submitted={{}} meId={state.members?.[0]?.memberId} />
-          </div>
-        )}
-
         {/* 傷害數字 */}
         {floats.map(f => (
           <span key={f.key}
@@ -280,6 +273,13 @@ export default function RaidScreen({
             style={{ left: `${f.left}%`, top: "38%" }}>{f.text}</span>
         ))}
       </div>
+
+      {/* 小隊站位：⚠️ 不能用絕對定位——8 個人會壓在王身上。放王的正下方自成一列。 */}
+      {teamSize > 1 && (
+        <div style={{ position: "relative", zIndex: 4, marginTop: 2 }}>
+          <RaidTeamBar members={shown?.members || state.members} submitted={{}} meId={state.members?.[0]?.memberId} />
+        </div>
+      )}
 
       {/* 意圖 ＋ 破防槽 */}
       <div style={{ position: "relative", zIndex: 3 }}>
@@ -293,71 +293,77 @@ export default function RaidScreen({
         fontSize: 12, fontWeight: 700, color: "#cbd5e1", textAlign: "center",
       }}>{message}</div>
 
-      {/* 操作區：計分中就收起來，把畫面讓給靶面 */}
+      {/* 操作區：計分中就收起來，把畫面讓給靶面。
+          版式＝**左邊一塊玩家資訊、右邊小按鈕**（作者 2026-07-31）——
+          原本按鈕各佔一整行，把畫面高度吃掉，王都快看不到了。 */}
       {!scoring && (
         <div style={{
           position: "relative", zIndex: 3, marginTop: "auto",
           background: "linear-gradient(180deg,rgba(2,6,23,.55),rgba(2,6,23,.96))",
-          padding: "10px 12px 14px", display: "flex", flexDirection: "column", gap: 9,
+          padding: "8px 10px 12px", display: "flex", flexDirection: "column", gap: 7,
         }}>
           <RaidSpotLegend spots={spots} />
 
-          <RaidPlayerCard
-            name={playerName} hp={state.playerHp} maxHp={state.playerMaxHp}
-            atk={state.stats.atk} def={state.stats.def}
-            archerLevel={state.archerLevel} cats={state.cats}
-            appearance={appearance}
-            baseStats={state.members?.[0]?.baseStats}
-            teamLabel={teamSize > 1 ? (state.teamBuff?.label || "") : ""}
-          />
-
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", gap: 5 }}>
-              {Array.from({ length: RAID_ARROWS_PER_ROUND }).map((_, i) => (
-                <span key={i}
-                  style={{
-                    width: 11, height: 11, borderRadius: "50%",
-                    background: pending[i] ? "#fbbf24" : "rgba(255,255,255,.14)",
-                    boxShadow: pending[i] ? "0 0 7px rgba(251,191,36,.7)" : "none",
-                  }} />
-              ))}
+          <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+            {/* 左：玩家資訊一塊 */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <RaidPlayerCard
+                name={playerName} hp={state.playerHp} maxHp={state.playerMaxHp}
+                atk={state.stats.atk} def={state.stats.def}
+                archerLevel={state.archerLevel} cats={state.cats}
+                appearance={appearance}
+                baseStats={state.members?.[0]?.baseStats}
+                teamLabel={teamSize > 1 ? (state.teamBuff?.label || "") : ""}
+                compact
+              />
+              <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 5, paddingLeft: 2 }}>
+                <div style={{ display: "flex", gap: 4 }}>
+                  {Array.from({ length: RAID_ARROWS_PER_ROUND }).map((_, i) => (
+                    <span key={i} style={{
+                      width: 9, height: 9, borderRadius: "50%",
+                      background: pending[i] ? "#fbbf24" : "rgba(255,255,255,.14)",
+                    }} />
+                  ))}
+                </div>
+                <span style={{ fontSize: 9.5, color: "#94a3b8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {raidFaceLabel(targetFmt)}・{state.distanceM}m
+                  <b style={{ color: range.color }}> ×{(state.rangeMult || 1).toFixed(2)}</b>
+                  　{Math.min(state.round, RAID_TOTAL_ROUNDS)}/{RAID_TOTAL_ROUNDS} 回合
+                  {burstOn && <b style={{ color: "#fde68a" }}>　💥×{burstMultiplier(displayGauge, state.round)}</b>}
+                </span>
+              </div>
             </div>
-            <span style={{ fontSize: 10.5, color: "#94a3b8" }}>
-              {raidFaceLabel(targetFmt)}・{state.distanceM}m
-              <b style={{ color: range.color }}>　×{(state.rangeMult || 1).toFixed(2)}</b>
-              　第 {Math.min(state.round, RAID_TOTAL_ROUNDS)}/{RAID_TOTAL_ROUNDS} 回合
-              {burstOn && <b style={{ color: "#fde68a" }}>　💥 ×{burstMultiplier(displayGauge, state.round)}</b>}
-            </span>
+
+            {/* 右：小按鈕 */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 5, width: 96, flex: "0 0 auto" }}>
+              <button type="button" disabled={playing || state.finished}
+                onClick={() => { unlockAudio(); setScoring(true); setMessage(""); sfxTap(); }}
+                style={{
+                  flex: 1, padding: "10px 0", borderRadius: 10, border: "none",
+                  background: playing ? "#475569" : "linear-gradient(135deg,#f59e0b,#b45309)",
+                  color: "#fff", fontWeight: 900, fontSize: 12, lineHeight: 1.3,
+                  cursor: playing || state.finished ? "not-allowed" : "pointer",
+                }}>
+                {playing ? "演出中" : pending.length ? `繼續射擊\n${pending.length}/${RAID_ARROWS_PER_ROUND}` : "🏹 開始射擊"}
+              </button>
+
+              {pending.length > 0 && !playing && (
+                <button type="button" onClick={playRound}
+                  style={{
+                    padding: "8px 0", borderRadius: 10, border: "1px solid #f59e0b",
+                    background: "transparent", color: "#fbbf24", fontWeight: 900, fontSize: 11, cursor: "pointer",
+                  }}>✅ 送出</button>
+              )}
+
+              {onExit && !playing && (
+                <button type="button" onClick={onExit}
+                  style={{
+                    padding: "6px 0", borderRadius: 9, border: "1px solid rgba(255,255,255,.12)",
+                    background: "transparent", color: "#64748b", fontSize: 10, cursor: "pointer",
+                  }}>離開</button>
+              )}
+            </div>
           </div>
-
-          <button type="button" disabled={playing || state.finished}
-            onClick={() => { unlockAudio(); setScoring(true); setMessage(""); sfxTap(); }}
-            style={{
-              padding: "14px 0", borderRadius: 12, border: "none",
-              background: playing ? "#475569" : "linear-gradient(135deg,#f59e0b,#b45309)",
-              color: "#fff", fontWeight: 900, fontSize: 16,
-              cursor: playing || state.finished ? "not-allowed" : "pointer",
-              boxShadow: playing ? "none" : "0 4px 16px rgba(245,158,11,.4)",
-            }}>
-            {playing ? "演出中…" : pending.length ? `🏹 繼續射擊（${pending.length}/${RAID_ARROWS_PER_ROUND}）` : "🏹 開始射擊"}
-          </button>
-
-          {pending.length > 0 && !playing && (
-            <button type="button" onClick={playRound}
-              style={{
-                padding: "11px 0", borderRadius: 11, border: "1px solid #f59e0b",
-                background: "transparent", color: "#fbbf24", fontWeight: 900, fontSize: 14, cursor: "pointer",
-              }}>
-              ✅ 送出這回合（{pending.length} 箭）
-            </button>
-          )}
-
-          {onExit && !playing && (
-            <button type="button" onClick={onExit}
-              style={{ padding: "6px 0", borderRadius: 9, border: "none", background: "transparent", color: "#64748b", fontSize: 11, cursor: "pointer" }}>
-              離開討伐
-            </button>
-          )}
         </div>
       )}
 
