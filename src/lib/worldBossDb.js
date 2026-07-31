@@ -176,7 +176,12 @@ export function subscribeWorldBossStatus(cb) {
       if (!d || !d.eventId) { fallback(); return; }   // 還沒建立過（舊活動）→ 用舊方式
       if (inner) { inner(); inner = null; }
       cb(d.status === "active" || d.status === "defeated"
-        ? { id: d.eventId, status: d.status, bossData: { name: d.bossName || "" }, announcement: d.announcement || null }
+        ? {
+          id: d.eventId, status: d.status,
+          bossData: { name: d.bossName || "" },
+          announcement: d.announcement || null,
+          killReplay: d.killReplay || null,     // 全服擊倒重播（見 raidKill.buildKillPayload）
+        }
         : null);
     },
     err => { console.warn("subscribeWorldBossStatus fallback:", err?.message); fallback(); },
@@ -353,7 +358,7 @@ export async function updateWorldBossHP(eventId, newHP) {
 // ── 攻擊大 Boss（每天一次，最多 5 回合 × 6 箭）────────────────
 // roundResults = [{ arrows, dmg, crits }, ...] 最多 5 回合
 // isGuest = true 時不寫 practiceLog
-export async function attackWorldBoss({ eventId, memberId, memberName, weapon, roundResults, isGuest = false, accountType = "official", sessionSourceId = null, potionDmgMult = 1, bots = [], memberAtk = 10, memberDef = 0, memberHP = 0, killerStyle = "baobao", finishingArrow = null }) {
+export async function attackWorldBoss({ eventId, memberId, memberName, weapon, roundResults, isGuest = false, accountType = "official", sessionSourceId = null, potionDmgMult = 1, bots = [], memberAtk = 10, memberDef = 0, memberHP = 0, killerStyle = "baobao", finishingArrow = null, killPayload = null }) {
   try {
     const eventRef  = doc(db, WB, eventId);
     const snap      = await getDoc(eventRef);
@@ -432,7 +437,13 @@ export async function attackWorldBoss({ eventId, memberId, memberName, weapon, r
     Object.assign(ev, committedEvent);
     const isLastHit = defeated;
     if (defeated) {
-      writeWorldBossStatus({ eventId, status:"defeated", bossName:ev.bossData?.name || "", announcement:upd.announcement });
+      // ⚠️ 擊倒重播放在**狀態小文件**上（作者 2026-07-31）：
+      //    全服玩家原本就訂閱這一份，多帶一個欄位是零額外讀取。
+      //    放在王文件上就要所有人訂閱整份王 → 那正是 changelog.md:310 的 4000 次讀取。
+      writeWorldBossStatus({
+        eventId, status:"defeated", bossName:ev.bossData?.name || "", announcement:upd.announcement,
+        killReplay: killPayload || null,
+      });
       createNotification({
         type:"worldboss",
         title:`⚔️ 世界王擊殺！${ev.bossData?.name || "Boss"} 已倒下！`,

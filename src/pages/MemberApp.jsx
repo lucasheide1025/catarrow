@@ -22,6 +22,7 @@ const ACH_ANNOUNCE = new Set(["epic", "legendary", "mythic"]);
 import { getAllowedPages, isAutoLocked } from "../lib/accessControl";
 import { MaintenanceScreen, FrozenScreen, LockedFeatureCard } from "../components/member/AccessLockScreens";
 import { subscribeWorldBossStatus } from "../lib/worldBossDb";
+import { shouldReplayKill } from "../worldboss/domain/raidKill";
 import { subscribeLatestBroadcast } from "../lib/dungeonDb";
 import { getDuelStats } from "../lib/duelDb";
 import { APP_VERSION } from "../lib/version";
@@ -82,6 +83,7 @@ const DuelRoom           = lazy(() => import("../components/duel/DuelRoom"));
 const DungeonLobby       = lazy(() => import("../components/dungeon/DungeonLobby"));
 const WorldBossLobby     = lazy(() => import("../components/worldboss/WorldBossLobby"));
 const WorldBossIntro     = lazy(() => import("../components/worldboss/WorldBossIntro"));
+const RaidKillCutscene   = lazy(() => import("../worldboss/ui/RaidKillCutscene"));
 const MemberBooking      = lazy(() => import("../components/member/MemberBooking"));
 
 const CAN_SCORE = ["upcoming","open","ongoing"];
@@ -162,6 +164,7 @@ export default function MemberApp() {
   const [bossIntroEvent, setBossIntroEvent] = useState(null);
   const [wbKillAlert,    setWbKillAlert]    = useState(null);
   const [activeWorldBoss, setActiveWorldBoss] = useState(null); // 供首頁「進行中」卡顯示世界王入口
+  const [wbKillReplay, setWbKillReplay] = useState(null);       // 全服擊倒演出重播
 
   const shownWbKillRef  = useRef(null);
   const [dungeonKillAlert, setDungeonKillAlert] = useState(null);
@@ -406,6 +409,17 @@ export default function MemberApp() {
       if (ev.status === "defeated" && ev.id !== shownWbKillRef.current) {
         shownWbKillRef.current = ev.id;
         setWbKillAlert(ev);
+        // ⚠️ 作者 2026-07-31：其他玩家原本只看得到這一行文字。
+        //    王被打倒時，**那段終結演出要在全服重播一次**。
+        //    看過的不重播（存 seenAt），太舊的也不跳出來嚇人。
+        const payload = ev.killReplay;
+        if (payload) {
+          const seen = Number(localStorage.getItem("wb_kill_seen_at") || 0);
+          if (shouldReplayKill(payload, seen)) {
+            localStorage.setItem("wb_kill_seen_at", String(payload.at || Date.now()));
+            setWbKillReplay(payload);
+          }
+        }
         const t = setTimeout(() => setWbKillAlert(null), 8000);
         return () => clearTimeout(t);
       }
@@ -641,6 +655,15 @@ export default function MemberApp() {
           <div style={{ fontSize:16, color:"rgba(255,255,255,0.4)", flexShrink:0 }}>✕</div>
         </div>
       )}
+      {/* 🌍 全服擊倒演出重播——不是只有一行文字 */}
+      {wbKillReplay && (
+        <div style={{ position:"fixed", inset:0, zIndex:1200, background:"#05040a" }}>
+          <Suspense fallback={null}>
+            <RaidKillCutscene payload={wbKillReplay} replay onDone={() => setWbKillReplay(null)} />
+          </Suspense>
+        </div>
+      )}
+
       {/* 🌍 世界王擊殺全系統公告 */}
       {wbKillAlert && (
         <div role="button" tabIndex={0} aria-live="polite"

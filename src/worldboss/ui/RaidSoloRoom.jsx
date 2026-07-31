@@ -183,7 +183,9 @@ export default function RaidSoloRoom({
           boxShadow: depart.ok ? "0 6px 20px rgba(245,158,11,.35)" : "none",
         }}>🏹 單人出擊</button>
 
-        {/* 揪團：單人房與等待室是同一條動線的兩端 */}
+        {/* 揪團：單人房與等待室是同一條動線的兩端。
+            ⚠️ 沒有給 onCreateRoom 就整塊不畫——組隊還沒接線時不要放一顆按了沒反應的鈕。 */}
+        {onCreateRoom && (
         <div style={card}>
           <div style={label}>或者揪團（最多 8 人＝射箭場容量．各扣各的次數）</div>
           <button type="button" onClick={onCreateRoom} disabled={joining} style={{
@@ -211,6 +213,7 @@ export default function RaidSoloRoom({
             <div style={{ fontSize: 11, color: "#fca5a5", marginTop: 7, fontWeight: 800 }}>⚠️ {roomError}</div>
           )}
         </div>
+        )}
 
         {onExit && (
           <button type="button" onClick={onExit} style={{

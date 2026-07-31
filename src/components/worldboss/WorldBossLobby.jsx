@@ -6,6 +6,7 @@ import { normalizeWorldBossState } from "../../lib/worldBossState";
 import { WORLD_BOSSES, getBossPhase, PHASE_LABELS, getParticipantBonus } from "../../lib/worldBossData";
 import WorldBossSVG from "./WorldBossSVG";
 import WorldBossAttack from "./WorldBossAttack";
+import RaidGate from "../../worldboss/RaidGate";
 import WorldBossIntro from "./WorldBossIntro";
 import { sfxTap } from "../../lib/sound";
 
@@ -292,8 +293,16 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
 
   // 進入戰鬥畫面
   if (inBattle && event) {
-    return <WorldBossAttack event={event} onBack={() => setInBattle(false)}
-      guestOverride={guestOverride}
+    // ⚠️ 訪客體驗仍走舊的 WorldBossAttack：新版討伐要靠靶面落點判弱點，
+    //    訪客沒有裝備／卡片／貓，那套流程對他們沒有意義，而且舊版是免登入設計的。
+    if (isGuestMode) {
+      return <WorldBossAttack event={event} onBack={() => setInBattle(false)}
+        guestOverride={guestOverride}
+        sharedData={sharedData}
+        onComplete={result => { setInBattle(false); onBattleComplete?.(result); }}
+      />;
+    }
+    return <RaidGate event={event} onBack={() => setInBattle(false)}
       sharedData={sharedData}
       onComplete={result => { setInBattle(false); onBattleComplete?.(result); }}
     />;
