@@ -589,3 +589,50 @@ src/worldboss/                  ← 新，頂層（比照 src/guild/ 的 domain/
 ⚠️ 箭矢由下往上，且飛行途中用 `--drift` **往中線收斂**（王在正中間）。
 ⚠️ 自己看到的演出與全服重播**走同一條 payload 路徑**，兩邊分開寫改了一邊就會不一致。
 沙盒有「🌐 全服擊倒廣播預覽」，不用真的打倒王就能看單人／組隊與 11 種擊倒方式。
+
+---
+
+## 14. 接上正式版（2026-07-31）
+
+`WorldBossLobby` 的「進入討伐戰鬥」→ `src/worldboss/RaidGate.jsx`（訪客仍走舊的 `WorldBossAttack`）。
+
+⚠️ **RaidGate 是唯一碰 Firestore 的地方**。`domain/` 與 `ui/` 保持純粹，
+沙盒（`?raid`）與正式版共用同一批元件，只是餵不同資料。
+
+⚠️ 玩家強度必須跟 `WorldBossAttack.jsx` **同一套公式**（archerBase + 卡片 + 等級加成），
+不然同一個人在新舊介面會有兩種數值。
+
+### 線上組隊：只有房主算
+
+| 誰 | 做什麼 |
+|----|--------|
+| 每個人 | `submitRaidArrows()` 寫**自己**那格（一回合一次，不逐箭） |
+| 房主 | 全員交齊 → `resolveRaidRoomRound()` 在他的裝置上跑 `resolveRaidRound` |
+| 每個人 | `seq` 一變 → `hydrateRaidState` + 照 `lastLog` 重播**同一份** log |
+| 每個人 | 結束後各自 `attackWorldBoss()` 只回報**自己的**傷害（各扣各的次數） |
+
+⚠️ 兩台各算各的，隨機數立刻漂掉，血條就對不上。這是整套同步的地基。
+
+`RaidScreen` 因此拆成 `playResolved(next, log)`（只播）與 `playRound(collected)`（算完再播）。
+新增 prop：`meId` / `onSubmitArrows` / `externalSubmissions` / `incomingRound`。
+
+⚠️ **`meId` 是必要的**：線上時 `members[0]` 不一定是我（房間的成員順序全隊共用），
+少了它每個人的血條、貓、倒地判定都會顯示房主的。
+
+### 全服擊倒重播的傳遞路徑
+
+payload → `attackWorldBoss({ killPayload })` → **狀態小文件** `worldBossStatus.killReplay`
+→ `subscribeWorldBossStatus` → `MemberApp` 全螢幕播一次（`localStorage.wb_kill_seen_at` 擋重播）。
+
+⚠️ 放在王文件上就要所有人訂閱整份王 → `changelog.md:310` 的 4000 次讀取。
+
+### 踩過的坑（都已修）
+
+1. **結算畫面一閃而過**：送出戰果就 `onComplete` → 大廳 `setInBattle(false)` →
+   整個戰鬥畫面連同結算被卸載。改成按「收工」才離開。
+2. **`startRaidRoom` 用王的滿血建戰鬥**：王的血全服共享，要帶活動當下剩餘血，
+   不然整隊對著一隻滿血的幻覺打。由呼叫端傳 `bossHp`（房間不自己讀王文件）。
+3. **最後一回合的 log 播不出來**：結算會同一次寫入把 `status` 改成 `"done"`，
+   只認 `"active"` 的話王倒下的那一刻就消失了。「還在房裡」要包含 `done`。
+4. **送箭失敗是靜默的**：這台以為送出了、房間沒收到 → 整隊等一個永遠不會來的人。
+   現在跳紅底橫幅 + 「重送」。房主推進失敗同理（房間文件不變 → effect 不會自己再跑，要排重試）。
