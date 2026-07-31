@@ -3,13 +3,15 @@
 // 計分覆蓋層打開時會整條收起來（手機畫面塞不下靶面＋狀態列）。
 import { rookieBadge } from "../domain/raidRookie";
 
+// ⚠️ 左邊原本有一張小立繪，2026-07-31 拿掉：
+//    王的正下方已經有小隊站位（含「我」的立繪），這裡再放一張是重複的，
+//    而且吃掉的寬度讓三維與加成被擠到換行。
 export default function RaidPlayerCard({
   name = "射手",
   hp = 0, maxHp = 1,
   atk = 0, def = 0,
   archerLevel = 1,
   cats = [],
-  appearance = "baobao",
   compact = false,
   baseStats = null,      // 有組隊加成時傳原始值，顯示「100 → 130」
   teamLabel = "",
@@ -24,12 +26,6 @@ export default function RaidPlayerCard({
       background: "rgba(2,6,23,.82)", border: "1px solid rgba(255,255,255,.09)",
       borderRadius: 12, padding: compact ? "6px 9px" : "8px 11px",
     }}>
-      <img
-        src={`/cats/archers/${appearance}.webp`} alt=""
-        onError={e => { e.currentTarget.style.visibility = "hidden"; }}
-        style={{ width: compact ? 30 : 40, height: compact ? 30 : 40, borderRadius: 9, objectFit: "cover", flex: "0 0 auto" }}
-      />
-
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
           <span style={{ fontSize: 12, fontWeight: 900, color: "#e2e8f0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>

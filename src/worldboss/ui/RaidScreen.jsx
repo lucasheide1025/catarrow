@@ -260,7 +260,7 @@ export default function RaidScreen({
 
       {/* 舞台：王 ＋ 部位熱點 */}
       <div className={`${shake === "hard" ? "raid-shake-hard" : shake === "soft" ? "raid-shake-soft" : ""}`}
-        style={{ position: "relative", zIndex: 2, flex: "0 0 auto", padding: "10px 0 4px" }}>
+        style={{ position: "relative", zIndex: 2, flex: "0 1 auto", padding: "10px 0 0" }}>
         <RaidBoss
           bossKey={bossKey} hp={displayHp} maxHp={state.boss.maxHp} size={230}
           spots={spots} charging={intent.charging} staggered={state.staggered}
@@ -274,31 +274,29 @@ export default function RaidScreen({
         ))}
       </div>
 
-      {/* 小隊站位：⚠️ 不能用絕對定位——8 個人會壓在王身上。放王的正下方自成一列。 */}
-      {teamSize > 1 && (
-        <div style={{ position: "relative", zIndex: 4, marginTop: 2 }}>
+      {/* 小隊站位＋意圖＋破防槽＋戰報：整團用 marginTop:auto 壓到底，
+          只跟下面的操作區留一點空。⚠️ auto 要放在這裡，放在操作區上會把它們留在上面。 */}
+      <div style={{ position: "relative", zIndex: 4, marginTop: "auto", marginBottom: 4 }}>
+        {/* ⚠️ 小隊站位不能用絕對定位——8 個人會壓在王身上 */}
+        {teamSize > 1 && (
           <RaidTeamBar members={shown?.members || state.members} submitted={{}} meId={state.members?.[0]?.memberId} />
-        </div>
-      )}
+        )}
 
-      {/* 意圖 ＋ 破防槽 */}
-      <div style={{ position: "relative", zIndex: 3 }}>
         <RaidIntent intent={intent} legHits={legHits} />
         <RaidGauge gauge={displayGauge.gauge} max={gaugeMax} burstActive={burstOn} />
-      </div>
 
-      {/* 戰報 */}
-      <div style={{
-        position: "relative", zIndex: 3, minHeight: 22, padding: "0 12px",
-        fontSize: 12, fontWeight: 700, color: "#cbd5e1", textAlign: "center",
-      }}>{message}</div>
+        <div style={{
+          minHeight: 20, padding: "0 12px",
+          fontSize: 12, fontWeight: 700, color: "#cbd5e1", textAlign: "center",
+        }}>{message}</div>
+      </div>
 
       {/* 操作區：計分中就收起來，把畫面讓給靶面。
           版式＝**左邊一塊玩家資訊、右邊小按鈕**（作者 2026-07-31）——
           原本按鈕各佔一整行，把畫面高度吃掉，王都快看不到了。 */}
       {!scoring && (
         <div style={{
-          position: "relative", zIndex: 3, marginTop: "auto",
+          position: "relative", zIndex: 3,
           background: "linear-gradient(180deg,rgba(2,6,23,.55),rgba(2,6,23,.96))",
           padding: "8px 10px 12px", display: "flex", flexDirection: "column", gap: 7,
         }}>
@@ -311,7 +309,6 @@ export default function RaidScreen({
                 name={playerName} hp={state.playerHp} maxHp={state.playerMaxHp}
                 atk={state.stats.atk} def={state.stats.def}
                 archerLevel={state.archerLevel} cats={state.cats}
-                appearance={appearance}
                 baseStats={state.members?.[0]?.baseStats}
                 teamLabel={teamSize > 1 ? (state.teamBuff?.label || "") : ""}
                 compact
