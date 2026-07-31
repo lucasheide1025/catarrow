@@ -4,6 +4,7 @@
 import { BREAK_GAUGE_MAX } from "../domain/breakGauge";
 import { intentHint } from "../domain/bossIntent";
 import { WEAK_SPOTS } from "../domain/weakPoints";
+import { archerForMember, raidArcherArt } from "../raidAssets";
 
 const GAUGE_CELLS = 20;
 
@@ -161,9 +162,13 @@ export function RaidTeamBar({ members = [], submitted = {}, meId = null }) {
               background: m.memberId === meId ? "rgba(96,165,250,.14)" : "rgba(15,23,42,.85)",
               opacity: dead ? 0.5 : 1,
             }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 900, color: "#e2e8f0" }}>
-              <span>{dead ? "✕" : done ? "✓" : "…"}</span>
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <img src={raidArcherArt(m.appearance || archerForMember(m.memberId))} alt=""
+                onError={e => { e.currentTarget.style.visibility = "hidden"; }}
+                style={{ width: 26, height: 26, objectFit: "contain", flex: "0 0 auto" }} />
+              <span style={{ fontSize: 10, fontWeight: 900, color: "#e2e8f0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {dead ? "✕" : done ? "✓" : "…"}{m.name}
+              </span>
             </div>
             <div style={{ height: 4, borderRadius: 3, background: "rgba(255,255,255,.1)", marginTop: 3, overflow: "hidden" }}>
               <div style={{ height: "100%", width: `${hpPct}%`, background: hpPct > 30 ? "#4ade80" : "#f87171" }} />

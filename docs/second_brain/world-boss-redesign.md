@@ -301,8 +301,30 @@ src/worldboss/                  ← 新，頂層（比照 src/guild/ 的 domain/
 `raidFx.css` 二十餘組動畫：鏡頭 punch/震動、命中粒子、破防白閃＋衝擊波、階段色調、蓄力條碎裂。
 一律 `transform`/`opacity`，粒子上限 16 顆，尊重 `prefers-reduced-motion`。
 
-美術：`scripts/gen-raid-art.py` 生 8 張討伐場地背景（`public/assets/raid/`）。
-⚠️ **王的立繪一律不生**：教練/師母/YUMI 是真人、九隻貓王是真貓，六族王已有既有立繪。
+美術（`public/assets/raid/`）：
+- `scripts/gen-raid-art.py`——8 張討伐場地背景
+- `scripts/gen-raid-chars.py`——8 位隊友外觀（去背 512²）、3 枚結算勳章、1 張組隊大廳底圖
+
+⚠️ **隊友不拿弓**（作者 2026-07-31）：本機模型畫弓的成功率很低，常變成一條白色幽靈狀的線。
+改拿長棍／圓盾／短劍／彎刀／水晶球／提燈／短矛／地圖，辨識度反而更高。
+毛色要加權（`(solid black fur:1.5)`），不然黑貓會生成灰虎斑。
+
+### ⚠️ 世界王立繪**不要用 ComfyUI 重生**
+
+`docs/image-generation-workflow.md` 定義了另一條正式流程，而且是**強制**的：
+
+> Character artwork is an explicitly approved, **manual GPT escalation workflow**…
+> Every generated image remains under `.staging/image-generation/` until visual approval.
+> Promotion into `public/` is a separate, explicit action.
+> For a major family redesign, the first manifest must be a **T1/T3/T6 × normal/miniboss/boss 校準批次**。
+
+三個理由不要繞過它：
+1. 那條線是 GPT 互動生成 + `.staging` 驗證（`scripts/validate-gpt-image-staging.mjs`）+ 明確提升
+2. **DreamShaperXL 生不出那個風格**——新版幽靈族是半寫實電影感帶場景，
+   ComfyUI 這個模型的語言是手繪遊戲風，硬生只會多出第三種風格
+3. 大改版依規定要先做校準批次
+
+規格另見 `docs/monster-art-progression.md`（Tier／Encounter／Identity／角色魅力四個維度）。
 
 ---
 

@@ -15,6 +15,7 @@ import { buildRaidTimeline, describeEvent } from "../domain/raidTimeline";
 import { RaidBossBar, RaidGauge, RaidIntent, RaidSpotLegend, RaidTeamBar } from "./RaidHud";
 import { teamGaugeMax, teamSizeOf } from "../domain/raidTeam";
 import { botTeamArrows } from "../domain/raidBot";
+import { RAID_MEDALS } from "../raidAssets";
 import RaidBoss from "./RaidBoss";
 import RaidTarget from "./RaidTarget";
 import RaidPlayerCard from "./RaidPlayerCard";
@@ -411,8 +412,16 @@ export default function RaidScreen({
           background: "rgba(2,6,23,.88)", padding: 20,
         }}>
           <div style={{ width: "100%", maxWidth: 340, textAlign: "center" }}>
-            <div style={{ fontSize: 30, fontWeight: 900, color: state.bossHp <= 0 ? "#fde68a" : "#e2e8f0" }}>
-              {state.bossHp <= 0 ? "🏆 討伐成功" : state.playerHp <= 0 ? "💀 力竭撤退" : "⏱ 出擊結束"}
+            <img
+              src={state.bossHp <= 0 ? RAID_MEDALS.victory
+                : state.totals.breakPoints >= 20 ? RAID_MEDALS.breaker : RAID_MEDALS.lasthit}
+              alt=""
+              onError={e => { e.currentTarget.style.display = "none"; }}
+              style={{ width: 116, height: 116, objectFit: "contain", margin: "0 auto 6px", display: "block",
+                filter: state.bossHp <= 0 ? "drop-shadow(0 0 22px rgba(253,230,138,.65))" : "saturate(.6)" }}
+            />
+            <div style={{ fontSize: 28, fontWeight: 900, color: state.bossHp <= 0 ? "#fde68a" : "#e2e8f0" }}>
+              {state.bossHp <= 0 ? "討伐成功" : state.members.every(m => m.hp <= 0) ? "力竭撤退" : "出擊結束"}
             </div>
             <div style={{ fontSize: 11.5, color: "#94a3b8", marginTop: 6, marginBottom: 16 }}>
               {state.bossHp <= 0 ? "牠倒下了。" : "牠還站著——但你打掉的每一分血都算數。"}

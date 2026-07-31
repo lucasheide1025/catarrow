@@ -16,7 +16,7 @@ import { BOT_SKILLS } from "../domain/raidBot";
 import { CATS, CAT_TYPE_MAP } from "../../lib/catData";
 import { calcCatCombatStats } from "../../lib/catCombat";
 import { createRaidState } from "../domain/raidFlow";
-import { raidBackground } from "../raidAssets";
+import { RAID_LOBBY_BG, raidBackground } from "../raidAssets";
 import RaidScreen from "./RaidScreen";
 
 const PRESETS = {
@@ -104,8 +104,9 @@ export default function RaidSandbox() {
 
   return (
     <div style={{
-      minHeight: "100dvh", background: "linear-gradient(180deg,#05040a,#0f172a)",
-      color: "#e2e8f0", padding: 16, maxWidth: 520, margin: "0 auto",
+      minHeight: "100dvh", color: "#e2e8f0", padding: 16, maxWidth: 520, margin: "0 auto",
+      backgroundImage: `linear-gradient(180deg,rgba(5,4,10,.88),rgba(15,23,42,.96)), url(${RAID_LOBBY_BG})`,
+      backgroundSize: "cover", backgroundPosition: "center top", backgroundAttachment: "fixed",
     }}>
       <div style={{ fontSize: 20, fontWeight: 900, color: "#fde68a", marginBottom: 4 }}>
         🚧 世界王討伐・試裝間
