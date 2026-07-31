@@ -171,6 +171,15 @@ export default function RaidScreen({
             break;
           }
           case "ultHit":
+            if (event.members) {
+              setShown(s2 => ({
+                ...(s2 || {}),
+                members: (state.members || []).map(mm => {
+                  const hit = event.members.find(x => x.memberId === mm.memberId);
+                  return hit ? { ...mm, hp: hit.hp } : mm;
+                }),
+              }));
+            }
             setBossAnim("lunge");
             setShake(event.last ? "hard" : "soft");
             setHurt(true);
@@ -188,6 +197,15 @@ export default function RaidScreen({
             setTimeout(() => setBossAnim(null), 320);
             break;
           case "counter":
+            if (event.members) {
+              setShown(s2 => ({
+                ...(s2 || {}),
+                members: (state.members || []).map(mm => {
+                  const hit = event.members.find(x => x.memberId === mm.memberId);
+                  return hit ? { ...mm, hp: hit.hp } : mm;
+                }),
+              }));
+            }
             setBossAnim("lunge"); setShake("soft"); setHurt(true);
             vibrate(25);
             setTimeout(() => { setBossAnim(null); setShake(null); setHurt(false); }, 320);
@@ -248,6 +266,13 @@ export default function RaidScreen({
           spots={spots} charging={intent.charging} staggered={state.staggered}
           anim={bossAnim}
         />
+        {/* 小隊站位：擺在戰場底部，跟公會一樣不佔操作區的高度 */}
+        {teamSize > 1 && (
+          <div style={{ position: "absolute", left: 0, right: 0, bottom: -6, zIndex: 4 }}>
+            <RaidTeamBar members={shown?.members || state.members} submitted={{}} meId={state.members?.[0]?.memberId} />
+          </div>
+        )}
+
         {/* 傷害數字 */}
         {floats.map(f => (
           <span key={f.key}
@@ -276,7 +301,6 @@ export default function RaidScreen({
           padding: "10px 12px 14px", display: "flex", flexDirection: "column", gap: 9,
         }}>
           <RaidSpotLegend spots={spots} />
-          <RaidTeamBar members={state.members} submitted={{}} meId={state.members?.[0]?.memberId} />
 
           <RaidPlayerCard
             name={playerName} hp={state.playerHp} maxHp={state.playerMaxHp}

@@ -145,36 +145,45 @@ export function RaidSpotTable() {
   );
 }
 
-/* 組隊列：房主要等全隊送出，所以「誰還沒送」必須一眼看到 */
+/* 小隊站位。比照冒險者公會的擺法（GuildTeamBattle 的小隊站位）：
+   **立繪大、沒有外框、只有名字與血條**——加了外框跟傷害數字反而把立繪擠小，
+   一排四個人在手機上根本看不清是誰。傷害留到結算頁再看。 */
 export function RaidTeamBar({ members = [], submitted = {}, meId = null }) {
   if (members.length < 2) return null;
   return (
-    <div style={{ display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap" }}>
+    <div style={{
+      display: "flex", gap: 12, alignItems: "flex-end", justifyContent: "center",
+      pointerEvents: "none",
+    }}>
       {members.map(m => {
         const done = Array.isArray(submitted[m.memberId]) && submitted[m.memberId].length > 0;
         const dead = m.hp <= 0;
+        const isMe = m.memberId === meId;
         const hpPct = Math.max(0, Math.min(100, (m.hp / (m.maxHp || 1)) * 100));
         return (
-          <div key={m.memberId}
-            style={{
-              minWidth: 74, padding: "5px 8px", borderRadius: 9,
-              border: `1.5px solid ${dead ? "#7f1d1d" : done ? "#4ade80" : "rgba(255,255,255,.14)"}`,
-              background: m.memberId === meId ? "rgba(96,165,250,.14)" : "rgba(15,23,42,.85)",
-              opacity: dead ? 0.5 : 1,
+          <div key={m.memberId} style={{ textAlign: "center", opacity: dead ? 0.42 : 1 }}>
+            <img
+              src={raidArcherArt(m.appearance || archerForMember(m.memberId))} alt=""
+              onError={e => { e.currentTarget.style.visibility = "hidden"; }}
+              style={{
+                width: 58, height: 58, objectFit: "contain", display: "block",
+                filter: `drop-shadow(0 4px 8px rgba(0,0,0,.65))${isMe ? " drop-shadow(0 0 7px #60a5fa)" : ""}`,
+              }}
+            />
+            <div style={{
+              fontSize: 9, fontWeight: 900, whiteSpace: "nowrap",
+              color: isMe ? "#93c5fd" : "#e2e8f0", textShadow: "0 1px 4px rgba(0,0,0,.9)",
             }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <img src={raidArcherArt(m.appearance || archerForMember(m.memberId))} alt=""
-                onError={e => { e.currentTarget.style.visibility = "hidden"; }}
-                style={{ width: 26, height: 26, objectFit: "contain", flex: "0 0 auto" }} />
-              <span style={{ fontSize: 10, fontWeight: 900, color: "#e2e8f0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {dead ? "✕" : done ? "✓" : "…"}{m.name}
-              </span>
+              {dead ? "💀 " : done ? "✅ " : ""}{m.name}
             </div>
-            <div style={{ height: 4, borderRadius: 3, background: "rgba(255,255,255,.1)", marginTop: 3, overflow: "hidden" }}>
-              <div style={{ height: "100%", width: `${hpPct}%`, background: hpPct > 30 ? "#4ade80" : "#f87171" }} />
-            </div>
-            <div style={{ fontSize: 8.5, color: "#94a3b8", marginTop: 2 }}>
-              傷害 {Math.round(m.damage || 0).toLocaleString()}
+            <div style={{
+              width: 46, height: 4, margin: "2px auto 0", borderRadius: 3,
+              background: "rgba(0,0,0,.55)", overflow: "hidden",
+            }}>
+              <div style={{
+                height: "100%", width: `${hpPct}%`, transition: "width .3s",
+                background: hpPct > 30 ? "#22c55e" : "#ef4444",
+              }} />
             </div>
           </div>
         );
