@@ -13,7 +13,7 @@ import { WORLD_BOSS_SKILLS } from "../../lib/worldBossSkillData";
 // 之後 state 加了新欄位，不會不小心把一坨東西同步上去。
 const STATE_KEYS = [
   "bossHp", "round", "staggered", "weakenStacks", "finished",
-  "spots", "gauge", "totals", "members", "teamBuff",
+  "spots", "spotsByFace", "gauge", "totals", "members", "teamBuff",
   "participantBonus", "dmgBonusPct", "dmgReducePct",
   "distanceM", "targetFmt", "rangeMult", "archerLevel", "rookieMult",
   "playerHp", "playerMaxHp",
@@ -112,6 +112,10 @@ export function rosterFromRoom(room) {
       stats: { atk: Number(m.atk) || 0, def: Number(m.def) || 0, hp: Number(m.hp) || 100 },
       archerLevel: Number(m.archerLevel) || 1,
       cats: Array.isArray(m.cats) ? m.cats : [],
+      // ⚠️ 靶紙與射程是**各自的**（作者 2026-07-31）：有人射長有人射短，
+      //    靶紙也不一定一樣。沒填就交給 createRaidState 用整場預設補。
+      targetFmt: m.targetFmt || undefined,
+      distanceM: Number(m.distanceM) || undefined,
     };
   });
 }

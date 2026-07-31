@@ -66,11 +66,21 @@ export function createRaidState({
       def: Math.round(base.def * buff.def),
       hp: Math.round(base.hp * buff.hp),
     };
+    // ⚠️ 靶紙與射程是**每個人自己的**（作者 2026-07-31）：
+    //    現場有人射 5 米有人射 18 米，靶紙也不一定一樣——
+    //    綁成全隊統一，等於逼所有人配合最短的那個人。
+    const myFmt = m.targetFmt || targetFmt;
+    const myDist = Number(m.distanceM) || distanceM;
     return {
       memberId: m.memberId || `m${i}`,
       name: m.name || `隊員${i + 1}`,
       baseStats: base,
       stats: st,
+      targetFmt: myFmt,
+      distanceM: myDist,
+      rangeMult: rangeMultiplier({ distanceM: myDist, targetFmt: myFmt }),
+      faceCap: maxArrowsPerFace(myFmt),
+      faceCount: faceCountOf(myFmt),
       archerLevel: Number(m.archerLevel) || 1,
       rookieMult: rookieMultiplier(Number(m.archerLevel) || 1),
       cats: (m.cats || []).filter(c => c && Number(c.atk) > 0),
@@ -84,6 +94,12 @@ export function createRaidState({
     };
   });
 
+  // 隊上出現幾種「張數」的靶：單張靶（半靶/全靶/原野靶）與三連靶的圈不能共用
+  const faceCounts = [...new Set(roster.map(m => m.faceCount))];
+  const spotsByFace = Object.fromEntries(faceCounts.map(fc => [
+    fc, rollWeakSpots({ rand, round: 1, phaseId: 1, faceCount: fc }),
+  ]));
+
   return {
     boss: {
       key: boss?.key || "boss", name: boss?.name || "世界王",
@@ -95,8 +111,9 @@ export function createRaidState({
     teamBuff: buff,
     stats: roster[0].stats,
     participantBonus, dmgBonusPct, dmgReducePct,
-    distanceM,
-    rangeMult: rangeMultiplier({ distanceM, targetFmt }),
+    // 以下三個是「我」的鏡像——畫面畫的就是我自己那張靶
+    distanceM: roster[0].distanceM,
+    rangeMult: roster[0].rangeMult,
     archerLevel: roster[0].archerLevel,
     cats: roster[0].cats,
     // 補償在戰鬥模型「外面」：一個乘在最後的倍率，跟弱點數值完全分離
@@ -109,8 +126,13 @@ export function createRaidState({
     staggered: false,          // 上回合打斷成功 → 這回合王硬直
     // ⚠️ 弱點圈必須在**射之前**就抽好並放進 state——UI 要先把圈畫在靶面上，
     //    玩家才知道要往哪射。射完才抽等於叫人閉著眼睛射。
-    targetFmt,
-    spots: rollWeakSpots({ rand, round: 1, phaseId: 1, faceCount: faceCountOf(targetFmt) }),
+    targetFmt: roster[0].targetFmt,
+    spots: spotsByFace[roster[0].faceCount],
+    // ⚠️ 弱點圈是**王身上的**，同一種靶紙就看到同一組圈。
+    //    只有「隊上真的有人用不同張數的靶」（三連靶 vs 單張）時才需要分組，
+    //    否則這個欄位是 null，state.spots 就是唯一的一組——
+    //    這樣既有的測試與存檔都不用改。
+    spotsByFace: faceCounts.length > 1 ? spotsByFace : null,
     weakenStacks: 0,
     totals: { damage: 0, breakPoints: 0, weakHits: 0, grazes: 0, bestCombo: 0, interrupts: 0, bullseyes: 0, catDamage: 0 },
     finished: false,
@@ -156,8 +178,9 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
   log.push({ type: "intent", round, intent, staggered });
 
   let spotHits = 0;
-  // 三連靶：每張靶最多吃 2 箭的傷害，六箭必須 2/2/2 分完
-  const faceCap = maxArrowsPerFace(s.targetFmt);
+  // 三連靶：每張靶最多吃 2 箭的傷害，六箭必須 2/2/2 分完。
+  // ⚠️ 上限是**每個人自己那張靶**的——所以 key 要帶 memberId，
+  //    不然四個人射同一個 faceIndex 會互相吃掉額度。
   const arrowsOnFace = {};
   let combo = 0;
   let roundDamage = 0;
@@ -171,8 +194,9 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
     const hpBeforeArrow = s.bossHp;
     const phaseNow = currentPhase(ratioBefore);
 
+    const shooterEarly = shooterOf(arrow);
     const hit = resolveWeakPointHit({
-      spots,
+      spots: s.spotsByFace?.[shooterEarly.faceCount] || spots,
       bossMaxHp: s.boss.maxHp,
       charging: intent.charging,
       staggered,
@@ -185,7 +209,7 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
     const effectiveScore = hit.hit
       ? MAX_ARROW_SCORE
       : (arrow?.label === "X" ? MAX_ARROW_SCORE : Number(arrow?.score) || 0);
-    const shooter = shooterOf(arrow);
+    const shooter = shooterEarly;
     const normal = calcWorldBossArrowDmg(
       effectiveScore,
       Math.round(shooter.stats.atk * support.atkMult), s.boss.def, s.participantBonus, s.dmgBonusPct,
@@ -193,8 +217,10 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
 
     // 這張靶滿了嗎（只有三連靶會有上限）
     const faceIdx = arrow?.faceIndex || 0;
-    arrowsOnFace[faceIdx] = (arrowsOnFace[faceIdx] || 0) + 1;
-    const overCap = faceCap != null && arrowsOnFace[faceIdx] > faceCap;
+    const faceCap = shooter.faceCap !== undefined ? shooter.faceCap : maxArrowsPerFace(s.targetFmt);
+    const faceKey = `${shooter.memberId}:${faceIdx}`;
+    arrowsOnFace[faceKey] = (arrowsOnFace[faceKey] || 0) + 1;
+    const overCap = faceCap != null && arrowsOnFace[faceKey] > faceCap;
 
     const flat = overCap ? 0 : hit.flatDamage;
     const breakGain = overCap ? 0 : hit.breakPoints;
@@ -203,7 +229,7 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
     // 射程倍率乘在整箭上：距離是這一場的設定，對新手老手一視同仁，不影響貢獻比
     // 新手扶助是**射手自己的**——組隊時各算各的，不會因為隊友是老手就被拉低
     const damage = overCap ? 0 : Math.max(0, Math.round(
-      (normal + flat) * burst * (s.rangeMult || 1) * (shooter.rookieMult || 1),
+      (normal + flat) * burst * (shooter.rangeMult || s.rangeMult || 1) * (shooter.rookieMult || 1),
     ));
 
     s.bossHp = Math.max(0, s.bossHp - damage);
@@ -390,11 +416,13 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
   s.staggered = nextStagger;
   s.round = round + 1;
   // 下一回合的圈：位置每回合都變，玩家不能靠肌肉記憶一直射同一點
-  s.spots = rollWeakSpots({
-    rand, round: s.round,
-    phaseId: currentPhase(raidHpRatio(s)).id,
-    faceCount: faceCountOf(s.targetFmt),
-  });
+  const nextPhaseId = currentPhase(raidHpRatio(s)).id;
+  const nextFaceCounts = [...new Set(s.members.map(m => m.faceCount || faceCountOf(s.targetFmt)))];
+  const nextByFace = Object.fromEntries(nextFaceCounts.map(fc => [
+    fc, rollWeakSpots({ rand, round: s.round, phaseId: nextPhaseId, faceCount: fc }),
+  ]));
+  s.spotsByFace = nextFaceCounts.length > 1 ? nextByFace : null;
+  s.spots = nextByFace[s.members[0].faceCount || faceCountOf(s.targetFmt)];
   // 結束條件：王倒下／回合用完／**全員陣亡**。
   // ⚠️ 單人被打倒就是全員陣亡＝直接結束（沒有後衛可以撐）；
   //    組隊時還有人站著就繼續打，倒下的人轉後衛（見 raidSupport）。

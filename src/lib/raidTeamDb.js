@@ -31,6 +31,9 @@ export async function createRaidRoom({
   targetFmt = "half_17", distanceM = 10,
   stats, archerLevel = 1, cats = [],
 }) {
+  // ⚠️ 房間層的 targetFmt/distanceM 只是**新進來的人的預設值**。
+  //    真正生效的是每位成員自己的那一份（作者 2026-07-31：
+  //    有人射長有人射短，靶紙也不相同）。
   if (!hostId || !bossKey) return { ok: false, reason: "參數錯誤" };
   try {
     const code = genCode();
@@ -45,7 +48,8 @@ export async function createRaidRoom({
         [hostId]: {
           name: hostName || "房主", ready: true,
           atk: Number(stats?.atk) || 0, def: Number(stats?.def) || 0, hp: Number(stats?.hp) || 100,
-          archerLevel, cats: cats || [], joinedAt: serverTimestamp(),
+          archerLevel, cats: cats || [],
+          targetFmt, distanceM, joinedAt: serverTimestamp(),
         },
       },
       createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
@@ -54,7 +58,7 @@ export async function createRaidRoom({
   } catch (e) { return { ok: false, reason: e?.message }; }
 }
 
-export async function joinRaidRoom(code, memberId, memberName, { stats, archerLevel = 1, cats = [] } = {}) {
+export async function joinRaidRoom(code, memberId, memberName, { stats, archerLevel = 1, cats = [], targetFmt = null, distanceM = null } = {}) {
   if (!code || !memberId) return { ok: false, reason: "參數錯誤" };
   try {
     const snap = await getDocs(query(
@@ -74,13 +78,32 @@ export async function joinRaidRoom(code, memberId, memberName, { stats, archerLe
         [`members.${memberId}`]: {
           name: memberName || "隊員", ready: false,
           atk: Number(stats?.atk) || 0, def: Number(stats?.def) || 0, hp: Number(stats?.hp) || 100,
-          archerLevel, cats: cats || [], joinedAt: serverTimestamp(),
+          archerLevel, cats: cats || [],
+          targetFmt: targetFmt || data.targetFmt || "half_17",
+          distanceM: Number(distanceM) || Number(data.distanceM) || 10,
+          joinedAt: serverTimestamp(),
         },
         updatedAt: serverTimestamp(),
       });
       joined = true;
     });
     return { ok: joined, roomId: snap.docs[0].id };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+/**
+ * 改自己的靶紙與射程。
+ * ⚠️ 每個人只寫**自己那一格**——Firestore 規則不准一人幫全部人寫，
+ *    而且這本來就是個人設定，房主沒有理由代決定。
+ */
+export async function setRaidLoadout(roomId, memberId, { targetFmt, distanceM } = {}) {
+  if (!roomId || !memberId) return { ok: false, reason: "參數錯誤" };
+  try {
+    const patch = { updatedAt: serverTimestamp() };
+    if (targetFmt) patch[`members.${memberId}.targetFmt`] = targetFmt;
+    if (Number(distanceM)) patch[`members.${memberId}.distanceM`] = Number(distanceM);
+    await updateDoc(doc(db, R, roomId), patch);
+    return { ok: true };
   } catch (e) { return { ok: false, reason: e?.message }; }
 }
 

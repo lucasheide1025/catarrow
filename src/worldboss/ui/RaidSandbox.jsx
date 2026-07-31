@@ -11,7 +11,8 @@ import { DEFAULT_RAID_FACE, RAID_FACES, faceMultiplier } from "../domain/raidFac
 import { RAID_DISTANCES, RAID_DEFAULT_DISTANCE, distanceMultiplier, rangeLabel, rangeMultiplier } from "../domain/raidRange";
 import { rookieMultiplier } from "../domain/raidRookie";
 import { RAID_MAX_TEAM, canTeamDepart, teamBreakSpeedup, teamGaugeMax, teamInterruptRequired, teamStatBonus } from "../domain/raidTeam";
-import { RAID_DAILY_ATTEMPTS, consumeAttempt } from "../domain/raidQuota";
+import { RAID_DAILY_ATTEMPTS, consumeAttempt, todayKey } from "../domain/raidQuota";
+import { lobbyView, soloDepart } from "../domain/raidLobby";
 import { clearRaidProgress, loadRaidProgress, resumeLabel } from "../domain/raidResume";
 import { BOT_SKILLS } from "../domain/raidBot";
 import { CATS, CAT_TYPE_MAP } from "../../lib/catData";
@@ -20,6 +21,8 @@ import { createRaidState } from "../domain/raidFlow";
 import { RAID_LOBBY_BG, raidBackground } from "../raidAssets";
 import RaidScreen from "./RaidScreen";
 import RaidKillCutscene from "./RaidKillCutscene";
+import RaidSoloRoom from "./RaidSoloRoom";
+import RaidWaitRoom from "./RaidWaitRoom";
 import { KILL_RARITY_COLOR, KILL_STYLES, buildKillPayload, detectKillStyle } from "../domain/raidKill";
 
 const PRESETS = {
@@ -61,6 +64,11 @@ export default function RaidSandbox() {
   // 防重整：一進來就看看有沒有沒打完的場次
   const [resume, setResume] = useState(() => loadRaidProgress({ bossKey: DEFAULT_BOSS_FOR_RESUME }));
 
+  // 前置畫面：單人房 / 等待室。用假房間驅動，一樣不碰 Firestore。
+  const [roomScreen, setRoomScreen] = useState("none");   // none | solo | wait
+  const [joinCode, setJoinCode] = useState("");
+  const [readyOverride, setReadyOverride] = useState({});   // memberId -> bool
+
   const boss = WORLD_BOSSES[bossKey];
 
   const start = () => {
@@ -98,6 +106,75 @@ export default function RaidSandbox() {
     }));
     setRunId(n => n + 1);
   };
+
+  // ── 前置畫面（單人房／等待室）─────────────────────────────
+  const memberIdAt = i => (i === 0 ? "me" : `bot${i}`);
+  const spentParticipant = { attemptDate: todayKey(), attempts: RAID_DAILY_ATTEMPTS };
+  const mockParticipants = spentIdx >= 0 ? { [memberIdAt(spentIdx)]: spentParticipant } : {};
+
+  const mockRoom = (() => {
+    const p = PRESETS[preset];
+    const n = Math.max(2, teamCount);
+    const members = {};
+    for (let i = 0; i < n; i += 1) {
+      const id = memberIdAt(i);
+      // 預設「最後一位還沒準備」——才看得到房主被擋住的樣子
+      const auto = i < n - 1;
+      members[id] = {
+        name: i === 0 ? "我" : `隊友${i}`,
+        ready: readyOverride[id] ?? auto,
+        atk: p.atk, def: p.def, hp: p.hp,
+        archerLevel: i === 0 ? archerLevel : 30 + i,
+        cats: [], joinedAt: i,
+        // 靶紙與射程各自決定——假隊友刻意給不一樣的，才看得出畫面有沒有分開顯示
+        targetFmt: i === 0 ? targetFmt : RAID_FACES[i % RAID_FACES.length].id,
+        distanceM: i === 0 ? distanceM : 5 + ((i * 4) % 14),
+      };
+    }
+    return {
+      id: "mock", code: "CAT777", status: "waiting",
+      hostId: "me", hostName: "我",
+      bossKey, targetFmt, distanceM, members,
+    };
+  })();
+
+  if (roomScreen === "solo") {
+    return (
+      <RaidSoloRoom
+        bossKey={boss?.pixelKey || bossKey} bossName={boss?.name} bossDesc={boss?.desc}
+        bossHp={Math.round((boss?.hp || 200000) * 0.62)} bossMaxHp={boss?.hp || 200000}
+        stats={{ atk: PRESETS[preset].atk, def: PRESETS[preset].def, hp: PRESETS[preset].hp }}
+        archerLevel={archerLevel}
+        catName={catId === "none" ? null : CATS[catId]?.name}
+        targetFmt={targetFmt} distanceM={distanceM}
+        onTargetFmt={setTargetFmt} onDistance={setDistanceM}
+        depart={soloDepart({ participant: spentIdx === 0 ? spentParticipant : {} })}
+        resume={resume ? { label: resumeLabel(resume.record) } : null}
+        onResume={() => { setState(resume.state); setRunId(n => n + 1); setResume(null); setRoomScreen("none"); }}
+        onDiscardResume={() => { clearRaidProgress(); setResume(null); }}
+        onDepart={() => { setRoomScreen("none"); setTeamCount(1); start(); }}
+        onCreateRoom={() => setRoomScreen("wait")}
+        onJoinRoom={() => setRoomScreen("wait")}
+        joinCode={joinCode} onJoinCode={setJoinCode}
+        onExit={() => setRoomScreen("none")}
+      />
+    );
+  }
+
+  if (roomScreen === "wait") {
+    const view = lobbyView(mockRoom, "me", { participants: mockParticipants });
+    return (
+      <RaidWaitRoom
+        view={view} bossName={boss?.name}
+        onReady={v => setReadyOverride(o => ({ ...o, me: v }))}
+        onStart={() => { setRoomScreen("none"); setTeamCount(view.size); start(); }}
+        onKick={id => setReadyOverride(o => ({ ...o, [id]: true }))}
+        onTargetFmt={setTargetFmt} onDistance={setDistanceM}
+        onLeave={() => setRoomScreen("solo")}
+        onDisband={() => setRoomScreen("none")}
+      />
+    );
+  }
 
   if (state) {
     return (
@@ -137,12 +214,34 @@ export default function RaidSandbox() {
         假資料驅動，不會碰到線上的世界王。用來確認版式與聲光效果——確認 OK 才接真的。
       </div>
 
+      {/* 前置畫面入口。⚠️ 這兩個是玩家真正的入口，不是沙盒面板——
+          沙盒面板只是調參數用的，正式版看不到。 */}
+      <div style={{ ...cardStyle, border: "1px solid rgba(74,222,128,.4)" }}>
+        <div style={labelStyle}>🚪 出擊前的前置畫面</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+          <button type="button" onClick={() => setRoomScreen("solo")} style={{
+            padding: "12px 0", borderRadius: 9, border: "1px solid #4ade80",
+            background: "rgba(74,222,128,.14)", color: "#e2e8f0",
+            fontWeight: 900, fontSize: 12.5, cursor: "pointer",
+          }}>🏹 單人房</button>
+          <button type="button" onClick={() => setRoomScreen("wait")} style={{
+            padding: "12px 0", borderRadius: 9, border: "1px solid #4ade80",
+            background: "rgba(74,222,128,.14)", color: "#e2e8f0",
+            fontWeight: 900, fontSize: 12.5, cursor: "pointer",
+          }}>👥 等待室（{Math.max(2, teamCount)} 人）</button>
+        </div>
+        <div style={{ fontSize: 10, color: "#64748b", marginTop: 6, lineHeight: 1.6 }}>
+          等待室用上面的「組隊人數」與「模擬隊友1 次數用完」設定生假成員，
+          預設讓最後一位還沒準備——才看得到房主被擋住的樣子。
+        </div>
+      </div>
+
       {/* 🌐 全服擊倒廣播預覽——不用真的打死王也看得到長怎樣 */}
       {!state && (
         <div style={{ ...cardStyle, border: "1px solid rgba(147,197,253,.5)" }}>
           <div style={labelStyle}>🌐 全服擊倒廣播預覽</div>
           <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 8, lineHeight: 1.6 }}>
-            王被打倒時，**全服玩家**都會看到這段演出重播一次（不是只有一行文字）。
+            王被打倒時，全服玩家都會看到這段演出重播一次（不是只有一行文字）。
             這裡可以直接預覽。
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 6 }}>
@@ -205,7 +304,7 @@ export default function RaidSandbox() {
           </div>
           <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 8, lineHeight: 1.6 }}>
             {killPayload.style.icon} {killPayload.killerName} 以「{killPayload.style.name}」討伐了 {killPayload.bossName}。<br />
-            正式版這段會存在王文件上，**全服玩家都會看到這段演出重播一次**（不是只有一行文字）。
+            正式版這段會存在王文件上，全服玩家都會看到這段演出重播一次（不是只有一行文字）。
           </div>
           <button type="button" onClick={() => playReplay(killPayload)}
             style={{
