@@ -21,13 +21,19 @@ export const MATCH_MAX_ARROW_SCORE = 10;
 export const MATCH_MAX_END_SCORE = MATCH_ARROWS_PER_END * MATCH_MAX_ARROW_SCORE;   // 30
 export const MATCH_DAMAGE_PER_POINT = 120;  // 純視覺：1 分 = 120 傷害
 
-/** 一支箭的環值。M（脫靶）＝0，X＝10。 */
+/**
+ * 一支箭的環值。M（脫靶）＝0，X＝10。
+ * ⚠️ `score` 沒有時要看得懂 `label`：戰鬥 log 只存 label（"9" / "X" / "M"），
+ *    不解析的話整場比賽會全部記成 0 分。
+ */
 export function arrowPoints(arrow) {
   if (!arrow) return 0;
   if (arrow.label === "M") return 0;
   if (arrow.label === "X") return 10;
   const n = Number(arrow.score);
-  return Number.isFinite(n) && n > 0 ? Math.round(n) : 0;
+  if (Number.isFinite(n) && n > 0) return Math.round(n);
+  const fromLabel = Number(arrow.label);
+  return Number.isFinite(fromLabel) && fromLabel > 0 ? Math.round(fromLabel) : 0;
 }
 
 /** 一個回合（3 箭）的結果。 */

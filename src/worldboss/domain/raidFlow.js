@@ -49,6 +49,13 @@ export function createRaidState({
   // 組隊：2~4 人同一場。**單人就是一人的隊伍**——刻意只留一條程式路徑，
   // 兩套流程各長各的遲早會漂移（公會就吃過這個虧）。
   members = null,             // [{ memberId, name, stats, archerLevel, cats }]
+  // 🏆 比賽模式（作者 2026-08-01）：王**不反擊**、而且**沒有回合上限**——
+  //    射到玩家自己按離場為止。演出、傷害數字、聲光全部照舊，
+  //    要的就是「在打世界王」的體感，只是拿掉會結束比賽的東西。
+  noRetaliation = false,
+  endless = false,
+  // 🏆 弱點固定在正中心（＝靶心），不會每回合跳位置
+  fixedSpots = false,
   rand = Math.random,
 } = {}) {
   const maxHp = Math.max(1, Number(boss?.maxHp || boss?.hp) || 1);
@@ -97,7 +104,7 @@ export function createRaidState({
   // 隊上出現幾種「張數」的靶：單張靶（半靶/全靶/原野靶）與三連靶的圈不能共用
   const faceCounts = [...new Set(roster.map(m => m.faceCount))];
   const spotsByFace = Object.fromEntries(faceCounts.map(fc => [
-    fc, rollWeakSpots({ rand, round: 1, phaseId: 1, faceCount: fc }),
+    fc, rollWeakSpots({ rand, round: 1, phaseId: 1, faceCount: fc, fixedCenter: fixedSpots }),
   ]));
 
   return {
@@ -122,6 +129,7 @@ export function createRaidState({
     playerHp: roster[0].hp,
     playerMaxHp: roster[0].maxHp,
     round: 1,
+    noRetaliation, endless, fixedSpots,
     gauge: { ...emptyGaugeState(), ...(gauge || {}) },
     staggered: false,          // 上回合打斷成功 → 這回合王硬直
     // ⚠️ 弱點圈必須在**射之前**就抽好並放進 state——UI 要先把圈畫在靶面上，
@@ -157,7 +165,9 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
   const log = [];
   const round = s.round;
   const phase = currentPhase(raidHpRatio(s));
-  const intent = intentForRound({ config: s.boss.skillConfig, round, phaseId: phase.id });
+  const intent = intentForRound({
+    config: s.boss.skillConfig, round, phaseId: phase.id, noRetaliation: s.noRetaliation,
+  });
   // 組隊時打斷需求次線性放大——不然四個人每回合都能斷，等於免費
   if (intent.charging) intent.interruptRequired = teamInterruptRequired(phase.id, teamSizeOf(state));
   const staggered = !!s.staggered;
@@ -330,8 +340,10 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
   }
 
   // ── 回合結束：分歧 ──
+  // ⚠️ 比賽模式的王不反擊：連「蓄力／打斷」都不跑，
+  //    不然畫面會出現一個永遠不會落下的招式預告。
   let nextStagger = false;
-  if (s.bossHp > 0) {
+  if (s.bossHp > 0 && !s.noRetaliation) {
     const outcome = resolveIntent({ intent, legHits: spotHits, weakenStacks: s.weakenStacks });
     if (intent.charging && outcome.interrupted) {
       nextStagger = true;
@@ -419,14 +431,17 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
   const nextPhaseId = currentPhase(raidHpRatio(s)).id;
   const nextFaceCounts = [...new Set(s.members.map(m => m.faceCount || faceCountOf(s.targetFmt)))];
   const nextByFace = Object.fromEntries(nextFaceCounts.map(fc => [
-    fc, rollWeakSpots({ rand, round: s.round, phaseId: nextPhaseId, faceCount: fc }),
+    fc, rollWeakSpots({ rand, round: s.round, phaseId: nextPhaseId, faceCount: fc, fixedCenter: s.fixedSpots }),
   ]));
   s.spotsByFace = nextFaceCounts.length > 1 ? nextByFace : null;
   s.spots = nextByFace[s.members[0].faceCount || faceCountOf(s.targetFmt)];
   // 結束條件：王倒下／回合用完／**全員陣亡**。
   // ⚠️ 單人被打倒就是全員陣亡＝直接結束（沒有後衛可以撐）；
   //    組隊時還有人站著就繼續打，倒下的人轉後衛（見 raidSupport）。
-  s.finished = s.bossHp <= 0 || s.round > RAID_TOTAL_ROUNDS || s.members.every(m => m.hp <= 0);
+  // 🏆 比賽模式：沒有回合上限、王也打不死人——只有外面按離場才結束
+  s.finished = s.endless
+    ? false
+    : (s.bossHp <= 0 || s.round > RAID_TOTAL_ROUNDS || s.members.every(m => m.hp <= 0));
 
   log.push({
     type: "roundEnd", round,

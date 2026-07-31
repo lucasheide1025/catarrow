@@ -2,36 +2,45 @@
 // ─────────────────────────────────────────────────────────────
 // 🏆 比賽模式。**這是實體比賽當天的計分系統**，不是遊戲關卡。
 //
-// 跟世界王討伐的差別（作者 2026-08-01 指定）：
-//   ・沒有回合上限——射到玩家自己按離場為止
-//   ・三箭一回合
-//   ・王**不會反擊**（沒有血量壓力、沒有倒地）
-//   ・沒有獎勵，但有**自己獨立的排行榜**
-//   ・場內選手與場外觀眾都即時看得到分數變化
+// ⚠️ 但體感要**跟打世界王一模一樣**（作者 2026-08-01）：
+//    所以射擊畫面直接用 `RaidScreen` 本體——箭飛過去、王中箭、傷害數字、
+//    弱點圈、破防槽、震動、音效全部照舊。自己另外做一個「記分表畫面」
+//    是第一版的錯，那看起來就只是在填表。
 //
-// ⚠️ 因為是真的比賽，防呆比功能重要：
-//   ① 離場要二次確認（按錯就中斷比賽了）
-//   ② 斷線／重整／關 App 再開都要接得回來（分數存在 Firestore，不是本機）
+// 跟討伐的差別只有三個開關：
+//   ・`endless`        沒有回合上限——射到玩家自己按離場為止
+//   ・`noRetaliation`  王不反擊（連蓄力預告都不跑）
+//   ・`arrowsPerRound` 三箭一回合
+//
+// ⚠️ 分數與傷害是**兩套東西**（作者 2026-08-01）：
+//    ・排行榜排序永遠用**靶紙印的環數**（對得上紙本記分表）
+//    ・場內的射手只看得到**傷害**，看不到正確分數
+//    ・場外的人（大螢幕／教練／觀眾）看到的是**分數 ＋ 傷害**
+//
+// 防呆（比賽當天比功能重要）：
+//   ① 離場要二次確認
+//   ② 斷線／重整／關 App 再開都接得回來（分數在 Firestore，不是本機）
 //   ③ 重送同一回合不會重複計分（回合序號當冪等鍵）
-//   ④ 沒送出的箭存在本機，重整回來還在
+//   ④ 送出失敗一定跳紅底 ＋ 重送鈕，絕不沉默
 // ─────────────────────────────────────────────────────────────
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import {
-  closeMatch, joinMatch, leaveMatch, reopenMatch, submitMatchEnd, subscribeMatch, todayMatchId,
+  MATCH_BOSS_MAX_HP, closeMatch, joinMatch, leaveMatch, reopenMatch,
+  submitMatchEnd, subscribeMatch, todayMatchId,
 } from "../lib/raidMatchDb";
 import {
-  MATCH_ARROWS_PER_END, MATCH_FACE, MATCH_MAX_END_SCORE, canSubmitEnd, endResult,
+  MATCH_ARROWS_PER_END, MATCH_FACE, endResult,
   matchBossRatio, matchLeaderboard, matchTotals, myStanding,
 } from "./domain/matchScore";
-import { RAID_LOBBY_BG } from "./raidAssets";
+import { milestoneFor, pickCheer } from "./domain/matchCheer";
+import { createRaidState } from "./domain/raidFlow";
+import { RAID_LOBBY_BG, randomRaidBackground } from "./raidAssets";
 import MatchBossSVG from "./ui/MatchBossSVG";
 import MatchLeaderboard from "./ui/MatchLeaderboard";
-import RaidTarget from "./ui/RaidTarget";
+import RaidScreen from "./ui/RaidScreen";
 import "./ui/raidFx.css";
-
-const PENDING_KEY = "wb_match_pending_v1";
 
 const card = {
   background: "rgba(15,23,42,.9)", borderRadius: 14, padding: 13, marginBottom: 10,
@@ -39,17 +48,13 @@ const card = {
 };
 const label = { fontSize: 11, fontWeight: 900, color: "#c7d2fe", marginBottom: 7 };
 
-/** 沒送出的箭留在本機——重整回來不用重射（真的射出去的箭撿不回來） */
-function loadPending(matchId) {
-  try {
-    const raw = JSON.parse(localStorage.getItem(PENDING_KEY) || "null");
-    if (raw?.matchId === matchId && Array.isArray(raw.arrows)) return raw.arrows;
-  } catch { /* 壞掉就當沒有 */ }
-  return [];
-}
-function savePending(matchId, arrows) {
-  try { localStorage.setItem(PENDING_KEY, JSON.stringify({ matchId, arrows })); } catch { /* 無所謂 */ }
-}
+// 靶紙王：不反擊，所以 atk 是 0——防禦留著只是給傷害公式用
+const MATCH_BOSS = Object.freeze({
+  key: "match_target", name: "靶紙王", atk: 0, def: 40, skillConfig: null,
+});
+// 5 米＝基準射程。比賽當天每個人的距離不見得一樣，但**環數才是成績**，
+// 射程倍率只影響「傷害」那層裝飾——所以全場用同一個值，才不會有人傷害虛高。
+const MATCH_DISTANCE = 5;
 
 export default function MatchGate({ onBack, isAdmin = false }) {
   const { profile } = useAuth();
@@ -58,70 +63,123 @@ export default function MatchGate({ onBack, isAdmin = false }) {
   const matchId = useMemo(() => todayMatchId(), []);
 
   const [match, setMatch] = useState(null);
-  const [screen, setScreen] = useState("lobby");      // lobby | shooting
-  const [pending, setPending] = useState(() => loadPending(matchId));
+  const [screen, setScreen] = useState("lobby");      // lobby | battle
+  const [battle, setBattle] = useState(null);
+  const [runId, setRunId] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [toast, setToast] = useState("");
+  const [cheer, setCheer] = useState(null);
+  const [showBoard, setShowBoard] = useState(false);
+  // 🏆 每次上場隨機換戰場——射一整天才不會膩
+  const [bgUrl, setBgUrl] = useState(() => randomRaidBackground());
   const [confirmLeave, setConfirmLeave] = useState(false);
-  const [hit, setHit] = useState(false);
   const sendingRef = useRef(false);
+  const prevCheerRef = useRef(null);
+  const lastEndRef = useRef(null);      // 沒送出去時要重送的那一輪
 
   useEffect(() => subscribeMatch(matchId, setMatch), [matchId]);
-  useEffect(() => { savePending(matchId, pending); }, [matchId, pending]);
 
   const players = match?.players || {};
   const board = useMemo(() => matchLeaderboard(players), [players]);
   const totals = useMemo(() => matchTotals(players), [players]);
   const mine = myStanding(board, myId);
   const closed = match?.status === "closed";
-  const myEnds = Number(players?.[myId]?.ends) || 0;
+  const bossMaxHp = Number(match?.bossMaxHp) || MATCH_BOSS_MAX_HP;
 
-  // ⚠️ 已經在比賽裡（重整／斷線回來）就直接回射擊畫面，不要退回大廳
-  useEffect(() => {
-    if (screen === "lobby" && players?.[myId]?.active && !closed) setScreen("shooting");
-  }, [players, myId, screen, closed]);
-
-  const flash = useCallback(msg => {
-    setToast(msg);
-    setTimeout(() => setToast(""), 2200);
-  }, []);
+  const startBattle = useCallback(() => {
+    setBattle(createRaidState({
+      boss: {
+        ...MATCH_BOSS,
+        // 王的血是**全場共享**的：帶當下剩餘，別人打掉的也算
+        hp: Math.max(1, bossMaxHp - totals.damage),
+        maxHp: bossMaxHp,
+      },
+      members: [{
+        memberId: myId, name: myName,
+        stats: { atk: 120, def: 60, hp: 9999 },     // 不反擊，HP 只是擺著
+        archerLevel: 50, cats: [],
+        targetFmt: MATCH_FACE, distanceM: MATCH_DISTANCE,
+      }],
+      targetFmt: MATCH_FACE, distanceM: MATCH_DISTANCE,
+      noRetaliation: true, endless: true,
+      // ⚠️ 弱點固定在正中心（＝靶心）：比賽當天讓圈亂跑，選手會去追圈
+      //    而不是照自己的動作射——那會直接傷害成績。
+      fixedSpots: true,
+    }));
+    setBgUrl(randomRaidBackground());
+    setRunId(n => n + 1);
+    setScreen("battle");
+  }, [bossMaxHp, totals.damage, myId, myName]);
 
   const enter = useCallback(async () => {
     setBusy(true); setError("");
     const res = await joinMatch(matchId, myId, myName, { bowType: profile?.bowType || null });
     setBusy(false);
     if (!res.ok) { setError(res.reason || "加入失敗"); return; }
-    setScreen("shooting");
-  }, [matchId, myId, myName, profile?.bowType]);
+    startBattle();
+  }, [matchId, myId, myName, profile?.bowType, startBattle]);
 
-  /** 送出這一回合。⚠️ 用 myEnds 當序號——重送不會重複計分。 */
-  const submitEnd = useCallback(async () => {
-    if (sendingRef.current || !canSubmitEnd(pending)) return;
+  // ⚠️ 已經在比賽裡（重整／斷線回來）就直接回戰鬥畫面，不要退回大廳
+  useEffect(() => {
+    if (screen === "lobby" && players?.[myId]?.active && !closed && !battle) startBattle();
+  }, [players, myId, screen, closed, battle, startBattle]);
+
+  /** 真正把一輪寫進去。抽出來是為了「重送」走同一條路。 */
+  const sendEnd = useCallback(async (arrows) => {
+    const endIndex = Number(players?.[myId]?.ends) || 0;
+    const res = await submitMatchEnd(matchId, myId, endIndex, arrows);
+    setError(res.ok ? "" : (res.reason || "這一輪沒送出去，請按重送"));
+    return res;
+  }, [matchId, myId, players]);
+
+  /**
+   * 一輪演出**跑完之後**才進來。
+   * ⚠️ 順序是刻意的：先看完戰鬥，再看到激勵詞。
+   *    射完就跳等於在說「戲演完了」，那句話反而變成打斷。
+   */
+  const onRoundDone = useCallback(async (next, log) => {
+    const myArrows = (log || []).filter(e => e.type === "arrow" && e.memberId === myId);
+    if (!myArrows.length) return;
+    const r = endResult(myArrows);
+    lastEndRef.current = myArrows;
+
+    const c = pickCheer(r, { prevLine: prevCheerRef.current });
+    prevCheerRef.current = c.line;
+    const arrowsBefore = Number(players?.[myId]?.arrows) || 0;
+    setCheer({
+      ...c, damage: r.damage,
+      milestone: milestoneFor(arrowsBefore, arrowsBefore + r.arrows),
+    });
+
+    if (sendingRef.current) return;
     sendingRef.current = true;
-    setBusy(true); setError("");
-    const res = await submitMatchEnd(matchId, myId, myEnds, pending);
-    setBusy(false);
+    await sendEnd(myArrows);
     sendingRef.current = false;
-    if (!res.ok) {
-      // 沒送出去就**不要清掉箭**，玩家才按得動重送
-      setError(res.reason || "沒送出去，請再按一次送出");
-      return;
-    }
-    setPending([]);
-    setHit(true);
-    setTimeout(() => setHit(false), 400);
-    flash(res.duplicate ? "這回合已經記過了" : `+${endResult(pending).score} 分`);
-  }, [pending, matchId, myId, myEnds, flash]);
+  }, [myId, players, sendEnd]);
+
+  const retrySend = useCallback(async () => {
+    if (!lastEndRef.current) return;
+    setBusy(true);
+    await sendEnd(lastEndRef.current);
+    setBusy(false);
+  }, [sendEnd]);
 
   const doLeave = useCallback(async () => {
     await leaveMatch(matchId, myId);
     setConfirmLeave(false);
+    setBattle(null);
     setScreen("lobby");
   }, [matchId, myId]);
 
-  // ── 大廳（也是場外觀戰畫面）────────────────────────────────
-  if (screen === "lobby") {
+  // 別人也在打——王的血條要跟著全場走（差太多才更新，免得每次推播都重繪）
+  useEffect(() => {
+    const shared = Math.max(1, bossMaxHp - totals.damage);
+    setBattle(b => (b && Math.abs(b.bossHp - shared) > bossMaxHp * 0.002
+      ? { ...b, bossHp: shared } : b));
+  }, [totals.damage, bossMaxHp]);
+
+  // ── 大廳＝場外觀戰畫面（分數 ＋ 傷害）─────────────────────
+  if (screen === "lobby" || !battle) {
     return (
       <div style={{
         position: "fixed", inset: 0, overflowY: "auto",
@@ -142,7 +200,7 @@ export default function MatchGate({ onBack, isAdmin = false }) {
           </div>
 
           <div style={{ ...card, textAlign: "center" }}>
-            <MatchBossSVG size={168} ratio={matchBossRatio(totals.damage, match?.bossMaxHp)} name="靶紙王" />
+            <MatchBossSVG size={150} ratio={matchBossRatio(totals.damage, bossMaxHp)} name="靶紙王" />
             <div style={{ fontSize: 16, fontWeight: 900, color: "#fde68a", letterSpacing: 2, marginTop: 4 }}>
               靶紙王
             </div>
@@ -154,8 +212,8 @@ export default function MatchGate({ onBack, isAdmin = false }) {
               marginTop: 9, border: "1px solid rgba(148,163,184,.25)",
             }}>
               <div style={{
-                width: `${(1 - matchBossRatio(totals.damage, match?.bossMaxHp)) * 100}%`,
-                height: "100%", background: "linear-gradient(90deg,#f59e0b,#ef4444)",
+                width: `${matchBossRatio(totals.damage, bossMaxHp) * 100}%`,
+                height: "100%", background: "linear-gradient(90deg,#ef4444,#f59e0b,#22c55e)",
                 transition: "width .5s",
               }} />
             </div>
@@ -190,7 +248,7 @@ export default function MatchGate({ onBack, isAdmin = false }) {
               cursor: myId && !busy ? "pointer" : "not-allowed",
               boxShadow: myId ? "0 6px 20px rgba(245,158,11,.35)" : "none",
             }}>
-              {mine ? `🏹 繼續比賽（目前 ${mine.score} 分・第 ${mine.rank} 名）` : "🏹 上場比賽"}
+              {mine ? `🏹 繼續討伐（${mine.score} 分・第 ${mine.rank} 名）` : "🏹 上場討伐"}
             </button>
           )}
 
@@ -199,7 +257,8 @@ export default function MatchGate({ onBack, isAdmin = false }) {
               <span>即時排行</span>
               <span style={{ color: "#64748b", fontWeight: 800 }}>總分 → X 數 → 10 數</span>
             </div>
-            <MatchLeaderboard board={board} myId={myId} />
+            {/* 場外看得到正確分數 ＋ 傷害 */}
+            <MatchLeaderboard board={board} myId={myId} show="both" />
           </div>
 
           {isAdmin && (
@@ -219,121 +278,135 @@ export default function MatchGate({ onBack, isAdmin = false }) {
     );
   }
 
-  // ── 射擊畫面 ──────────────────────────────────────────────
-  const end = endResult(pending);
-  const ready = canSubmitEnd(pending);
-
+  // ── 戰鬥畫面＝真正的討伐畫面 ──────────────────────────────
   return (
-    <div style={{
-      position: "fixed", inset: 0, overflowY: "auto",
-      background: "#05040a", color: "#e2e8f0", padding: "10px 10px 24px",
-    }}>
-      <div style={{ maxWidth: 520, margin: "0 auto" }}>
+    <>
+      <RaidScreen
+        key={runId}
+        state={battle}
+        bossKey="match_target"
+        bossTitle="全場共同討伐"
+        renderBoss={size => (
+          <MatchBossSVG size={size} ratio={matchBossRatio(totals.damage, bossMaxHp)} name="靶紙王" />
+        )}
+        participants={totals.players}
+        playerName={myName}
+        bgUrl={bgUrl}
+        targetFmt={MATCH_FACE}
+        meId={myId}
+        arrowsPerRound={MATCH_ARROWS_PER_END}
+        endless
+        onState={next => setBattle(next)}
+        onRoundDone={onRoundDone}
+        onExit={() => setConfirmLeave(true)}
+        statusExtra={
+          <div style={{
+            display: "flex", alignItems: "center", gap: 6, padding: "5px 8px",
+            overflowX: "auto", background: "rgba(2,6,23,.55)",
+          }}>
+            {/* 我的名次——不用離開戰鬥就看得到（作者 2026-08-01） */}
+            <button type="button" onClick={() => setShowBoard(true)} style={{
+              flexShrink: 0, padding: "4px 10px", borderRadius: 999, cursor: "pointer",
+              border: "1px solid rgba(251,191,36,.55)", background: "rgba(251,191,36,.16)",
+              color: "#fde68a", fontSize: 11.5, fontWeight: 900,
+            }}>🏆 第 {mine?.rank ?? "-"} 名／{board.length} 人</button>
 
-        {/* 王 ＋ 我的分數 */}
-        <div style={{ ...card, padding: 10, textAlign: "center" }}>
-          <MatchBossSVG size={132} ratio={matchBossRatio(totals.damage, match?.bossMaxHp)} hit={hit} />
-          <div style={{ display: "flex", justifyContent: "space-around", marginTop: 6 }}>
-            {[["我的總分", mine?.score ?? 0, "#fbbf24"],
-              ["名次", mine ? `${mine.rank}/${board.length}` : "-", "#e2e8f0"],
-              ["已射", `${mine?.arrows ?? 0} 箭`, "#94a3b8"]].map(([k, v, c]) => (
-              <div key={k}>
-                <div style={{ fontSize: 9.5, color: "#94a3b8", fontWeight: 800 }}>{k}</div>
-                <div style={{ fontSize: 17, fontWeight: 900, color: c }}>{v}</div>
+            {/* 同場玩家：誰在射、打了多少（只給傷害） */}
+            {board.slice(0, 8).map(p => (
+              <div key={p.memberId} style={{
+                flexShrink: 0, padding: "3px 9px", borderRadius: 999,
+                border: `1px solid ${p.memberId === myId ? "#fbbf24" : "rgba(148,163,184,.28)"}`,
+                background: p.memberId === myId ? "rgba(251,191,36,.14)" : "rgba(15,23,42,.8)",
+                fontSize: 10.5, fontWeight: 900,
+                color: p.memberId === myId ? "#fde68a" : "#cbd5e1",
+                whiteSpace: "nowrap",
+              }}>
+                {p.active && <span style={{ color: "#4ade80", fontSize: 8 }}>● </span>}
+                {p.name}
+                <span style={{ color: "#f87171", marginLeft: 5 }}>{p.damage.toLocaleString()}</span>
               </div>
             ))}
           </div>
-          {players?.[myId]?.lastEnd?.length > 0 && (
-            <div style={{ fontSize: 10, color: "#64748b", marginTop: 4 }}>
-              上一回合 {players[myId].lastEnd.join("・")}
-            </div>
-          )}
-        </div>
+        }
+      />
 
-        {/* 靶面。⚠️ 固定全靶（1~10 環），不給選——整場要用同一種靶紙分數才可比 */}
-        <div style={{ ...card, padding: 8 }}>
-          <div style={{
-            fontSize: 10.5, color: "#94a3b8", fontWeight: 800,
-            textAlign: "center", marginBottom: 4,
-          }}>🎯 122cm 十環全靶（1~10 環）</div>
-          <RaidTarget fmtId={MATCH_FACE} arrows={pending} radius={128}
-            onArrow={arrow => setPending(p => (p.length >= MATCH_ARROWS_PER_END ? p : [...p, arrow]))} />
-          <div style={{ display: "flex", justifyContent: "center", gap: 7, marginTop: 8 }}>
-            {Array.from({ length: MATCH_ARROWS_PER_END }, (_, i) => (
-              <div key={i} style={{
-                width: 44, height: 34, borderRadius: 8, display: "grid", placeItems: "center",
-                background: pending[i] ? "rgba(251,191,36,.18)" : "#1e293b",
-                border: `1px solid ${pending[i] ? "#fbbf24" : "rgba(255,255,255,.1)"}`,
-                fontSize: 15, fontWeight: 900, color: pending[i] ? "#fde68a" : "#475569",
-              }}>{pending[i] ? end.labels[i] : "–"}</div>
-            ))}
-            <div style={{
-              minWidth: 52, height: 34, borderRadius: 8, display: "grid", placeItems: "center",
-              background: "rgba(15,23,42,.9)", border: "1px solid rgba(148,163,184,.2)",
-              fontSize: 15, fontWeight: 900, color: "#fbbf24",
-            }}>{end.score}<span style={{ fontSize: 9, color: "#94a3b8" }}>/{MATCH_MAX_END_SCORE}</span></div>
-          </div>
-        </div>
-
-        {error && (
-          <div style={{ ...card, border: "1px solid rgba(248,113,113,.5)", background: "rgba(69,10,10,.6)" }}>
-            <div style={{ fontSize: 12, color: "#fecaca", fontWeight: 900 }}>⚠️ {error}</div>
-            <div style={{ fontSize: 10.5, color: "#fca5a5", marginTop: 3 }}>
-              箭還留著，網路好一點再按一次「送出」就好——不會重複計分。
-            </div>
-          </div>
-        )}
-
-        <div style={{ display: "flex", gap: 7, marginBottom: 10 }}>
-          <button type="button" onClick={() => setPending(p => p.slice(0, -1))}
-            disabled={!pending.length || busy}
-            style={{
-              padding: "14px 16px", borderRadius: 11, border: "1px solid #475569",
-              background: "transparent", color: pending.length ? "#cbd5e1" : "#475569",
-              fontWeight: 900, fontSize: 13, cursor: pending.length ? "pointer" : "not-allowed",
-            }}>↩︎ 收回</button>
-          <button type="button" onClick={submitEnd} disabled={!ready || busy || closed}
-            style={{
-              flex: 1, padding: "14px 0", borderRadius: 11, border: "none",
-              background: ready && !closed ? "linear-gradient(135deg,#f59e0b,#b45309)" : "#1e293b",
-              color: ready && !closed ? "#fff" : "#64748b",
-              fontWeight: 900, fontSize: 15, letterSpacing: 2,
-              cursor: ready && !busy && !closed ? "pointer" : "not-allowed",
-            }}>
-            {closed ? "已收榜" : busy ? "送出中…" : ready ? `🏹 送出（${end.score} 分）` : `射滿 ${MATCH_ARROWS_PER_END} 箭`}
-          </button>
-        </div>
-
-        {/* 即時排行：場內也要看得到別人 */}
-        <div style={{ ...card, padding: 10 }}>
-          <div style={{ ...label, marginBottom: 6 }}>即時排行</div>
-          <MatchLeaderboard board={board} myId={myId} compact max={8} />
-        </div>
-
-        {/* ⚠️ 離場要二次確認——按錯就中斷比賽了 */}
-        <button type="button" onClick={() => setConfirmLeave(true)} style={{
-          width: "100%", padding: "10px 0", borderRadius: 10,
-          border: "1px solid #334155", background: "transparent",
-          color: "#94a3b8", fontWeight: 900, fontSize: 12, cursor: "pointer",
-        }}>離場</button>
-      </div>
-
-      {toast && (
+      {/* 🏆 演出跑完才跳的激勵詞。⚠️ 場內只給傷害，不給正確分數。 */}
+      {cheer && (
         <div style={{
-          position: "fixed", top: 12, left: 0, right: 0, textAlign: "center", zIndex: 200,
-          pointerEvents: "none",
+          position: "fixed", left: 0, right: 0, bottom: 76, zIndex: 120,
+          display: "flex", justifyContent: "center", padding: "0 14px",
         }}>
-          <span style={{
-            display: "inline-block", padding: "8px 18px", borderRadius: 999,
-            background: "rgba(21,128,61,.95)", color: "#fff", fontSize: 14, fontWeight: 900,
-          }}>{toast}</span>
+          <div style={{
+            background: "rgba(2,6,23,.95)", border: `1px solid ${cheer.color}`,
+            borderRadius: 14, padding: "11px 18px", maxWidth: 400, textAlign: "center",
+            boxShadow: `0 0 26px ${cheer.color}55`,
+            animation: "raid-cut-title .5s cubic-bezier(.2,1.1,.3,1) both",
+          }}>
+            <div style={{ fontSize: 15, fontWeight: 900, color: cheer.color, lineHeight: 1.4 }}>
+              {cheer.icon} {cheer.line}
+            </div>
+            <div style={{ fontSize: 12.5, fontWeight: 900, color: "#f87171", marginTop: 4 }}>
+              這一輪造成 {cheer.damage.toLocaleString()} 傷害
+            </div>
+            {cheer.milestone && (
+              <div style={{ fontSize: 11, color: "#fde68a", fontWeight: 800, marginTop: 3 }}>
+                {cheer.milestone}
+              </div>
+            )}
+            <button type="button" onClick={() => setCheer(null)} style={{
+              marginTop: 8, padding: "6px 20px", borderRadius: 8, border: "none",
+              background: "rgba(148,163,184,.22)", color: "#cbd5e1",
+              fontSize: 11.5, fontWeight: 900, cursor: "pointer",
+            }}>繼續</button>
+          </div>
         </div>
       )}
 
+      {/* 送出失敗——整場比賽最不能沉默的地方 */}
+      {error && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, zIndex: 130,
+          padding: "9px 12px", display: "flex", alignItems: "center", gap: 8,
+          background: "rgba(127,29,29,.97)", color: "#fff", fontSize: 12, fontWeight: 900,
+        }}>
+          <span style={{ flex: 1 }}>⚠️ {error}</span>
+          <button type="button" onClick={retrySend} disabled={busy} style={{
+            padding: "6px 13px", borderRadius: 8, border: "none",
+            background: "#fff", color: "#7f1d1d", fontWeight: 900, fontSize: 11.5, cursor: "pointer",
+          }}>{busy ? "送出中…" : "重送"}</button>
+        </div>
+      )}
+
+      {/* 排行榜入口在狀態列那顆「第 N 名」上——這裡不要再放一顆重複的 */}
+
+      {showBoard && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 200, background: "rgba(2,6,23,.93)",
+          overflowY: "auto", padding: "16px 12px",
+        }} onClick={() => setShowBoard(false)}>
+          <div style={{ maxWidth: 440, margin: "0 auto" }} onClick={e => e.stopPropagation()}>
+            <div style={{
+              fontSize: 15, fontWeight: 900, color: "#fde68a",
+              textAlign: "center", marginBottom: 4,
+            }}>🏆 全場即時戰況</div>
+            <div style={{ fontSize: 10.5, color: "#64748b", textAlign: "center", marginBottom: 10 }}>
+              場上顯示傷害——正式成績由記分台公布
+            </div>
+            <MatchLeaderboard board={board} myId={myId} show="damage" />
+            <button type="button" onClick={() => setShowBoard(false)} style={{
+              width: "100%", marginTop: 12, padding: "12px 0", borderRadius: 11, border: "none",
+              background: "linear-gradient(135deg,#f59e0b,#b45309)", color: "#fff",
+              fontWeight: 900, fontSize: 14, cursor: "pointer",
+            }}>回到戰鬥</button>
+          </div>
+        </div>
+      )}
+
+      {/* ⚠️ 離場要二次確認——按錯就中斷比賽了 */}
       {confirmLeave && (
         <div style={{
           position: "fixed", inset: 0, zIndex: 300, display: "grid", placeItems: "center",
-          background: "rgba(2,6,23,.88)", padding: 20,
+          background: "rgba(2,6,23,.9)", padding: 20,
         }}>
           <div style={{
             maxWidth: 320, width: "100%", background: "#0f172a", borderRadius: 16,
@@ -343,21 +416,17 @@ export default function MatchGate({ onBack, isAdmin = false }) {
               要離場嗎？
             </div>
             <div style={{ fontSize: 11.5, color: "#94a3b8", lineHeight: 1.7, marginBottom: 14 }}>
-              目前 <b style={{ color: "#fbbf24" }}>{mine?.score ?? 0} 分</b>，
-              分數會留在排行榜上。
+              目前累積 <b style={{ color: "#f87171" }}>
+                {(mine?.damage ?? 0).toLocaleString()} 傷害
+              </b>，成績會留在榜上。
               <br />離場後還是可以再上場繼續射。
-              {pending.length > 0 && (
-                <><br /><span style={{ color: "#fca5a5", fontWeight: 900 }}>
-                  這回合有 {pending.length} 箭還沒送出！
-                </span></>
-              )}
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button type="button" onClick={() => setConfirmLeave(false)} style={{
                 flex: 1, padding: "12px 0", borderRadius: 10, border: "none",
                 background: "linear-gradient(135deg,#2563eb,#1e40af)", color: "#fff",
                 fontWeight: 900, fontSize: 13, cursor: "pointer",
-              }}>繼續比賽</button>
+              }}>繼續討伐</button>
               <button type="button" onClick={doLeave} style={{
                 padding: "12px 16px", borderRadius: 10, border: "1px solid #f87171",
                 background: "transparent", color: "#f87171",
@@ -367,6 +436,6 @@ export default function MatchGate({ onBack, isAdmin = false }) {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

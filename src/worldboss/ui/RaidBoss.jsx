@@ -11,6 +11,9 @@ function spotStyle(spot) {
 }
 
 export default function RaidBoss({
+  // 🏆 比賽模式的靶紙王不在 WORLD_BOSSES 裡——讓外層直接塞立繪進來。
+  //    這樣王的演出（震動、裂痕、粒子、弱點圈）整套照用，只換中間那張圖。
+  renderBoss = null,
   bossKey, hp, maxHp, size = 240,
   spots = [],
   charging = false, staggered = false,
@@ -53,7 +56,7 @@ export default function RaidBoss({
   return (
     <div style={{ position: "relative", width: size, height: size, margin: "0 auto" }}>
       <div className={bossClass} style={{ width: "100%", height: "100%" }}>
-        <WorldBossSVG bossKey={bossKey} currentHP={hp} maxHP={maxHp} size={size} />
+        {renderBoss ? renderBoss(size) : <WorldBossSVG bossKey={bossKey} currentHP={hp} maxHP={maxHp} size={size} />}
         {/* 血量越低，裂痕越明顯 */}
         <div className="raid-crack" style={{ opacity: (1 - ratio) * 0.75 }} />
       </div>

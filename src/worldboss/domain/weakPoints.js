@@ -70,7 +70,29 @@ export function ratioOf(nx, ny) {
  * 位置隨機但**整個圈都要在靶紙內**，否則會出現「有一半在靶外、根本射不滿」的圈。
  * 兩個圈時強制一大一小——不然新手可能整回合碰不到，老手也少了取捨。
  */
-export function rollWeakSpots({ rand = Math.random, round = 1, phaseId = 1, faceCount = 1 } = {}) {
+/**
+ * 🏆 比賽模式的弱點：**固定在正中心，不會跳來跳去**（作者 2026-08-01）。
+ *
+ * ⚠️ 這剛好就是射箭的真實規則——靶心（X／10 環）本來就是最該打的地方。
+ *    比賽當天讓圈四處亂跑，選手會去追圈而不是照自己的動作射，
+ *    那會直接傷害成績。
+ *
+ * 兩個同心圈：黃（大）＋紅（小）。`hitSpot` 取最小的那個，
+ * 所以中 X ＝紅、中 9~10 ＝黃，跟環數一一對應。
+ */
+export function centerWeakSpots({ faceCount = 1 } = {}) {
+  const out = [];
+  for (let f = 0; f < faceCount; f += 1) {
+    out.push(
+      { ...WEAK_SPOT_MAP.yellow, cx: 0, cy: 0, faceIndex: f, key: `c-y-${f}` },
+      { ...WEAK_SPOT_MAP.red, cx: 0, cy: 0, faceIndex: f, key: `c-r-${f}` },
+    );
+  }
+  return out;
+}
+
+export function rollWeakSpots({ rand = Math.random, round = 1, phaseId = 1, faceCount = 1, fixedCenter = false } = {}) {
+  if (fixedCenter) return centerWeakSpots({ faceCount });
   const count = rand() < 0.45 ? 1 : 2;
   const big = WEAK_SPOTS.slice(0, 2);     // 綠 / 黃
   const small = WEAK_SPOTS.slice(2);      // 橙 / 紅

@@ -2,6 +2,8 @@
 // ⚠️ 現場有人射 5 米有人射 18 米，靶紙也不一定一樣。
 //    綁成全隊統一，等於逼所有人配合最短的那個人。
 import { createRaidState, resolveRaidRound } from "./raidFlow";
+import { intentForRound } from "./bossIntent";
+import { centerWeakSpots, hitSpot } from "./weakPoints";
 import { rangeMultiplier } from "./raidRange";
 import { WEAK_SPOT_MAP } from "./weakPoints";
 
@@ -122,5 +124,91 @@ describe("弱點圈：同一種靶紙看到同一組", () => {
     const { state } = resolveRaidRound({ state: s, arrows: [] });
     expect(Object.keys(state.spotsByFace).sort()).toEqual(["1", "3"]);
     expect(state.spots).toBe(state.spotsByFace[1]);
+  });
+});
+
+describe("🏆 比賽模式：不反擊、不結束", () => {
+  const matchState = () => createRaidState({
+    boss: { key: "m", name: "靶紙王", hp: 500000, maxHp: 500000, atk: 9999, def: 40 },
+    members: [member("me", { stats: { atk: 120, def: 0, hp: 100 } })],
+    noRetaliation: true, endless: true,
+  });
+
+  test("⚠️ 王不會打人——atk 再高也一樣", () => {
+    let st = matchState();
+    for (let i = 0; i < 8; i += 1) st = resolveRaidRound({ state: st, arrows: [] }).state;
+    expect(st.members[0].hp).toBe(st.members[0].maxHp);
+  });
+
+  test("⚠️ 連蓄力預告都不出現——掛一個永遠不會落下的招式，玩家會一直等", () => {
+    for (let round = 1; round <= 6; round += 1) {
+      expect(intentForRound({ round, phaseId: 1, noRetaliation: true }).charging).toBe(false);
+    }
+    // 一般討伐仍然會蓄力，這條規則沒有被弄壞
+    expect([1, 2, 3, 4, 5].some(r => intentForRound({ round: r, phaseId: 1 }).charging)).toBe(true);
+  });
+
+  test("⚠️ 沒有回合上限——射到玩家自己離場為止", () => {
+    let st = matchState();
+    for (let i = 0; i < 12; i += 1) {
+      const out = resolveRaidRound({ state: st, arrows: [] });
+      st = out.state;
+      expect(st.finished).toBe(false);
+    }
+    expect(st.round).toBe(13);
+  });
+
+  test("一般討伐不受影響：5 回合就結束", () => {
+    let st = createRaidState({
+      boss: { key: "t", name: "測試王", hp: 9000000, maxHp: 9000000, atk: 1, def: 0 },
+      members: [member("me")],
+    });
+    for (let i = 0; i < 5; i += 1) st = resolveRaidRound({ state: st, arrows: [] }).state;
+    expect(st.finished).toBe(true);
+  });
+});
+
+describe("🏆 弱點固定在正中心（作者 2026-08-01）", () => {
+  const matchState = () => createRaidState({
+    boss: { key: "m", name: "靶紙王", hp: 500000, maxHp: 500000, atk: 0, def: 40 },
+    members: [member("me", { targetFmt: "full_110" })],
+    noRetaliation: true, endless: true, fixedSpots: true,
+  });
+
+  test("⚠️ 每回合都在正中心——讓圈亂跑，選手會去追圈而不是照動作射", () => {
+    let st = matchState();
+    for (let i = 0; i < 6; i += 1) {
+      for (const spot of st.spots) {
+        expect(spot.cx).toBe(0);
+        expect(spot.cy).toBe(0);
+      }
+      st = resolveRaidRound({ state: st, arrows: [] }).state;
+    }
+  });
+
+  test("兩個同心圈：黃（大）＋紅（小），跟環數一一對應", () => {
+    const spots = centerWeakSpots({ faceCount: 1 });
+    expect(spots.map(s => s.id)).toEqual(["yellow", "red"]);
+    // 正中心命中最小的那個（＝X），稍微偏一點是黃（＝9~10 環）
+    expect(hitSpot(spots, 0, 0).id).toBe("red");
+    expect(hitSpot(spots, 0.2, 0).id).toBe("yellow");
+    expect(hitSpot(spots, 0.6, 0)).toBeNull();
+  });
+
+  test("三連靶時每張靶都有一組", () => {
+    expect(centerWeakSpots({ faceCount: 3 })).toHaveLength(6);
+  });
+
+  test("一般討伐不受影響：圈還是會換位置", () => {
+    let st = createRaidState({
+      boss: { key: "t", name: "測試王", hp: 9000000, maxHp: 9000000, atk: 1, def: 0 },
+      members: [member("me")],
+    });
+    const seen = new Set();
+    for (let i = 0; i < 8; i += 1) {
+      st.spots.forEach(sp => seen.add(`${sp.cx.toFixed(3)},${sp.cy.toFixed(3)}`));
+      st = resolveRaidRound({ state: st, arrows: [] }).state;
+    }
+    expect(seen.size).toBeGreaterThan(1);
   });
 });

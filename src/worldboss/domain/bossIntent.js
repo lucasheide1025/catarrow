@@ -28,7 +28,16 @@ export function isChargeRound(round) {
 /**
  * 這回合王在做什麼。charging=false 就是普通回合（牠只會平砍）。
  */
-export function intentForRound({ config = null, round = 1, phaseId = 1 } = {}) {
+export function intentForRound({ config = null, round = 1, phaseId = 1, noRetaliation = false } = {}) {
+  // 🏆 比賽模式：王不反擊，所以**連蓄力預告都不能出現**——
+  //    畫面上掛一個永遠不會落下的招式，玩家會一直等它。
+  if (noRetaliation) {
+    return {
+      round, charging: false, skill: null, skillId: null,
+      name: "任你射擊", counterText: "", color: "#4ade80",
+      isFinisher: false, interruptRequired: 0,
+    };
+  }
   const charging = isChargeRound(round);
   const skill = charging ? getWorldBossScheduledStrike(config, round) : null;
   return {

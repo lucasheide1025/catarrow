@@ -31,6 +31,12 @@ describe("一支箭的環值", () => {
     expect(arrowPoints(a("M", 8))).toBe(0);      // 標成 M 就是 0，不看 score
   });
 
+  test("⚠️ 只有 label 也要讀得懂——戰鬥 log 只存 label，不解析會全部記成 0 分", () => {
+    expect(arrowPoints({ label: "9" })).toBe(9);
+    expect(arrowPoints({ label: "10" })).toBe(10);
+    expect(arrowPoints({ label: "M" })).toBe(0);
+  });
+
   test("壞資料算 0，不會變成 NaN 汙染全場總分", () => {
     expect(arrowPoints(null)).toBe(0);
     expect(arrowPoints({ score: "abc" })).toBe(0);

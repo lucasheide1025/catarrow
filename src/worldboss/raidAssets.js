@@ -11,6 +11,11 @@ export function raidBackground(family) {
   return `/assets/raid/raid_bg_${key}.webp`;
 }
 
+/** 🏆 比賽模式：每次上場隨機換一張戰場，同一場比賽射一整天才不會膩 */
+export function randomRaidBackground(rand = Math.random) {
+  return raidBackground(RAID_ARENAS[Math.floor(rand() * RAID_ARENAS.length)]);
+}
+
 // ── 隊友外觀（scripts/gen-raid-chars.py 生成）──────────────
 // ⚠️ 這些不拿弓：本機模型畫弓的成功率很低，常常變成一條白色幽靈狀的線。
 //    改拿近戰/輔助裝備反而辨識度更高（作者 2026-07-31 指示）。

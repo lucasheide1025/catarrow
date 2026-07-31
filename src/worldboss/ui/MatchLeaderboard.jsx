@@ -3,7 +3,17 @@
 // 兩份實作遲早會漂，而比賽當天分數對不上是最嚴重的事。
 const MEDAL = ["🥇", "🥈", "🥉"];
 
-export default function MatchLeaderboard({ board = [], myId = null, compact = false, max = 0 }) {
+/**
+ * @param show "score"（正確分數）｜"damage"（只給傷害）｜"both"
+ *
+ * ⚠️ **場內的射手只看得到傷害，看不到正確分數**（作者 2026-08-01）：
+ *    比賽當下讓選手盯著環數會影響心態，而且我們要的是「在打王」的體感。
+ *    場外的人（大螢幕、教練、觀眾）看到的才是正確分數 ＋ 傷害。
+ *    ⚠️ 但**排序永遠照真實分數**——顯示什麼跟怎麼排名是兩件事。
+ */
+export default function MatchLeaderboard({
+  board = [], myId = null, compact = false, max = 0, show = "score",
+}) {
   const rows = max > 0 ? board.slice(0, max) : board;
   if (!rows.length) {
     return (
@@ -44,16 +54,27 @@ export default function MatchLeaderboard({ board = [], myId = null, compact = fa
               </div>
               {!compact && (
                 <div style={{ fontSize: 9.5, color: "#64748b", marginTop: 1 }}>
-                  {p.arrows} 箭・平均 {p.average.toFixed(1)} 環・X{p.xCount}・10×{p.tens}
+                  {show === "damage"
+                    ? `${p.arrows} 箭・${p.ends} 輪`
+                    : `${p.arrows} 箭・平均 ${p.average.toFixed(1)} 環・X${p.xCount}・10×${p.tens}`}
                 </div>
               )}
             </div>
 
             <div style={{ textAlign: "right", flexShrink: 0 }}>
-              <div style={{ fontSize: compact ? 14 : 17, fontWeight: 900, color: "#fbbf24", lineHeight: 1.1 }}>
-                {p.score}
-              </div>
-              {!compact && <div style={{ fontSize: 9, color: "#64748b" }}>分</div>}
+              {show !== "damage" && (
+                <div style={{ fontSize: compact ? 14 : 17, fontWeight: 900, color: "#fbbf24", lineHeight: 1.1 }}>
+                  {p.score}<span style={{ fontSize: 9, color: "#64748b", fontWeight: 800 }}> 分</span>
+                </div>
+              )}
+              {show !== "score" && (
+                <div style={{
+                  fontSize: compact ? 12.5 : 14, fontWeight: 900,
+                  color: "#f87171", lineHeight: 1.2,
+                }}>
+                  {p.damage.toLocaleString()}<span style={{ fontSize: 9, color: "#64748b", fontWeight: 800 }}> 傷害</span>
+                </div>
+              )}
             </div>
           </div>
         );

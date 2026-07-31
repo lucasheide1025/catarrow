@@ -50,6 +50,12 @@ export default function RaidScreen({
   onSubmitArrows = null,       // 有給就走線上：送出自己的箭，不本機結算
   externalSubmissions = null,  // 房間文件上的 submissions（誰交了）
   incomingRound = null,        // { seq, state, log } → seq 變了就重播房主算好的結果
+  // 🏆 比賽模式：三箭一回合、沒有回合上限、演出跑完跳一句激勵詞
+  arrowsPerRound = RAID_ARROWS_PER_ROUND,
+  endless = false,
+  onRoundDone = null,          // (state, log) => void  **演出跑完才叫**
+  renderBoss = null,           // (size) => ReactNode  換掉中間那張王的圖
+  statusExtra = null,          // 狀態列上方要多塞的東西（比賽模式放同場玩家與名次）
   // ⚠️ 靶面輸入是**強制**的（作者 2026-07-31）：弱點的精準判定要靠落點，
   //    按分數鍵給不出位置，整套「射在紙上的位置＝射在牠身上的位置」就不成立。
   targetFmt = "half_17",
@@ -101,8 +107,11 @@ export default function RaidScreen({
 
   const phase = currentPhase(shown?.hpRatio ?? raidHpRatio(state));
   const intent = useMemo(
-    () => intentForRound({ config: state.boss.skillConfig, round: state.round, phaseId: phase.id }),
-    [state.boss.skillConfig, state.round, phase.id],
+    () => intentForRound({
+      config: state.boss.skillConfig, round: state.round, phaseId: phase.id,
+      noRetaliation: state.noRetaliation,
+    }),
+    [state.boss.skillConfig, state.round, phase.id, state.noRetaliation],
   );
   const displayHp = shown?.bossHp ?? state.bossHp;
   const displayGauge = shown?.gauge ?? state.gauge;
@@ -121,13 +130,13 @@ export default function RaidScreen({
   }, []);
 
   const addArrow = useCallback(arrow => {
-    if (playing || state.finished || pending.length >= RAID_ARROWS_PER_ROUND) return;
+    if (playing || state.finished || pending.length >= arrowsPerRound) return;
     unlockAudio();
     const spot = hitSpot(spots, arrow.nx, arrow.ny);
     setPending(list => [...list, { ...arrow, spotId: spot?.id || null }]);
     setMessage("");
     if (spot) { sfxLockOn(); vibrate(12); } else { sfxTap(); }
-  }, [playing, state.finished, pending.length, spots]);
+  }, [playing, state.finished, pending.length, spots, arrowsPerRound]);
 
   // ── 演出：照 log 順序重播。collected = 已經收齊的全隊箭矢（單人時省略）──
   /**
@@ -356,9 +365,10 @@ export default function RaidScreen({
       }
       else saveRaidProgress(next, { bossKey: next.boss?.key || bossKey, eventId });
       onState?.(next, log);
+      onRoundDone?.(next, log);          // 🏆 演出跑完才叫——激勵詞要在動畫之後
       if (next.finished) onFinish?.(next);
     }, total + 240));
-  }, [state, meId, bossKey, bossMeta, eventId, onState, onFinish, pushFloat]);
+  }, [state, meId, bossKey, bossMeta, eventId, onState, onFinish, onRoundDone, pushFloat]);
 
   /** 本機算完再播（單人、以及沙盒的假組隊） */
   const playRound = useCallback(collected => {
@@ -420,7 +430,7 @@ export default function RaidScreen({
             ...prev,
             [m.memberId]: botRoundArrows({
               memberId: m.memberId, spots, skill: botSkill,
-              arrows: RAID_ARROWS_PER_ROUND, targetFmt,
+              arrows: arrowsPerRound, targetFmt,
             }),
           };
           if (allSubmitted(roster, next)) {
@@ -434,11 +444,11 @@ export default function RaidScreen({
         });
       }, 650 * (i + 1)));
     });
-  }, [playing, state, pending, spots, botSkill, targetFmt, playRound, me, onSubmitArrows]);
+  }, [playing, state, pending, spots, botSkill, targetFmt, playRound, me, onSubmitArrows, arrowsPerRound]);
 
   // 線上時「誰交了」以房間文件為準（本機的 submissions 只有沙盒在用）
   const liveSubmissions = externalSubmissions || submissions;
-  const full = pending.length >= RAID_ARROWS_PER_ROUND;
+  const full = pending.length >= arrowsPerRound;
 
   const range = rangeLabel(state.rangeMult || 1);
   const faceCap = maxArrowsPerFace(targetFmt);
@@ -472,6 +482,9 @@ export default function RaidScreen({
       <div className="raid-parallax-fg" />
       <div className="raid-tint" style={{ background: phase.tint ? PHASE_TINTS[phase.tint] : "transparent" }} />
 
+      {/* 外層追加的狀態（比賽模式：同場玩家與我的名次）*/}
+      {statusExtra && <div style={{ position: "relative", zIndex: 5 }}>{statusExtra}</div>}
+
       {/* 全場共享血條 */}
       <div style={{ position: "relative", zIndex: 3 }}>
         <RaidBossBar
@@ -484,6 +497,7 @@ export default function RaidScreen({
       <div className={`${shake === "hard" ? "raid-shake-hard" : shake === "soft" ? "raid-shake-soft" : ""}`}
         style={{ position: "relative", zIndex: 2, flex: "0 1 auto", padding: "10px 0 0" }}>
         <RaidBoss
+          renderBoss={renderBoss}
           bossKey={bossKey} hp={displayHp} maxHp={state.boss.maxHp} size={bossSize}
           spots={spots} charging={intent.charging} staggered={state.staggered}
           anim={bossAnim}
@@ -555,7 +569,7 @@ export default function RaidScreen({
                     </div>
                     <span style={{ fontSize: 9.5, color: "#94a3b8", whiteSpace: "nowrap" }}>
                       {Math.max(0, Math.round(myHp))}/{Math.round(myMaxHp)}
-                      　{Math.min(state.round, RAID_TOTAL_ROUNDS)}/{RAID_TOTAL_ROUNDS} 回合
+                      　{endless ? `第 ${state.round} 輪` : `${Math.min(state.round, RAID_TOTAL_ROUNDS)}/${RAID_TOTAL_ROUNDS} 回合`}
                       {burstOn && <b style={{ color: "#fde68a" }}>　💥×{burstMultiplier(displayGauge, state.round)}</b>}
                     </span>
                   </div>
@@ -574,7 +588,7 @@ export default function RaidScreen({
               />
               <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 5, paddingLeft: 2 }}>
                 <div style={{ display: "flex", gap: 4 }}>
-                  {Array.from({ length: RAID_ARROWS_PER_ROUND }).map((_, i) => (
+                  {Array.from({ length: arrowsPerRound }).map((_, i) => (
                     <span key={i} style={{
                       width: 9, height: 9, borderRadius: "50%",
                       background: pending[i] ? "#fbbf24" : "rgba(255,255,255,.14)",
@@ -584,7 +598,7 @@ export default function RaidScreen({
                 <span style={{ fontSize: 9.5, color: "#94a3b8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {raidFaceLabel(targetFmt)}・{state.distanceM}m
                   <b style={{ color: range.color }}> ×{(state.rangeMult || 1).toFixed(2)}</b>
-                  　{Math.min(state.round, RAID_TOTAL_ROUNDS)}/{RAID_TOTAL_ROUNDS} 回合
+                  　{endless ? `第 ${state.round} 輪` : `${Math.min(state.round, RAID_TOTAL_ROUNDS)}/${RAID_TOTAL_ROUNDS} 回合`}
                   {burstOn && <b style={{ color: "#fde68a" }}>　💥×{burstMultiplier(displayGauge, state.round)}</b>}
                 </span>
               </div>
@@ -602,7 +616,7 @@ export default function RaidScreen({
                   color: "#fff", fontWeight: 900, fontSize: 12, lineHeight: 1.3,
                   cursor: playing || state.finished ? "not-allowed" : "pointer",
                 }}>
-                {playing ? "演出中" : pending.length ? `繼續射擊\n${pending.length}/${RAID_ARROWS_PER_ROUND}` : "🏹 開始射擊"}
+                {playing ? "演出中" : pending.length ? `繼續射擊\n${pending.length}/${arrowsPerRound}` : "🏹 開始射擊"}
               </button>
 
               {pending.length > 0 && !playing && (
@@ -657,7 +671,7 @@ export default function RaidScreen({
               {raidFaceLabel(targetFmt)}・{state.distanceM}m　×{(state.rangeMult || 1).toFixed(2)}
             </span>
             <div style={{ display: "flex", gap: 5 }}>
-              {Array.from({ length: RAID_ARROWS_PER_ROUND }).map((_, i) => (
+              {Array.from({ length: arrowsPerRound }).map((_, i) => (
                 <span key={i} style={{
                   width: 10, height: 10, borderRadius: "50%",
                   background: pending[i] ? "#fbbf24" : "rgba(255,255,255,.16)",
@@ -707,7 +721,7 @@ export default function RaidScreen({
                 color: "#fff", fontWeight: 900, fontSize: 15,
                 cursor: pending.length ? "pointer" : "not-allowed",
               }}>
-              {full ? "🏹 送出這回合" : `🏹 送出（${pending.length}/${RAID_ARROWS_PER_ROUND}）`}
+              {full ? "🏹 送出這回合" : `🏹 送出（${pending.length}/${arrowsPerRound}）`}
             </button>
           </div>
         </div>
