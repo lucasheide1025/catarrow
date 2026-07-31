@@ -22,15 +22,22 @@ import { archerLevelBonus, archerLevelFromXP } from "../lib/archerLevel";
 import { calcCatCombatStats } from "../lib/catCombat";
 import { CATS, CAT_TYPE_MAP } from "../lib/catData";
 
+import {
+  createRaidRoom, disbandRaidRoom, findReconnectableRaidRoom, forceAdvanceRaidRoom,
+  joinRaidRoom, kickRaidMember, leaveRaidRoom, resolveRaidRoomRound, setRaidLoadout,
+  setRaidReady, startRaidRoom, submitRaidArrows, subscribeRaidRoom,
+} from "../lib/raidTeamDb";
 import { createRaidState } from "./domain/raidFlow";
 import { roundResultFromLog, raidRoundResults } from "./domain/raidReport";
-import { soloDepart } from "./domain/raidLobby";
+import { lobbyView, soloDepart } from "./domain/raidLobby";
+import { hydrateRaidState, roomPhase } from "./domain/raidRoomState";
 import { DEFAULT_RAID_FACE } from "./domain/raidFaces";
 import { RAID_DEFAULT_DISTANCE } from "./domain/raidRange";
 import { clearRaidProgress, loadRaidProgress, resumeLabel } from "./domain/raidResume";
 import { raidBackground } from "./raidAssets";
 import RaidScreen from "./ui/RaidScreen";
 import RaidSoloRoom from "./ui/RaidSoloRoom";
+import RaidWaitRoom from "./ui/RaidWaitRoom";
 
 const LOADOUT_KEY = "wb_raid_loadout_v1";
 
@@ -51,7 +58,17 @@ export default function RaidGate({ event, onBack, sharedData, onComplete }) {
   const myId = profile?.id;
   const myName = profile?.name || "射手";
 
-  const [screen, setScreen] = useState("solo");     // solo | battle
+  const [screen, setScreen] = useState("solo");     // solo | wait | battle
+  // ── 線上組隊 ───────────────────────────────────────────────
+  const [roomId, setRoomId] = useState(null);
+  const [room, setRoom] = useState(null);
+  const [joinCode, setJoinCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [roomError, setRoomError] = useState("");
+  // ⚠️ 送箭失敗是**最糟的失敗**：這台以為送出了，房間卻沒收到，
+  //    整隊會一直等一個永遠不會來的人。所以失敗一定要看得見、而且能重送。
+  const [sendFailed, setSendFailed] = useState(false);
+  const lastArrowsRef = useRef(null);
   const [state, setState] = useState(null);
   const [runId, setRunId] = useState(0);
   const [resume, setResume] = useState(() => loadRaidProgress({ bossKey: event?.bossKey || null }));
@@ -70,6 +87,23 @@ export default function RaidGate({ event, onBack, sharedData, onComplete }) {
   const killPayloadRef = useRef(null);
 
   useEffect(() => { saveLoadout(targetFmt, distanceM); }, [targetFmt, distanceM]);
+
+  // 一進來就看看有沒有斷線前的房間——重整不該讓整隊卡住
+  useEffect(() => {
+    if (!myId) return;
+    findReconnectableRaidRoom(myId).then(r => { if (r?.room?.id) setRoomId(r.room.id); }).catch(() => {});
+  }, [myId]);
+
+  useEffect(() => {
+    if (!roomId) { setRoom(null); return undefined; }
+    return subscribeRaidRoom(roomId, setRoom);
+  }, [roomId]);
+
+  // 重整或斷線回來時，房間還在等人就回等待室（不用重新輸入代碼）
+  useEffect(() => {
+    if (room?.status === "waiting" && screen === "solo") setScreen("wait");
+    if (room === null && screen === "wait") setScreen("solo");   // 房被解散
+  }, [room, screen]);
 
   // ── 玩家強度：跟 WorldBossAttack 同一套公式 ──────────────
   const cardColl = sharedData?.cardData ?? null;
@@ -180,13 +214,119 @@ export default function RaidGate({ event, onBack, sharedData, onComplete }) {
     // ⚠️ 這裡**不呼叫 onComplete**——那會讓大廳把戰鬥畫面收掉，玩家看不到結算。
   }, [event, myId, myName, profile, stats]);
 
+  // ── 線上組隊：房間 → 畫面 ──────────────────────────────────
+  // ⚠️ 最後一回合結算時，房間會**同一次寫入**把 status 改成 "done"。
+  //    只認 "active" 的話，那一回合的 log 就永遠播不出來（王倒下的那一刻消失）。
+  //    所以「還在房裡」要包含 done，只有「把大家推進戰鬥」才限定 active。
+  const inRoom = !!room && (room.status === "active" || room.status === "done");
+  const online = inRoom;
+  const view = useMemo(
+    () => (room ? lobbyView({ ...room, id: roomId }, myId, { participants: event?.participants || {} }) : null),
+    [room, roomId, myId, event?.participants],
+  );
+  const phase = useMemo(() => (room ? roomPhase(room) : null), [room]);
+  const isHost = room?.hostId === myId;
+
+  // 房主推進：全員送出就結算。**只有房主算**——兩台各算各的，隨機數立刻漂掉。
+  const resolvingSeq = useRef(-1);
+  const [resolveRetry, setResolveRetry] = useState(0);
+  useEffect(() => {
+    if (room?.status !== "active" || !isHost || !phase?.canResolve) return undefined;
+    const seq = Number(room.seq) || 0;
+    if (resolvingSeq.current === seq) return undefined;     // 同一個 seq 只推一次
+    resolvingSeq.current = seq;
+    let timer = null;
+    resolveRaidRoomRound(roomId, myId)
+      .then(res => {
+        if (res?.ok) return;
+        // ⚠️ 推進失敗時房間文件不會變 → 這個 effect 不會自己再跑一次，
+        //    整隊就永遠卡在「全員已送出」。所以要自己排一次重試。
+        resolvingSeq.current = -1;
+        timer = setTimeout(() => setResolveRetry(n => n + 1), 1500);
+      })
+      .catch(() => {
+        resolvingSeq.current = -1;
+        timer = setTimeout(() => setResolveRetry(n => n + 1), 1500);
+      });
+    return () => { if (timer) clearTimeout(timer); };
+  }, [room?.status, isHost, phase?.canResolve, room?.seq, roomId, myId, resolveRetry]);
+
+  // 房主寫回來的結果：seq 一變，所有人重播同一份 log
+  const incomingRound = useMemo(() => {
+    if (!online || !room?.state) return null;
+    return { seq: Number(room.seq) || 0, state: hydrateRaidState(room.state), log: room.lastLog || null };
+  }, [online, room?.seq, room?.state, room?.lastLog]);
+
+  // 房間一轉 active 就進戰鬥（每個人都會被推進來，不用各自按）
+  useEffect(() => {
+    if (room?.status !== "active" || screen === "battle") return;
+    const hydrated = hydrateRaidState(room.state);
+    if (!hydrated) return;
+    roundsRef.current = [];
+    submittedRef.current = false;
+    killPayloadRef.current = null;
+    setState(hydrated);
+    setRunId(n => n + 1);
+    setScreen("battle");
+  }, [room?.status, room?.state, screen]);
+
+  /** 送出自己這回合的箭。失敗要讓玩家看得到、按得動重送。 */
+  const sendArrows = useCallback(async (arrows) => {
+    lastArrowsRef.current = arrows;
+    setSendFailed(false);
+    const res = await submitRaidArrows(roomId, myId, room?.round || 1, arrows)
+      .catch(e => ({ ok: false, reason: e?.message }));
+    if (!res?.ok) setSendFailed(true);
+  }, [roomId, myId, room?.round]);
+
+  const retrySend = useCallback(() => {
+    if (lastArrowsRef.current) sendArrows(lastArrowsRef.current);
+  }, [sendArrows]);
+
+  // ── 房間動作 ──────────────────────────────────────────────
+  const roomAction = useCallback(async (fn) => {
+    setBusy(true); setRoomError("");
+    const res = await fn().catch(e => ({ ok: false, reason: e?.message }));
+    setBusy(false);
+    if (!res?.ok) setRoomError(res?.reason || "操作失敗");
+    return res;
+  }, []);
+
+  const handleCreateRoom = useCallback(async () => {
+    const res = await roomAction(() => createRaidRoom({
+      hostId: myId, hostName: myName, bossKey: event.bossKey, eventId: event.id,
+      targetFmt, distanceM, stats, archerLevel, cats,
+    }));
+    if (res?.ok) { setRoomId(res.roomId); setScreen("wait"); }
+  }, [roomAction, myId, myName, event, targetFmt, distanceM, stats, archerLevel, cats]);
+
+  const handleJoinRoom = useCallback(async () => {
+    const res = await roomAction(() => joinRaidRoom(joinCode, myId, myName, {
+      stats, archerLevel, cats, targetFmt, distanceM,
+    }));
+    if (res?.ok) { setRoomId(res.roomId); setScreen("wait"); }
+  }, [roomAction, joinCode, myId, myName, stats, archerLevel, cats, targetFmt, distanceM]);
+
+  const handleStart = useCallback(() => roomAction(() => startRaidRoom(roomId, myId, {
+    participants: event?.participants || {},
+    // 王的血全服共享——帶當下剩餘，不然整隊會對著一隻滿血的幻覺打
+    bossHp: Number(event?.bossCurrentHP) || null,
+  })), [roomAction, roomId, myId, event?.participants, event?.bossCurrentHP]);
+
+  const exitRoom = useCallback(async (fn) => {
+    await roomAction(fn);
+    setRoomId(null); setRoom(null); setScreen("solo");
+  }, [roomAction]);
+
   /** 玩家自己點掉結算畫面才離開 */
   const leaveBattle = useCallback(() => {
     setScreen("solo");
     setState(null);
+    // 線上：打完就退房，不然下次進來會被 findReconnectableRaidRoom 拉回已結束的房
+    if (roomId) { leaveRaidRoom(roomId, myId).catch(() => {}); setRoomId(null); setRoom(null); }
     if (submitResult?.ok) onComplete?.(submitResult);
     else onBack?.();
-  }, [submitResult, onComplete, onBack]);
+  }, [submitResult, onComplete, onBack, roomId, myId]);
 
   if (!event) return null;
 
@@ -205,6 +345,12 @@ export default function RaidGate({ event, onBack, sharedData, onComplete }) {
           appearance={profile?.equippedCat?.catId || "baobao"}
           bgUrl={raidBackground(event.bossData?.family)}
           targetFmt={targetFmt}
+          meId={myId}
+          isHost={online ? isHost : true}
+          onSubmitArrows={online ? sendArrows : null}
+          externalSubmissions={online ? (room?.submissions || {}) : null}
+          incomingRound={incomingRound}
+          onForceAdvance={online && isHost ? (() => forceAdvanceRaidRoom(roomId, myId)) : null}
           onState={handleState}
           onKill={payload => { killPayloadRef.current = payload; }}
           onFinish={final => handleFinish({ ...final, killPayload: killPayloadRef.current })}
@@ -216,6 +362,21 @@ export default function RaidGate({ event, onBack, sharedData, onComplete }) {
             background: "rgba(2,6,23,.8)", color: "#e2e8f0", fontWeight: 900, fontSize: 14,
           }}>戰果送出中…</div>
         )}
+        {/* 送箭沒送到——整隊會卡在等你，所以講清楚並給重送 */}
+        {sendFailed && (
+          <div style={{
+            position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 270,
+            padding: "10px 14px", display: "flex", alignItems: "center", gap: 10,
+            background: "rgba(127,29,29,.97)", color: "#fff", fontSize: 12, fontWeight: 900,
+          }}>
+            <span style={{ flex: 1 }}>⚠️ 這回合的箭沒送出去，隊友還在等你</span>
+            <button type="button" onClick={retrySend} style={{
+              padding: "7px 14px", borderRadius: 8, border: "none",
+              background: "#fff", color: "#7f1d1d", fontWeight: 900, fontSize: 12, cursor: "pointer",
+            }}>重送</button>
+          </div>
+        )}
+
         {/* 玩家最在意的一件事：傷害到底有沒有記到排行榜上 */}
         {submitResult && (
           <div style={{
@@ -230,6 +391,30 @@ export default function RaidGate({ event, onBack, sharedData, onComplete }) {
           </div>
         )}
       </>
+    );
+  }
+
+  if (screen === "wait" && view) {
+    return (
+      <div style={{ position: "fixed", inset: 0, overflowY: "auto", background: "#05040a" }}>
+        <RaidWaitRoom
+          view={view} bossName={event.bossData?.name}
+          starting={busy} error={roomError}
+          onReady={v => setRaidReady(roomId, myId, v)}
+          onStart={handleStart}
+          onKick={id => kickRaidMember(roomId, myId, id)}
+          onTargetFmt={fmt => {
+            setLoadout(l => ({ ...l, targetFmt: fmt }));
+            setRaidLoadout(roomId, myId, { targetFmt: fmt });
+          }}
+          onDistance={d => {
+            setLoadout(l => ({ ...l, distanceM: d }));
+            setRaidLoadout(roomId, myId, { distanceM: d });
+          }}
+          onLeave={() => exitRoom(() => leaveRaidRoom(roomId, myId))}
+          onDisband={() => exitRoom(() => disbandRaidRoom(roomId, myId))}
+        />
+      </div>
     );
   }
 
@@ -258,6 +443,10 @@ export default function RaidGate({ event, onBack, sharedData, onComplete }) {
         onResume={() => { setState(resume.state); setRunId(n => n + 1); setResume(null); setScreen("battle"); }}
         onDiscardResume={() => { clearRaidProgress(); setResume(null); }}
         onDepart={startSolo}
+        onCreateRoom={handleCreateRoom}
+        onJoinRoom={handleJoinRoom}
+        joinCode={joinCode} onJoinCode={setJoinCode}
+        joining={busy} roomError={roomError}
         onExit={onBack}
       />
     </div>

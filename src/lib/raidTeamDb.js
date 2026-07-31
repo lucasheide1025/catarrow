@@ -122,7 +122,7 @@ export async function setRaidReady(roomId, memberId, ready = true) {
  *    participants 由呼叫端從世界王事件文件帶進來（房間不自己去讀那份文件，
  *    否則每個人都要監聽王文件＝又是那個 4000 次讀取的坑）。
  */
-export async function startRaidRoom(roomId, hostId, { participants = {}, dateKey } = {}) {
+export async function startRaidRoom(roomId, hostId, { participants = {}, dateKey, bossHp = null } = {}) {
   try {
     const ref = doc(db, R, roomId);
     const s = await getDoc(ref);
@@ -142,10 +142,14 @@ export async function startRaidRoom(roomId, hostId, { participants = {}, dateKey
 
     const boss = WORLD_BOSSES[data.bossKey];
     const maxHp = Math.max(1, Number(boss?.hp) || 1);
+    // ⚠️ 王的血是**全伺服器共享**的：要帶活動當下的剩餘血，不是滿血。
+    //    由呼叫端傳進來——房間自己去讀王文件的話，每個房主都要訂閱整份王，
+    //    那正是 changelog.md:310 的 4000 次讀取。
+    const currentHp = Math.max(1, Math.min(maxHp, Number(bossHp) || maxHp));
     const state = createRaidState({
       boss: {
         key: data.bossKey, name: boss?.name || data.bossKey,
-        hp: maxHp, maxHp, atk: boss?.atk || 100, def: boss?.def || 0,
+        hp: currentHp, maxHp, atk: boss?.atk || 100, def: boss?.def || 0,
         skillConfig: WORLD_BOSS_SKILLS[data.bossKey] || null,
       },
       members: rosterFromRoom(data),

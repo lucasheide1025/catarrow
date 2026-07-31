@@ -42,6 +42,14 @@ export default function RaidScreen({
   appearance = "baobao",
   // 沙盒用：自動幫隊友出手，單機也驗得到組隊邏輯。正式組隊時是 null（箭來自真人）
   botSkill = null,
+  // ── 線上組隊（RaidGate 接 Firestore 房間時才給）─────────────
+  // ⚠️ 線上時**這台裝置不算傷害**：房主在他的裝置上跑 resolveRaidRound，
+  //    結果寫回房間，其他人照 lastLog 重播。所有人看到同一場戰鬥的唯一辦法
+  //    就是只有一個人算——兩台各算各的，隨機數一定會漂。
+  meId = null,                 // 我是誰（線上時 members[0] 不一定是我）
+  onSubmitArrows = null,       // 有給就走線上：送出自己的箭，不本機結算
+  externalSubmissions = null,  // 房間文件上的 submissions（誰交了）
+  incomingRound = null,        // { seq, state, log } → seq 變了就重播房主算好的結果
   // ⚠️ 靶面輸入是**強制**的（作者 2026-07-31）：弱點的精準判定要靠落點，
   //    按分數鍵給不出位置，整套「射在紙上的位置＝射在牠身上的位置」就不成立。
   targetFmt = "half_17",
@@ -76,6 +84,12 @@ export default function RaidScreen({
     window.addEventListener("resize", fit);
     return () => window.removeEventListener("resize", fit);
   }, []);
+  // ⚠️ 「我」在線上組隊時**不一定是 members[0]**：房間的成員順序是共用的，
+  //    每台裝置都拿到同一份 state。沒有這一行，所有人的血條與貓都會顯示房主的。
+  const me = useMemo(
+    () => (state.members || []).find(m => m.memberId === meId) || state.members?.[0] || null,
+    [state.members, meId],
+  );
   const [floats, setFloats] = useState([]);
   const [message, setMessage] = useState("");
   // 手機畫面塞不下「靶面＋狀態列」，所以靶面收進覆蓋層，按「開始射擊」才打開
@@ -114,16 +128,14 @@ export default function RaidScreen({
   }, [playing, state.finished, pending.length, spots]);
 
   // ── 演出：照 log 順序重播。collected = 已經收齊的全隊箭矢（單人時省略）──
-  const playRound = useCallback(collected => {
-    if (playing || state.finished) return;
-    const meId = state.members?.[0]?.memberId;
-    const arrows = Array.isArray(collected) && collected.length
-      ? collected
-      : pending.map(a => ({ ...a, memberId: meId }));
-    if (!arrows.length) return;
+  /**
+   * **只負責播**——傷害已經算好了。
+   * 線上組隊時房主算完寫回房間，每個人（包含房主自己）都走這條路播同一份 log。
+   */
+  const playResolved = useCallback((next, log) => {
+    if (!next || !log) return;
     setPlaying(true);
     setMessage("");
-    const { state: next, log } = resolveRaidRound({ state, arrows });
     // 三箭一組再播：8 人局逐箭要 25 秒，分組後砍到一半以內
     const timeline = buildRaidTimeline(groupRaidVolleys(log));
     let liveLegs = 0;
@@ -337,14 +349,38 @@ export default function RaidScreen({
           totals: next.totals,
           bossMaxHp: next.boss.maxHp,
           defeated: next.bossHp <= 0,
-          hasCat: (next.members?.[0]?.cats || []).length > 0,
+          hasCat: ((next.members || []).find(m => m.memberId === meId) || next.members?.[0])?.cats?.length > 0,
         }));
       }
       else saveRaidProgress(next, { bossKey: next.boss?.key || bossKey, eventId });
       onState?.(next, log);
       if (next.finished) onFinish?.(next);
     }, total + 240));
-  }, [playing, pending, state, onState, onFinish, pushFloat]);
+  }, [state, meId, bossKey, bossMeta, eventId, onState, onFinish, pushFloat]);
+
+  /** 本機算完再播（單人、以及沙盒的假組隊） */
+  const playRound = useCallback(collected => {
+    if (playing || state.finished) return;
+    const myId = me?.memberId;
+    const arrows = Array.isArray(collected) && collected.length
+      ? collected
+      : pending.map(a => ({ ...a, memberId: myId }));
+    if (!arrows.length) return;
+    const { state: next, log } = resolveRaidRound({ state, arrows });
+    playResolved(next, log);
+  }, [playing, pending, state, me, playResolved]);
+
+  // 線上：房主推進後 seq 會變，所有人重播同一份 log
+  const playedSeq = useRef(-1);
+  useEffect(() => {
+    if (!incomingRound || incomingRound.seq == null) return;
+    if (incomingRound.seq === playedSeq.current) return;
+    playedSeq.current = incomingRound.seq;
+    setSubmissions({});
+    setScoring(false);
+    setPending([]);
+    playResolved(incomingRound.state, incomingRound.log);
+  }, [incomingRound, playResolved]);
 
   /**
    * 我送出這回合。
@@ -355,18 +391,27 @@ export default function RaidScreen({
   const submitRound = useCallback(() => {
     if (playing || state.finished || !pending.length) return;
     const roster = state.members || [];
-    const meId = roster[0]?.memberId;
-    const mine = pending.map(a => ({ ...a, memberId: meId }));
+    const myId = me?.memberId;
+    const mine = pending.map(a => ({ ...a, memberId: myId }));
+
+    // ⚠️ 線上：只把箭寫進房間，**不本機結算**。房主收齊了才推進，
+    //    所有人再照他算好的 log 重播——不然兩台各算各的，隨機數立刻漂掉。
+    if (onSubmitArrows) {
+      setScoring(false);
+      setMessage("✅ 已送出——等隊友");
+      onSubmitArrows(mine);
+      return;
+    }
 
     if (roster.length < 2) { setScoring(false); playRound(mine); return; }
 
-    const first = { [meId]: mine };
+    const first = { [myId]: mine };
     setSubmissions(first);
     setScoring(false);
     setMessage(`✅ 已送出——等 ${pendingMembers(roster, first).join("、")}`);
 
     if (!botSkill) return;                    // 正式版：等真人交箭
-    roster.filter(m => m.memberId !== meId).forEach((m, i) => {
+    roster.filter(m => m.memberId !== myId).forEach((m, i) => {
       timers.current.push(setTimeout(() => {
         setSubmissions(prev => {
           const next = {
@@ -387,21 +432,23 @@ export default function RaidScreen({
         });
       }, 650 * (i + 1)));
     });
-  }, [playing, state, pending, spots, botSkill, targetFmt, playRound]);
+  }, [playing, state, pending, spots, botSkill, targetFmt, playRound, me, onSubmitArrows]);
 
+  // 線上時「誰交了」以房間文件為準（本機的 submissions 只有沙盒在用）
+  const liveSubmissions = externalSubmissions || submissions;
   const full = pending.length >= RAID_ARROWS_PER_ROUND;
 
   const range = rangeLabel(state.rangeMult || 1);
   const faceCap = maxArrowsPerFace(targetFmt);
   const teamSize = teamSizeOf(state);
   // 送出之後（等隊友／演出中）才顯示小隊立繪
-  const teamRevealed = playing || Object.keys(submissions).length > 0;
+  const teamRevealed = playing || Object.keys(liveSubmissions).length > 0;
   // 我倒地了嗎——倒地＝轉後衛，不能再射但仍在戰鬥
   // ⚠️ 只有組隊才有後衛：單人倒地＝直接結束，不會停在「後衛中」
-  const iAmDown = teamSize > 1 && (state.members?.[0]?.hp ?? 1) <= 0;
+  const iAmDown = teamSize > 1 && (me?.hp ?? 1) <= 0;
   // 還在等誰（房主的強制推進按鈕吃這個）
-  const waitingNames = (!playing && Object.keys(submissions).length > 0)
-    ? pendingMembers(state.members || [], submissions) : [];
+  const waitingNames = (!playing && Object.keys(liveSubmissions).length > 0)
+    ? pendingMembers(state.members || [], liveSubmissions) : [];
   const gaugeMax = teamGaugeMax(teamSize);
 
   return (
@@ -447,7 +494,7 @@ export default function RaidScreen({
                短螢幕（iPhone SE 可用高度 ~553px）上這一列會把按鈕擠到摺線下方。 */}
         {teamSize > 1 && teamRevealed && (
           <RaidTeamBar members={shown?.members || state.members}
-            meId={state.members?.[0]?.memberId} activeId={activeShooter} submitted={submissions} />
+            meId={me?.memberId} activeId={activeShooter} submitted={liveSubmissions} />
         )}
 
         <RaidIntent intent={intent} legHits={legHits} />
@@ -509,9 +556,9 @@ export default function RaidScreen({
                 name={playerName} hp={state.playerHp} maxHp={state.playerMaxHp}
                 atk={state.stats.atk} def={state.stats.def}
                 archerLevel={state.archerLevel} cats={state.cats}
-                wbCard={state.members?.[0]?.wbCard}
-                wbCardCount={state.members?.[0]?.wbCardCount}
-                baseStats={state.members?.[0]?.baseStats}
+                wbCard={me?.wbCard}
+                wbCardCount={me?.wbCardCount}
+                baseStats={me?.baseStats}
                 teamLabel={teamSize > 1 ? (state.teamBuff?.label || "") : ""}
                 compact
               />
@@ -562,10 +609,10 @@ export default function RaidScreen({
               {isHost && !playing && waitingNames.length > 0 && (
                 <button type="button"
                   onClick={() => {
-                    if (onForceAdvance) { onForceAdvance(submissions); return; }
+                    if (onForceAdvance) { onForceAdvance(liveSubmissions); return; }
                     const roster = state.members || [];
                     setMessage(`強制推進——跳過 ${waitingNames.join("、")}`);
-                    playRound(roster.flatMap(m => submissions[m.memberId] || []));
+                    playRound(roster.flatMap(m => liveSubmissions[m.memberId] || []));
                   }}
                   style={{
                     padding: "8px 0", borderRadius: 10, border: "1px solid #f87171",
