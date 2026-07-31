@@ -240,6 +240,9 @@ src/worldboss/                  ← 新，頂層（比照 src/guild/ 的 domain/
 
 ## 11. 還沒做
 
+> ⚠️ **新手教學不要在這裡做**（作者 2026-07-31）：教學之後會**整套重做一份全新的**，
+> 不是討伐專屬的。這裡先不要生半套的引導，否則到時候要拆。
+
 - Firestore 欄位（`breakGauge` / `participants.breakPoints`）與破防貢獻榜
 - 接 `WorldBossAttack.jsx`（2023 行，最後動）
 - ⚠️ **破防槽不可逐箭同步**——`changelog.md:310` 記過訂閱整份王文件造成 4000 次讀取。
