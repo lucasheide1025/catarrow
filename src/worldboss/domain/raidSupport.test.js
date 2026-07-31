@@ -164,3 +164,56 @@ describe("UI 文案", () => {
     expect(supportLabel(null)).toBe("");
   });
 });
+
+describe("⚠️ 只有組隊有後衛（作者 2026-07-31）", () => {
+  test("單人倒地完全沒有後衛——寫死，不靠「剛好沒有存活者」", () => {
+    expect(teamSupport([member("me", { hp: 0, damage: 9999 })])).toEqual({
+      atkMult: 1, healPct: 0, supporters: [], totalPerf: 0,
+    });
+  });
+
+  test("單人還活著時當然也沒有後衛", () => {
+    expect(teamSupport([member("me", { damage: 9999 })]).supporters).toEqual([]);
+  });
+
+  test("兩人以上才會有", () => {
+    expect(teamSupport([member("a", { hp: 0, damage: 500 }), member("b", { damage: 500 })]).supporters)
+      .toHaveLength(1);
+  });
+});
+
+describe("⚠️ 全員陣亡就提前結束", () => {
+  const lethal = n => {
+    const st = createRaidState({
+      boss: {
+        key: "t", name: "測試王", hp: 900000, maxHp: 900000, atk: 99999, def: 0,
+        skillConfig: { r4Finisher: { skillId: "x", name: "終結", baseMultiplier: 2.2, canKnockOut: true } },
+      },
+      members: Array.from({ length: n }, (_, i) => ({
+        memberId: `m${i}`, name: `隊員${i}`, stats: { atk: 100, def: 0, hp: 10 },
+      })),
+    });
+    return { ...st, round: 4, spots: [] };
+  };
+
+  test("單人被打倒＝直接結束", () => {
+    const { state } = resolveRaidRound({ state: lethal(1), arrows: [] });
+    expect(state.members[0].hp).toBe(0);
+    expect(state.finished).toBe(true);
+  });
+
+  test("組隊全員陣亡才結束", () => {
+    const { state } = resolveRaidRound({ state: lethal(3), arrows: [] });
+    expect(state.members.every(m => m.hp <= 0)).toBe(true);
+    expect(state.finished).toBe(true);
+  });
+
+  test("組隊還有人站著就繼續打", () => {
+    const st = lethal(3);
+    st.members[2].stats = { ...st.members[2].stats, hp: 999999 };
+    st.members[2].hp = 999999; st.members[2].maxHp = 999999;
+    const { state } = resolveRaidRound({ state: st, arrows: [] });
+    expect(state.members[2].hp).toBeGreaterThan(0);
+    expect(state.finished).toBe(false);
+  });
+});

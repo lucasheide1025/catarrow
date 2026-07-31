@@ -3,7 +3,11 @@
 // 倒地 → 轉後衛助戰（作者 2026-07-31，比照公會的
 // 「💀 你已倒地——隊友還在戰鬥，撐到勝利你一樣有獎勵」）。
 //
-// 被王打倒的人不是出局，而是換位置：
+// ⚠️ **只有組隊有後衛**（作者 2026-07-31）：
+//    單人被打倒＝直接結束，沒有後衛這回事（沒有隊友可以助戰，本來也不該有）。
+//    組隊則是全員陣亡才提前結束；還有人站著就繼續打，倒下的人轉後衛。
+//
+// 被王打倒的人不是出局（組隊時），而是換位置：
 //   ・幫還站著的隊友加攻擊力（**最高 +15%**）
 //   ・每回合幫隊友補血（**最高 +15% 最大生命**）
 //
@@ -32,12 +36,14 @@ export function supportPerformance(member, teamAvgDamage = 0) {
  */
 export function teamSupport(members = []) {
   const roster = Array.isArray(members) ? members : [];
+  const none = { atkMult: 1, healPct: 0, supporters: [], totalPerf: 0 };
+
+  // ⚠️ 單人沒有後衛——寫死在這裡，不要靠「剛好沒有存活者」這種間接條件。
+  if (roster.length < 2) return none;
+
   const alive = roster.filter(m => m.hp > 0);
   const downed = roster.filter(m => m.hp <= 0);
-
-  if (!downed.length || !alive.length) {
-    return { atkMult: 1, healPct: 0, supporters: [], totalPerf: 0 };
-  }
+  if (!downed.length || !alive.length) return none;
 
   const totalDamage = roster.reduce((sum, m) => sum + (Number(m.damage) || 0), 0);
   const avg = roster.length ? totalDamage / roster.length : 0;

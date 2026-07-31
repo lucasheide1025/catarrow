@@ -390,7 +390,8 @@ export default function RaidScreen({
   // 送出之後（等隊友／演出中）才顯示小隊立繪
   const teamRevealed = playing || Object.keys(submissions).length > 0;
   // 我倒地了嗎——倒地＝轉後衛，不能再射但仍在戰鬥
-  const iAmDown = (state.members?.[0]?.hp ?? 1) <= 0;
+  // ⚠️ 只有組隊才有後衛：單人倒地＝直接結束，不會停在「後衛中」
+  const iAmDown = teamSize > 1 && (state.members?.[0]?.hp ?? 1) <= 0;
   // 還在等誰（房主的強制推進按鈕吃這個）
   const waitingNames = (!playing && Object.keys(submissions).length > 0)
     ? pendingMembers(state.members || [], submissions) : [];
@@ -669,10 +670,16 @@ export default function RaidScreen({
                 filter: state.bossHp <= 0 ? "drop-shadow(0 0 22px rgba(253,230,138,.65))" : "saturate(.6)" }}
             />
             <div style={{ fontSize: 28, fontWeight: 900, color: state.bossHp <= 0 ? "#fde68a" : "#e2e8f0" }}>
-              {state.bossHp <= 0 ? "討伐成功" : state.members.every(m => m.hp <= 0) ? "力竭撤退" : "出擊結束"}
+              {state.bossHp <= 0 ? "討伐成功"
+                : state.members.every(m => m.hp <= 0)
+                  ? (teamSize > 1 ? "全隊倒下" : "力竭撤退")
+                  : "出擊結束"}
             </div>
             <div style={{ fontSize: 11.5, color: "#94a3b8", marginTop: 6, marginBottom: 16 }}>
-              {state.bossHp <= 0 ? "牠倒下了。" : "牠還站著——但你打掉的每一分血都算數。"}
+              {state.bossHp <= 0 ? "牠倒下了。"
+                : state.members.every(m => m.hp <= 0)
+                  ? (teamSize > 1 ? "全隊都倒下了——這一場提前結束。" : "你倒下了——這一場提前結束。")
+                  : "牠還站著——但你打掉的每一分血都算數。"}
             </div>
             <div style={{
               display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 8, fontSize: 12,

@@ -395,6 +395,9 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
     phaseId: currentPhase(raidHpRatio(s)).id,
     faceCount: faceCountOf(s.targetFmt),
   });
+  // 結束條件：王倒下／回合用完／**全員陣亡**。
+  // ⚠️ 單人被打倒就是全員陣亡＝直接結束（沒有後衛可以撐）；
+  //    組隊時還有人站著就繼續打，倒下的人轉後衛（見 raidSupport）。
   s.finished = s.bossHp <= 0 || s.round > RAID_TOTAL_ROUNDS || s.members.every(m => m.hp <= 0);
 
   log.push({
