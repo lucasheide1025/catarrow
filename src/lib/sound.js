@@ -1274,3 +1274,110 @@ export function sfxBoardTile(tileType) {
     default:         return sfxSuccess();
   }
 }
+
+// ════════════════════════════════════════════════════════════════
+//  世界王討伐（src/worldboss/）專屬音效
+//  全部用現代合成器原語疊出來（punch/impact/sub/swell/notes），不加任何音檔。
+//  設計原則：**輕重要拉開**——一般命中很輕，破防是全場最重的一個，
+//  玩家光靠聽就知道剛剛發生的是大事還是小事。
+// ════════════════════════════════════════════════════════════════
+
+// 宣告部位：準星收束。短、乾、帶一點金屬味
+export function sfxLockOn() {
+  pluck({ freq: 1180, dur: 0.09, gain: 0.13, cut0: 7000, cut1: 2200, send: 0.08 });
+  pluck({ freq: 1560, dur: 0.07, gain: 0.09, delay: 0.05, cut0: 8000, cut1: 3000, send: 0.06 });
+}
+
+// 王在蓄力：低頻漸強，讓人不安
+export function sfxCharge() {
+  swell({ up: true, dur: 0.7, gain: 0.13, send: 0.3 });
+  sub({ freq: 54, dur: 0.75, gain: 0.32 });
+}
+
+// 命中弱點：這是玩家最想聽到的聲音——透、亮、有重量
+export function sfxWeakHit() {
+  impact({ dur: 0.2, cut0: 9000, cut1: 700, gain: 0.34, send: 0.16 });
+  punch({ freq: 520, drop: 0.5, dur: 0.16, gain: 0.3, type: 'triangle', send: 0.14 });
+  pluck({ freq: 1760, dur: 0.16, gain: 0.16, delay: 0.02, cut0: 9000, cut1: 2600, send: 0.24 });
+  sub({ freq: 74, dur: 0.2, gain: 0.34 });
+}
+
+// 擦過：宣告失敗。金屬彈開，刺耳但短——要讓人「嘖」一聲
+export function sfxDeflect() {
+  pluck({ freq: 2400, dur: 0.08, gain: 0.14, detune: 40, cut0: 9000, cut1: 5000, send: 0.1 });
+  pluck({ freq: 3100, dur: 0.06, gain: 0.1, delay: 0.03, cut0: 9000, cut1: 6000, send: 0.14 });
+  impact({ dur: 0.1, cut0: 6000, cut1: 2400, gain: 0.12, send: 0.08 });
+}
+
+// 破防槽累積：音高隨進度上升，快滿的時候自己會緊張
+export function sfxGaugeTick(progress = 0) {
+  const p = Math.max(0, Math.min(1, progress));
+  pluck({ freq: 620 + p * 780, dur: 0.07, gain: 0.1, cut0: 6000, cut1: 1800, send: 0.12 });
+}
+
+// 破防！全場最重的一個
+export function sfxBreakthrough() {
+  impact({ dur: 0.5, cut0: 11000, cut1: 180, gain: 0.44, send: 0.34 });
+  sub({ freq: 46, dur: 0.62, gain: 0.55 });
+  punch({ freq: 300, drop: 0.62, dur: 0.34, gain: 0.32, type: 'sawtooth', send: 0.2 });
+  notes([[523.25, 0.08, 0.5], [659.25, 0.14, 0.5], [783.99, 0.2, 0.62], [1046.5, 0.26, 0.7]],
+        { gain: 0.15, send: 0.4, spread: true });
+}
+
+// 打斷成功：蓄力條碎裂。要有「卡」一聲的中斷感
+export function sfxInterrupt() {
+  impact({ dur: 0.16, cut0: 8000, cut1: 900, gain: 0.32, send: 0.14 });
+  punch({ freq: 760, drop: 0.7, dur: 0.12, gain: 0.26, type: 'square', send: 0.1 });
+  pluck({ freq: 880, dur: 0.2, gain: 0.13, delay: 0.09, cut0: 7000, cut1: 1500, send: 0.28 });
+  sub({ freq: 64, dur: 0.18, gain: 0.3 });
+}
+
+// 王的大招：沒斷成的代價
+export function sfxBossUlt() {
+  distTone(180, 48, 0.75, 0.3);
+  impact({ dur: 0.55, cut0: 6000, cut1: 130, gain: 0.4, send: 0.3 });
+  sub({ freq: 40, dur: 0.7, gain: 0.5 });
+}
+
+// 階段轉換：牠變了
+export function sfxPhaseShift() {
+  distTone(260, 120, 0.6, 0.24);
+  swell({ up: false, dur: 0.5, gain: 0.16, send: 0.34 });
+  sub({ freq: 50, dur: 0.5, gain: 0.4 });
+}
+
+// 連擊：音高遞增，連越多越爽
+export function sfxCombo(count = 1) {
+  const step = Math.min(11, Math.max(0, count - 1));
+  pluck({ freq: 660 * Math.pow(2, step / 12), dur: 0.1, gain: 0.12, cut0: 7000, cut1: 2200, send: 0.2 });
+}
+
+// 王倒下：慢、重、然後放晴
+export function sfxWorldBossFall() {
+  distTone(200, 34, 1.3, 0.32);
+  impact({ dur: 0.9, cut0: 5000, cut1: 90, gain: 0.42, send: 0.4, delay: 0.15 });
+  sub({ freq: 38, dur: 1.1, gain: 0.55, delay: 0.1 });
+  notes([[392, 0.85, 0.8], [523.25, 0.98, 0.8], [659.25, 1.1, 0.9], [783.99, 1.22, 1.2]],
+        { gain: 0.16, send: 0.45, spread: true });
+}
+
+// log 事件 → 音效。UI 只要照時間軸呼叫這一支，不必自己判斷。
+export function sfxRaidEvent(event) {
+  if (!event) return;
+  switch (event.type) {
+    case "intent":       return event.intent?.charging ? sfxCharge() : undefined;
+    case "arrow":
+      if (event.missed) return sfxSoftFail();
+      if (event.grazed || event.blocked) return sfxDeflect();
+      if (event.hit) { sfxWeakHit(); if (event.combo >= 3) sfxCombo(event.combo); return; }
+      return sfxArrowHit();
+    case "gauge":        return sfxGaugeTick((event.gauge?.gauge || 0) / 30);
+    case "breakthrough": return sfxBreakthrough();
+    case "interrupt":    return sfxInterrupt();
+    case "ult":          return sfxBossUlt();
+    case "counter":      return sfxCounter();
+    case "phaseShift":   return sfxPhaseShift();
+    case "bossDown":     return sfxWorldBossFall();
+    default:             return undefined;
+  }
+}

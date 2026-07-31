@@ -155,6 +155,34 @@ lastCheckinDate // "YYYY-MM-DD"，submitCheckin 當下 + approveCheckin 補寫�
 
 ---
 
+## 👹 世界王討伐（`src/worldboss/`，2026-07-31 新版，`?raid` 沙盒）
+
+> 舊版 `src/components/worldboss/WorldBossAttack.jsx`（2023 行）**還在跑線上**，新版尚未接線。
+> 規格：`docs/second_brain/world-boss-redesign.md`
+
+| 檔案 | 用途 |
+|------|------|
+| `domain/weakPoints.js` | 宣告制弱點：`WEAK_POINTS`、`resolveWeakPointHit()`、`clockOf()`（方位加碼） |
+| `domain/raidPhases.js` | 三階段與部位封鎖：`currentPhase()`、`phaseTransition()` |
+| `domain/breakGauge.js` | 破防槽（算次數不算傷害）：`advanceBreakGauge()`、`burstMultiplier()` |
+| `domain/bossIntent.js` | 蓄力／打斷：`intentForRound()`、`resolveIntent()` |
+| `domain/raidFlow.js` | 回合狀態機 → **產生 log**：`createRaidState()`、`resolveRaidRound()` |
+| `domain/raidTimeline.js` | log → 演出時間軸（**保留原順序**）：`buildRaidTimeline()` |
+| `ui/RaidScreen.jsx` | 討伐版式外殼＋演出引擎 |
+| `ui/RaidBoss.jsx` / `RaidHud.jsx` / `raidFx.css` | 王＋部位熱點／四條資訊帶／所有動畫 |
+| `ui/RaidSandbox.jsx` | `?raid` 試裝間（假資料） |
+| `raidAssets.js` | `raidBackground(family)` → `/assets/raid/raid_bg_<族>.webp` |
+
+**平衡的三個旋鈕**（改任何一個都要讓 `domain/raidBalance.test.js` 繼續過，貢獻比須落在 2.5×~4.5×）：
+1. `WEAK_POINTS[].dmgPct`——弱點固定傷害佔王最大血量的比例
+2. `RAID_NORMAL_DAMAGE_SCALE`（raidFlow）——ATK 那一段的權重，**壓它才能只動配重不動總量**
+3. `WEAK_POINTS[].breakPoints`——破防貢獻的落差
+
+⚠️ **弱點傷害絕對不能改成乘 ATK**——那等於整個改版白做（差距會從 3× 回到 34×）。
+⚠️ **音效**：`sfxRaidEvent(event)` 一支對應所有 log 事件（sound.js 末段），不要在 UI 裡各自判斷。
+
+---
+
 ## 📦 Firestore Collections
 
 ```js

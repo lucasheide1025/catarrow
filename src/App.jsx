@@ -12,6 +12,7 @@ import PublicBookingApp from "./pages/PublicBookingApp";
 import ZombieGame   from "./zombie/ZombieGame";
 import CatalogPreviewPage from "./features/catalog/CatalogPreviewPage";
 import GuildTestApp from "./guild/GuildTestApp";
+import RaidSandbox from "./worldboss/ui/RaidSandbox";
 import { initGoalTracker } from "./lib/villageGoalDb";
 import { CostControlProvider } from "./hooks/useCostControl";
 import { resolveGuestEntry } from "./lib/guestEntryRoute";
@@ -34,6 +35,7 @@ function AppRoutes() {
   if (searchParams.has("zombie")) return <ZombieGame />;
   if (searchParams.has("catalog")) return <CatalogPreviewPage />;
   if (searchParams.has("guild")) return <GuildTestApp />;   // 🚧 公會遠征雛形，隱藏測試入口
+  if (searchParams.has("raid")) return <RaidSandbox />;     // 🚧 世界王討伐試裝間，假資料、不碰線上世界王
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">
