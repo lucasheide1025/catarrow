@@ -5,6 +5,7 @@ import { BREAK_GAUGE_MAX } from "../domain/breakGauge";
 import { intentHint } from "../domain/bossIntent";
 import { WEAK_SPOTS } from "../domain/weakPoints";
 import { archerForMember, raidArcherArt } from "../raidAssets";
+import { WB_FRAME, wbFrameStyle } from "../domain/raidCards";
 
 const GAUGE_CELLS = 20;
 
@@ -169,14 +170,25 @@ export function RaidTeamBar({ members = [], submitted = {}, meId = null, activeI
           <div key={m.memberId}
             className={`raid-member${m.memberId === activeId ? " raid-member-active raid-member-step" : ""}`}
             style={{ textAlign: "center", opacity: dead ? 0.42 : 1 }}>
-            <img
-              src={raidArcherArt(m.appearance || archerForMember(m.memberId))} alt=""
-              onError={e => { e.currentTarget.style.visibility = "hidden"; }}
-              style={{
-                width: art, height: art, objectFit: "contain", display: "block",
-                filter: `drop-shadow(0 4px 8px rgba(0,0,0,.65))${isMe ? " drop-shadow(0 0 7px #60a5fa)" : ""}`,
-              }}
-            />
+            <div style={{ position: "relative", ...(wbFrameStyle(m.wbCard) || {}) }}>
+              {/* 有世界王卡：頭頂小皇冠＋金邊（顏色沿用戰鬥畫面的 FRAME_TIERS.worldboss） */}
+              {m.wbCard && (
+                <span aria-label={WB_FRAME.label} title={WB_FRAME.label}
+                  style={{
+                    position: "absolute", top: -9, left: "50%", transform: "translateX(-50%)",
+                    fontSize: n <= 6 ? 13 : 11, lineHeight: 1, zIndex: 2,
+                    filter: `drop-shadow(0 0 4px ${WB_FRAME.glow})`,
+                  }}>{WB_FRAME.icon}</span>
+              )}
+              <img
+                src={raidArcherArt(m.appearance || archerForMember(m.memberId))} alt=""
+                onError={e => { e.currentTarget.style.visibility = "hidden"; }}
+                style={{
+                  width: art, height: art, objectFit: "contain", display: "block",
+                  filter: `drop-shadow(0 4px 8px rgba(0,0,0,.65))${isMe ? " drop-shadow(0 0 7px #60a5fa)" : ""}`,
+                }}
+              />
+            </div>
             <div style={{
               fontSize: n <= 6 ? 9 : 8, fontWeight: 900, whiteSpace: "nowrap",
               color: isMe ? "#93c5fd" : "#e2e8f0", textShadow: "0 1px 4px rgba(0,0,0,.9)",

@@ -17,6 +17,7 @@ import { rangeMultiplier } from "./raidRange";
 import { rookieMultiplier } from "./raidRookie";
 import { faceCountOf, maxArrowsPerFace } from "./raidFaces";
 import { teamGaugeMax, teamInterruptRequired, teamSizeOf, teamStatBonus } from "./raidTeam";
+import { hasWorldBossCard, worldBossCardCount } from "./raidCards";
 
 export const RAID_TOTAL_ROUNDS = 5;
 
@@ -71,6 +72,9 @@ export function createRaidState({
       archerLevel: Number(m.archerLevel) || 1,
       rookieMult: rookieMultiplier(Number(m.archerLevel) || 1),
       cats: (m.cats || []).filter(c => c && Number(c.atk) > 0),
+      // 世界王卡：判定沿用既有的 source === "wb"，UI 據此畫金邊與皇冠
+      wbCard: m.wbCard != null ? !!m.wbCard : hasWorldBossCard(m.equipped),
+      wbCardCount: m.wbCardCount != null ? m.wbCardCount : worldBossCardCount(m.equipped),
       hp: st.hp,
       maxHp: st.hp,
       damage: 0,

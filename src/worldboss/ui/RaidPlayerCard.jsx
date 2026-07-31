@@ -2,6 +2,7 @@
 // 玩家狀態列。原本的討伐版式漏了這一塊——玩家看不到自己的 HP、也看不到貓貓在不在。
 // 計分覆蓋層打開時會整條收起來（手機畫面塞不下靶面＋狀態列）。
 import { rookieBadge } from "../domain/raidRookie";
+import { WB_FRAME } from "../domain/raidCards";
 
 // ⚠️ 左邊原本有一張小立繪，2026-07-31 拿掉：
 //    王的正下方已經有小隊站位（含「我」的立繪），這裡再放一張是重複的，
@@ -13,6 +14,8 @@ export default function RaidPlayerCard({
   archerLevel = 1,
   cats = [],
   compact = false,
+  wbCard = false,
+  wbCardCount = 0,
   baseStats = null,      // 有組隊加成時傳原始值，顯示「100 → 130」
   teamLabel = "",
 }) {
@@ -32,6 +35,17 @@ export default function RaidPlayerCard({
             {name}
           </span>
           <span style={{ fontSize: 9.5, color: "#94a3b8", whiteSpace: "nowrap" }}>Lv.{archerLevel}</span>
+          {wbCard && (
+            <span title={WB_FRAME.label}
+              style={{
+                fontSize: 9, fontWeight: 900, color: "#78350f", whiteSpace: "nowrap",
+                borderRadius: 5, padding: "1px 5px",
+                background: "linear-gradient(120deg,#f59e0b,#fde68a,#f59e0b)",
+                boxShadow: `0 0 6px ${WB_FRAME.glow}`,
+              }}>
+              {WB_FRAME.icon} 王卡{wbCardCount > 1 ? `×${wbCardCount}` : ""}
+            </span>
+          )}
           {rookie && (
             <span style={{
               fontSize: 9, fontWeight: 900, color: rookie.color,

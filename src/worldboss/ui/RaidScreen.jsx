@@ -14,7 +14,8 @@ import { RAID_ARROWS_PER_ROUND, RAID_TOTAL_ROUNDS, raidHpRatio, resolveRaidRound
 import { buildRaidTimeline, describeEvent, groupRaidVolleys } from "../domain/raidTimeline";
 import { RaidBossBar, RaidGauge, RaidIntent, RaidSpotLegend, RaidTeamBar } from "./RaidHud";
 import { teamGaugeMax, teamSizeOf } from "../domain/raidTeam";
-import { botTeamArrows } from "../domain/raidBot";
+import { botRoundArrows } from "../domain/raidBot";
+import { allSubmitted, pendingMembers } from "../domain/raidTeam";
 import { RAID_MEDALS } from "../raidAssets";
 import RaidBoss from "./RaidBoss";
 import RaidTarget from "./RaidTarget";
@@ -50,6 +51,8 @@ export default function RaidScreen({
   const [pierceMark, setPierceMark] = useState(null);
   // 輪到誰誰上前——8 個人站一排，不標的話不知道現在誰在射
   const [activeShooter, setActiveShooter] = useState(null);
+  // 組隊：全員送出才推進。存每個人交上來的箭，收齊了才結算。
+  const [submissions, setSubmissions] = useState({});
   const [floats, setFloats] = useState([]);
   const [message, setMessage] = useState("");
   // 手機畫面塞不下「靶面＋狀態列」，所以靶面收進覆蓋層，按「開始射擊」才打開
@@ -87,21 +90,17 @@ export default function RaidScreen({
     if (spot) { sfxLockOn(); vibrate(12); } else { sfxTap(); }
   }, [playing, state.finished, pending.length, spots]);
 
-  // ── 演出：照 log 順序重播 ──
-  const playRound = useCallback(() => {
-    if (playing || state.finished || !pending.length) return;
+  // ── 演出：照 log 順序重播。collected = 已經收齊的全隊箭矢（單人時省略）──
+  const playRound = useCallback(collected => {
+    if (playing || state.finished) return;
+    const meId = state.members?.[0]?.memberId;
+    const arrows = Array.isArray(collected) && collected.length
+      ? collected
+      : pending.map(a => ({ ...a, memberId: meId }));
+    if (!arrows.length) return;
     setPlaying(true);
     setMessage("");
-    // 模擬隊友出手：把 bot 的箭跟我的箭合在一起結算，才驗得到組隊的邏輯
-    const meId = state.members?.[0]?.memberId;
-    const mine = pending.map(a => ({ ...a, memberId: meId }));
-    const botArrows = botSkill
-      ? botTeamArrows({
-        members: state.members, meId, spots,
-        skill: botSkill, arrows: RAID_ARROWS_PER_ROUND, targetFmt,
-      })
-      : [];
-    const { state: next, log } = resolveRaidRound({ state, arrows: [...mine, ...botArrows] });
+    const { state: next, log } = resolveRaidRound({ state, arrows });
     // 三箭一組再播：8 人局逐箭要 25 秒，分組後砍到一半以內
     const timeline = buildRaidTimeline(groupRaidVolleys(log));
     let liveLegs = 0;
@@ -261,11 +260,55 @@ export default function RaidScreen({
       setActiveShooter(null);
       setScoring(false);
       setPending([]);
+      setSubmissions({});
       setShown(null);
       onState?.(next, log);
       if (next.finished) onFinish?.(next);
     }, total + 240));
-  }, [playing, pending, state, spots, botSkill, targetFmt, onState, onFinish, pushFloat]);
+  }, [playing, pending, state, onState, onFinish, pushFloat]);
+
+  /**
+   * 我送出這回合。
+   * ⚠️ **組隊時不會馬上結算**——要等全隊都送出（作者 2026-07-31 指定）。
+   *    正式版每個人各自 submitRaidArrows 寫自己那格，房主收齊才推進；
+   *    沙盒裡隊友由 bot 陸續交上來，才看得到這個閘門真的在擋。
+   */
+  const submitRound = useCallback(() => {
+    if (playing || state.finished || !pending.length) return;
+    const roster = state.members || [];
+    const meId = roster[0]?.memberId;
+    const mine = pending.map(a => ({ ...a, memberId: meId }));
+
+    if (roster.length < 2) { setScoring(false); playRound(mine); return; }
+
+    const first = { [meId]: mine };
+    setSubmissions(first);
+    setScoring(false);
+    setMessage(`✅ 已送出——等 ${pendingMembers(roster, first).join("、")}`);
+
+    if (!botSkill) return;                    // 正式版：等真人交箭
+    roster.filter(m => m.memberId !== meId).forEach((m, i) => {
+      timers.current.push(setTimeout(() => {
+        setSubmissions(prev => {
+          const next = {
+            ...prev,
+            [m.memberId]: botRoundArrows({
+              memberId: m.memberId, spots, skill: botSkill,
+              arrows: RAID_ARROWS_PER_ROUND, targetFmt,
+            }),
+          };
+          if (allSubmitted(roster, next)) {
+            setMessage("全隊送出，開始結算…");
+            timers.current.push(setTimeout(
+              () => playRound(roster.flatMap(x => next[x.memberId] || [])), 260));
+          } else {
+            setMessage(`⏳ 等 ${pendingMembers(roster, next).join("、")}`);
+          }
+          return next;
+        });
+      }, 650 * (i + 1)));
+    });
+  }, [playing, state, pending, spots, botSkill, targetFmt, playRound]);
 
   const full = pending.length >= RAID_ARROWS_PER_ROUND;
 
@@ -314,8 +357,8 @@ export default function RaidScreen({
       <div style={{ position: "relative", zIndex: 4, marginTop: "auto", marginBottom: 4 }}>
         {/* ⚠️ 小隊站位不能用絕對定位——8 個人會壓在王身上 */}
         {teamSize > 1 && (
-          <RaidTeamBar members={shown?.members || state.members} submitted={{}}
-            meId={state.members?.[0]?.memberId} activeId={activeShooter} />
+          <RaidTeamBar members={shown?.members || state.members}
+            meId={state.members?.[0]?.memberId} activeId={activeShooter} submitted={submissions} />
         )}
 
         <RaidIntent intent={intent} legHits={legHits} />
@@ -345,6 +388,8 @@ export default function RaidScreen({
                 name={playerName} hp={state.playerHp} maxHp={state.playerMaxHp}
                 atk={state.stats.atk} def={state.stats.def}
                 archerLevel={state.archerLevel} cats={state.cats}
+                wbCard={state.members?.[0]?.wbCard}
+                wbCardCount={state.members?.[0]?.wbCardCount}
                 baseStats={state.members?.[0]?.baseStats}
                 teamLabel={teamSize > 1 ? (state.teamBuff?.label || "") : ""}
                 compact
@@ -381,7 +426,7 @@ export default function RaidScreen({
               </button>
 
               {pending.length > 0 && !playing && (
-                <button type="button" onClick={playRound}
+                <button type="button" onClick={submitRound}
                   style={{
                     padding: "8px 0", borderRadius: 10, border: "1px solid #f59e0b",
                     background: "transparent", color: "#fbbf24", fontWeight: 900, fontSize: 11, cursor: "pointer",
@@ -455,7 +500,7 @@ export default function RaidScreen({
                 background: "transparent", color: "#94a3b8", fontWeight: 900, cursor: "pointer",
               }}>收起</button>
             <button type="button" disabled={!pending.length}
-              onClick={() => { setScoring(false); playRound(); }}
+              onClick={submitRound}
               style={{
                 flex: 1, padding: "13px 0", borderRadius: 11, border: "none",
                 background: pending.length ? "linear-gradient(135deg,#f59e0b,#b45309)" : "#475569",

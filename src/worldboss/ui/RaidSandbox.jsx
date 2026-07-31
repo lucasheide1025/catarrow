@@ -41,6 +41,7 @@ export default function RaidSandbox() {
   const [teamCount, setTeamCount] = useState(1);
   const [spentIdx, setSpentIdx] = useState(-1);   // 模擬「某個隊員次數用完」
   const [botSkill, setBotSkill] = useState("mid");
+  const [wbCardMode, setWbCardMode] = useState("me");   // none / me / half / all
   const [hpScale, setHpScale] = useState(0.05);   // 沙盒預設把血調低，才看得到階段轉換
   const [runId, setRunId] = useState(0);
   const [state, setState] = useState(null);
@@ -60,8 +61,13 @@ export default function RaidSandbox() {
       },
       stats: { atk: p.atk, def: p.def, hp: p.hp },
       archerLevel,
+      wbCard: wbCardMode === "me" || wbCardMode === "all" || wbCardMode === "half",
+      wbCardCount: wbCardMode === "none" ? 0 : 1,
       members: teamCount < 2 ? null : Array.from({ length: teamCount }, (_, i) => ({
         memberId: `m${i}`, name: i === 0 ? "我" : `隊友${i}`,
+        wbCard: wbCardMode === "all" || (wbCardMode === "me" && i === 0)
+          || (wbCardMode === "half" && i % 2 === 0),
+        wbCardCount: 1,
         stats: { atk: p.atk, def: p.def, hp: p.hp },
         archerLevel: i === 0 ? archerLevel : 60,
         cats: catId === "none" ? [] : [(() => {
@@ -272,6 +278,21 @@ export default function RaidSandbox() {
             </div>
           );
         })()}
+      </div>
+
+      <div style={cardStyle}>
+        <div style={labelStyle}>👑 世界王卡（有卡的人立繪會有金邊＋皇冠）</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 5 }}>
+          {[["none","都沒有"],["me","只有我"],["half","一半的人"],["all","全隊都有"]].map(([id,label]) => (
+            <button key={id} type="button" onClick={() => setWbCardMode(id)}
+              style={{
+                padding: "8px 2px", borderRadius: 8, cursor: "pointer",
+                border: `2px solid ${wbCardMode === id ? "#f5b942" : "rgba(255,255,255,.1)"}`,
+                background: wbCardMode === id ? "rgba(245,185,66,.16)" : "#1e293b",
+                color: "#e2e8f0", fontSize: 11, fontWeight: 900,
+              }}>{label}</button>
+          ))}
+        </div>
       </div>
 
       <div style={cardStyle}>
