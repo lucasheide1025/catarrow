@@ -155,6 +155,9 @@ export function buildKillPayload({
     style: { id: style.id, icon: style.icon, name: style.name, flavour: style.flavour, rarity: style.rarity, color: style.color },
     // 演出只需要 id 與名字（用來挑射手姿勢與顯示人數），不搬整份成員資料
     cast: (members || []).slice(0, 5).map(m => ({ memberId: m.memberId, name: m.name })),
+    // 立繪最多排 5 位，但**名字要全部列出來**（作者 2026-07-31）——
+    // 演出最後會跳「所有參戰人的名字」，八個名字比八張立繪便宜得多。
+    names: (members || []).map(m => m.name).filter(Boolean),
     teamSize: (members || []).length || 1,
   };
 }

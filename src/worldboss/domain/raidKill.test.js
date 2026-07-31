@@ -182,6 +182,21 @@ describe("全服擊倒重播（作者 2026-07-31 澄清）", () => {
     expect(p.teamSize).toBe(8);      // 但人數要記真的
   });
 
+  test("⚠️ 名字要全部帶——演出最後會跳所有參戰人的名字", () => {
+    const p = buildKillPayload({
+      style, members: Array.from({ length: 8 }, (_, i) => ({ memberId: `m${i}`, name: `隊員${i}` })),
+    });
+    expect(p.names).toHaveLength(8);          // 立繪只排 5 位，名單不受影響
+    expect(p.names[7]).toBe("隊員7");
+  });
+
+  test("沒有名字的成員不會變成空白標籤", () => {
+    const p = buildKillPayload({
+      style, members: [{ memberId: "m1", name: "小明" }, { memberId: "m2" }],
+    });
+    expect(p.names).toEqual(["小明"]);
+  });
+
   test("沒有 style 就沒有 payload（不會生出空演出）", () => {
     expect(buildKillPayload({ killerName: "小明" })).toBeNull();
   });

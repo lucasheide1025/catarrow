@@ -285,8 +285,15 @@ export default function RaidScreen({
           case "bossDown":
             setBossAnim("fall");
             vibrate([80, 60, 120]);
-            // 擊倒演出取代原本的「討伐成功」大字——射手真的跑出來射一箭
-            setCutscene({ killerId: event.killerId, style: event.style });
+            // 擊倒演出取代原本的「討伐成功」大字——射手真的跑出來射一箭。
+            // ⚠️ 這裡也走 payload：自己看到的跟全服重播看到的必須是**同一段演出**，
+            //    兩條路徑分開寫，改了一邊忘了另一邊就會不一致。
+            setCutscene(buildKillPayload({
+              bossKey: next.boss?.key, bossName: next.boss?.name,
+              killerId: event.killerId, killerName: event.killerName,
+              byCat: event.byCat, catName: event.catName,
+              style: event.style, members: next.members, eventId,
+            }));
             break;
           default:
             break;
@@ -769,10 +776,7 @@ export default function RaidScreen({
 
       {/* 全螢幕演出層 */}
       {cutscene && (
-        <RaidKillCutscene
-          members={state.members} killerId={cutscene.killerId} style={cutscene.style}
-          onDone={() => setCutscene(null)}
-        />
+        <RaidKillCutscene payload={cutscene} onDone={() => setCutscene(null)} />
       )}
       {flash && <div className="raid-flash" style={{ zIndex: 20 }} />}
       {hurt && <div className="raid-hurt" />}

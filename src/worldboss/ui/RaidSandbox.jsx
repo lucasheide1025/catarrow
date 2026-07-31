@@ -20,6 +20,7 @@ import { createRaidState } from "../domain/raidFlow";
 import { RAID_LOBBY_BG, raidBackground } from "../raidAssets";
 import RaidScreen from "./RaidScreen";
 import RaidKillCutscene from "./RaidKillCutscene";
+import { KILL_RARITY_COLOR, KILL_STYLES, buildKillPayload, detectKillStyle } from "../domain/raidKill";
 
 const PRESETS = {
   rookie:  { label: "新手白板", atk: 30,  def: 30, hp: 180 },
@@ -53,6 +54,10 @@ export default function RaidSandbox() {
   // 全服擊倒重播：正式版存在王文件上，全服玩家都會播一次
   const [killPayload, setKillPayload] = useState(null);
   const [replaying, setReplaying] = useState(false);
+  // ⚠️ 重播要能連按——RaidKillCutscene 的分鏡是內部 state，
+  //    只換 payload 不會回到第一幕，必須用 key 讓它重新掛載。
+  const [replaySeq, setReplaySeq] = useState(0);
+  const playReplay = payload => { setKillPayload(payload); setReplaySeq(n => n + 1); setReplaying(true); };
   // 防重整：一進來就看看有沒有沒打完的場次
   const [resume, setResume] = useState(() => loadRaidProgress({ bossKey: DEFAULT_BOSS_FOR_RESUME }));
 
@@ -132,6 +137,67 @@ export default function RaidSandbox() {
         假資料驅動，不會碰到線上的世界王。用來確認版式與聲光效果——確認 OK 才接真的。
       </div>
 
+      {/* 🌐 全服擊倒廣播預覽——不用真的打死王也看得到長怎樣 */}
+      {!state && (
+        <div style={{ ...cardStyle, border: "1px solid rgba(147,197,253,.5)" }}>
+          <div style={labelStyle}>🌐 全服擊倒廣播預覽</div>
+          <div style={{ fontSize: 10, color: "#94a3b8", marginBottom: 8, lineHeight: 1.6 }}>
+            王被打倒時，**全服玩家**都會看到這段演出重播一次（不是只有一行文字）。
+            這裡可以直接預覽。
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 6 }}>
+            {[["solo", "單人擊倒"], ["team", `${Math.max(2, teamCount)} 人擊倒`]].map(([mode, label]) => (
+              <button key={mode} type="button"
+                onClick={() => {
+                  const n = mode === "solo" ? 1 : Math.max(2, teamCount);
+                  const members = Array.from({ length: n }, (_, i) => ({
+                    memberId: `p${i}`, name: i === 0 ? "我" : `隊友${i}`,
+                  }));
+                  playReplay(buildKillPayload({
+                    bossKey, bossName: boss?.name || "世界王",
+                    killerId: "p0", killerName: "我",
+                    style: detectKillStyle({
+                      bySpot: mode === "solo" ? "red" : "green",
+                      bullseye: mode === "solo",
+                      teamSize: n, burst: mode === "team",
+                    }),
+                    members,
+                  }));
+                }}
+                style={{
+                  padding: "10px 0", borderRadius: 9, border: "1px solid #60a5fa",
+                  background: "rgba(96,165,250,.14)", color: "#e2e8f0",
+                  fontWeight: 900, fontSize: 12, cursor: "pointer",
+                }}>▶️ {label}</button>
+            ))}
+          </div>
+          <div style={{ fontSize: 10, color: "#64748b", marginBottom: 5 }}>換一種擊倒方式看看：</div>
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+            {KILL_STYLES.map(st => (
+              <button key={st.id} type="button"
+                onClick={() => {
+                  const n = Math.max(1, teamCount);
+                  playReplay(buildKillPayload({
+                    bossKey, bossName: boss?.name || "世界王",
+                    killerId: "p0", killerName: "我",
+                    style: {
+                      id: st.id, icon: st.icon, name: st.name,
+                      flavour: st.flavour, rarity: st.rarity,
+                      color: KILL_RARITY_COLOR[st.rarity],
+                    },
+                    members: Array.from({ length: n }, (_, i) => ({ memberId: `p${i}`, name: i === 0 ? "我" : `隊友${i}` })),
+                  }));
+                }}
+                style={{
+                  padding: "5px 8px", borderRadius: 7, cursor: "pointer",
+                  border: "1px solid rgba(255,255,255,.12)", background: "#1e293b",
+                  color: "#cbd5e1", fontSize: 10, fontWeight: 800,
+                }}>{st.icon} {st.name}</button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {killPayload && !state && (
         <div style={{ ...cardStyle, border: "1px solid #93c5fd" }}>
           <div style={{ fontSize: 12.5, fontWeight: 900, color: "#93c5fd", marginBottom: 4 }}>
@@ -141,7 +207,7 @@ export default function RaidSandbox() {
             {killPayload.style.icon} {killPayload.killerName} 以「{killPayload.style.name}」討伐了 {killPayload.bossName}。<br />
             正式版這段會存在王文件上，**全服玩家都會看到這段演出重播一次**（不是只有一行文字）。
           </div>
-          <button type="button" onClick={() => setReplaying(true)}
+          <button type="button" onClick={() => playReplay(killPayload)}
             style={{
               width: "100%", padding: "10px 0", borderRadius: 9, border: "none",
               background: "linear-gradient(135deg,#2563eb,#1e40af)", color: "#fff",
@@ -152,7 +218,7 @@ export default function RaidSandbox() {
 
       {replaying && (
         <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "#05040a" }}>
-          <RaidKillCutscene payload={killPayload} replay onDone={() => setReplaying(false)} />
+          <RaidKillCutscene key={replaySeq} payload={killPayload} replay onDone={() => setReplaying(false)} />
         </div>
       )}
 
