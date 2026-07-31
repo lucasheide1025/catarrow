@@ -53,6 +53,16 @@ export default function RaidScreen({
   const [activeShooter, setActiveShooter] = useState(null);
   // 組隊：全員送出才推進。存每個人交上來的箭，收齊了才結算。
   const [submissions, setSubmissions] = useState({});
+  // ⚠️ 短螢幕（iPhone SE 可用高度只有 ~553px）本來會把按鈕擠到摺線下方。
+  //    王的尺寸跟著畫面高度縮，整頁才不用捲動。
+  const [bossSize, setBossSize] = useState(() =>
+    Math.round(Math.max(140, Math.min(230, (typeof window !== "undefined" ? window.innerHeight : 700) * 0.30))));
+  useEffect(() => {
+    const fit = () => setBossSize(Math.round(Math.max(140, Math.min(230, window.innerHeight * 0.30))));
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, []);
   const [floats, setFloats] = useState([]);
   const [message, setMessage] = useState("");
   // 手機畫面塞不下「靶面＋狀態列」，所以靶面收進覆蓋層，按「開始射擊」才打開
@@ -315,6 +325,8 @@ export default function RaidScreen({
   const range = rangeLabel(state.rangeMult || 1);
   const faceCap = maxArrowsPerFace(targetFmt);
   const teamSize = teamSizeOf(state);
+  // 送出之後（等隊友／演出中）才顯示小隊立繪
+  const teamRevealed = playing || Object.keys(submissions).length > 0;
   const gaugeMax = teamGaugeMax(teamSize);
 
   return (
@@ -340,7 +352,7 @@ export default function RaidScreen({
       <div className={`${shake === "hard" ? "raid-shake-hard" : shake === "soft" ? "raid-shake-soft" : ""}`}
         style={{ position: "relative", zIndex: 2, flex: "0 1 auto", padding: "10px 0 0" }}>
         <RaidBoss
-          bossKey={bossKey} hp={displayHp} maxHp={state.boss.maxHp} size={230}
+          bossKey={bossKey} hp={displayHp} maxHp={state.boss.maxHp} size={bossSize}
           spots={spots} charging={intent.charging} staggered={state.staggered}
           anim={bossAnim}
         />
@@ -355,8 +367,10 @@ export default function RaidScreen({
       {/* 小隊站位＋意圖＋破防槽＋戰報：整團用 marginTop:auto 壓到底，
           只跟下面的操作區留一點空。⚠️ auto 要放在這裡，放在操作區上會把它們留在上面。 */}
       <div style={{ position: "relative", zIndex: 4, marginTop: "auto", marginBottom: 4 }}>
-        {/* ⚠️ 小隊站位不能用絕對定位——8 個人會壓在王身上 */}
-        {teamSize > 1 && (
+        {/* ⚠️ 小隊站位不能用絕對定位——8 個人會壓在王身上。
+            ⚠️ **非戰鬥中先隱藏，送出分數後才亮出來**（作者 2026-07-31）：
+               短螢幕（iPhone SE 可用高度 ~553px）上這一列會把按鈕擠到摺線下方。 */}
+        {teamSize > 1 && teamRevealed && (
           <RaidTeamBar members={shown?.members || state.members}
             meId={state.members?.[0]?.memberId} activeId={activeShooter} submitted={submissions} />
         )}
@@ -375,8 +389,11 @@ export default function RaidScreen({
           原本按鈕各佔一整行，把畫面高度吃掉，王都快看不到了。 */}
       {!scoring && (
         <div style={{
-          position: "relative", zIndex: 3,
-          background: "linear-gradient(180deg,rgba(2,6,23,.55),rgba(2,6,23,.96))",
+          // ⚠️ 黏在畫面底部：萬一內容還是超過視窗高度（超短螢幕、系統字放大、
+          //    瀏覽器工具列彈出），按鈕也一定點得到。這是最後一道保險。
+          position: "sticky", bottom: 0, zIndex: 6,
+          background: "linear-gradient(180deg,rgba(2,6,23,.72),rgba(2,6,23,.98))",
+          backdropFilter: "blur(3px)",
           padding: "8px 10px 12px", display: "flex", flexDirection: "column", gap: 7,
         }}>
           <RaidSpotLegend spots={spots} />
