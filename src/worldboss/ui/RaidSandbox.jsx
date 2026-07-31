@@ -97,6 +97,7 @@ export default function RaidSandbox() {
         state={state}
         bossKey={boss?.pixelKey || bossKey}
         bossTitle={boss?.title}
+        bossMeta={{ family: boss?.family, familyTier: boss?.familyTier }}
         participants={24}
         playerName={`${PRESETS[preset].label}`}
         botSkill={teamCount > 1 ? botSkill : null}

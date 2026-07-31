@@ -18,6 +18,7 @@ import { botRoundArrows } from "../domain/raidBot";
 import { allSubmitted, pendingMembers } from "../domain/raidTeam";
 import { clearRaidProgress, saveRaidProgress } from "../domain/raidResume";
 import { RAID_MEDALS } from "../raidAssets";
+import { rewardRows, rollSortieRewards } from "../domain/raidRewards";
 import RaidBoss from "./RaidBoss";
 import RaidTarget from "./RaidTarget";
 import RaidPlayerCard from "./RaidPlayerCard";
@@ -28,6 +29,7 @@ export default function RaidScreen({
   state,                       // createRaidState 的結果
   onState,                     // (nextState, roundLog) => void
   bossKey, bossTitle,
+  bossMeta = null,             // { family, familyTier } → 決定獎勵檔次
   eventId = null,
   isHost = true,               // 只有房主看得到強制推進
   onForceAdvance = null,       // 組隊接線上時由外層提供（沙盒直接本機推進）
@@ -57,6 +59,8 @@ export default function RaidScreen({
   const [activeShooter, setActiveShooter] = useState(null);
   // 組隊：全員送出才推進。存每個人交上來的箭，收齊了才結算。
   const [submissions, setSubmissions] = useState({});
+  // 結算獎勵：一場出擊結束就結算，**沒擊倒也給**（作者 2026-07-31）
+  const [reward, setReward] = useState(null);
   // ⚠️ 短螢幕（iPhone SE 可用高度只有 ~553px）本來會把按鈕擠到摺線下方。
   //    王的尺寸跟著畫面高度縮，整頁才不用捲動。
   const [bossSize, setBossSize] = useState(() =>
@@ -277,7 +281,16 @@ export default function RaidScreen({
       setSubmissions({});
       setShown(null);
       // 防重整：每回合存一次；打完就清掉（不然重整可以再結算一次）
-      if (next.finished) clearRaidProgress();
+      if (next.finished) {
+        clearRaidProgress();
+        setReward(rollSortieRewards({
+          boss: bossMeta || { family: null },
+          totals: next.totals,
+          bossMaxHp: next.boss.maxHp,
+          defeated: next.bossHp <= 0,
+          hasCat: (next.members?.[0]?.cats || []).length > 0,
+        }));
+      }
       else saveRaidProgress(next, { bossKey: next.boss?.key || bossKey, eventId });
       onState?.(next, log);
       if (next.finished) onFinish?.(next);
@@ -622,9 +635,35 @@ export default function RaidScreen({
               <div>最高連擊　<b>{state.totals.bestCombo}</b></div>
               <div>成功打斷　<b style={{ color: "#4ade80" }}>{state.totals.interrupts}</b></div>
             </div>
+            {/* ⚠️ 沒擊倒也要給獎勵——來射箭這件事本身就該有回饋 */}
+            {reward && (
+              <div style={{
+                marginTop: 12, background: "rgba(15,23,42,.92)", borderRadius: 12,
+                padding: "10px 12px", textAlign: "left",
+                border: reward.wbCard ? "1px solid #f5b942" : "1px solid rgba(255,255,255,.08)",
+              }}>
+                <div style={{ fontSize: 11, fontWeight: 900, color: "#c7d2fe", marginBottom: 6 }}>
+                  🎁 出擊獎勵　<span style={{ color: "#64748b", fontWeight: 700 }}>貢獻 {Math.round(reward.ratio * 100)}%</span>
+                </div>
+                <div style={{ display: "grid", gap: 4 }}>
+                  {rewardRows(reward).map(row => (
+                    <div key={row.key} style={{
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                      fontSize: 11.5, color: row.rare ? "#fde68a" : "#e2e8f0",
+                      fontWeight: row.rare ? 900 : 700,
+                      ...(row.rare ? { textShadow: "0 0 10px rgba(245,185,66,.7)" } : {}),
+                    }}>
+                      <span>{row.icon} {row.label}</span>
+                      <b>{typeof row.value === "number" ? `+${row.value.toLocaleString()}` : row.value}</b>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <button type="button" onClick={() => onExit?.()}
               style={{
-                marginTop: 16, width: "100%", padding: "13px 0", borderRadius: 11, border: "none",
+                marginTop: 14, width: "100%", padding: "13px 0", borderRadius: 11, border: "none",
                 background: "linear-gradient(135deg,#f59e0b,#b45309)", color: "#fff",
                 fontWeight: 900, fontSize: 15, cursor: "pointer",
               }}>收工</button>
