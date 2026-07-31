@@ -162,24 +162,26 @@ lastCheckinDate // "YYYY-MM-DD"，submitCheckin 當下 + approveCheckin 補寫�
 
 | 檔案 | 用途 |
 |------|------|
-| `domain/weakPoints.js` | 宣告制弱點：`WEAK_POINTS`、`resolveWeakPointHit()`、`clockOf()`（方位加碼） |
-| `domain/raidPhases.js` | 三階段與部位封鎖：`currentPhase()`、`phaseTransition()` |
-| `domain/breakGauge.js` | 破防槽（算次數不算傷害）：`advanceBreakGauge()`、`burstMultiplier()` |
-| `domain/bossIntent.js` | 蓄力／打斷：`intentForRound()`、`resolveIntent()` |
-| `domain/raidFlow.js` | 回合狀態機 → **產生 log**：`createRaidState()`、`resolveRaidRound()` |
-| `domain/raidTimeline.js` | log → 演出時間軸（**保留原順序**）：`buildRaidTimeline()` |
-| `ui/RaidScreen.jsx` | 討伐版式外殼＋演出引擎 |
-| `ui/RaidBoss.jsx` / `RaidHud.jsx` / `raidFx.css` | 王＋部位熱點／四條資訊帶／所有動畫 |
-| `ui/RaidSandbox.jsx` | `?raid` 試裝間（假資料） |
-| `raidAssets.js` | `raidBackground(family)` → `/assets/raid/raid_bg_<族>.webp` |
+| `domain/weakPoints.js` | 彩色弱點圈：`WEAK_SPOTS`、`rollWeakSpots()`、`hitSpot()`、`resolveWeakPointHit()` |
+| `domain/raidFaces.js` | 四種靶紙（半靶/全靶/三連靶/原野靶）、`faceCountOf()` |
+| `domain/raidRange.js` | 射程加成，**基準 5 米 × 半靶 ＝ ×1.00** |
+| `domain/raidRookie.js` | **新手扶助（50 級以下）——戰鬥模型外面的補償層** |
+| `domain/raidPhases.js` | 三階段 |
+| `domain/breakGauge.js` | 破防槽（算次數不算傷害）與爆發 |
+| `domain/bossIntent.js` | 蓄力／打斷（沿用既有 24 王的 r2/r4 技能） |
+| `domain/raidFlow.js` | 回合狀態機 → **產生 log**；`MAX_ARROW_SCORE`、`RAID_NORMAL_DAMAGE_SCALE` |
+| `domain/raidTimeline.js` | log → 演出時間軸（**保留原順序**） |
+| `ui/RaidTarget.jsx` | 強制靶面（靶外空間、弱點圈、三連靶橫排） |
+| `ui/RaidScreen.jsx` / `RaidBoss` / `RaidHud` / `raidFx.css` | 版式外殼＋演出／王／資訊帶／動畫 |
+| `ui/RaidSandbox.jsx` | `?raid` 試裝間 |
 
-**平衡的三個旋鈕**（改任何一個都要讓 `domain/raidBalance.test.js` 繼續過，貢獻比須落在 2.5×~4.5×）：
-1. `WEAK_POINTS[].dmgPct`——弱點固定傷害佔王最大血量的比例
-2. `RAID_NORMAL_DAMAGE_SCALE`（raidFlow）——ATK 那一段的權重，**壓它才能只動配重不動總量**
-3. `WEAK_POINTS[].breakPoints`——破防貢獻的落差
+**三條不能忘的規則**：
+1. **打中弱點 → 一般傷害算滿分**（圈可能長在外圈，不然沒人想拚）
+2. **弱點固定傷害不乘 ATK**（乘了就等於整個改版白做）
+3. **補償不放戰鬥模型裡**——新手加成一律走 `raidRookie.js`（作者 2026-07-31 明確指示）
 
-⚠️ **弱點傷害絕對不能改成乘 ATK**——那等於整個改版白做（差距會從 3× 回到 34×）。
-⚠️ **音效**：`sfxRaidEvent(event)` 一支對應所有 log 事件（sound.js 末段），不要在 UI 裡各自判斷。
+⚠️ 平衡模擬要**平均多場**（`raidBalance.test.js` 用 120 場）：一場才 30 箭，單一 seed 沒有意義。
+⚠️ 音效：`sfxRaidEvent(event)` 一支對應所有 log 事件（sound.js 末段），別在 UI 裡各自判斷。
 
 ---
 

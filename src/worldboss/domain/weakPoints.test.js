@@ -1,157 +1,211 @@
 import {
+  BULLSEYE_BONUS,
   CHARGE_EXPOSED_BONUS,
-  QUADRANT_BONUS,
   STAGGER_BONUS,
-  WEAK_POINTS,
-  WEAK_POINT_MAP,
-  callableParts,
-  clockOf,
-  matchesQuadrant,
+  WEAK_SPOTS,
+  WEAK_SPOT_MAP,
+  hitSpot,
   resolveWeakPointHit,
-  scoreOf,
+  rollWeakSpots,
+  standardScoreFromRatio,
 } from "./weakPoints";
 
 const BOSS_HP = 200000;
-const shoot = (declaredId, score, extra = {}) =>
-  resolveWeakPointHit({ declaredId, score, bossMaxHp: BOSS_HP, ...extra });
-// 平衡數字一律從常數推導。寫死在測試裡的話，每次調平衡都要回頭改一輪測試。
-const flatOf = (id, mult = 1) => Math.round(BOSS_HP * WEAK_POINT_MAP[id].dmgPct * mult);
+const seeded = seed => {
+  let a = seed >>> 0;
+  return () => { a = (a + 0x6D2B79F5) >>> 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+};
+const spotAt = (id, cx = 0, cy = 0) => ({ ...WEAK_SPOT_MAP[id], cx, cy });
+const shoot = (spots, nx, ny, extra = {}) =>
+  resolveWeakPointHit({ spots, nx, ny, bossMaxHp: BOSS_HP, ...extra });
 
-describe("宣告制的判定", () => {
-  test("分數達標＝命中，不再擲骰（玩家賭的是自己的穩定度）", () => {
-    for (let i = 0; i < 50; i += 1) {
-      expect(shoot("eye", 9).hit).toBe(true);
-      expect(shoot("eye", 8).hit).toBe(false);
+describe("四種弱點：大小＝難度，顏色＝報酬", () => {
+  test("越小的圈傷害越高；破防點數不遞減（一場只有 30 箭，點數刻意壓低）", () => {
+    for (let i = 1; i < WEAK_SPOTS.length; i += 1) {
+      expect(WEAK_SPOTS[i].radius).toBeLessThan(WEAK_SPOTS[i - 1].radius);
+      expect(WEAK_SPOTS[i].dmgPct).toBeGreaterThan(WEAK_SPOTS[i - 1].dmgPct);
+      expect(WEAK_SPOTS[i].breakPoints).toBeGreaterThanOrEqual(WEAK_SPOTS[i - 1].breakPoints);
+    }
+    // 最難的還是要比最好打的多
+    expect(WEAK_SPOTS[WEAK_SPOTS.length - 1].breakPoints).toBeGreaterThan(WEAK_SPOTS[0].breakPoints);
+  });
+
+  test("破防點數壓在個位數——一場 30 箭不該把全場的槽灌爆", () => {
+    for (const s2 of WEAK_SPOTS) expect(s2.breakPoints).toBeLessThanOrEqual(3);
+  });
+
+  test("每種都有顯示資料，UI 才畫得出來", () => {
+    for (const s of WEAK_SPOTS) {
+      expect(s.name && s.icon && s.color && s.desc).toBeTruthy();
+      expect(s.radius).toBeGreaterThan(0);
     }
   });
 
-  test("每個部位的門檻都不同，構成真實的取捨", () => {
-    expect(shoot("eye", 8).grazed).toBe(true);
-    expect(shoot("heart", 8).hit).toBe(true);
-    expect(shoot("leg", 5).hit).toBe(true);
-    expect(shoot("tail", 3).hit).toBe(true);
-  });
-
-  test("X 環當 10 分；M 是脫靶", () => {
-    expect(scoreOf(0, "X")).toBe(10);
-    expect(scoreOf(9, "M")).toBe(0);
-    expect(shoot("eye", 0, { label: "X" }).hit).toBe(true);
-    expect(shoot("eye", 10, { label: "M" }).missed).toBe(true);
-  });
-
-  test("脫靶什麼都沒有——連一般傷害都沒有", () => {
-    const r = shoot("eye", 0);
-    expect(r.normalMult).toBe(0);
-    expect(r.flatDamage).toBe(0);
-    expect(r.breakPoints).toBe(0);
-  });
-
-  test("高門檻部位賭失敗要有代價，否則所有人永遠宣告眼睛", () => {
-    expect(shoot("eye", 5).normalMult).toBe(0.5);
-    expect(shoot("heart", 5).normalMult).toBe(0.5);
-    // 低門檻部位沒有懲罰——新手才敢用
-    expect(shoot("leg", 4).normalMult).toBe(1);
-    expect(shoot("tail", 2).normalMult).toBe(1);
-  });
-
-  test("沒宣告就只有一般傷害，不會拿到弱點收益", () => {
-    const r = shoot(null, 10);
-    expect(r.hit).toBe(false);
-    expect(r.flatDamage).toBe(0);
-    expect(r.normalMult).toBe(1);
+  test("只有紅點會削弱牠的強攻", () => {
+    expect(WEAK_SPOTS.filter(s => s.weakensUlt).map(s => s.id)).toEqual(["red"]);
   });
 });
 
-describe("固定傷害：不乘攻擊力，只看王的血量", () => {
-  test("弱點傷害＝王最大血量的固定比例", () => {
-    for (const part of WEAK_POINTS) {
-      const r = shoot(part.id, 10);
-      expect(r.flatDamage).toBe(Math.round(BOSS_HP * part.dmgPct));
+describe("命中判定", () => {
+  test("射進圈裡＝命中，圈外＝只有一般傷害", () => {
+    const green = WEAK_SPOT_MAP.green;
+    const spots = [spotAt("green", 0.3, 0)];
+    expect(shoot(spots, 0.3, 0).hit).toBe(true);
+    expect(shoot(spots, 0.3, green.radius * 0.95).hit).toBe(true);   // 圈邊緣內
+    expect(shoot(spots, 0.3, green.radius * 1.15).hit).toBe(false);  // 圈外
+    expect(shoot(spots, 0.3, green.radius * 1.15).normalMult).toBe(1); // 但沒有額外懲罰
+  });
+
+  test("脫靶（半徑 > 1）連一般傷害都沒有", () => {
+    const r = shoot([spotAt("green")], 0.9, 0.9);
+    expect(r.missed).toBe(true);
+    expect(r.normalMult).toBe(0);
+  });
+
+  test("沒有圈的回合照常射，不會壞掉", () => {
+    const r = shoot([], 0.1, 0.1);
+    expect(r.hit).toBe(false);
+    expect(r.normalMult).toBe(1);
+  });
+
+  test("圈重疊時算最難的那個——玩家該拿到他真正達成的那一層", () => {
+    const spots = [spotAt("green", 0, 0), spotAt("red", 0, 0)];
+    expect(hitSpot(spots, 0.01, 0).id).toBe("red");
+    expect(hitSpot(spots, 0.2, 0).id).toBe("green");
+  });
+
+  test("傷害＝王最大血量的固定比例，不乘攻擊力", () => {
+    for (const s2 of WEAK_SPOTS) {
+      expect(shoot([spotAt(s2.id)], 0, 0).flatDamage).toBe(Math.round(BOSS_HP * s2.dmgPct * BULLSEYE_BONUS));
     }
   });
 
-  test("血越多的王，弱點的絕對傷害越高（比例制的重點）", () => {
-    const small = resolveWeakPointHit({ declaredId: "eye", score: 10, bossMaxHp: 100000 });
-    const big = resolveWeakPointHit({ declaredId: "eye", score: 10, bossMaxHp: 1100000 });
-    expect(big.flatDamage).toBeGreaterThan(small.flatDamage * 10);
+  test("三連靶：同樣的座標但不同張靶，不算命中", () => {
+    const spots = [{ ...WEAK_SPOT_MAP.green, cx: 0, cy: 0, faceIndex: 1 }];
+    expect(resolveWeakPointHit({ spots, nx: 0, ny: 0, faceIndex: 1, bossMaxHp: BOSS_HP }).hit).toBe(true);
+    expect(resolveWeakPointHit({ spots, nx: 0, ny: 0, faceIndex: 0, bossMaxHp: BOSS_HP }).hit).toBe(false);
+  });
+});
+
+describe("正中加碼", () => {
+  test("射進圈心一半的範圍＝正中，傷害加一層", () => {
+    const spots = [spotAt("yellow", 0, 0)];
+    const r = WEAK_SPOT_MAP.yellow.radius;
+    const edge = shoot(spots, r * 0.8, 0);   // 圈內但偏外
+    const centre = shoot(spots, r * 0.1, 0);
+    expect(edge.bullseye).toBe(false);
+    expect(centre.bullseye).toBe(true);
+    expect(centre.flatDamage).toBe(Math.round(edge.flatDamage * BULLSEYE_BONUS));
   });
 
-  test("眼＞心＞腿＞尾，跟門檻高低一致", () => {
-    const dmg = id => shoot(id, 10).flatDamage;
-    expect(dmg("eye")).toBeGreaterThan(dmg("heart"));
-    expect(dmg("heart")).toBeGreaterThan(dmg("leg"));
-    expect(dmg("leg")).toBeGreaterThan(dmg("tail"));
+  test("⚠️ 正中**不加**破防點數——一場只有 30 箭，加了會把槽灌爆", () => {
+    const spots = [spotAt("yellow", 0, 0)];
+    const r = WEAK_SPOT_MAP.yellow.radius;
+    expect(shoot(spots, r * 0.1, 0).breakPoints).toBe(shoot(spots, r * 0.8, 0).breakPoints);
   });
 });
 
 describe("情境倍率", () => {
+  const spots = [spotAt("yellow", 0, 0)];
+  const base = () => shoot(spots, WEAK_SPOT_MAP.yellow.radius * 0.8, 0).flatDamage;
+
   test("蓄力回合弱點外露，值得貪", () => {
-    expect(shoot("heart", 10, { charging: true }).flatDamage)
-      .toBe(flatOf("heart", CHARGE_EXPOSED_BONUS));
+    expect(shoot(spots, WEAK_SPOT_MAP.yellow.radius * 0.8, 0, { charging: true }).flatDamage)
+      .toBe(Math.round(base() * CHARGE_EXPOSED_BONUS));
   });
 
-  test("打斷後的硬直回合傷害加倍——這是打斷的回報", () => {
-    expect(shoot("heart", 10, { staggered: true }).flatDamage)
-      .toBe(flatOf("heart", STAGGER_BONUS));
-  });
-
-  test("倍率會疊乘（蓄力中被打斷後的下一輪最肥）", () => {
-    const both = shoot("heart", 10, { charging: true, staggered: true }).flatDamage;
-    expect(both).toBe(flatOf("heart", CHARGE_EXPOSED_BONUS * STAGGER_BONUS));
+  test("打斷後的硬直回合傷害加倍", () => {
+    expect(shoot(spots, WEAK_SPOT_MAP.yellow.radius * 0.8, 0, { staggered: true }).flatDamage)
+      .toBe(Math.round(base() * STAGGER_BONUS));
   });
 
   test("倍率只碰固定傷害，不碰一般傷害", () => {
-    expect(shoot("heart", 10, { charging: true, staggered: true }).normalMult).toBe(1);
+    expect(shoot(spots, WEAK_SPOT_MAP.yellow.radius * 0.8, 0, { charging: true, staggered: true }).normalMult).toBe(1);
   });
 });
 
-describe("階段封鎖", () => {
-  test("被護住的部位宣告無效，只剩一般傷害", () => {
-    const r = shoot("eye", 10, { blocked: ["eye"] });
-    expect(r.blocked).toBe(true);
-    expect(r.hit).toBe(false);
-    expect(r.flatDamage).toBe(0);
-    expect(r.normalMult).toBe(1);   // 不額外懲罰——玩家是被規則擋的，不是賭輸
+describe("每回合抽圈", () => {
+  test("三連靶時圈會分佈在三張靶上", () => {
+    const seen = new Set();
+    for (let seed = 1; seed <= 200; seed += 1) {
+      for (const sp of rollWeakSpots({ rand: seeded(seed), faceCount: 3 })) seen.add(sp.faceIndex);
+    }
+    expect(seen).toEqual(new Set([0, 1, 2]));
   });
 
-  test("沒被封鎖的部位照常", () => {
-    expect(shoot("heart", 10, { blocked: ["eye"] }).hit).toBe(true);
+  test("單靶時 faceIndex 恆為 0", () => {
+    for (let seed = 1; seed <= 60; seed += 1) {
+      for (const sp of rollWeakSpots({ rand: seeded(seed) })) expect(sp.faceIndex).toBe(0);
+    }
   });
 
-  test("UI 拿得到「被鎖住」的旗標，才畫得出鎖鏈", () => {
-    const parts = callableParts(["eye"]);
-    expect(parts.find(p => p.id === "eye").blocked).toBe(true);
-    expect(parts.find(p => p.id === "leg").blocked).toBe(false);
-    expect(parts).toHaveLength(WEAK_POINTS.length);
+  test("每回合 1~2 個（作者定案）", () => {
+    for (let seed = 1; seed <= 60; seed += 1) {
+      const spots = rollWeakSpots({ rand: seeded(seed) });
+      expect(spots.length).toBeGreaterThanOrEqual(1);
+      expect(spots.length).toBeLessThanOrEqual(2);
+    }
+  });
+
+  test("⚠️ 整個圈都要在靶紙內——不然會出現射不滿的圈", () => {
+    for (let seed = 1; seed <= 200; seed += 1) {
+      for (const s of rollWeakSpots({ rand: seeded(seed) })) {
+        expect(Math.hypot(s.cx, s.cy) + s.radius).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+
+  test("兩個圈時一大一小——新手有得打，老手有得賭", () => {
+    for (let seed = 1; seed <= 120; seed += 1) {
+      const spots = rollWeakSpots({ rand: seeded(seed) });
+      if (spots.length === 2) {
+        const ids = spots.map(s => s.id);
+        expect(ids.some(id => ["green", "yellow"].includes(id))).toBe(true);
+        expect(ids.some(id => ["orange", "red"].includes(id))).toBe(true);
+      }
+    }
+  });
+
+  test("同一張靶上的圈不會互相重疊，否則一箭吃兩個", () => {
+    for (let seed = 1; seed <= 200; seed += 1) {
+      const spots = rollWeakSpots({ rand: seeded(seed) });
+      if (spots.length === 2 && spots[0].faceIndex === spots[1].faceIndex) {
+        expect(Math.hypot(spots[0].cx - spots[1].cx, spots[0].cy - spots[1].cy))
+          .toBeGreaterThan(spots[0].radius + spots[1].radius);
+      }
+    }
+  });
+
+  test("位置每回合都不同——不能靠肌肉記憶一直射同一點", () => {
+    const rand = seeded(9);
+    const a = rollWeakSpots({ rand, round: 1 });
+    const b = rollWeakSpots({ rand, round: 2 });
+    expect(JSON.stringify(a.map(s => [s.cx, s.cy]))).not.toBe(JSON.stringify(b.map(s => [s.cx, s.cy])));
+  });
+
+  test("後段階段更容易出現小圈（更吃準度）", () => {
+    const smallRate = phaseId => {
+      let small = 0, total = 0;
+      for (let seed = 1; seed <= 300; seed += 1) {
+        for (const s of rollWeakSpots({ rand: seeded(seed), phaseId })) {
+          total += 1;
+          if (["orange", "red"].includes(s.id)) small += 1;
+        }
+      }
+      return small / total;
+    };
+    expect(smallRate(3)).toBeGreaterThan(smallRate(1));
   });
 });
 
-describe("方位加碼（靶面模式選配）", () => {
-  test("正上方＝12 點、正右＝3 點、正下＝6 點、正左＝9 點", () => {
-    expect(clockOf(0, -1)).toBe(12);
-    expect(clockOf(1, 0)).toBe(3);
-    expect(clockOf(0, 1)).toBe(6);
-    expect(clockOf(-1, 0)).toBe(9);
+describe("標準環值（只用於顯示，跨靶紙可比）", () => {
+  test("中心＝10、邊緣＝1、靶外＝0", () => {
+    expect(standardScoreFromRatio(0)).toBe(10);
+    expect(standardScoreFromRatio(0.95)).toBe(1);
+    expect(standardScoreFromRatio(1.4)).toBe(0);
   });
 
-  test("容差 ±1 小時，且 12↔1 要繞回去算", () => {
-    expect(matchesQuadrant(0, -1, 1)).toBe(true);
-    expect(matchesQuadrant(0, -1, 12)).toBe(true);
-    expect(matchesQuadrant(0, -1, 3)).toBe(false);
-  });
-
-  test("命中方位 → 固定傷害加碼且破防多 1 點", () => {
-    const plain = shoot("heart", 10);
-    const bonus = shoot("heart", 10, { nx: 0, ny: -1, weakClock: 12 });
-    expect(bonus.flatDamage).toBe(Math.round(plain.flatDamage * QUADRANT_BONUS));
-    expect(bonus.breakPoints).toBe(plain.breakPoints + 1);
-    expect(bonus.bonuses).toContain("quadrant");
-  });
-
-  test("⚠️ 按分數鍵的玩家（沒有座標）完全不受影響——不能被排除", () => {
-    const noCoords = shoot("heart", 10, { weakClock: 12 });
-    expect(noCoords.hit).toBe(true);
-    expect(noCoords.flatDamage).toBe(flatOf("heart"));
-    expect(noCoords.bonuses).not.toContain("quadrant");
+  test("⚠️ 17cm 半靶印的是 6~10 環，換算後才跨靶紙可比", () => {
+    expect(standardScoreFromRatio(0.92)).toBeLessThan(6);
   });
 });

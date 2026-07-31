@@ -12,8 +12,10 @@ import { getWorldBossScheduledStrike } from "../../lib/worldBossStrikeEngine";
 
 export const CHARGE_ROUNDS = Object.freeze([2, 4]);
 
-// 打斷需要的腿部命中數：階段越後面越難斷（但硬直的回報也越大）
-export const INTERRUPT_REQUIRED = Object.freeze({ 1: 2, 2: 3, 3: 4 });
+// 打斷需要的弱點命中數：階段越後面越難斷（但硬直的回報也越大）。
+// 2026-07-31 改制後「任何弱點命中」都推進度（紅點推 2 格），不再綁單一部位，
+// 所以門檻要比原本的腿部專屬高一些。
+export const INTERRUPT_REQUIRED = Object.freeze({ 1: 3, 2: 4, 3: 5 });
 
 // 尾部「削弱」的效果：每層讓大招倍率降一截，最多疊到剩四成
 export const WEAKEN_PER_STACK = 0.15;
@@ -62,6 +64,6 @@ export function resolveIntent({ intent, legHits = 0, weakenStacks = 0 } = {}) {
 export function intentHint(intent, legHits = 0) {
   if (!intent?.charging) return "牠在等你出手——弱點都開著。";
   const left = Math.max(0, intent.interruptRequired - legHits);
-  if (left === 0) return "🦵 打斷條件已達成，這次牠發不出來了！";
-  return `🦵 再命中腿 ${left} 次可以打斷「${intent.name}」`;
+  if (left === 0) return "💢 打斷條件已達成，這次牠發不出來了！";
+  return `💢 再命中弱點 ${left} 次可以打斷「${intent.name}」`;
 }

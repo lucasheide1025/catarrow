@@ -7,6 +7,9 @@
 import { useMemo, useState } from "react";
 import { WORLD_BOSSES } from "../../lib/worldBossData";
 import { WORLD_BOSS_SKILLS } from "../../lib/worldBossSkillData";
+import { getTargetFaceFormat } from "../../lib/targetFace";
+import { DEFAULT_RAID_FACE, RAID_FACES } from "../domain/raidFaces";
+import { RAID_DISTANCES, RAID_DEFAULT_DISTANCE, rangeLabel, rangeMultiplier } from "../domain/raidRange";
 import { createRaidState } from "../domain/raidFlow";
 import { raidBackground } from "../raidAssets";
 import RaidScreen from "./RaidScreen";
@@ -26,7 +29,8 @@ const BOSS_CHOICES = ["cat_baobao", "ghost_boss_r1", "head_coach"]
 export default function RaidSandbox() {
   const [bossKey, setBossKey] = useState(BOSS_CHOICES[0] || Object.keys(WORLD_BOSSES)[0]);
   const [preset, setPreset] = useState("mid");
-  const [inputMode, setInputMode] = useState("button");
+  const [targetFmt, setTargetFmt] = useState(DEFAULT_RAID_FACE);
+  const [distanceM, setDistanceM] = useState(RAID_DEFAULT_DISTANCE);
   const [hpScale, setHpScale] = useState(0.05);   // 沙盒預設把血調低，才看得到階段轉換
   const [runId, setRunId] = useState(0);
   const [state, setState] = useState(null);
@@ -45,7 +49,9 @@ export default function RaidSandbox() {
         skillConfig: WORLD_BOSS_SKILLS?.[bossKey] || null,
       },
       stats: { atk: p.atk, def: p.def, hp: p.hp },
-      weakClock: 1 + Math.floor(Math.random() * 12),
+      distanceM,
+      faceSizeCm: getTargetFaceFormat(targetFmt).faceSizeCm,
+      targetFmt,
     }));
     setRunId(n => n + 1);
   };
@@ -59,7 +65,7 @@ export default function RaidSandbox() {
         bossTitle={boss?.title}
         participants={24}
         bgUrl={raidBackground(boss?.family)}
-        inputMode={inputMode}
+        targetFmt={targetFmt}
         onState={next => setState(next)}
         onFinish={next => setSummary(next)}
         onExit={() => setState(null)}
@@ -128,20 +134,42 @@ export default function RaidSandbox() {
       </div>
 
       <div style={cardStyle}>
-        <div style={labelStyle}>輸入方式</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 6 }}>
-          {[{ id: "button", label: "⌨️ 點擊分數" }, { id: "target", label: "🎯 點擊靶面" }].map(m => (
-            <button key={m.id} type="button" onClick={() => setInputMode(m.id)}
+        <div style={labelStyle}>靶紙</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6 }}>
+          {RAID_FACES.map(f => (
+            <button key={f.id} type="button" onClick={() => setTargetFmt(f.id)}
               style={{
-                padding: "9px 0", borderRadius: 9, cursor: "pointer",
-                border: `2px solid ${inputMode === m.id ? "#60a5fa" : "rgba(255,255,255,.1)"}`,
-                background: inputMode === m.id ? "rgba(96,165,250,.16)" : "#1e293b",
+                padding: "9px 2px", borderRadius: 9, cursor: "pointer",
+                border: `2px solid ${targetFmt === f.id ? "#60a5fa" : "rgba(255,255,255,.1)"}`,
+                background: targetFmt === f.id ? "rgba(96,165,250,.16)" : "#1e293b",
                 color: "#e2e8f0", fontSize: 12, fontWeight: 900,
-              }}>{m.label}</button>
+              }}>
+              {f.label}
+              <div style={{ fontSize: 8.5, color: "#94a3b8", fontWeight: 700 }}>{f.hint}</div>
+            </button>
           ))}
         </div>
         <div style={{ fontSize: 10, color: "#64748b", marginTop: 6 }}>
-          靶面模式多一層「方位弱點」加碼；按分數鍵的玩家完全不受影響。
+          ⌨️ 點分數的模式已移除——弱點判定要靠落點位置。
+        </div>
+      </div>
+
+      <div style={cardStyle}>
+        <div style={labelStyle}>射程（貓小隊實際是 5~18 米）</div>
+        <input type="range" min={RAID_DISTANCES[0]} max={RAID_DISTANCES[RAID_DISTANCES.length - 1]}
+          value={distanceM} onChange={e => setDistanceM(Number(e.target.value))} style={{ width: "100%" }} />
+        {(() => {
+          const mult = rangeMultiplier({ distanceM, faceSizeCm: getTargetFaceFormat(targetFmt).faceSizeCm });
+          const lab = rangeLabel(mult);
+          return (
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginTop: 4 }}>
+              <span style={{ color: "#94a3b8" }}>{distanceM} 米</span>
+              <span style={{ color: lab.color, fontWeight: 900 }}>{lab.text}　傷害 ×{mult.toFixed(2)}</span>
+            </div>
+          );
+        })()}
+        <div style={{ fontSize: 10, color: "#64748b", marginTop: 6, lineHeight: 1.6 }}>
+          難度看的是「視角大小」＝靶紙直徑 ÷ 距離。17cm 靶射 18 米比 40cm 靶射 18 米難得多，加成也高。
         </div>
       </div>
 

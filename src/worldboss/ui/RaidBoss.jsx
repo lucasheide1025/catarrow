@@ -3,24 +3,19 @@
 // 王的立繪沿用既有的 WorldBossSVG（24 隻都有；教練與貓是真人真貓，不另外生圖）。
 import { useEffect, useRef, useState } from "react";
 import WorldBossSVG from "../../components/worldboss/WorldBossSVG";
-import { callableParts } from "../domain/weakPoints";
 
-// 部位在立繪上的相對位置（%）。四個點刻意錯開，手指不會誤觸。
-const PART_POS = {
-  eye:   { left: 50, top: 24 },
-  heart: { left: 38, top: 47 },
-  leg:   { left: 60, top: 74 },
-  tail:  { left: 22, top: 66 },
-};
+
+// 弱點圈在靶面上的座標（-1~1）直接映射到立繪上——射在紙上的位置＝射在牠身上的位置。
+function spotStyle(spot) {
+  return { left: `${50 + spot.cx * 42}%`, top: `${50 + spot.cy * 40}%` };
+}
 
 export default function RaidBoss({
   bossKey, hp, maxHp, size = 240,
-  blocked = [], declaredId = null, onDeclare,
-  charging = false, staggered = false, exposedIds = [],
+  spots = [],
+  charging = false, staggered = false,
   anim = null,            // "flinch" | "roar" | "fall" | null
-  locked = false,         // 計分中不能改宣告
 }) {
-  const parts = callableParts(blocked);
   const ratio = Math.max(0, Math.min(1, maxHp ? hp / maxHp : 0));
   const [sparks, setSparks] = useState([]);
   const sparkId = useRef(0);
@@ -67,40 +62,19 @@ export default function RaidBoss({
           style={{ left: "50%", top: "45%", background: s.color, "--dx": s.dx, "--dy": s.dy }} />
       ))}
 
-      {/* 部位熱點 */}
-      {parts.map(part => {
-        const pos = PART_POS[part.id];
-        if (!pos) return null;
-        const active = declaredId === part.id;
-        const exposed = exposedIds.includes(part.id) && !part.blocked;
-        const cls = [
-          "raid-part",
-          part.blocked ? "raid-part-blocked" : "",
-          active ? "raid-part-active" : "",
-          exposed && !active ? "raid-part-exposed" : "",
-          declaredId && !active && !part.blocked ? "raid-part-dim" : "",
-        ].filter(Boolean).join(" ");
+      {/* 弱點圈：跟靶面上畫的是同一組，位置一一對應 */}
+      {spots.map(spot => (
+        <span key={spot.key || spot.id} aria-hidden
+          className={charging ? "raid-part raid-part-exposed" : "raid-part"}
+          style={{
+            ...spotStyle(spot), color: spot.color, pointerEvents: "none",
+            width: Math.max(26, spot.radius * 190), height: Math.max(26, spot.radius * 190),
+            fontSize: Math.max(12, spot.radius * 64),
+          }}>
+          {spot.icon}
+        </span>
+      ))}
 
-        return (
-          <button
-            key={part.id} type="button" className={cls}
-            disabled={part.blocked || locked}
-            aria-pressed={active}
-            aria-label={`宣告${part.name}（需要 ${part.threshold} 分以上）`}
-            onClick={() => !part.blocked && !locked && onDeclare?.(part.id)}
-            style={{ left: `${pos.left}%`, top: `${pos.top}%`, color: part.color }}
-          >
-            <span aria-hidden>{part.blocked ? "⛓️" : part.icon}</span>
-            <span style={{
-              position: "absolute", bottom: -15, fontSize: 9, fontWeight: 900,
-              color: part.blocked ? "#64748b" : part.color, whiteSpace: "nowrap",
-              textShadow: "0 1px 4px rgba(0,0,0,.9)",
-            }}>
-              {part.blocked ? "封鎖" : `≥${part.threshold}`}
-            </span>
-          </button>
-        );
-      })}
     </div>
   );
 }

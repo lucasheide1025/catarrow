@@ -75,6 +75,20 @@ export const TARGET_FACE_FORMATS = [
     colors:TARGET_COLORS,
   },
   {
+    // 貓小隊實際最常用的靶紙（作者 2026-07-31）：17cm 半靶造型，射程 5~18 米。
+    // 環structure 同 40cm 五環單靶（6-10 環），只是紙小很多——距離加成就是為它設計的。
+    id:"half_17",
+    label:"17cm 五環半靶",
+    shortLabel:"17cm 半靶",
+    sub:"6-10 環",
+    faceSizeCm:17,
+    minScore:6,
+    maxScore:10,
+    layout:"single",
+    innerTenRatio:0.1,
+    colors:TARGET_COLORS,
+  },
+  {
     id:"triple",
     label:"40cm 直式三連靶",
     shortLabel:"40cm 三連靶",

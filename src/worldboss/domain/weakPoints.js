@@ -1,160 +1,178 @@
 // src/worldboss/domain/weakPoints.js
 // ─────────────────────────────────────────────────────────────
-// 宣告制弱點：射之前先選部位，每個部位有一條分數門檻，射完看有沒有兌現。
+// 弱點＝**靶面上的彩色落點圈**（作者 2026-07-31 定案，取代原本的眼/心/腿/尾）。
 //
-// 為什麼不沿用一般怪的部位系統（monsterData.BODY_PARTS）：那是「射完才隨機決定打到哪」，
-// 玩家不做任何決定，換皮而已。這裡的判定是**決定性**的——分數 ≥ 門檻就是命中，不再擲骰，
-// 玩家賭的是自己的穩定度，那正是射箭真正的技術。
+// 為什麼改：用身體部位當弱點時，「宣告哪個部位」得靠一條分數門檻判定，
+// 而門檻跟落點位置是兩套語言——高門檻部位（要射得靠中心）跟方位區（要射得偏一邊）
+// 甚至互相矛盾（實測「宣告眼」永遠比「宣告尾」還虧）。
+// 改用「圈」之後，**大小就是難度、顏色就是報酬**，一眼看懂，
+// 而且命中率可以直接從半徑算出來，平衡不再是猜的。
 //
-// ⚠️ 最重要的一條：**弱點傷害不乘玩家攻擊力，而是王最大血量的固定比例。**
+// 每回合只出現 1~2 個圈、位置隨機。玩家看著靶面上的圈射——這才是真的在練指定目標。
+//
+// ⚠️ 弱點傷害仍然**不乘玩家攻擊力**，是王最大血量的固定比例。
 //    只要傷害是 ATK 的函數，不管怎麼包裝，114 級的一箭就是抵新手五十箭。
-//    固定比例才能真的壓縮新老玩家的貢獻差距（見 worldBossBalance.test.js 的驗算）。
-//
-// 純函數，零 Firebase、零 React。
 // ─────────────────────────────────────────────────────────────
 
-export const WEAK_POINTS = Object.freeze([
+// radius 是靶面半徑的比例（1.0 ＝ 靶紙邊緣）。
+//
+// ⚠️ **這是中性的戰鬥模型**：越小的圈越難打、傷害與破防都越高，就這樣。
+//    這裡**不做**任何「壓縮新老玩家差距」的手腳——作者 2026-07-31 明確指示：
+//    戰鬥模型保持標準，新手的補償放到外面做（見 raidRookie.js，50 級以下）。
+//    把補償塞進戰鬥數值裡會讓數字失去意義，也沒人看得懂為什麼紅點破防比綠點少。
+export const WEAK_SPOTS = Object.freeze([
   {
-    id: "eye", name: "眼", icon: "👁️", color: "#f472b6",
-    threshold: 9, dmgPct: 0.0015, breakPoints: 3,
-    // 擦過的懲罰：高門檻部位賭失敗要有代價，否則所有人永遠宣告眼睛
-    grazeMult: 0.5, effect: null,
-    desc: "最痛，但要 9 分以上才咬得住",
+    id: "green", name: "綠點", icon: "🟢", color: "#4ade80",
+    radius: 0.38, dmgPct: 0.0008, breakPoints: 1,
+    desc: "最大最好打",
   },
   {
-    id: "heart", name: "心", icon: "🫀", color: "#f87171",
-    threshold: 7, dmgPct: 0.0009, breakPoints: 2,
-    grazeMult: 0.5, effect: null,
-    desc: "穩定的主力輸出",
+    id: "yellow", name: "黃點", icon: "🟡", color: "#fbbf24",
+    radius: 0.28, dmgPct: 0.0015, breakPoints: 1,
+    desc: "穩定的主力",
   },
   {
-    id: "leg", name: "腿", icon: "🦵", color: "#fbbf24",
-    threshold: 5, dmgPct: 0.00075, breakPoints: 2,
-    grazeMult: 1, effect: "interrupt",
-    desc: "打斷牠的蓄力——新手打得到、而且真的有用",
+    id: "orange", name: "橙點", icon: "🟠", color: "#fb923c",
+    radius: 0.19, dmgPct: 0.0028, breakPoints: 2,
+    desc: "要準才咬得住",
   },
   {
-    id: "tail", name: "尾", icon: "🐉", color: "#4ade80",
-    threshold: 3, dmgPct: 0.00045, breakPoints: 1,
-    grazeMult: 1, effect: "weaken",
-    desc: "削弱牠下一次強攻",
+    id: "red", name: "紅點", icon: "🔴", color: "#f87171",
+    radius: 0.12, dmgPct: 0.0050, breakPoints: 3,
+    desc: "最小最痛，還會削弱牠的強攻",
+    weakensUlt: true,
   },
 ]);
 
-export const WEAK_POINT_MAP = Object.freeze(
-  Object.fromEntries(WEAK_POINTS.map(p => [p.id, p])),
+export const WEAK_SPOT_MAP = Object.freeze(
+  Object.fromEntries(WEAK_SPOTS.map(s => [s.id, s])),
 );
 
-// 情境倍率。都是乘在「固定傷害」上，不碰一般傷害。
+// 情境倍率（乘在固定傷害上，不碰一般傷害）
 export const CHARGE_EXPOSED_BONUS = 1.5;  // 蓄力回合：牠專心充能，弱點外露
-export const STAGGER_BONUS        = 2.0;  // 打斷後的硬直回合：全部位開放且加倍
-export const QUADRANT_BONUS       = 1.5;  // 靶面模式命中正確方位（選配加碼）
+export const STAGGER_BONUS        = 2.0;  // 打斷後的硬直回合
+export const BULLSEYE_BONUS       = 1.25;
 
-// X 環當 10 分算。門檻只看數字，不看是不是 X——X 的獎勵走方位加碼那條路。
-export function scoreOf(score, label) {
-  if (label === "X") return 10;
-  if (label === "M") return 0;
-  const n = Math.floor(Number(score) || 0);
-  return Math.max(0, n);
-}
+// ⚠️ 2026-07-31 作者指示：**不要**做「同一個圈重複打會遞減」。
+//    打到就是打到，一支箭一份報酬——遞減會讓玩家算不出自己這箭值多少。  // 射進圈心一半的範圍：再賞一層
 
-// 落點 → 幾點鐘方向（1~12）。nx/ny 是 targetFace.makeLandingRecord 存的正規化座標，
-// ny 向下為正，所以要取負才是「上方＝12 點」。
-export function clockOf(nx, ny) {
-  // ⚠️ 一定要先擋 null/undefined：Number(null) === 0，按分數鍵的玩家（沒有座標）
-  //    會被當成「正中心」而白拿方位加碼——方位必須是靶面模式獨有的。
-  if (nx == null || ny == null || nx === "" || ny === "") return null;
+export function ratioOf(nx, ny) {
+  if (nx == null || ny == null) return null;
   const x = Number(nx), y = Number(ny);
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-  if (x === 0 && y === 0) return 12;
-  const deg = (Math.atan2(x, -y) * 180) / Math.PI;      // 0=正上，順時針為正
-  const norm = (deg + 360) % 360;
-  const hour = Math.round(norm / 30) || 12;
-  return hour;
-}
-
-// 方位命中：允許 ±1 小時的容差（12 點跟 1 點是相鄰的，要繞回去算）
-export function matchesQuadrant(nx, ny, weakClock) {
-  const target = Math.floor(Number(weakClock) || 0);
-  if (!target) return false;
-  const hour = clockOf(nx, ny);
-  if (!hour) return false;
-  const diff = Math.abs(hour - target);
-  return Math.min(diff, 12 - diff) <= 1;
+  return Math.sqrt(x * x + y * y);
 }
 
 /**
- * 單箭的弱點結算。
+ * 抽這一回合的弱點圈。
  *
- * 回傳的 normalMult 給呼叫端乘在「一般傷害」上（一般傷害仍走既有 ATK 公式）：
- *   命中 → 1（照常）＋ flatDamage
- *   擦過 → 部位的 grazeMult（眼/心 0.5，腿/尾 1）
- *   脫靶 → 0
+ * 規則（作者定案）：每回合 1~2 個、出現在靶面裡。
+ * 位置隨機但**整個圈都要在靶紙內**，否則會出現「有一半在靶外、根本射不滿」的圈。
+ * 兩個圈時強制一大一小——不然新手可能整回合碰不到，老手也少了取捨。
+ */
+export function rollWeakSpots({ rand = Math.random, round = 1, phaseId = 1, faceCount = 1 } = {}) {
+  const count = rand() < 0.45 ? 1 : 2;
+  const big = WEAK_SPOTS.slice(0, 2);     // 綠 / 黃
+  const small = WEAK_SPOTS.slice(2);      // 橙 / 紅
+  // 階段越後面，小圈越容易出現（後段更吃準度）
+  const smallBias = phaseId >= 3 ? 0.65 : phaseId === 2 ? 0.5 : 0.4;
+
+  const picked = count === 1
+    ? [rand() < smallBias ? small[Math.floor(rand() * small.length)] : big[Math.floor(rand() * big.length)]]
+    : [big[Math.floor(rand() * big.length)], small[Math.floor(rand() * small.length)]];
+
+  const placed = [];
+  for (const spot of picked) {
+    // 多張靶時不必檢查跨靶重疊——不同張本來就不會撞在一起
+    // 圈心可以放的最大半徑：扣掉圈自己的半徑，整個圈才會在紙上
+    const maxR = Math.max(0, 1 - spot.radius - 0.02);
+    let pos = null;
+    for (let attempt = 0; attempt < 24; attempt += 1) {
+      const angle = rand() * Math.PI * 2;
+      const dist = Math.sqrt(rand()) * maxR;       // sqrt 讓分佈在圓面上均勻
+      const cx = Math.cos(angle) * dist;
+      const cy = Math.sin(angle) * dist;
+      // 不要跟已放的圈重疊，否則一箭吃兩個
+      const clash = placed.some(p => Math.hypot(p.cx - cx, p.cy - cy) < p.radius + spot.radius + 0.04);
+      if (!clash) { pos = { cx, cy }; break; }
+    }
+    if (pos) {
+      // 三連靶時每個圈還要記自己在左/中/右哪一張上（單靶恆為 0）
+      const faceIndex = faceCount > 1 ? Math.floor(rand() * faceCount) : 0;
+      placed.push({ ...spot, cx: pos.cx, cy: pos.cy, faceIndex, key: `${round}-${spot.id}` });
+    }
+  }
+  return placed;
+}
+
+/**
+ * 一支箭打到哪個圈。
+ * 圈重疊時取「最難的那個」（半徑最小）——玩家該拿到他真正達成的那一層。
+ */
+export function hitSpot(spots = [], nx, ny, faceIndex = 0) {
+  if (nx == null || ny == null) return null;
+  const face = Math.max(0, Math.floor(Number(faceIndex) || 0));
+  const inside = spots.filter(s =>
+    (s.faceIndex || 0) === face && Math.hypot(nx - s.cx, ny - s.cy) <= s.radius);
+  if (!inside.length) return null;
+  return inside.reduce((best, s) => (s.radius < best.radius ? s : best));
+}
+
+/**
+ * 單箭結算。
+ *
+ * normalMult 給呼叫端乘在「一般傷害」（ATK 公式）上：
+ *   打中圈／只是上靶 → 1；脫靶 → 0。
+ * 沒有「擦過懲罰」了——圈就是圈，射不中就是沒有加成，不必再多罰一層。
  */
 export function resolveWeakPointHit({
-  declaredId,
-  score,
-  label = null,
-  bossMaxHp = 0,
-  blocked = [],          // 本階段被護住的部位
-  charging = false,      // 王正在蓄力（弱點外露）
-  staggered = false,     // 王被打斷後的硬直回合
+  spots = [],
   nx = null,
   ny = null,
-  weakClock = null,      // 本場的方位弱點（靶面模式才有意義）
+  faceIndex = 0,          // 三連靶：射在左/中/右哪一張
+  bossMaxHp = 0,
+  charging = false,
+  staggered = false,
 } = {}) {
-  const effScore = scoreOf(score, label);
-  const part = WEAK_POINT_MAP[declaredId] || null;
-  const isBlocked = !!part && blocked.includes(part.id);
+  const ratio = ratioOf(nx, ny);
   const bonuses = [];
 
   // 脫靶：什麼都沒有
-  if (effScore <= 0) {
-    return {
-      declared: part, part: null, hit: false, missed: true, grazed: false,
-      blocked: isBlocked, flatDamage: 0, breakPoints: 0, effect: null,
-      normalMult: 0, bonuses,
-    };
+  if (ratio == null || ratio > 1) {
+    return { spot: null, hit: false, missed: true, bullseye: false,
+      flatDamage: 0, breakPoints: 0, weakensUlt: false, normalMult: 0, bonuses };
   }
 
-  // 沒宣告，或宣告了被護住的部位 → 只有一般傷害，沒有弱點收益
-  if (!part || isBlocked) {
-    return {
-      declared: part, part: null, hit: false, missed: false, grazed: false,
-      blocked: isBlocked, flatDamage: 0, breakPoints: 0, effect: null,
-      normalMult: 1, bonuses,
-    };
+  const spot = hitSpot(spots, nx, ny, faceIndex);
+  if (!spot) {
+    return { spot: null, hit: false, missed: false, bullseye: false,
+      flatDamage: 0, breakPoints: 0, weakensUlt: false, normalMult: 1, bonuses };
   }
 
-  // 沒達標＝擦過。這是宣告制的代價，也是它成立的原因。
-  if (effScore < part.threshold) {
-    return {
-      declared: part, part: null, hit: false, missed: false, grazed: true,
-      blocked: false, flatDamage: 0, breakPoints: 0, effect: null,
-      normalMult: part.grazeMult, bonuses,
-    };
-  }
-
-  // 命中
   let mult = 1;
   if (charging)  { mult *= CHARGE_EXPOSED_BONUS; bonuses.push("charge"); }
   if (staggered) { mult *= STAGGER_BONUS;        bonuses.push("stagger"); }
-  const quadrant = weakClock != null && matchesQuadrant(nx, ny, weakClock);
-  if (quadrant)  { mult *= QUADRANT_BONUS;       bonuses.push("quadrant"); }
-
-  const flatDamage = Math.max(1, Math.round((Number(bossMaxHp) || 0) * part.dmgPct * mult));
+  // 射進圈心一半的範圍＝更漂亮的一箭，再賞一層
+  const bullseye = Math.hypot(nx - spot.cx, ny - spot.cy) <= spot.radius * 0.5;
+  if (bullseye) { mult *= BULLSEYE_BONUS;        bonuses.push("bullseye"); }
 
   return {
-    declared: part, part, hit: true, missed: false, grazed: false, blocked: false,
-    flatDamage,
-    breakPoints: part.breakPoints + (quadrant ? 1 : 0),
-    effect: part.effect,
+    spot, hit: true, missed: false, bullseye,
+    flatDamage: Math.max(1, Math.round((Number(bossMaxHp) || 0) * spot.dmgPct * mult)),
+    // ⚠️ 正中只加傷害，**不加破防點數**——一場只有 30 箭，破防槽很容易灌爆
+    breakPoints: spot.breakPoints,
+    weakensUlt: !!spot.weakensUlt,
     normalMult: 1,
     bonuses,
   };
 }
 
-// UI 用：本階段可宣告的部位（含被封鎖的，要畫成鎖鏈灰掉，玩家才看得到「規則變了」）
-export function callableParts(blocked = []) {
-  return WEAK_POINTS.map(p => ({ ...p, blocked: blocked.includes(p.id) }));
+// 靶紙上的落點 → 標準環值（中心 10、邊緣 1、靶外 0）。
+// 只用於顯示與紀錄；弱點判定看的是圈，不是環數。
+// 為什麼需要它：貓小隊常用的 17cm 半靶只有 6~10 環，印在紙上的環數跨靶紙不能比。
+export function standardScoreFromRatio(ratio) {
+  const r = Number(ratio);
+  if (!Number.isFinite(r) || r < 0) return 0;
+  if (r > 1) return 0;
+  return Math.max(1, Math.min(10, Math.ceil((1 - r) * 10) || 1));
 }

@@ -3,7 +3,7 @@
 // 全部是無狀態的呈現元件，資料由 RaidScreen 餵。
 import { BREAK_GAUGE_MAX } from "../domain/breakGauge";
 import { intentHint } from "../domain/bossIntent";
-import { callableParts } from "../domain/weakPoints";
+import { WEAK_SPOTS } from "../domain/weakPoints";
 
 const GAUGE_CELLS = 20;
 
@@ -100,40 +100,46 @@ export function RaidGauge({ gauge = 0, burstActive = false }) {
   );
 }
 
-/* 宣告列：決策在射之前，不是之後 */
-export function RaidCallBar({ blocked = [], value, onChange, disabled = false }) {
-  const parts = callableParts(blocked);
+/* 本回合的弱點圖例：顏色＝報酬、大小＝難度，一眼看懂要不要賭 */
+export function RaidSpotLegend({ spots = [] }) {
+  if (!spots.length) {
+    return (
+      <div style={{ fontSize: 11, color: "#64748b", textAlign: "center", padding: "6px 0" }}>
+        本回合沒有弱點，照常射就好。
+      </div>
+    );
+  }
   return (
-    <div>
-      <div style={{ fontSize: 10.5, fontWeight: 900, color: "#c7d2fe", margin: "0 0 5px 2px" }}>
-        宣告部位（先選才能計分）
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6 }}>
-        {parts.map(part => {
-          const active = value === part.id;
-          return (
-            <button key={part.id} type="button"
-              disabled={part.blocked || disabled}
-              aria-pressed={active}
-              onClick={() => onChange?.(part.id)}
-              style={{
-                padding: "7px 2px", borderRadius: 10, cursor: part.blocked ? "not-allowed" : "pointer",
-                border: `2px solid ${active ? part.color : "rgba(255,255,255,.12)"}`,
-                background: active ? `${part.color}28` : "rgba(15,23,42,.85)",
-                color: part.blocked ? "#475569" : "#e2e8f0",
-                opacity: part.blocked ? 0.45 : 1,
-                boxShadow: active ? `0 0 14px ${part.color}66` : "none",
-                transition: "all .18s",
-              }}>
-              <div style={{ fontSize: 19, lineHeight: 1.1 }}>{part.blocked ? "⛓️" : part.icon}</div>
-              <div style={{ fontSize: 10.5, fontWeight: 900 }}>{part.name}</div>
-              <div style={{ fontSize: 9, color: part.blocked ? "#475569" : part.color, fontWeight: 900 }}>
-                {part.blocked ? "封鎖" : `≥${part.threshold}`}
-              </div>
-            </button>
-          );
-        })}
-      </div>
+    <div style={{ display: "flex", gap: 7, justifyContent: "center", flexWrap: "wrap" }}>
+      {spots.map(spot => (
+        <div key={spot.key || spot.id}
+          style={{
+            display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", borderRadius: 9,
+            border: `1.5px solid ${spot.color}`, background: `${spot.color}1e`,
+          }}>
+          <span style={{
+            width: Math.max(10, spot.radius * 44), height: Math.max(10, spot.radius * 44),
+            borderRadius: "50%", background: spot.color, display: "inline-block",
+          }} />
+          <span style={{ fontSize: 11, fontWeight: 900, color: spot.color }}>{spot.name}</span>
+          <span style={{ fontSize: 9.5, color: "#94a3b8" }}>破防 +{spot.breakPoints}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* 四種弱點的說明（大廳/結算用） */
+export function RaidSpotTable() {
+  return (
+    <div style={{ display: "grid", gap: 5 }}>
+      {WEAK_SPOTS.map(spot => (
+        <div key={spot.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
+          <span style={{ width: 12, height: 12, borderRadius: "50%", background: spot.color }} />
+          <b style={{ color: spot.color, minWidth: 34 }}>{spot.name}</b>
+          <span style={{ color: "#94a3b8" }}>{spot.desc}</span>
+        </div>
+      ))}
     </div>
   );
 }

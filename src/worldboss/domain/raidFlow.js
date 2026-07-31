@@ -12,16 +12,20 @@ import { calcWorldBossArrowDmg, calcWorldBossCounter } from "../../lib/damage";
 import { advanceBreakGauge, applyUltGaugePenalty, burstMultiplier, emptyGaugeState } from "./breakGauge";
 import { intentForRound, resolveIntent } from "./bossIntent";
 import { currentPhase, phaseTransition } from "./raidPhases";
-import { resolveWeakPointHit } from "./weakPoints";
+import { resolveWeakPointHit, rollWeakSpots } from "./weakPoints";
+import { rangeMultiplier } from "./raidRange";
+import { rookieMultiplier } from "./raidRookie";
+import { faceCountOf } from "./raidFaces";
 
 export const RAID_TOTAL_ROUNDS = 5;
 
-// ⚠️ 平衡的主要旋鈕。世界王的「一般傷害」（ATK 公式）刻意壓到五成，把配重讓給弱點固定傷害。
-// 為什麼不是直接調高固定傷害：那會連帶讓王死得更快、還要回頭改 24 隻王的血量。
-// 降低 ATK 那一段的權重可以只動「配重」不動「總量」——實測貢獻差距 4.5× → 3.5×，
-// 而每場總傷害幾乎不變（見 raidBalance.test.js）。
+// 世界王的「一般傷害」（ATK 公式）佔一半，另一半來自弱點固定傷害。
+// 這個配重決定了「射得準」與「練得久」各佔多少——世界王要的是前者多一點。
 export const RAID_NORMAL_DAMAGE_SCALE = 0.5;
 export const RAID_ARROWS_PER_ROUND = 6;
+
+// 打中弱點時，一般傷害用這個分數去算（＝滿分）
+export const MAX_ARROW_SCORE = 10;
 
 export function createRaidState({
   boss,                       // { key, name, hp, maxHp, atk, def, skillConfig }
@@ -30,7 +34,11 @@ export function createRaidState({
   dmgBonusPct = 0,
   dmgReducePct = 0,
   gauge = null,               // 進場快照（全場共享；戰鬥中只用本地樂觀值）
-  weakClock = null,
+  distanceM = 10,             // 射程（5~18 米）
+  faceSizeCm = 17,            // 靶紙直徑；貓小隊常用 17cm 半靶
+  targetFmt = "half_17",      // 三連靶時圈會分佈在三張靶上
+  archerLevel = 1,            // 射手等級 → 新手扶助（50 級以下，見 raidRookie.js）
+  rand = Math.random,
 } = {}) {
   const maxHp = Math.max(1, Number(boss?.maxHp || boss?.hp) || 1);
   return {
@@ -41,14 +49,23 @@ export function createRaidState({
     },
     bossHp: Math.max(0, Math.min(maxHp, Number(boss?.hp ?? maxHp))),
     stats: { atk: Number(stats?.atk) || 0, def: Number(stats?.def) || 0, hp: Number(stats?.hp) || 100 },
-    participantBonus, dmgBonusPct, dmgReducePct, weakClock,
+    participantBonus, dmgBonusPct, dmgReducePct,
+    distanceM, faceSizeCm,
+    rangeMult: rangeMultiplier({ distanceM, faceSizeCm }),
+    archerLevel,
+    // 補償在戰鬥模型「外面」：一個乘在最後的倍率，跟弱點數值完全分離
+    rookieMult: rookieMultiplier(archerLevel),
     playerHp: Number(stats?.hp) || 100,
     playerMaxHp: Number(stats?.hp) || 100,
     round: 1,
     gauge: { ...emptyGaugeState(), ...(gauge || {}) },
     staggered: false,          // 上回合打斷成功 → 這回合王硬直
+    // ⚠️ 弱點圈必須在**射之前**就抽好並放進 state——UI 要先把圈畫在靶面上，
+    //    玩家才知道要往哪射。射完才抽等於叫人閉著眼睛射。
+    targetFmt,
+    spots: rollWeakSpots({ rand, round: 1, phaseId: 1, faceCount: faceCountOf(targetFmt) }),
     weakenStacks: 0,
-    totals: { damage: 0, breakPoints: 0, weakHits: 0, grazes: 0, bestCombo: 0, interrupts: 0 },
+    totals: { damage: 0, breakPoints: 0, weakHits: 0, grazes: 0, bestCombo: 0, interrupts: 0, bullseyes: 0 },
     finished: false,
   };
 }
@@ -62,7 +79,7 @@ export function raidHpRatio(state) {
  * arrows: [{ score, label, declaredId, nx, ny }]
  * 回傳 { state, log }——log 順序就是演出順序。
  */
-export function resolveRaidRound({ state, arrows = [] } = {}) {
+export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}) {
   const s = {
     ...state,
     gauge: { ...state.gauge },
@@ -74,10 +91,12 @@ export function resolveRaidRound({ state, arrows = [] } = {}) {
   const intent = intentForRound({ config: s.boss.skillConfig, round, phaseId: phase.id });
   const staggered = !!s.staggered;
 
-  log.push({ type: "roundStart", round, phase, staggered });
+  const spots = state.spots || [];
+
+  log.push({ type: "roundStart", round, phase, staggered, spots });
   log.push({ type: "intent", round, intent, staggered });
 
-  let legHits = 0;
+  let spotHits = 0;
   let combo = 0;
   let roundDamage = 0;
   let roundBreak = 0;
@@ -88,24 +107,32 @@ export function resolveRaidRound({ state, arrows = [] } = {}) {
     const phaseNow = currentPhase(ratioBefore);
 
     const hit = resolveWeakPointHit({
-      declaredId: arrow?.declaredId,
-      score: arrow?.score,
-      label: arrow?.label,
+      spots,
       bossMaxHp: s.boss.maxHp,
-      blocked: phaseNow.blocked,
       charging: intent.charging,
       staggered,
-      nx: arrow?.nx, ny: arrow?.ny,
-      weakClock: s.weakClock,
+      nx: arrow?.nx, ny: arrow?.ny, faceIndex: arrow?.faceIndex || 0,
     });
 
+    // ⚠️ 打中弱點圈 → 一般傷害**一律以最高分計算**（作者 2026-07-31）。
+    //    圈可能長在 6 環甚至更外圈的位置；如果還照落點的環數算，
+    //    玩家就沒有動力去拚邊緣的圈了。打中就是打中，給滿。
+    const effectiveScore = hit.hit
+      ? MAX_ARROW_SCORE
+      : (arrow?.label === "X" ? MAX_ARROW_SCORE : Number(arrow?.score) || 0);
     const normal = calcWorldBossArrowDmg(
-      arrow?.label === "X" ? 10 : Number(arrow?.score) || 0,
+      effectiveScore,
       s.stats.atk, s.boss.def, s.participantBonus, s.dmgBonusPct,
     ) * hit.normalMult * RAID_NORMAL_DAMAGE_SCALE;
 
+    const flat = hit.flatDamage;
+    const breakGain = hit.breakPoints;
+
     const burst = burstMultiplier(s.gauge, round);
-    const damage = Math.max(0, Math.round((normal + hit.flatDamage) * burst));
+    // 射程倍率乘在整箭上：距離是這一場的設定，對新手老手一視同仁，不影響貢獻比
+    const damage = Math.max(0, Math.round(
+      (normal + flat) * burst * (s.rangeMult || 1) * (s.rookieMult || 1),
+    ));
 
     s.bossHp = Math.max(0, s.bossHp - damage);
     roundDamage += damage;
@@ -115,25 +142,29 @@ export function resolveRaidRound({ state, arrows = [] } = {}) {
       combo += 1;
       s.totals.weakHits += 1;
       s.totals.bestCombo = Math.max(s.totals.bestCombo, combo);
-      if (hit.effect === "interrupt") legHits += 1;
-      if (hit.effect === "weaken") s.weakenStacks += 1;
+      if (hit.bullseye) s.totals.bullseyes += 1;
+      // 打斷不再綁在某個部位上：任何弱點命中都推進度，紅點推兩格
+      spotHits += hit.spot?.id === "red" ? 2 : 1;
+      if (hit.weakensUlt) s.weakenStacks += 1;
     } else {
       combo = 0;
-      if (hit.grazed) s.totals.grazes += 1;
+      if (!hit.missed) s.totals.grazes += 1;   // 上靶但沒中圈
     }
 
     log.push({
       type: "arrow", round, index,
       label: arrow?.label ?? String(arrow?.score ?? ""),
-      declared: hit.declared, part: hit.part,
-      hit: hit.hit, grazed: hit.grazed, missed: hit.missed, blocked: hit.blocked,
+      spot: hit.spot, hit: hit.hit, missed: hit.missed, bullseye: hit.bullseye,
+      maxScored: hit.hit,
+      grazed: !hit.hit && !hit.missed,
+      nx: arrow?.nx, ny: arrow?.ny,
       bonuses: hit.bonuses, burst: burst > 1,
-      damage, flatDamage: hit.flatDamage, combo,
+      damage, flatDamage: flat, combo,
       bossHp: s.bossHp, bossHpRatio: raidHpRatio(s),
     });
 
-    if (hit.breakPoints > 0) {
-      const adv = advanceBreakGauge(s.gauge, hit.breakPoints, { phaseGaugeMult: phaseNow.gaugeMult, round });
+    if (breakGain > 0) {
+      const adv = advanceBreakGauge(s.gauge, breakGain, { phaseGaugeMult: phaseNow.gaugeMult, round });
       s.gauge = adv.state;
       roundBreak += adv.gained;
       s.totals.breakPoints += adv.gained;
@@ -152,11 +183,11 @@ export function resolveRaidRound({ state, arrows = [] } = {}) {
   // ── 回合結束：分歧 ──
   let nextStagger = false;
   if (s.bossHp > 0) {
-    const outcome = resolveIntent({ intent, legHits, weakenStacks: s.weakenStacks });
+    const outcome = resolveIntent({ intent, legHits: spotHits, weakenStacks: s.weakenStacks });
     if (intent.charging && outcome.interrupted) {
       nextStagger = true;
       s.totals.interrupts += 1;
-      log.push({ type: "interrupt", round, intent, legHits });
+      log.push({ type: "interrupt", round, intent, legHits: spotHits });
     } else if (outcome.fired) {
       const base = calcWorldBossCounter(s.boss.atk, s.stats.def, s.dmgReducePct);
       const mult = (intent.skill?.baseMultiplier || 1) * outcome.ultMultiplier;
@@ -180,13 +211,19 @@ export function resolveRaidRound({ state, arrows = [] } = {}) {
 
   s.staggered = nextStagger;
   s.round = round + 1;
+  // 下一回合的圈：位置每回合都變，玩家不能靠肌肉記憶一直射同一點
+  s.spots = rollWeakSpots({
+    rand, round: s.round,
+    phaseId: currentPhase(raidHpRatio(s)).id,
+    faceCount: faceCountOf(s.targetFmt),
+  });
   s.finished = s.bossHp <= 0 || s.round > RAID_TOTAL_ROUNDS || s.playerHp <= 0;
 
   log.push({
     type: "roundEnd", round,
     damage: roundDamage, breakPoints: roundBreak,
     bossHp: s.bossHp, bossHpRatio: raidHpRatio(s),
-    finished: s.finished, staggerNext: nextStagger,
+    finished: s.finished, staggerNext: nextStagger, nextSpots: s.spots,
   });
 
   return { state: s, log };

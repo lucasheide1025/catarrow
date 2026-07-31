@@ -3,6 +3,7 @@ import { INTERRUPT_REQUIRED, intentForRound, isChargeRound, resolveIntent } from
 import { RAID_TOTAL_ROUNDS, createRaidState, raidHpRatio, resolveRaidRound } from "./raidFlow";
 import { buildRaidTimeline, describeEvent, timelineDuration } from "./raidTimeline";
 import { WB_PHASES, currentPhase, phaseTransition } from "./raidPhases";
+import { WEAK_SPOT_MAP } from "./weakPoints";
 
 const boss = (hp = 200000) => ({ key: "test", name: "測試王", hp, maxHp: hp, atk: 120, def: 50 });
 const newState = (over = {}) => createRaidState({
@@ -10,8 +11,15 @@ const newState = (over = {}) => createRaidState({
   stats: { atk: 150, def: 60, hp: 300 },
   ...over,
 });
-const arrows = (declaredId, score, n = 6) =>
-  Array.from({ length: n }, () => ({ declaredId, score }));
+// 把弱點圈固定放在正中央，測試才不用管它抽到哪
+const withSpot = (state, spotId = "yellow") => ({
+  ...state,
+  spots: [{ ...WEAK_SPOT_MAP[spotId], cx: 0, cy: 0, key: "t-" + spotId }],
+});
+// 射在圈心（命中）／射在靶上但圈外（沒中）／射到靶外（脫靶）
+const atCentre = (n = 6) => Array.from({ length: n }, () => ({ nx: 0, ny: 0, score: 10 }));
+const outsideSpot = (n = 6) => Array.from({ length: n }, () => ({ nx: 0.65, ny: 0, score: 4 }));
+const offTarget = (n = 6) => Array.from({ length: n }, () => ({ nx: 1.4, ny: 0, score: 0 }));
 
 describe("階段", () => {
   test("血量決定階段，邊界不會落空", () => {
@@ -22,7 +30,7 @@ describe("階段", () => {
     expect(currentPhase(0).id).toBe(3);
   });
 
-  test("每階段護住的部位都不同，強迫改變宣告", () => {
+  test("每階段的封鎖設定都不同（保留給未來的階段機制）", () => {
     const blocked = WB_PHASES.map(p => p.blocked.join(","));
     expect(new Set(blocked).size).toBe(WB_PHASES.length);
   });
@@ -52,10 +60,10 @@ describe("破防槽：算次數不算傷害", () => {
     expect(burstMultiplier(st, 5)).toBe(1);
   });
 
-  test("新手打腿的累積速度不會輸老手打眼十倍——這是設計目的", () => {
-    const legs = advanceBreakGauge(emptyGaugeState(), 1 * 4, {});   // 腿 ×4
-    const eyes = advanceBreakGauge(emptyGaugeState(), 3 * 4, {});   // 眼 ×4
-    expect(eyes.state.gauge / legs.state.gauge).toBeLessThanOrEqual(3);
+  test("破防槽算的是命中次數，不是傷害", () => {
+    const few = advanceBreakGauge(emptyGaugeState(), 4, {});
+    const many = advanceBreakGauge(emptyGaugeState(), 8, {});
+    expect(many.state.gauge).toBe(few.state.gauge * 2);
   });
 
   test("大招打中會打掉一截槽，但不會歸零", () => {
@@ -79,7 +87,7 @@ describe("王的意圖", () => {
       .toBeGreaterThan(intentForRound({ round: 2, phaseId: 1 }).interruptRequired);
   });
 
-  test("腿部命中夠 → 打斷成功，王發不出來", () => {
+  test("弱點命中夠 → 打斷成功，王發不出來", () => {
     const intent = intentForRound({ round: 2, phaseId: 1 });
     const r = resolveIntent({ intent, legHits: intent.interruptRequired });
     expect(r.interrupted).toBe(true);
@@ -94,7 +102,7 @@ describe("王的意圖", () => {
     expect(r.fired).toBe(true);
   });
 
-  test("尾部削弱會降低大招威力，但有下限", () => {
+  test("紅點削弱會降低大招威力，但有下限", () => {
     const intent = intentForRound({ round: 2, phaseId: 1 });
     const none = resolveIntent({ intent, legHits: 0, weakenStacks: 0 });
     const some = resolveIntent({ intent, legHits: 0, weakenStacks: 3 });
@@ -110,55 +118,73 @@ describe("王的意圖", () => {
 });
 
 describe("一個回合的結算", () => {
-  test("命中弱點會扣王的血，並累積破防", () => {
-    const { state, log } = resolveRaidRound({ state: newState(), arrows: arrows("heart", 8) });
+  test("射進圈裡會扣王的血，並累積破防", () => {
+    const { state, log } = resolveRaidRound({ state: withSpot(newState()), arrows: atCentre() });
     expect(state.bossHp).toBeLessThan(200000);
     expect(state.totals.weakHits).toBe(6);
     expect(state.gauge.gauge).toBeGreaterThan(0);
     expect(log.filter(e => e.type === "arrow")).toHaveLength(6);
   });
 
-  test("擦過就是沒有固定傷害——賭輸要有感覺", () => {
-    const hit = resolveRaidRound({ state: newState(), arrows: arrows("eye", 9) });
-    const graze = resolveRaidRound({ state: newState(), arrows: arrows("eye", 8) });
-    expect(graze.state.totals.damage).toBeLessThan(hit.state.totals.damage / 3);
-    expect(graze.state.totals.grazes).toBe(6);
+  test("上靶但沒中圈＝只有一般傷害，沒有弱點加成", () => {
+    const hit = resolveRaidRound({ state: withSpot(newState()), arrows: atCentre() });
+    const plain = resolveRaidRound({ state: withSpot(newState()), arrows: outsideSpot() });
+    expect(plain.state.totals.weakHits).toBe(0);
+    expect(plain.state.totals.damage).toBeGreaterThan(0);
+    expect(plain.state.totals.damage).toBeLessThan(hit.state.totals.damage / 3);
+  });
+
+  test("脫靶連一般傷害都沒有", () => {
+    const { state } = resolveRaidRound({ state: withSpot(newState()), arrows: offTarget() });
+    expect(state.totals.damage).toBe(0);
+  });
+
+  test("⚠️ 打中弱點的一般傷害一律算滿分——圈長在外圈也值得拚", () => {
+    // 同一個圈放在靶的外圈，射中它 vs 射在同樣位置但沒有圈
+    const far = { ...newState(), spots: [{ ...WEAK_SPOT_MAP.green, cx: 0.55, cy: 0, key: "far" }] };
+    const none = { ...newState(), spots: [] };
+    const shot = [{ nx: 0.55, ny: 0, score: 4 }];
+    const withSpotHit = resolveRaidRound({ state: far, arrows: shot });
+    const withoutSpot = resolveRaidRound({ state: none, arrows: shot });
+    expect(withSpotHit.log.find(e => e.type === "arrow").maxScored).toBe(true);
+    expect(withoutSpot.log.find(e => e.type === "arrow").maxScored).toBe(false);
+    // 有圈那一箭連「一般傷害」都被拉到滿分，所以差距不只是固定傷害那一塊
+    expect(withSpotHit.state.totals.damage)
+      .toBeGreaterThan(withoutSpot.state.totals.damage + WEAK_SPOT_MAP.green.dmgPct * 200000);
+  });
+
+  test("沒中圈就照落點的環數算，不會白送滿分", () => {
+    const none = { ...newState(), spots: [] };
+    const near = resolveRaidRound({ state: none, arrows: [{ nx: 0.05, ny: 0, score: 10 }] });
+    const far = resolveRaidRound({ state: none, arrows: [{ nx: 0.75, ny: 0, score: 3 }] });
+    expect(near.state.totals.damage).toBeGreaterThan(far.state.totals.damage);
   });
 
   test("打斷成功 → 下回合硬直，且硬直回合傷害更高", () => {
-    const base = newState();
+    const base = withSpot(newState());
     base.round = 2;
-    const { state } = resolveRaidRound({ state: base, arrows: arrows("leg", 6) });
+    const { state } = resolveRaidRound({ state: base, arrows: atCentre() });
     expect(state.staggered).toBe(true);
 
-    const staggerRound = resolveRaidRound({ state, arrows: arrows("heart", 8) });
-    const normal = { ...state, staggered: false };
-    const normalRound = resolveRaidRound({ state: normal, arrows: arrows("heart", 8) });
+    const staggerRound = resolveRaidRound({ state: withSpot(state), arrows: atCentre(1) });
+    const normalRound = resolveRaidRound({ state: withSpot({ ...state, staggered: false }), arrows: atCentre(1) });
     expect(staggerRound.state.totals.damage).toBeGreaterThan(normalRound.state.totals.damage);
   });
 
   test("沒斷成 → 大招發動，玩家掉血且破防槽被打掉", () => {
-    const base = newState();
+    const base = withSpot(newState());
     base.round = 2;
     base.gauge = { ...emptyGaugeState(), gauge: 20 };
-    const { state, log } = resolveRaidRound({ state: base, arrows: arrows("heart", 8) });
+    const { state, log } = resolveRaidRound({ state: base, arrows: outsideSpot() });
     expect(log.some(e => e.type === "ult")).toBe(true);
     expect(state.playerHp).toBeLessThan(base.playerHp);
     expect(state.gauge.gauge).toBeLessThan(20);
   });
 
-  test("被封鎖的部位不給弱點收益（第二階段護眼）", () => {
-    const low = newState();
-    low.bossHp = 200000 * 0.5;            // → 第二階段
-    const { state } = resolveRaidRound({ state: low, arrows: arrows("eye", 10) });
-    expect(state.totals.weakHits).toBe(0);
-    expect(state.totals.damage).toBeGreaterThan(0);   // 一般傷害還在
-  });
-
   test("王倒下就停手，後面的箭不再結算（不會打死人還繼續扣）", () => {
-    const nearly = newState();
+    const nearly = withSpot(newState(), "red");
     nearly.bossHp = 1;
-    const { state, log } = resolveRaidRound({ state: nearly, arrows: arrows("eye", 10) });
+    const { state, log } = resolveRaidRound({ state: nearly, arrows: atCentre() });
     expect(state.bossHp).toBe(0);
     expect(log.filter(e => e.type === "arrow").length).toBeLessThan(6);
     expect(log.some(e => e.type === "bossDown")).toBe(true);
@@ -166,21 +192,25 @@ describe("一個回合的結算", () => {
 
   test("連擊會累計，斷掉要歸零", () => {
     const mixed = [
-      { declaredId: "heart", score: 8 },
-      { declaredId: "heart", score: 8 },
-      { declaredId: "heart", score: 2 },   // 擦過 → 斷
-      { declaredId: "heart", score: 8 },
+      { nx: 0, ny: 0 }, { nx: 0, ny: 0 },
+      { nx: 0.65, ny: 0 },
+      { nx: 0, ny: 0 },
     ];
-    const { state, log } = resolveRaidRound({ state: newState(), arrows: mixed });
-    const combos = log.filter(e => e.type === "arrow").map(e => e.combo);
-    expect(combos).toEqual([1, 2, 0, 1]);
+    const { state, log } = resolveRaidRound({ state: withSpot(newState()), arrows: mixed });
+    expect(log.filter(e => e.type === "arrow").map(e => e.combo)).toEqual([1, 2, 0, 1]);
     expect(state.totals.bestCombo).toBe(2);
+  });
+
+  test("下一回合會重抽圈，且整個圈都在靶紙內", () => {
+    const { state } = resolveRaidRound({ state: withSpot(newState()), arrows: atCentre() });
+    expect(state.spots.length).toBeGreaterThanOrEqual(1);
+    expect(state.spots.every(sp => Math.hypot(sp.cx, sp.cy) + sp.radius <= 1)).toBe(true);
   });
 
   test("五回合後結束", () => {
     let state = newState({ hp: 99999999 });
     for (let i = 0; i < RAID_TOTAL_ROUNDS; i += 1) {
-      state = resolveRaidRound({ state, arrows: arrows("tail", 5) }).state;
+      state = resolveRaidRound({ state, arrows: outsideSpot() }).state;
     }
     expect(state.finished).toBe(true);
   });
@@ -188,13 +218,13 @@ describe("一個回合的結算", () => {
 
 describe("演出時間軸：log 順序就是演出順序", () => {
   test("時間軸完全保留 log 的順序（公會踩過的坑：按類型分桶會跳過動畫）", () => {
-    const { log } = resolveRaidRound({ state: newState(), arrows: arrows("heart", 8) });
+    const { log } = resolveRaidRound({ state: withSpot(newState()), arrows: atCentre() });
     const timeline = buildRaidTimeline(log);
     expect(timeline.map(e => e.type)).toEqual(log.map(e => e.type));
   });
 
   test("時間單調遞增，總長＝各事件停留時間相加", () => {
-    const { log } = resolveRaidRound({ state: newState(), arrows: arrows("heart", 8) });
+    const { log } = resolveRaidRound({ state: withSpot(newState()), arrows: atCentre() });
     const timeline = buildRaidTimeline(log);
     for (let i = 1; i < timeline.length; i += 1) {
       expect(timeline[i].atMs).toBeGreaterThan(timeline[i - 1].atMs);
@@ -208,7 +238,7 @@ describe("演出時間軸：log 順序就是演出順序", () => {
   });
 
   test("每種事件都有可顯示的文案", () => {
-    const { log } = resolveRaidRound({ state: newState(), arrows: arrows("heart", 8) });
+    const { log } = resolveRaidRound({ state: withSpot(newState()), arrows: atCentre() });
     for (const event of log) {
       if (event.type === "roundEnd" || event.type === "gauge") continue;
       expect(describeEvent(event)).toBeTruthy();
@@ -220,7 +250,7 @@ describe("狀態不可變", () => {
   test("結算不會改到傳進去的 state（重播與重連才安全）", () => {
     const before = newState();
     const snapshot = JSON.parse(JSON.stringify({ hp: before.bossHp, gauge: before.gauge, totals: before.totals }));
-    resolveRaidRound({ state: before, arrows: arrows("eye", 10) });
+    resolveRaidRound({ state: withSpot(before), arrows: atCentre() });
     expect(before.bossHp).toBe(snapshot.hp);
     expect(before.gauge).toEqual(snapshot.gauge);
     expect(before.totals).toEqual(snapshot.totals);
@@ -240,7 +270,7 @@ describe("結束條件（2026-07-31 抓到的洞：回合會一直往上加）",
     for (let i = 0; i < 5; i += 1) {
       rounds.push(state.round);
       expect(state.finished).toBe(false);
-      state = resolveRaidRound({ state, arrows: arrows("leg", 9) }).state;
+      state = resolveRaidRound({ state, arrows: outsideSpot() }).state;
     }
     expect(rounds).toEqual([1, 2, 3, 4, 5]);
     expect(state.finished).toBe(true);
@@ -248,9 +278,9 @@ describe("結束條件（2026-07-31 抓到的洞：回合會一直往上加）",
   });
 
   test("王倒下當下就 finished，不必等回合跑完", () => {
-    const nearly = newState();
+    const nearly = withSpot(newState(), "red");
     nearly.bossHp = 1;
-    const { state } = resolveRaidRound({ state: nearly, arrows: arrows("eye", 10) });
+    const { state } = resolveRaidRound({ state: nearly, arrows: atCentre() });
     expect(state.finished).toBe(true);
     expect(state.round).toBe(2);
   });
@@ -261,14 +291,14 @@ describe("結束條件（2026-07-31 抓到的洞：回合會一直往上加）",
     weak.playerHp = 1;
     weak.stats = { ...weak.stats, def: 0 };
     weak.boss = { ...weak.boss, atk: 9999, skillConfig: { r4Finisher: { skillId: "x", name: "終結", baseMultiplier: 2.2, canKnockOut: true } } };
-    const { state } = resolveRaidRound({ state: weak, arrows: arrows("tail", 4) });
+    const { state } = resolveRaidRound({ state: weak, arrows: outsideSpot() });
     expect(state.playerHp).toBe(0);
     expect(state.finished).toBe(true);
   });
 
   test("finished 之後即使再結算，回合也不會無限膨脹（呼叫端應該擋，這裡確保不會爆）", () => {
     let state = newState({ hp: 99999999 });
-    for (let i = 0; i < 8; i += 1) state = resolveRaidRound({ state, arrows: arrows("leg", 9) }).state;
+    for (let i = 0; i < 8; i += 1) state = resolveRaidRound({ state, arrows: outsideSpot() }).state;
     expect(state.finished).toBe(true);
   });
 });

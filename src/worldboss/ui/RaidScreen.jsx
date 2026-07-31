@@ -4,19 +4,19 @@
 // ⚠️ 演出鐵律：domain 產生 log，這裡**照 log 的原順序**重播（buildRaidTimeline）。
 //    不按事件類型分桶——公會就是那樣才會「怪物全滅前直接跳過戰鬥動畫」。
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { TargetFaceInput } from "../../components/shared/TargetFaceOverlay";
-import { getTargetScoreLabels } from "../../lib/targetFace";
+import { raidFaceLabel } from "../domain/raidFaces";
 import { sfxLockOn, sfxRaidEvent, sfxTap, unlockAudio, vibrate } from "../../lib/sound";
 import { burstMultiplier, isBurstActive } from "../domain/breakGauge";
 import { intentForRound } from "../domain/bossIntent";
+import { hitSpot } from "../domain/weakPoints";
 import { PHASE_TINTS, currentPhase } from "../domain/raidPhases";
 import { RAID_ARROWS_PER_ROUND, RAID_TOTAL_ROUNDS, raidHpRatio, resolveRaidRound } from "../domain/raidFlow";
 import { buildRaidTimeline, describeEvent } from "../domain/raidTimeline";
-import { RaidBossBar, RaidCallBar, RaidGauge, RaidIntent } from "./RaidHud";
+import { RaidBossBar, RaidGauge, RaidIntent, RaidSpotLegend } from "./RaidHud";
 import RaidBoss from "./RaidBoss";
+import RaidTarget from "./RaidTarget";
+import { rangeLabel } from "../domain/raidRange";
 import "./raidFx.css";
-
-const EXPOSED_ON_CHARGE = ["eye", "heart", "leg", "tail"];
 
 export default function RaidScreen({
   state,                       // createRaidState 的結果
@@ -24,13 +24,13 @@ export default function RaidScreen({
   bossKey, bossTitle,
   participants = 0,
   bgUrl = null,
-  inputMode = "button",        // "button" | "target"
-  targetFmt = "full_110",
+  // ⚠️ 靶面輸入是**強制**的（作者 2026-07-31）：弱點的精準判定要靠落點，
+  //    按分數鍵給不出位置，整套「射在紙上的位置＝射在牠身上的位置」就不成立。
+  targetFmt = "half_17",
   onFinish,
   onExit,
 }) {
   const [pending, setPending] = useState([]);       // 本回合已輸入的箭
-  const [declared, setDeclared] = useState(null);
   const [playing, setPlaying] = useState(false);
   const [shown, setShown] = useState(null);         // 演出中的即時畫面狀態
   const [banner, setBanner] = useState(null);
@@ -53,9 +53,9 @@ export default function RaidScreen({
   const displayGauge = shown?.gauge ?? state.gauge;
   const burstOn = isBurstActive(displayGauge, state.round);
 
-  // 輸入中：顯示「預計」的打斷進度（宣告了幾次腿），演出時換成實際命中
-  const plannedLegs = pending.filter(a => a.declaredId === "leg").length;
-  const legHits = shown?.legHits ?? plannedLegs;
+  const spots = state.spots || [];
+  // 輸入中先不透露打斷進度（要射完才知道有沒有中）；演出時才跑真實數字
+  const legHits = shown?.legHits ?? 0;
 
   const pushFloat = useCallback((text, kind) => {
     const key = floatId.current++;
@@ -63,21 +63,14 @@ export default function RaidScreen({
     setTimeout(() => setFloats(list => list.filter(f => f.key !== key)), 1200);
   }, []);
 
-  const declare = useCallback(id => {
-    if (playing || state.finished) return;
-    unlockAudio();
-    setDeclared(id);
-    sfxLockOn();
-    vibrate(8);
-  }, [playing, state.finished]);
-
   const addArrow = useCallback(arrow => {
     if (playing || state.finished || pending.length >= RAID_ARROWS_PER_ROUND) return;
-    if (!declared) { setMessage("先宣告要打哪個部位。"); return; }
-    setPending(list => [...list, { ...arrow, declaredId: declared }]);
+    unlockAudio();
+    const spot = hitSpot(spots, arrow.nx, arrow.ny);
+    setPending(list => [...list, { ...arrow, spotId: spot?.id || null }]);
     setMessage("");
-    sfxTap();
-  }, [playing, state.finished, pending.length, declared]);
+    if (spot) { sfxLockOn(); vibrate(12); } else { sfxTap(); }
+  }, [playing, state.finished, pending.length, spots]);
 
   // ── 演出：照 log 順序重播 ──
   const playRound = useCallback(() => {
@@ -97,7 +90,8 @@ export default function RaidScreen({
           case "arrow": {
             setShown(s => ({ ...(s || {}), bossHp: event.bossHp, hpRatio: event.bossHpRatio, legHits: liveLegs }));
             if (event.hit) {
-              if (event.part?.effect === "interrupt") { liveLegs += 1; setShown(s => ({ ...(s || {}), legHits: liveLegs })); }
+              liveLegs += event.spot?.id === "red" ? 2 : 1;
+              setShown(s => ({ ...(s || {}), legHits: liveLegs }));
               setBossAnim("flinch"); setShake("soft");
               pushFloat(`-${event.damage}`, "weak");
               vibrate(24);
@@ -150,15 +144,15 @@ export default function RaidScreen({
     timers.current.push(setTimeout(() => {
       setPlaying(false);
       setPending([]);
-      setDeclared(null);
       setShown(null);
       onState?.(next, log);
       if (next.finished) onFinish?.(next);
     }, total + 240));
   }, [playing, pending, state, onState, onFinish, pushFloat]);
 
-  const scoreLabels = useMemo(() => getTargetScoreLabels(targetFmt), [targetFmt]);
   const full = pending.length >= RAID_ARROWS_PER_ROUND;
+
+  const range = rangeLabel(state.rangeMult || 1);
 
   return (
     <div className="raid-stage" style={{
@@ -184,10 +178,8 @@ export default function RaidScreen({
         style={{ position: "relative", zIndex: 2, flex: "0 0 auto", padding: "10px 0 4px" }}>
         <RaidBoss
           bossKey={bossKey} hp={displayHp} maxHp={state.boss.maxHp} size={230}
-          blocked={phase.blocked} declaredId={declared} onDeclare={declare}
-          charging={intent.charging} staggered={state.staggered}
-          exposedIds={intent.charging ? EXPOSED_ON_CHARGE : []}
-          anim={bossAnim} locked={playing}
+          spots={spots} charging={intent.charging} staggered={state.staggered}
+          anim={bossAnim}
         />
         {/* 傷害數字 */}
         {floats.map(f => (
@@ -215,7 +207,7 @@ export default function RaidScreen({
         background: "linear-gradient(180deg,rgba(2,6,23,.55),rgba(2,6,23,.96))",
         padding: "10px 12px 14px", display: "flex", flexDirection: "column", gap: 9,
       }}>
-        <RaidCallBar blocked={phase.blocked} value={declared} onChange={declare} disabled={playing} />
+        <RaidSpotLegend spots={spots} />
 
         {/* 箭數進度 */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -223,7 +215,7 @@ export default function RaidScreen({
             {Array.from({ length: RAID_ARROWS_PER_ROUND }).map((_, i) => {
               const a = pending[i];
               return (
-                <span key={i} title={a ? `${a.label ?? a.score}・${a.declaredId}` : ""}
+                <span key={i} title={a ? `${a.label ?? a.score}${a.spotId ? `・${a.spotId}` : ""}` : ""}
                   style={{
                     width: 11, height: 11, borderRadius: "50%",
                     background: a ? "#fbbf24" : "rgba(255,255,255,.14)",
@@ -233,35 +225,22 @@ export default function RaidScreen({
             })}
           </div>
           <span style={{ fontSize: 10.5, color: "#94a3b8" }}>
-            第 {Math.min(state.round, RAID_TOTAL_ROUNDS)}/{RAID_TOTAL_ROUNDS} 回合
+            {raidFaceLabel(targetFmt)}・{state.distanceM}m
+            <b style={{ color: range.color }}>　×{(state.rangeMult || 1).toFixed(2)}</b>
+            　第 {Math.min(state.round, RAID_TOTAL_ROUNDS)}/{RAID_TOTAL_ROUNDS} 回合
             {burstOn && <b style={{ color: "#fde68a" }}>　💥 ×{burstMultiplier(displayGauge, state.round)}</b>}
           </span>
         </div>
 
-        {/* 計分 */}
-        {inputMode === "target" ? (
-          <TargetFaceInput
-            fmtId={targetFmt}
-            arrowLabels={pending.map(a => a.label)}
-            arrowsPerRound={RAID_ARROWS_PER_ROUND}
-            radius={112}
-            onArrow={rec => addArrow({ score: rec.rawScore, label: rec.label, nx: rec.nx, ny: rec.ny })}
-          />
-        ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 5 }}>
-            {scoreLabels.map(label => (
-              <button key={label} type="button" disabled={playing || full || !declared}
-                onClick={() => addArrow({ score: label === "X" ? 10 : label === "M" ? 0 : Number(label), label })}
-                style={{
-                  padding: "9px 0", borderRadius: 9, border: "1px solid rgba(255,255,255,.12)",
-                  background: label === "X" ? "#78350f" : label === "M" ? "#334155" : "rgba(30,41,59,.9)",
-                  color: "#f8fafc", fontWeight: 900, fontSize: 14,
-                  opacity: playing || full || !declared ? 0.4 : 1,
-                  cursor: playing || full || !declared ? "not-allowed" : "pointer",
-                }}>{label}</button>
-            ))}
-          </div>
-        )}
+        {/* 計分：強制靶面 */}
+        <RaidTarget
+          fmtId={targetFmt}
+          spots={spots}
+          disabled={playing || full}
+          arrows={pending}
+          radius={122}
+          onArrow={rec => addArrow(rec)}
+        />
 
         <div style={{ display: "flex", gap: 8 }}>
           {pending.length > 0 && !playing && (

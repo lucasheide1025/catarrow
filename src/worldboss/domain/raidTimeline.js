@@ -40,17 +40,15 @@ export function describeEvent(event) {
       return event.staggered ? "牠還沒站穩——全部位開放！" : `第 ${event.round} 回合`;
     case "intent":
       return event.intent?.charging
-        ? `⚡ ${event.intent.name}：${event.intent.interruptRequired} 次腿部命中可打斷`
+        ? `⚡ ${event.intent.name}：命中弱點 ${event.intent.interruptRequired} 次可打斷`
         : "牠在等你出手。";
     case "arrow": {
       if (event.missed) return "脫靶";
-      if (event.blocked) return `${event.declared?.name || "該部位"}被護住了`;
-      if (event.grazed) return `擦過——${event.declared?.name || ""}沒咬住`;
-      if (event.hit) return `${event.part?.icon || ""}${event.part?.name || ""} 命中 −${event.damage}`;
-      return `命中 −${event.damage}`;
+      if (event.hit) return `${event.bullseye ? "🎯正中 " : ""}${event.spot?.icon || ""}${event.spot?.name || "弱點"}（算滿分）−${event.damage}`;
+      return `上靶但沒中弱點 −${event.damage}`;
     }
     case "breakthrough": return "💥 破防！全員增傷";
-    case "interrupt":    return `🦵 打斷「${event.intent?.name || ""}」——破綻！`;
+    case "interrupt":    return `💢 打斷「${event.intent?.name || ""}」——破綻！`;
     case "phaseShift":   return `${event.phase?.name || ""}：${event.phase?.flavor || ""}`;
     case "ult":          return `${event.intent?.name || "強攻"} 命中 −${event.damage}${event.weakened ? "（已削弱）" : ""}`;
     case "counter":      return `牠反擊 −${event.damage}`;
