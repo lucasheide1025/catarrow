@@ -13,6 +13,8 @@ export const RAID_STEP_MS = Object.freeze({
   arrow:        520,
   volley:       480,    // 三箭一組（比單箭久一點，但遠比 3×520 短）
   catVolley:    520,
+  support:      800,
+  supportHeal:  620,
   gauge:        150,
   breakthrough: 1600,   // 全場最重的一個，要讓白閃＋慢動作跑完
   interrupt:    1300,
@@ -151,6 +153,9 @@ export function describeEvent(event) {
     }
     case "catVolley":
       return `🐾 貓貓協戰 ×${event.cats.length} −${event.damage}${event.skills ? "　✨特技" : ""}`;
+    case "support":      return event.text || "";
+    case "supportHeal":
+      return `💚 後衛補血：${event.healed.map(h => `${h.name} +${h.amount}`).join("、")}`;
     case "breakthrough": return "💥 破防！全員增傷";
     case "interrupt":    return `💢 打斷「${event.intent?.name || ""}」——破綻！`;
     case "phaseShift":   return `${event.phase?.name || ""}：${event.phase?.flavor || ""}`;

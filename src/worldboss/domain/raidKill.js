@@ -131,3 +131,44 @@ export function findKillingBlow(log = []) {
   }
   return null;
 }
+
+/**
+ * 擊倒演出的**重播 payload**。
+ *
+ * ⚠️ 作者 2026-07-31 澄清：其他玩家原本只看得到一行文字廣播
+ *    （`MemberApp.jsx:656` 的 toast「XXX 給予最後一擊」）——
+ *    **要讓全服都看到那段終結演出重播一次**，所以演出必須能從「存下來的資料」重現，
+ *    不能依賴當下的戰鬥 state（別人的裝置上根本沒有那份 state）。
+ *
+ * 只存演出需要的東西：誰、幾個人、什麼方式、王是誰。刻意精簡——
+ * 這份會寫進全服共用的王文件，每個欄位都是所有人的讀取成本。
+ */
+export function buildKillPayload({
+  bossKey, bossName, killerId, killerName, byCat = false, catName = null,
+  style, members = [], eventId = null, at = Date.now(),
+} = {}) {
+  if (!style) return null;
+  return {
+    v: 1, at, eventId, bossKey: bossKey || null, bossName: bossName || "",
+    killerId: killerId || null, killerName: killerName || "某位射手",
+    byCat: !!byCat, catName: catName || null,
+    style: { id: style.id, icon: style.icon, name: style.name, flavour: style.flavour, rarity: style.rarity, color: style.color },
+    // 演出只需要 id 與名字（用來挑射手姿勢與顯示人數），不搬整份成員資料
+    cast: (members || []).slice(0, 5).map(m => ({ memberId: m.memberId, name: m.name })),
+    teamSize: (members || []).length || 1,
+  };
+}
+
+/** 這個重播還新不新鮮——太舊的不要跳出來嚇人（例如三天前打倒的） */
+export const KILL_REPLAY_FRESH_MS = 10 * 60 * 1000;
+
+export function isKillReplayFresh(payload, now = Date.now()) {
+  if (!payload || payload.v !== 1) return false;
+  return now - (payload.at || 0) <= KILL_REPLAY_FRESH_MS;
+}
+
+/** 這個玩家看過這次擊倒了沒（避免每次開 App 都重播同一場） */
+export function shouldReplayKill(payload, seenAt = 0, now = Date.now()) {
+  if (!isKillReplayFresh(payload, now)) return false;
+  return (payload.at || 0) > (seenAt || 0);
+}

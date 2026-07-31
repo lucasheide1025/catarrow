@@ -19,6 +19,7 @@ import { calcCatCombatStats } from "../../lib/catCombat";
 import { createRaidState } from "../domain/raidFlow";
 import { RAID_LOBBY_BG, raidBackground } from "../raidAssets";
 import RaidScreen from "./RaidScreen";
+import RaidKillCutscene from "./RaidKillCutscene";
 
 const PRESETS = {
   rookie:  { label: "新手白板", atk: 30,  def: 30, hp: 180 },
@@ -49,6 +50,9 @@ export default function RaidSandbox() {
   const [runId, setRunId] = useState(0);
   const [state, setState] = useState(null);
   const [summary, setSummary] = useState(null);
+  // 全服擊倒重播：正式版存在王文件上，全服玩家都會播一次
+  const [killPayload, setKillPayload] = useState(null);
+  const [replaying, setReplaying] = useState(false);
   // 防重整：一進來就看看有沒有沒打完的場次
   const [resume, setResume] = useState(() => loadRaidProgress({ bossKey: DEFAULT_BOSS_FOR_RESUME }));
 
@@ -106,6 +110,7 @@ export default function RaidSandbox() {
         targetFmt={targetFmt}
         onState={next => setState(next)}
         onFinish={next => { setSummary(next); clearRaidProgress(); }}
+        onKill={p => setKillPayload(p)}
         onExit={() => setState(null)}
       />
     );
@@ -126,6 +131,30 @@ export default function RaidSandbox() {
       <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 14, lineHeight: 1.7 }}>
         假資料驅動，不會碰到線上的世界王。用來確認版式與聲光效果——確認 OK 才接真的。
       </div>
+
+      {killPayload && !state && (
+        <div style={{ ...cardStyle, border: "1px solid #93c5fd" }}>
+          <div style={{ fontSize: 12.5, fontWeight: 900, color: "#93c5fd", marginBottom: 4 }}>
+            🌐 全服擊倒重播
+          </div>
+          <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 8, lineHeight: 1.6 }}>
+            {killPayload.style.icon} {killPayload.killerName} 以「{killPayload.style.name}」討伐了 {killPayload.bossName}。<br />
+            正式版這段會存在王文件上，**全服玩家都會看到這段演出重播一次**（不是只有一行文字）。
+          </div>
+          <button type="button" onClick={() => setReplaying(true)}
+            style={{
+              width: "100%", padding: "10px 0", borderRadius: 9, border: "none",
+              background: "linear-gradient(135deg,#2563eb,#1e40af)", color: "#fff",
+              fontWeight: 900, fontSize: 13, cursor: "pointer",
+            }}>▶️ 播放其他玩家看到的畫面</button>
+        </div>
+      )}
+
+      {replaying && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "#05040a" }}>
+          <RaidKillCutscene payload={killPayload} replay onDone={() => setReplaying(false)} />
+        </div>
+      )}
 
       {resume && !state && (
         <div style={{ ...cardStyle, border: "1px solid #60a5fa" }}>

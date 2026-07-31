@@ -19,7 +19,7 @@ import { allSubmitted, pendingMembers } from "../domain/raidTeam";
 import { clearRaidProgress, saveRaidProgress } from "../domain/raidResume";
 import { RAID_MEDALS } from "../raidAssets";
 import { rewardRows, rollSortieRewards } from "../domain/raidRewards";
-import { findKillingBlow, killAnnouncement, lastHitReward } from "../domain/raidKill";
+import { buildKillPayload, findKillingBlow, killAnnouncement, lastHitReward } from "../domain/raidKill";
 import RaidBoss from "./RaidBoss";
 import RaidTarget from "./RaidTarget";
 import RaidPlayerCard from "./RaidPlayerCard";
@@ -35,6 +35,7 @@ export default function RaidScreen({
   eventId = null,
   isHost = true,               // 只有房主看得到強制推進
   onForceAdvance = null,       // 組隊接線上時由外層提供（沙盒直接本機推進）
+  onKill = null,               // 擊倒時回報重播 payload（外層寫進全服王文件）
   participants = 0,
   bgUrl = null,
   playerName = "射手",
@@ -189,6 +190,22 @@ export default function RaidScreen({
             setBossAnim("flinch"); setShake("soft");
             setTimeout(() => { setBossAnim(null); setShake(null); }, 380);
             break;
+          case "support":
+            setPierceMark({ text: "🛡️ 後衛助戰", color: "#93c5fd" });
+            setTimeout(() => setPierceMark(null), 900);
+            break;
+          case "supportHeal":
+            if (event.healed) {
+              setShown(s2 => ({
+                ...(s2 || {}),
+                members: (state.members || []).map(mm => {
+                  const h = event.healed.find(x => x.memberId === mm.memberId);
+                  return h ? { ...mm, hp: h.hp } : mm;
+                }),
+              }));
+            }
+            event.healed?.forEach((h, i) => setTimeout(() => pushFloat(`+${h.amount}`, "normal"), i * 110));
+            break;
           case "gauge":
             setShown(s => ({ ...(s || {}), gauge: event.gauge }));
             break;
@@ -292,6 +309,13 @@ export default function RaidScreen({
         // ⚠️ 王的血是全伺服器共享的——擊倒才有尾刀獎勵，而且要記下「誰、怎麼打倒的」
         const down = log.find(e => e.type === "bossDown");
         if (down) {
+          // 全服重播用：演出要能從「存下來的資料」重現，別人的裝置沒有戰鬥 state
+          onKill?.(buildKillPayload({
+            bossKey: next.boss?.key, bossName: next.boss?.name,
+            killerId: down.killerId, killerName: down.killerName,
+            byCat: down.byCat, catName: down.catName,
+            style: down.style, members: next.members, eventId,
+          }));
           setKillInfo({
             ...down,
             reward: lastHitReward(down.style),
@@ -365,6 +389,8 @@ export default function RaidScreen({
   const teamSize = teamSizeOf(state);
   // 送出之後（等隊友／演出中）才顯示小隊立繪
   const teamRevealed = playing || Object.keys(submissions).length > 0;
+  // 我倒地了嗎——倒地＝轉後衛，不能再射但仍在戰鬥
+  const iAmDown = (state.members?.[0]?.hp ?? 1) <= 0;
   // 還在等誰（房主的強制推進按鈕吃這個）
   const waitingNames = (!playing && Object.keys(submissions).length > 0)
     ? pendingMembers(state.members || [], submissions) : [];
@@ -450,8 +476,9 @@ export default function RaidScreen({
                   display: "flex", flexDirection: "column", justifyContent: "center",
                   height: "100%", gap: 4, paddingLeft: 2,
                 }}>
-                  <div style={{ fontSize: 11, fontWeight: 900, color: "#cbd5e1" }}>
-                    {playing ? "⚔️ 戰鬥進行中" : "⏳ 等隊友送出"}
+                  <div style={{ fontSize: 11, fontWeight: 900, color: iAmDown ? "#93c5fd" : "#cbd5e1" }}>
+                    {iAmDown ? "🛡️ 你已倒地——轉為後衛助戰"
+                      : playing ? "⚔️ 戰鬥進行中" : "⏳ 等隊友送出"}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <div style={{ flex: 1, height: 5, borderRadius: 3, background: "rgba(255,255,255,.1)", overflow: "hidden", maxWidth: 120 }}>
@@ -502,7 +529,7 @@ export default function RaidScreen({
 
             {/* 右：小按鈕 */}
             <div style={{ display: "flex", flexDirection: "column", gap: 5, width: 96, flex: "0 0 auto" }}>
-              <button type="button" disabled={playing || state.finished}
+              <button type="button" disabled={playing || state.finished || iAmDown}
                 onClick={() => { unlockAudio(); setScoring(true); setMessage(""); sfxTap(); }}
                 style={{
                   flex: 1, padding: "10px 0", borderRadius: 10, border: "none",
@@ -624,16 +651,21 @@ export default function RaidScreen({
       {/* 結算：討伐結束就鎖住畫面，不能再打下去（沒有這層的話回合會一直往上加）*/}
       {state.finished && !playing && (
         <div style={{
-          position: "absolute", inset: 0, zIndex: 30, display: "grid", placeItems: "center",
-          background: "rgba(2,6,23,.88)", padding: 20,
+          // ⚠️ **一定要能捲動**：結算有尾刀＋全服＋參戰獎勵三塊，內容比畫面高，
+          //    原本用 grid placeItems:center 會把上下都切掉，收工鍵直接點不到。
+          position: "absolute", inset: 0, zIndex: 30,
+          background: "rgba(2,6,23,.9)",
+          overflowY: "auto", WebkitOverflowScrolling: "touch",
+          display: "flex", justifyContent: "center", alignItems: "flex-start",
+          padding: "16px 16px 28px",
         }}>
-          <div style={{ width: "100%", maxWidth: 340, textAlign: "center" }}>
+          <div style={{ width: "100%", maxWidth: 340, textAlign: "center", margin: "auto 0" }}>
             <img
               src={state.bossHp <= 0 ? RAID_MEDALS.victory
                 : state.totals.breakPoints >= 20 ? RAID_MEDALS.breaker : RAID_MEDALS.lasthit}
               alt=""
               onError={e => { e.currentTarget.style.display = "none"; }}
-              style={{ width: 116, height: 116, objectFit: "contain", margin: "0 auto 6px", display: "block",
+              style={{ width: 88, height: 88, objectFit: "contain", margin: "0 auto 4px", display: "block",
                 filter: state.bossHp <= 0 ? "drop-shadow(0 0 22px rgba(253,230,138,.65))" : "saturate(.6)" }}
             />
             <div style={{ fontSize: 28, fontWeight: 900, color: state.bossHp <= 0 ? "#fde68a" : "#e2e8f0" }}>

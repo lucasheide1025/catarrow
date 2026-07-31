@@ -193,8 +193,12 @@ export function RaidTeamBar({ members = [], submitted = {}, meId = null, activeI
               fontSize: n <= 6 ? 9 : 8, fontWeight: 900, whiteSpace: "nowrap",
               color: isMe ? "#93c5fd" : "#e2e8f0", textShadow: "0 1px 4px rgba(0,0,0,.9)",
             }}>
-              {dead ? "💀 " : done ? "✅ " : ""}{m.name}
+              {dead ? "🛡️ " : done ? "✅ " : ""}{m.name}
             </div>
+            {/* 倒地＝轉後衛，不是出局——標清楚玩家才不會以為自己被踢了 */}
+            {dead && (
+              <div style={{ fontSize: 7.5, fontWeight: 900, color: "#93c5fd", marginTop: 1 }}>後衛助戰</div>
+            )}
             <div style={{
               width: bar, height: 4, margin: "2px auto 0", borderRadius: 3,
               background: "rgba(0,0,0,.55)", overflow: "hidden",

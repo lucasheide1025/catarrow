@@ -21,11 +21,21 @@ function shooterFor(memberId, index = 0) {
 
 const LOOT = ["💰", "📦", "🃏", "💎", "🎁", "👑"];
 
-export default function RaidKillCutscene({ members = [], killerId = null, style, onDone }) {
+/**
+ * @param payload  buildKillPayload 的結果——**其他玩家重播時只有這個**，
+ *                 沒有戰鬥 state。自己打倒時可以改傳 members/killerId/style。
+ */
+export default function RaidKillCutscene({
+  payload = null, members = [], killerId = null, style, replay = false, onDone,
+}) {
   const [phase, setPhase] = useState("enter");   // enter → fire → fall → loot → done
-  const solo = members.length <= 1;
+  const roster = payload ? (payload.cast || []) : members;
+  const shownStyle = payload ? payload.style : style;
+  const shownKiller = payload ? payload.killerId : killerId;
+  const teamSize = payload ? (payload.teamSize || roster.length || 1) : members.length;
+  const solo = teamSize <= 1;
   // 組隊時最多排 5 位（8 個人全排會擠成一團，看不出在射箭）
-  const cast = (members.length ? members : [{ memberId: "me", name: "射手" }]).slice(0, 5);
+  const cast = (roster.length ? roster : [{ memberId: "me", name: "射手" }]).slice(0, 5);
 
   useEffect(() => {
     const timers = [
@@ -62,7 +72,7 @@ export default function RaidKillCutscene({ members = [], killerId = null, style,
             style={{
               width: solo ? 132 : 84, height: solo ? 132 : 84, objectFit: "contain",
               animationDelay: `${i * 70}ms`,
-              filter: m.memberId === killerId
+              filter: m.memberId === shownKiller
                 ? "drop-shadow(0 0 12px #fbbf24) drop-shadow(0 6px 10px rgba(0,0,0,.7))"
                 : "drop-shadow(0 6px 10px rgba(0,0,0,.7))",
             }}
@@ -70,11 +80,11 @@ export default function RaidKillCutscene({ members = [], killerId = null, style,
         ))}
       </div>
 
-      {/* 箭：單人一支、組隊一排 */}
+      {/* 箭：從射手身上**往上**射向王。單人一支、組隊一排。 */}
       {(phase === "fire" || phase === "fall") && cast.map((m, i) => (
         <span key={`ar${i}`} className="raid-cut-arrow"
           style={{
-            top: `${52 + (i - cast.length / 2) * 5}%`,
+            left: solo ? "20%" : `${9 + i * 15}%`,
             animationDelay: `${i * 60}ms`,
           }}>➤</span>
       ))}
@@ -90,14 +100,24 @@ export default function RaidKillCutscene({ members = [], killerId = null, style,
       ))}
 
       {/* 擊倒方式的字卡 */}
-      {(phase === "fall" || phase === "loot") && style && (
-        <div className="raid-cut-title" style={{ color: style.color }}>
+      {(phase === "fall" || phase === "loot") && shownStyle && (
+        <div className="raid-cut-title" style={{ color: shownStyle.color }}>
+          {replay && (
+            <div style={{ fontSize: 10, letterSpacing: 2, color: "#93c5fd", marginBottom: 2 }}>
+              🌐 全服擊倒重播
+            </div>
+          )}
           <div style={{ fontSize: 13, letterSpacing: 3, opacity: .9 }}>
-            {solo ? "單騎討伐" : `${members.length} 人討伐`}
+            {solo ? "單騎討伐" : `${teamSize} 人討伐`}
           </div>
           <div style={{ fontSize: 34, fontWeight: 900, letterSpacing: 4 }}>
-            {style.icon} {style.name}
+            {shownStyle.icon} {shownStyle.name}
           </div>
+          {payload && (
+            <div style={{ fontSize: 12, fontWeight: 900, color: "#e2e8f0", marginTop: 4 }}>
+              {payload.killerName}{payload.byCat ? ` 的 ${payload.catName}` : ""} 給予最後一擊
+            </div>
+          )}
         </div>
       )}
     </div>

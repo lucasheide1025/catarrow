@@ -389,17 +389,19 @@
   100% { transform: translateX(0) scale(1); }
 }
 
-/* 箭飛過去 */
+/* 箭飛過去。
+   ⚠️ **由下往上**射向王（作者 2026-07-31）——射手站在畫面下方、王在上方，
+   箭橫著飛過去在空間上根本說不通。 */
 .raid-cut-arrow {
-  position: absolute; left: 18%;
+  position: absolute; bottom: 26%;
   font-size: 26px; color: #fde68a;
   text-shadow: 0 0 12px rgba(253,230,138,.9);
   animation: raid-cut-arrow .5s cubic-bezier(.4,0,.9,.6) forwards;
 }
 @keyframes raid-cut-arrow {
-  0%   { transform: translateX(0) scaleX(.7); opacity: 0; }
+  0%   { transform: rotate(-90deg) translateX(0) scaleX(.7); opacity: 0; }
   15%  { opacity: 1; }
-  100% { transform: translateX(230%) scaleX(1.6); opacity: 0; }
+  100% { transform: rotate(-90deg) translateX(210px) scaleX(1.6); opacity: 0; }
 }
 
 /* 寶物噴出來 */

@@ -19,6 +19,7 @@ import { faceCountOf, maxArrowsPerFace } from "./raidFaces";
 import { teamGaugeMax, teamInterruptRequired, teamSizeOf, teamStatBonus } from "./raidTeam";
 import { hasWorldBossCard, worldBossCardCount } from "./raidCards";
 import { detectKillStyle } from "./raidKill";
+import { supportLabel, teamSupport } from "./raidSupport";
 
 export const RAID_TOTAL_ROUNDS = 5;
 
@@ -144,8 +145,14 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
   const teamSize = teamSizeOf(s);
   const byId = Object.fromEntries(s.members.map(m => [m.memberId, m]));
   const shooterOf = arrow => byId[arrow?.memberId] || s.members[0];
+  // ⚠️ 倒地的人轉後衛助戰（不是出局）：加攻擊力、每回合補血。
+  //    先算好，這一回合的箭就吃得到加成。
+  const support = teamSupport(s.members);
 
   log.push({ type: "roundStart", round, phase, staggered, spots });
+  if (support.supporters.length) {
+    log.push({ type: "support", round, support, text: supportLabel(support) });
+  }
   log.push({ type: "intent", round, intent, staggered });
 
   let spotHits = 0;
@@ -158,6 +165,8 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
 
   arrows.forEach((arrow, index) => {
     if (s.bossHp <= 0) return;
+    // 倒地的人這回合是後衛，他的箭不算（正式版 UI 也不會讓他射）
+    if ((byId[arrow?.memberId]?.hp ?? 1) <= 0) return;
     const ratioBefore = raidHpRatio(s);
     const hpBeforeArrow = s.bossHp;
     const phaseNow = currentPhase(ratioBefore);
@@ -179,7 +188,7 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
     const shooter = shooterOf(arrow);
     const normal = calcWorldBossArrowDmg(
       effectiveScore,
-      shooter.stats.atk, s.boss.def, s.participantBonus, s.dmgBonusPct,
+      Math.round(shooter.stats.atk * support.atkMult), s.boss.def, s.participantBonus, s.dmgBonusPct,
     ) * hit.normalMult * RAID_NORMAL_DAMAGE_SCALE;
 
     // 這張靶滿了嗎（只有三連靶會有上限）
@@ -360,6 +369,21 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
         type: "counter", round, damage: shown, playerHp: s.playerHp,
         members: s.members.map(m => ({ memberId: m.memberId, hp: m.hp })),
       });
+    }
+  }
+
+  // 後衛補血：回合結束時幫還站著的人回一點（依表現，最多 15% 最大生命）
+  if (support.healPct > 0 && s.bossHp > 0) {
+    const healed = [];
+    for (const m of s.members) {
+      if (m.hp <= 0 || m.hp >= m.maxHp) continue;
+      const amount = Math.max(1, Math.round(m.maxHp * support.healPct));
+      m.hp = Math.min(m.maxHp, m.hp + amount);
+      healed.push({ memberId: m.memberId, name: m.name, amount, hp: m.hp });
+    }
+    if (healed.length) {
+      s.playerHp = s.members[0].hp;
+      log.push({ type: "supportHeal", round, healed, healPct: support.healPct });
     }
   }
 

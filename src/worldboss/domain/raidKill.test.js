@@ -1,8 +1,12 @@
 import {
   KILL_STYLES,
   KILL_STYLE_COIN_BONUS,
+  KILL_REPLAY_FRESH_MS,
+  buildKillPayload,
   detectKillStyle,
   findKillingBlow,
+  isKillReplayFresh,
+  shouldReplayKill,
   killAnnouncement,
   lastHitReward,
 } from "./raidKill";
@@ -144,5 +148,54 @@ describe("實際結算會帶上補刀資訊", () => {
     expect(down.byCat).toBe(true);
     expect(down.catName).toBe("小咪");
     expect(down.style.id).toBe("cat_finish");
+  });
+});
+
+describe("全服擊倒重播（作者 2026-07-31 澄清）", () => {
+  const style = detectKillStyle({ bySpot: "red", bullseye: true });
+  const payload = () => buildKillPayload({
+    bossKey: "cat_baobao", bossName: "寶寶", killerId: "m1", killerName: "小明",
+    style, members: [{ memberId: "m1", name: "小明" }, { memberId: "m2", name: "阿華" }],
+    eventId: "e1", at: 1000,
+  });
+
+  test("⚠️ 演出必須能從存下來的資料重現——別人的裝置沒有戰鬥 state", () => {
+    const p = payload();
+    expect(p.style.name).toBe("一箭穿心");
+    expect(p.cast).toHaveLength(2);
+    expect(p.killerName).toBe("小明");
+    expect(p.bossName).toBe("寶寶");
+  });
+
+  test("刻意精簡：只存演出要用的，不搬整份成員資料", () => {
+    const p = buildKillPayload({
+      style, members: [{ memberId: "m1", name: "小明", stats: { atk: 999 }, cats: [{}] }],
+    });
+    expect(Object.keys(p.cast[0])).toEqual(["memberId", "name"]);
+  });
+
+  test("最多帶 5 位——8 個人全排會擠成一團", () => {
+    const p = buildKillPayload({
+      style, members: Array.from({ length: 8 }, (_, i) => ({ memberId: `m${i}`, name: `隊員${i}` })),
+    });
+    expect(p.cast).toHaveLength(5);
+    expect(p.teamSize).toBe(8);      // 但人數要記真的
+  });
+
+  test("沒有 style 就沒有 payload（不會生出空演出）", () => {
+    expect(buildKillPayload({ killerName: "小明" })).toBeNull();
+  });
+
+  test("太舊的重播不跳出來嚇人", () => {
+    const p = payload();
+    expect(isKillReplayFresh(p, 1000 + 60_000)).toBe(true);
+    expect(isKillReplayFresh(p, 1000 + KILL_REPLAY_FRESH_MS + 1)).toBe(false);
+  });
+
+  test("⚠️ 看過的不重播——不然每次開 App 都播同一場", () => {
+    const p = payload();
+    expect(shouldReplayKill(p, 0, 1000)).toBe(true);
+    expect(shouldReplayKill(p, 1000, 1000)).toBe(false);   // 已經看過這一次
+    expect(shouldReplayKill(p, 999, 1000)).toBe(true);     // 上次看的是更早那場
   });
 });
