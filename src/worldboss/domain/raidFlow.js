@@ -27,6 +27,10 @@ export const RAID_ARROWS_PER_ROUND = 6;
 // 打中弱點時，一般傷害用這個分數去算（＝滿分）
 export const MAX_ARROW_SCORE = 10;
 
+// 貓貓陪練：每回合出手一次，有機率發動特技
+export const CAT_SKILL_CHANCE = 0.22;
+export const CAT_SKILL_MULT = 1.6;
+
 export function createRaidState({
   boss,                       // { key, name, hp, maxHp, atk, def, skillConfig }
   stats,                      // { atk, def, hp } ← 由 raidLoadout 從既有存檔轉進來
@@ -37,6 +41,7 @@ export function createRaidState({
   distanceM = 10,             // 射程（5~18 米）
   targetFmt = "half_17",      // 決定靶紙倍率、張數、每張上限
   archerLevel = 1,            // 射手等級 → 新手扶助（50 級以下，見 raidRookie.js）
+  cats = [],                  // 貓貓陪練 [{ catId, name, atk, skillGroup }]
   rand = Math.random,
 } = {}) {
   const maxHp = Math.max(1, Number(boss?.maxHp || boss?.hp) || 1);
@@ -52,6 +57,7 @@ export function createRaidState({
     distanceM,
     rangeMult: rangeMultiplier({ distanceM, targetFmt }),
     archerLevel,
+    cats: (cats || []).filter(c => c && Number(c.atk) > 0),
     // 補償在戰鬥模型「外面」：一個乘在最後的倍率，跟弱點數值完全分離
     rookieMult: rookieMultiplier(archerLevel),
     playerHp: Number(stats?.hp) || 100,
@@ -64,7 +70,7 @@ export function createRaidState({
     targetFmt,
     spots: rollWeakSpots({ rand, round: 1, phaseId: 1, faceCount: faceCountOf(targetFmt) }),
     weakenStacks: 0,
-    totals: { damage: 0, breakPoints: 0, weakHits: 0, grazes: 0, bestCombo: 0, interrupts: 0, bullseyes: 0 },
+    totals: { damage: 0, breakPoints: 0, weakHits: 0, grazes: 0, bestCombo: 0, interrupts: 0, bullseyes: 0, catDamage: 0 },
     finished: false,
   };
 }
@@ -186,6 +192,23 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
 
     if (s.bossHp <= 0) log.push({ type: "bossDown", round, index });
   });
+
+  // ── 貓貓陪練：每回合幫忙咬一口（在王行動之前，牠們比較急）──
+  if (s.bossHp > 0 && s.cats.length) {
+    for (const cat of s.cats) {
+      if (s.bossHp <= 0) break;
+      // 貓不吃射程/靶紙/新手扶助那些「射手環境」倍率——牠又沒有在射箭
+      const base = calcWorldBossArrowDmg(8, cat.atk, s.boss.def, s.participantBonus, s.dmgBonusPct);
+      const crit = Math.random() < CAT_SKILL_CHANCE;
+      const dealt = Math.max(1, Math.round(base * (crit ? CAT_SKILL_MULT : 1)));
+      s.bossHp = Math.max(0, s.bossHp - dealt);
+      roundDamage += dealt;
+      s.totals.damage += dealt;
+      s.totals.catDamage += dealt;
+      log.push({ type: "catAssist", round, cat, damage: dealt, skill: crit, bossHp: s.bossHp, bossHpRatio: raidHpRatio(s) });
+      if (s.bossHp <= 0) log.push({ type: "bossDown", round });
+    }
+  }
 
   // ── 回合結束：分歧 ──
   let nextStagger = false;

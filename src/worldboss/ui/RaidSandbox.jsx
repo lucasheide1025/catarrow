@@ -9,6 +9,9 @@ import { WORLD_BOSSES } from "../../lib/worldBossData";
 import { WORLD_BOSS_SKILLS } from "../../lib/worldBossSkillData";
 import { DEFAULT_RAID_FACE, RAID_FACES, faceMultiplier } from "../domain/raidFaces";
 import { RAID_DISTANCES, RAID_DEFAULT_DISTANCE, distanceMultiplier, rangeLabel, rangeMultiplier } from "../domain/raidRange";
+import { rookieMultiplier } from "../domain/raidRookie";
+import { CATS, CAT_TYPE_MAP } from "../../lib/catData";
+import { calcCatCombatStats } from "../../lib/catCombat";
 import { createRaidState } from "../domain/raidFlow";
 import { raidBackground } from "../raidAssets";
 import RaidScreen from "./RaidScreen";
@@ -30,6 +33,8 @@ export default function RaidSandbox() {
   const [preset, setPreset] = useState("mid");
   const [targetFmt, setTargetFmt] = useState(DEFAULT_RAID_FACE);
   const [distanceM, setDistanceM] = useState(RAID_DEFAULT_DISTANCE);
+  const [catId, setCatId] = useState("baobao");
+  const [archerLevel, setArcherLevel] = useState(10);
   const [hpScale, setHpScale] = useState(0.05);   // 沙盒預設把血調低，才看得到階段轉換
   const [runId, setRunId] = useState(0);
   const [state, setState] = useState(null);
@@ -48,6 +53,11 @@ export default function RaidSandbox() {
         skillConfig: WORLD_BOSS_SKILLS?.[bossKey] || null,
       },
       stats: { atk: p.atk, def: p.def, hp: p.hp },
+      archerLevel,
+      cats: catId === "none" ? [] : [(() => {
+        const st = calcCatCombatStats({ catId, catXP: 4000, bond: 20 }, catId);
+        return { catId, name: CATS[catId]?.name || catId, atk: st.catATK, skillGroup: CAT_TYPE_MAP[catId] };
+      })()],
       distanceM,
       targetFmt,
     }));
@@ -62,6 +72,8 @@ export default function RaidSandbox() {
         bossKey={boss?.pixelKey || bossKey}
         bossTitle={boss?.title}
         participants={24}
+        playerName={`${PRESETS[preset].label}`}
+        appearance={catId === "none" ? "baobao" : catId}
         bgUrl={raidBackground(boss?.family)}
         targetFmt={targetFmt}
         onState={next => setState(next)}
@@ -175,6 +187,26 @@ export default function RaidSandbox() {
         })()}
         <div style={{ fontSize: 10, color: "#64748b", marginTop: 6, lineHeight: 1.6 }}>
           5 米＝新手標準射程（×1.00），退越遠加成越高（18 米 ×1.90）。靶紙倍率另外相乘。
+        </div>
+      </div>
+
+      <div style={cardStyle}>
+        <div style={labelStyle}>貓貓陪練（每回合會自己咬一口）</div>
+        <select value={catId} onChange={e => setCatId(e.target.value)}
+          style={{ width: "100%", padding: 9, borderRadius: 9, background: "#1e293b", color: "#f8fafc", border: "1px solid #334155", fontWeight: 700 }}>
+          <option value="none">不帶貓</option>
+          {Object.keys(CATS).map(id => (
+            <option key={id} value={id}>{CATS[id].name}（{CAT_TYPE_MAP[id]}）</option>
+          ))}
+        </select>
+      </div>
+
+      <div style={cardStyle}>
+        <div style={labelStyle}>射手等級（50 級以下有新手扶助）</div>
+        <input type="range" min="1" max="120" value={archerLevel}
+          onChange={e => setArcherLevel(Number(e.target.value))} style={{ width: "100%" }} />
+        <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>
+          Lv.{archerLevel}　{archerLevel < 50 ? `🌱 新手扶助 ×${rookieMultiplier(archerLevel).toFixed(2)}` : "無扶助"}
         </div>
       </div>
 

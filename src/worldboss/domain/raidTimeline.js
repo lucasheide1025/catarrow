@@ -12,6 +12,7 @@ export const RAID_STEP_MS = Object.freeze({
   phaseShift:   1500,
   ult:          1100,
   counter:      700,
+  catAssist:    620,
   bossDown:     2200,
   roundEnd:     420,
 });
@@ -48,6 +49,8 @@ export function describeEvent(event) {
       if (event.hit) return `${event.bullseye ? "🎯正中 " : ""}${event.spot?.icon || ""}${event.spot?.name || "弱點"}（算滿分）−${event.damage}`;
       return `上靶但沒中弱點 −${event.damage}`;
     }
+    case "catAssist":
+      return `🐾 ${event.cat?.name || "貓貓"} 協戰 −${event.damage}${event.skill ? "　✨特技！" : ""}`;
     case "breakthrough": return "💥 破防！全員增傷";
     case "interrupt":    return `💢 打斷「${event.intent?.name || ""}」——破綻！`;
     case "phaseShift":   return `${event.phase?.name || ""}：${event.phase?.flavor || ""}`;

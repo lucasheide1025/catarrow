@@ -302,3 +302,45 @@ describe("結束條件（2026-07-31 抓到的洞：回合會一直往上加）",
     expect(state.finished).toBe(true);
   });
 });
+
+describe("貓貓陪練（2026-07-31 補上）", () => {
+  const withCats = (over = {}) => createRaidState({
+    boss: boss(200000),
+    stats: { atk: 150, def: 60, hp: 300 },
+    cats: [{ catId: "baobao", name: "寶寶", atk: 90 }],
+    ...over,
+  });
+
+  test("每回合會自己咬一口，log 有 catAssist", () => {
+    const { state, log } = resolveRaidRound({ state: withSpot(withCats()), arrows: outsideSpot() });
+    expect(log.filter(e => e.type === "catAssist")).toHaveLength(1);
+    expect(state.totals.catDamage).toBeGreaterThan(0);
+  });
+
+  test("貓的傷害算進總傷害", () => {
+    const withCat = resolveRaidRound({ state: withSpot(withCats()), arrows: outsideSpot() }).state;
+    const noCat = resolveRaidRound({ state: withSpot(newState()), arrows: outsideSpot() }).state;
+    expect(withCat.totals.damage).toBeGreaterThan(noCat.totals.damage);
+  });
+
+  test("沒帶貓完全不會有 catAssist", () => {
+    const { log, state } = resolveRaidRound({ state: withSpot(newState()), arrows: outsideSpot() });
+    expect(log.some(e => e.type === "catAssist")).toBe(false);
+    expect(state.totals.catDamage).toBe(0);
+  });
+
+  test("壞資料（atk 0 / null）不會被算成貓", () => {
+    const s2 = createRaidState({
+      boss: boss(), stats: { atk: 100, def: 50, hp: 200 },
+      cats: [{ catId: "x", atk: 0 }, null, { catId: "y" }],
+    });
+    expect(s2.cats).toHaveLength(0);
+  });
+
+  test("王已經倒下就不會再補刀", () => {
+    const nearly = withSpot(withCats(), "red");
+    nearly.bossHp = 1;
+    const { log } = resolveRaidRound({ state: nearly, arrows: atCentre() });
+    expect(log.filter(e => e.type === "catAssist")).toHaveLength(0);
+  });
+});

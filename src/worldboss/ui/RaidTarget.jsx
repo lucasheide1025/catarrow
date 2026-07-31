@@ -7,7 +7,9 @@
 //   ① **靶外空間**：靶紙外圍留一圈可點區，脫靶也要點得到、也要記到位置
 //   ② **弱點圈**：每回合 1~2 個彩色圈畫在靶紙上（大小＝難度、顏色＝報酬）
 //   ③ **三連靶橫排**：作者要求左/中/右各一張（共用元件的 triple 是直式）
-//   ④ 即時顯示標準環值（半靶只有 6~10 環，印在紙上的環數跨靶紙不能比）
+//   ④ **放大鏡**：手指按住時畫面中央浮出放大視窗，可以拖曳微調再放開
+//      （手機上靶面很小，沒有放大鏡根本點不準——這是能不能玩的關鍵）
+//   ⑤ 即時顯示標準環值（半靶只有 6~10 環，印在紙上的環數跨靶紙不能比）
 import { useState } from "react";
 import { getTargetFaceFormat, getTargetRings } from "../../lib/targetFace";
 import { faceCountOf, maxArrowsPerFace } from "../domain/raidFaces";
@@ -24,7 +26,6 @@ export default function RaidTarget({
   onArrow,
   disabled = false,
   radius = 120,
-  onFullFace,             // 點到已經滿的靶時通知上層（要提醒玩家）
 }) {
   const faceCount = faceCountOf(fmtId);
   const cap = maxArrowsPerFace(fmtId);
@@ -60,9 +61,9 @@ export default function RaidTarget({
   }
 
   function commit(px, py) {
+    // ⚠️ **不鎖定**（作者 2026-07-31）：玩家可能多射、或箭脫靶跑到別張去。
+    //    射出去的箭收不回來，擋輸入等於不承認現實——照收，但超過上限那箭不算傷害。
     const faceIndex = faceOf(px, py);
-    // 這張靶已經吃滿了 → 不收這一箭，改成提醒（不要讓玩家白白浪費）
-    if (isFull(faceIndex)) { onFullFace?.(faceIndex); return; }
     const nx = (px - centreX(faceIndex)) / R;
     const ny = (py - CY) / R;
     const ratio = Math.sqrt(nx * nx + ny * ny);
@@ -77,12 +78,40 @@ export default function RaidTarget({
     });
   }
 
+  // 放大鏡：把同一組圖形用縮小的 viewBox 再畫一次＝放大
+  const ZOOM_SPAN = 46;        // 放大鏡看得到的 SVG 範圍（越小倍率越高）
   const dragFace = drag ? faceOf(drag.px, drag.py) : 0;
   const dragScore = drag
     ? standardScoreFromRatio(Math.hypot((drag.px - centreX(dragFace)) / R, (drag.py - CY) / R))
     : null;
 
+  // 靶面本體（放大鏡要用同一組圖形再畫一次，所以抽成函式）
+  const faceLayers = () => (
+    <>
+      {Array.from({ length: faceCount }).map((_, i) => (
+        <g key={`z${i}`}>
+          <circle cx={centreX(i)} cy={CY} r={PAD} fill="#111c30" stroke="#1e293b" strokeWidth="1" />
+          {rings.map(ring => (
+            <circle key={ring.score} cx={centreX(i)} cy={CY} r={ring.radius * R}
+              fill={ring.fill} stroke={ring.stroke} strokeWidth="0.8" />
+          ))}
+        </g>
+      ))}
+      {spots.map(spot => (
+        <circle key={`zs${spot.key || spot.id}`}
+          cx={centreX(spot.faceIndex || 0) + spot.cx * R} cy={CY + spot.cy * R}
+          r={spot.radius * R} fill={spot.color} fillOpacity="0.28"
+          stroke={spot.color} strokeWidth="1.5" />
+      ))}
+      {arrows.map((a, i) => (
+        <circle key={`za${i}`} cx={centreX(a.faceIndex || 0) + a.nx * R} cy={CY + a.ny * R}
+          r="3" fill="#f8fafc" stroke="#0f172a" strokeWidth="1" />
+      ))}
+    </>
+  );
+
   return (
+    <div style={{ position: "relative" }}>
     <svg
       viewBox={`0 0 ${W} ${H}`}
       style={{
@@ -107,9 +136,9 @@ export default function RaidTarget({
             <circle cx={centreX(i)} cy={CY} r={format.innerTenRatio * R}
               fill="none" stroke="rgba(30,30,30,.75)" strokeWidth="0.8" />
           )}
-          {/* 滿了就整張壓暗，玩家一眼看到不能再射這張 */}
+          {/* 滿了就壓暗＋標示，但還是可以點（多射的箭照樣記，只是不算傷害） */}
           {isFull(i) && (
-            <circle cx={centreX(i)} cy={CY} r={PAD} fill="rgba(2,6,23,.72)" />
+            <circle cx={centreX(i)} cy={CY} r={PAD} fill="rgba(2,6,23,.55)" />
           )}
           {faceCount > 1 && (
             <text x={centreX(i)} y={CY + PAD - 3} textAnchor="middle" fontSize="10"
@@ -143,10 +172,14 @@ export default function RaidTarget({
       {arrows.map((a, i) => {
         const ax = centreX(a.faceIndex || 0) + a.nx * R;
         const ay = CY + a.ny * R;
+        // 這一箭是不是這張靶的第 3 箭以後（超過上限＝不算傷害，畫成灰的）
+        const over = cap != null
+          && arrows.slice(0, i).filter(b => (b.faceIndex || 0) === (a.faceIndex || 0)).length >= cap;
         return (
           <g key={i}>
             <circle cx={ax} cy={ay} r={a.bullseye ? 4.5 : 3.5}
-              fill={a.bullseye ? "#fde68a" : "#f8fafc"} stroke="#0f172a" strokeWidth="1.5" />
+              fill={over ? "#475569" : a.bullseye ? "#fde68a" : "#f8fafc"}
+              stroke="#0f172a" strokeWidth="1.5" opacity={over ? 0.7 : 1} />
             {a.bullseye && (
               <circle cx={ax} cy={ay} r="8" fill="none" stroke="#fde68a" strokeWidth="1" opacity=".8" />
             )}
@@ -154,18 +187,45 @@ export default function RaidTarget({
         );
       })}
 
-      {/* 拖曳中的十字線與即時環值 */}
+      {/* 拖曳中：靶面上的十字線 */}
       {drag && (
         <g pointerEvents="none">
-          <line x1={drag.px - 12} y1={drag.py} x2={drag.px + 12} y2={drag.py} stroke="#fff" strokeWidth="1" />
-          <line x1={drag.px} y1={drag.py - 12} x2={drag.px} y2={drag.py + 12} stroke="#fff" strokeWidth="1" />
+          <line x1={drag.px - 14} y1={drag.py} x2={drag.px + 14} y2={drag.py} stroke="#fff" strokeWidth="1" opacity=".8" />
+          <line x1={drag.px} y1={drag.py - 14} x2={drag.px} y2={drag.py + 14} stroke="#fff" strokeWidth="1" opacity=".8" />
           <circle cx={drag.px} cy={drag.py} r="2" fill="#fff" />
-          <text x={drag.px} y={drag.py - 18} textAnchor="middle" fontSize="15" fontWeight="900"
-            fill="#fde68a" stroke="#0f172a" strokeWidth="3" paintOrder="stroke">
-            {dragScore || "M"}
-          </text>
         </g>
       )}
     </svg>
+
+    {/* 放大鏡：按住時浮在畫面中央，可以拖曳微調再放開。手機上沒有這個點不準。 */}
+    {drag && (
+      <div style={{
+        // 釘在畫面頂端：手指在下半部操作，放大鏡不能擋住靶面（矮視窗用 % 會壓到）
+        position: "fixed", top: 12, left: "50%", transform: "translateX(-50%)",
+        zIndex: 10050, pointerEvents: "none", textAlign: "center",
+      }}>
+        <div style={{
+          width: 172, height: 172, borderRadius: "50%", overflow: "hidden",
+          border: "3px solid rgba(255,255,255,.75)", boxShadow: "0 8px 30px rgba(0,0,0,.75)",
+          background: "#0b1220",
+        }}>
+          <svg width="172" height="172"
+            viewBox={`${drag.px - ZOOM_SPAN / 2} ${drag.py - ZOOM_SPAN / 2} ${ZOOM_SPAN} ${ZOOM_SPAN}`}>
+            {faceLayers()}
+            <line x1={drag.px - 5} y1={drag.py} x2={drag.px + 5} y2={drag.py} stroke="#fff" strokeWidth="0.5" />
+            <line x1={drag.px} y1={drag.py - 5} x2={drag.px} y2={drag.py + 5} stroke="#fff" strokeWidth="0.5" />
+            <circle cx={drag.px} cy={drag.py} r="0.9" fill="#fff" />
+          </svg>
+        </div>
+        <div style={{
+          marginTop: 6, fontSize: 20, fontWeight: 900, color: "#fde68a",
+          textShadow: "0 2px 10px rgba(0,0,0,.9)",
+        }}>
+          {dragScore || "M"} 環
+        </div>
+        <div style={{ fontSize: 10, color: "rgba(255,255,255,.6)" }}>拖曳微調，放開就記錄</div>
+      </div>
+    )}
+    </div>
   );
 }
