@@ -58,6 +58,10 @@ export default function RaidGate({ event, onBack, sharedData, onComplete }) {
   const [{ targetFmt, distanceM }, setLoadout] = useState(loadLoadout);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  // ⚠️ 送出結果只**顯示**，不自動離開（作者 2026-07-31：來不及看結算畫面）。
+  //    送完就 onComplete → 大廳 setInBattle(false) → 整個戰鬥畫面連同結算被卸載。
+  //    要等玩家自己點掉。
+  const [submitResult, setSubmitResult] = useState(null);
 
   // 每回合的傷害累積起來，結束時一次送出（逐箭寫入是那個 4000 次讀取的坑）
   const roundsRef = useRef([]);
@@ -110,6 +114,7 @@ export default function RaidGate({ event, onBack, sharedData, onComplete }) {
     submittedRef.current = false;
     killPayloadRef.current = null;
     setError("");
+    setSubmitResult(null);
     setState(createRaidState({
       boss: {
         key: event.bossKey,
@@ -169,10 +174,19 @@ export default function RaidGate({ event, onBack, sharedData, onComplete }) {
     }
 
     setSubmitting(false);
+    setSubmitResult(res);
     if (!res?.ok) { setError(res?.reason || "傷害沒有送出，請截圖回報"); return; }
     if (res.defeated) distributeWorldBossRewards(event.id).catch(() => {});
-    onComplete?.(res);
-  }, [event, myId, myName, profile, stats, onComplete]);
+    // ⚠️ 這裡**不呼叫 onComplete**——那會讓大廳把戰鬥畫面收掉，玩家看不到結算。
+  }, [event, myId, myName, profile, stats]);
+
+  /** 玩家自己點掉結算畫面才離開 */
+  const leaveBattle = useCallback(() => {
+    setScreen("solo");
+    setState(null);
+    if (submitResult?.ok) onComplete?.(submitResult);
+    else onBack?.();
+  }, [submitResult, onComplete, onBack]);
 
   if (!event) return null;
 
@@ -194,13 +208,26 @@ export default function RaidGate({ event, onBack, sharedData, onComplete }) {
           onState={handleState}
           onKill={payload => { killPayloadRef.current = payload; }}
           onFinish={final => handleFinish({ ...final, killPayload: killPayloadRef.current })}
-          onExit={() => { setScreen("solo"); setState(null); onBack?.(); }}
+          onExit={leaveBattle}
         />
         {submitting && (
           <div style={{
             position: "fixed", inset: 0, zIndex: 300, display: "grid", placeItems: "center",
             background: "rgba(2,6,23,.8)", color: "#e2e8f0", fontWeight: 900, fontSize: 14,
           }}>戰果送出中…</div>
+        )}
+        {/* 玩家最在意的一件事：傷害到底有沒有記到排行榜上 */}
+        {submitResult && (
+          <div style={{
+            position: "fixed", top: 0, left: 0, right: 0, zIndex: 260,
+            padding: "9px 14px", textAlign: "center",
+            background: submitResult.ok ? "rgba(21,128,61,.95)" : "rgba(127,29,29,.95)",
+            color: "#fff", fontSize: 12, fontWeight: 900,
+          }}>
+            {submitResult.ok
+              ? `✅ 傷害已記錄${submitResult.dmg ? `：${Math.round(submitResult.dmg).toLocaleString()}` : ""}${submitResult.defeated ? "　🏆 你給了最後一擊！" : ""}`
+              : `⚠️ ${submitResult.reason || "傷害沒有送出"}`}
+          </div>
         )}
       </>
     );
