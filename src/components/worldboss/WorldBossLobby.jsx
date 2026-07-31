@@ -7,6 +7,7 @@ import { WORLD_BOSSES, getBossPhase, PHASE_LABELS, getParticipantBonus } from ".
 import WorldBossSVG from "./WorldBossSVG";
 import WorldBossAttack from "./WorldBossAttack";
 import RaidGate from "../../worldboss/RaidGate";
+import MatchGate from "../../worldboss/MatchGate";
 import WorldBossIntro from "./WorldBossIntro";
 import { sfxTap } from "../../lib/sound";
 
@@ -181,6 +182,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
   const [event,         setEvent]         = useState(null);
   const [loading,       setLoading]       = useState(true);
   const [inBattle,      setInBattle]      = useState(false);
+  const [inMatch,       setInMatch]       = useState(false);
   const [showKillScreen, setShowKillScreen] = useState(false);
   const [killEvent,     setKillEvent]     = useState(null); // 儲存被擊倒的那隻 boss
   const [replayIntro,   setReplayIntro]   = useState(false);
@@ -289,6 +291,13 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
         載入中…
       </div>
     );
+  }
+
+  // 🏆 比賽模式：實體比賽當天的計分系統。
+  // ⚠️ 跟世界王完全分開——沒有獎勵、不扣次數、不影響王的血，
+  //    所以「今日已出戰」的人也進得來（比賽跟討伐是兩件事）。
+  if (inMatch) {
+    return <MatchGate onBack={() => setInMatch(false)} isAdmin={!isGuestMode && !!profile?.isAdmin} />;
   }
 
   // 進入戰鬥畫面
@@ -674,6 +683,20 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
           </button>
           {pendingEvent && !myReward && event?.id !== pendingEvent.eventId && <button onClick={() => claimPendingReward(pendingEvent.eventId)} style={{flex:"0 0 42%",padding:"10px 6px",border:0,borderRadius:12,background:"#fbbf24",color:"#422006",fontWeight:900,fontSize:11,whiteSpace:"nowrap"}}>🎁 上次獎勵</button>}
           </div>
+        )}
+
+        {/* 🏆 比賽模式：實體比賽當天的計分系統。
+            ⚠️ **永遠看得到**——沒有獎勵、不扣次數、不影響王的血，
+               所以「今日已出戰」或王已被擊倒都還是進得去。 */}
+        {!isGuestMode && (
+          <button onClick={() => { sfxTap(); setInMatch(true); }}
+            style={{
+              width: "100%", marginTop: 8, padding: "13px 0", borderRadius: 16,
+              border: "1px solid rgba(251,191,36,.45)", background: "rgba(251,191,36,.14)",
+              color: "#fde68a", fontWeight: 900, fontSize: 14, cursor: "pointer",
+            }}>
+            🏆 比賽模式（實體比賽計分・即時排行）
+          </button>
         )}
       </div>
     </div>

@@ -529,6 +529,12 @@ service cloud.firestore {
       allow read, write: if isLoggedIn();
     }
 
+    // raidMatches：🏆 比賽模式（實體比賽當天的計分系統）。
+    // 一天一顆文件，所有人共用；登入者可讀寫（分數在自己的欄位，交易保護冪等）。
+    match /raidMatches/{matchId} {
+      allow read, write: if isLoggedIn();
+    }
+
     // zombieRooms：殭屍生存模式房間（Phase 0）
     // Phase 0 使用寬鬆規則（比照 dungeonRooms/partyRooms），
     // 後續 Phase 加入主機驗證與欄位層級控管。
