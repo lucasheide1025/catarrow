@@ -116,9 +116,34 @@ export function roomSummary(room) {
     code: room?.code || "",
     hostName: room?.hostName || "房主",
     bossKey: room?.bossKey || null,
+    memberNames: activeMemberIds(room).map(id => room.members[id]?.name || id),
     size, full: size >= RAID_MAX_TEAM,
     joinable: room?.status === "waiting" && size < RAID_MAX_TEAM,
   };
+}
+
+/**
+ * 直接列出可加入的房間（作者 2026-07-31：**不要用組隊碼進入**）。
+ *
+ * ⚠️ 只列**同一隻王**的房：世界王一次只有一隻，但活動換王的瞬間可能有殘留的舊房，
+ *    點進去會打到一隻已經結束的王。
+ * ⚠️ 我已經在裡面的房不列——那要走「回到隊伍」，不是「加入」。
+ * 排序：人多的排前面（快要能出發的優先），同人數再看誰先開的。
+ */
+export function openRoomList(rooms = [], { bossKey = null, myId = null } = {}) {
+  return (Array.isArray(rooms) ? rooms : [])
+    .filter(r => r && (!bossKey || r.bossKey === bossKey))
+    .filter(r => !(myId && r.members?.[myId]))
+    .map(roomSummary)
+    .filter(r => r.joinable)
+    .sort((a, b) => b.size - a.size || String(a.code).localeCompare(String(b.code)));
+}
+
+/** 我是不是已經在某個房裡了（重整回來要接得回去） */
+export function myOpenRoom(rooms = [], myId = null) {
+  if (!myId) return null;
+  const found = (Array.isArray(rooms) ? rooms : []).find(r => r?.members?.[myId]);
+  return found ? roomSummary(found) : null;
 }
 
 /** 房主看的一句話：還缺誰 */

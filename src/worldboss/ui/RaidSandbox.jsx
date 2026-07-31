@@ -66,7 +66,6 @@ export default function RaidSandbox() {
 
   // 前置畫面：單人房 / 等待室。用假房間驅動，一樣不碰 Firestore。
   const [roomScreen, setRoomScreen] = useState("none");   // none | solo | wait
-  const [joinCode, setJoinCode] = useState("");
   const [readyOverride, setReadyOverride] = useState({});   // memberId -> bool
 
   const boss = WORLD_BOSSES[bossKey];
@@ -155,7 +154,11 @@ export default function RaidSandbox() {
         onDepart={() => { setRoomScreen("none"); setTeamCount(1); start(); }}
         onCreateRoom={() => setRoomScreen("wait")}
         onJoinRoom={() => setRoomScreen("wait")}
-        joinCode={joinCode} onJoinCode={setJoinCode}
+        // 假的公開房列表——正式版是 subscribeOpenRaidRooms 推進來的
+        openRooms={[
+          { roomId: "f1", code: "CAT777", hostName: "阿甲", size: 3, memberNames: ["阿甲", "阿乙", "阿丙"] },
+          { roomId: "f2", code: "DOG123", hostName: "小明", size: 1, memberNames: ["小明"] },
+        ]}
         onExit={() => setRoomScreen("none")}
       />
     );

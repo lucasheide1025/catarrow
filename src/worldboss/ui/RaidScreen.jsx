@@ -108,7 +108,9 @@ export default function RaidScreen({
   const displayGauge = shown?.gauge ?? state.gauge;
   const burstOn = isBurstActive(displayGauge, state.round);
 
-  const spots = state.spots || [];
+  // ⚠️ state.spots 也是 members[0] 的鏡像。三連靶與單張靶的圈不是同一組，
+  //    用錯的話玩家看到的圈跟結算判定的圈會不一樣（射了卻不算命中）。
+  const spots = (me?.faceCount && state.spotsByFace?.[me.faceCount]) || state.spots || [];
   // 輸入中先不透露打斷進度（要射完才知道有沒有中）；演出時才跑真實數字
   const legHits = shown?.legHits ?? 0;
 
@@ -445,6 +447,14 @@ export default function RaidScreen({
   const teamRevealed = playing || Object.keys(liveSubmissions).length > 0;
   // 我倒地了嗎——倒地＝轉後衛，不能再射但仍在戰鬥
   // ⚠️ 只有組隊才有後衛：單人倒地＝直接結束，不會停在「後衛中」
+  // ⚠️ state.playerHp / state.stats / state.cats 都是 **members[0]** 的鏡像，
+  //    而房間的成員順序不保證房主在第一個——線上組隊時直接用它們，
+  //    每個人看到的都會是同一個人的數值（作者 2026-07-31 回報：
+  //    房主 181 ATK 進戰鬥後變成隊友的 131）。一律走 me。
+  //    演出中要吃 shown.members（王的招式打下去血條才會即時掉）
+  const shownMe = (shown?.members || []).find(m => m.memberId === me?.memberId);
+  const myHp = shownMe?.hp ?? me?.hp ?? state.playerHp ?? 0;
+  const myMaxHp = me?.maxHp ?? state.playerMaxHp ?? 1;
   const iAmDown = teamSize > 1 && (me?.hp ?? 1) <= 0;
   // 還在等誰（房主的強制推進按鈕吃這個）
   const waitingNames = (!playing && Object.keys(liveSubmissions).length > 0)
@@ -539,12 +549,12 @@ export default function RaidScreen({
                     <div style={{ flex: 1, height: 5, borderRadius: 3, background: "rgba(255,255,255,.1)", overflow: "hidden", maxWidth: 120 }}>
                       <div style={{
                         height: "100%", transition: "width .3s",
-                        width: `${Math.max(0, Math.min(100, (state.playerHp / (state.playerMaxHp || 1)) * 100))}%`,
-                        background: state.playerHp / (state.playerMaxHp || 1) > 0.3 ? "#22c55e" : "#ef4444",
+                        width: `${Math.max(0, Math.min(100, (myHp / (myMaxHp || 1)) * 100))}%`,
+                        background: myHp / (myMaxHp || 1) > 0.3 ? "#22c55e" : "#ef4444",
                       }} />
                     </div>
                     <span style={{ fontSize: 9.5, color: "#94a3b8", whiteSpace: "nowrap" }}>
-                      {Math.max(0, Math.round(state.playerHp))}/{Math.round(state.playerMaxHp)}
+                      {Math.max(0, Math.round(myHp))}/{Math.round(myMaxHp)}
                       　{Math.min(state.round, RAID_TOTAL_ROUNDS)}/{RAID_TOTAL_ROUNDS} 回合
                       {burstOn && <b style={{ color: "#fde68a" }}>　💥×{burstMultiplier(displayGauge, state.round)}</b>}
                     </span>
@@ -553,9 +563,9 @@ export default function RaidScreen({
               ) : (
               <>
               <RaidPlayerCard
-                name={playerName} hp={state.playerHp} maxHp={state.playerMaxHp}
-                atk={state.stats.atk} def={state.stats.def}
-                archerLevel={state.archerLevel} cats={state.cats}
+                name={playerName} hp={myHp} maxHp={myMaxHp}
+                atk={me?.stats?.atk ?? 0} def={me?.stats?.def ?? 0}
+                archerLevel={me?.archerLevel ?? 1} cats={me?.cats || []}
                 wbCard={me?.wbCard}
                 wbCardCount={me?.wbCardCount}
                 baseStats={me?.baseStats}

@@ -10,6 +10,7 @@
 // ⚠️ 出發鈕被擋住時**一定要寫出原因**。玩家看到灰掉的按鈕卻不知道為什麼，
 //    只會以為是壞掉了——`soloDepart().blockers` 就是為了這個而存在。
 import { RAID_FACES, faceMultiplier } from "../domain/raidFaces";
+import { RAID_MAX_TEAM } from "../domain/raidTeam";
 import {
   RAID_DISTANCES, distanceMultiplier, rangeLabel, rangeMultiplier,
 } from "../domain/raidRange";
@@ -40,7 +41,10 @@ export default function RaidSoloRoom({
   depart = { ok: true, blockers: [], left: 1 },
   resume = null, onResume, onDiscardResume,
   onDepart, onCreateRoom, onJoinRoom, onExit,
-  joinCode = "", onJoinCode, joining = false, roomError = "",
+  // ⚠️ 作者 2026-07-31：**房間直接顯示，不要用組隊碼進入**。
+  //    要人先開房、把六碼唸給對方、對方再打字——射箭場現場沒人想這樣做。
+  openRooms = [], myRoom = null, onReturnRoom = null,
+  joining = false, roomError = "",
 }) {
   const ratio = Math.max(0, Math.min(1, bossMaxHp ? bossHp / bossMaxHp : 0));
   const mult = rangeMultiplier({ distanceM, targetFmt });
@@ -187,28 +191,56 @@ export default function RaidSoloRoom({
             ⚠️ 沒有給 onCreateRoom 就整塊不畫——組隊還沒接線時不要放一顆按了沒反應的鈕。 */}
         {onCreateRoom && (
         <div style={card}>
-          <div style={label}>或者揪團（最多 8 人＝射箭場容量．各扣各的次數）</div>
+          <div style={label}>或者揪團（最多 {RAID_MAX_TEAM} 人＝射箭場容量．各扣各的次數）</div>
           <button type="button" onClick={onCreateRoom} disabled={joining} style={{
             width: "100%", padding: "11px 0", borderRadius: 10, border: "none",
             background: "linear-gradient(135deg,#16a34a,#15803d)", color: "#fff",
             fontWeight: 900, fontSize: 13, cursor: joining ? "wait" : "pointer", marginBottom: 8,
           }}>👥 建立討伐隊</button>
-          <div style={{ display: "flex", gap: 6 }}>
-            <input value={joinCode} onChange={e => onJoinCode?.(e.target.value.toUpperCase())}
-              placeholder="輸入隊伍代碼" maxLength={6}
-              style={{
-                flex: 1, padding: "10px 11px", borderRadius: 10, background: "#1e293b",
-                border: "1px solid #334155", color: "#f8fafc",
-                fontWeight: 900, fontSize: 13, letterSpacing: 3, textAlign: "center",
-              }} />
-            <button type="button" onClick={onJoinRoom} disabled={joining || joinCode.length < 4} style={{
-              padding: "10px 16px", borderRadius: 10, border: "1px solid #60a5fa",
-              background: "rgba(96,165,250,.15)", color: "#e2e8f0",
-              fontWeight: 900, fontSize: 13,
-              cursor: joinCode.length < 4 ? "not-allowed" : "pointer",
-              opacity: joinCode.length < 4 ? .5 : 1,
-            }}>加入</button>
-          </div>
+          {/* 我已經在某個房裡：回去，而不是再開一個 */}
+          {myRoom && (
+            <button type="button" onClick={onReturnRoom} style={{
+              width: "100%", padding: "11px 0", borderRadius: 10, marginBottom: 8,
+              border: "1px solid #fbbf24", background: "rgba(251,191,36,.15)",
+              color: "#fde68a", fontWeight: 900, fontSize: 12.5, cursor: "pointer",
+            }}>↩️ 回到我的隊伍（{myRoom.size} 人）</button>
+          )}
+
+          {/* 開著的房直接列出來，點一下就進去 */}
+          {openRooms.length > 0 ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {openRooms.map(r => (
+                <button key={r.roomId} type="button" disabled={joining}
+                  onClick={() => onJoinRoom?.(r)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 10, width: "100%",
+                    padding: "9px 11px", borderRadius: 10, textAlign: "left",
+                    border: "1px solid rgba(96,165,250,.4)", background: "#1e293b",
+                    color: "#e2e8f0", cursor: joining ? "wait" : "pointer",
+                  }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 900 }}>
+                      👑 {r.hostName} 的隊伍
+                      <span style={{ color: "#94a3b8", fontWeight: 800, marginLeft: 6 }}>
+                        {r.size}/{RAID_MAX_TEAM} 人
+                      </span>
+                    </div>
+                    <div style={{
+                      fontSize: 10, color: "#64748b", marginTop: 2,
+                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                    }}>{r.memberNames.join("、")}</div>
+                  </div>
+                  <span style={{ fontSize: 12, fontWeight: 900, color: "#60a5fa", flexShrink: 0 }}>加入 →</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div style={{
+              padding: "12px 10px", borderRadius: 10, textAlign: "center",
+              border: "1px dashed rgba(148,163,184,.28)",
+              color: "#64748b", fontSize: 11, fontWeight: 800,
+            }}>目前沒有人開隊——按上面「建立討伐隊」，隊友就看得到你了</div>
+          )}
           {roomError && (
             <div style={{ fontSize: 11, color: "#fca5a5", marginTop: 7, fontWeight: 800 }}>⚠️ {roomError}</div>
           )}

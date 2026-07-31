@@ -29,7 +29,7 @@ import {
 } from "../lib/raidTeamDb";
 import { createRaidState } from "./domain/raidFlow";
 import { roundResultFromLog, raidRoundResults } from "./domain/raidReport";
-import { lobbyView, soloDepart } from "./domain/raidLobby";
+import { lobbyView, myOpenRoom, openRoomList, soloDepart } from "./domain/raidLobby";
 import { hydrateRaidState, roomPhase } from "./domain/raidRoomState";
 import { DEFAULT_RAID_FACE } from "./domain/raidFaces";
 import { RAID_DEFAULT_DISTANCE } from "./domain/raidRange";
@@ -62,7 +62,7 @@ export default function RaidGate({ event, onBack, sharedData, onComplete }) {
   // ── 線上組隊 ───────────────────────────────────────────────
   const [roomId, setRoomId] = useState(null);
   const [room, setRoom] = useState(null);
-  const [joinCode, setJoinCode] = useState("");
+  const [openRooms, setOpenRooms] = useState([]);
   const [busy, setBusy] = useState(false);
   const [roomError, setRoomError] = useState("");
   // ⚠️ 送箭失敗是**最糟的失敗**：這台以為送出了，房間卻沒收到，
@@ -98,6 +98,13 @@ export default function RaidGate({ event, onBack, sharedData, onComplete }) {
     if (!roomId) { setRoom(null); return undefined; }
     return subscribeRaidRoom(roomId, setRoom);
   }, [roomId]);
+
+  // ⚠️ 只在「還沒進房」時聽公開房列表。進房之後這個監聽就是純浪費——
+  //    每有人開房／關房，房裡的每個人都要被推一次。
+  useEffect(() => {
+    if (roomId || screen !== "solo") { setOpenRooms([]); return undefined; }
+    return subscribeOpenRaidRooms(setOpenRooms);
+  }, [roomId, screen]);
 
   // 重整或斷線回來時，房間還在等人就回等待室（不用重新輸入代碼）
   useEffect(() => {
@@ -300,12 +307,13 @@ export default function RaidGate({ event, onBack, sharedData, onComplete }) {
     if (res?.ok) { setRoomId(res.roomId); setScreen("wait"); }
   }, [roomAction, myId, myName, event, targetFmt, distanceM, stats, archerLevel, cats]);
 
-  const handleJoinRoom = useCallback(async () => {
-    const res = await roomAction(() => joinRaidRoom(joinCode, myId, myName, {
+  const handleJoinRoom = useCallback(async (target) => {
+    if (!target?.code) return;
+    const res = await roomAction(() => joinRaidRoom(target.code, myId, myName, {
       stats, archerLevel, cats, targetFmt, distanceM,
     }));
-    if (res?.ok) { setRoomId(res.roomId); setScreen("wait"); }
-  }, [roomAction, joinCode, myId, myName, stats, archerLevel, cats, targetFmt, distanceM]);
+    if (res?.ok) { setRoomId(res.roomId || target.roomId); setScreen("wait"); }
+  }, [roomAction, myId, myName, stats, archerLevel, cats, targetFmt, distanceM]);
 
   const handleStart = useCallback(() => roomAction(() => startRaidRoom(roomId, myId, {
     participants: event?.participants || {},
@@ -445,7 +453,12 @@ export default function RaidGate({ event, onBack, sharedData, onComplete }) {
         onDepart={startSolo}
         onCreateRoom={handleCreateRoom}
         onJoinRoom={handleJoinRoom}
-        joinCode={joinCode} onJoinCode={setJoinCode}
+        openRooms={openRoomList(openRooms, { bossKey: event.bossKey, myId })}
+        myRoom={myOpenRoom(openRooms, myId)}
+        onReturnRoom={() => {
+          const mine = myOpenRoom(openRooms, myId);
+          if (mine?.roomId) { setRoomId(mine.roomId); setScreen("wait"); }
+        }}
         joining={busy} roomError={roomError}
         onExit={onBack}
       />

@@ -3,6 +3,8 @@ import {
   blockerSummary,
   lobbyRoster,
   lobbyView,
+  myOpenRoom,
+  openRoomList,
   roomSummary,
   soloDepart,
 } from "./raidLobby";
@@ -179,5 +181,54 @@ describe("房主看的一句話", () => {
 
   test("沒有阻礙就沒有文案", () => {
     expect(blockerSummary([])).toBe("");
+  });
+});
+
+describe("直接列房（不用組隊碼）", () => {
+  const rooms = [
+    room({ id: "r1", code: "AAA111", members: { h: { name: "房主" } } }),
+    room({ id: "r2", code: "BBB222", members: { x: { name: "阿丙" }, y: { name: "阿丁" }, z: { name: "阿戊" } } }),
+    room({ id: "r3", code: "CCC333", bossKey: "other_boss" }),
+    room({ id: "r4", code: "DDD444", status: "active" }),
+  ];
+
+  test("⚠️ 只列同一隻王的房——換王那一瞬間的殘留房會讓人打到已結束的王", () => {
+    const list = openRoomList(rooms, { bossKey: "cat_baobao" });
+    expect(list.map(r => r.code)).not.toContain("CCC333");
+  });
+
+  test("已經開打的房不列", () => {
+    expect(openRoomList(rooms, { bossKey: "cat_baobao" }).map(r => r.code)).not.toContain("DDD444");
+  });
+
+  test("人多的排前面——快要能出發的優先", () => {
+    expect(openRoomList(rooms, { bossKey: "cat_baobao" }).map(r => r.code)).toEqual(["BBB222", "AAA111"]);
+  });
+
+  test("⚠️ 我已經在裡面的房不列——那要走「回到隊伍」不是「加入」", () => {
+    const list = openRoomList(rooms, { bossKey: "cat_baobao", myId: "h" });
+    expect(list.map(r => r.code)).toEqual(["BBB222"]);
+  });
+
+  test("滿人的房不列", () => {
+    const members = {};
+    for (let i = 0; i < RAID_MAX_TEAM; i += 1) members[`m${i}`] = { name: `m${i}` };
+    expect(openRoomList([room({ members })], { bossKey: "cat_baobao" })).toHaveLength(0);
+  });
+
+  test("列得出裡面有誰——看到認識的人才會想加入", () => {
+    const list = openRoomList(rooms, { bossKey: "cat_baobao" });
+    expect(list[0].memberNames).toEqual(["阿丙", "阿丁", "阿戊"]);
+  });
+
+  test("找得到我自己的房（重整回來要接得回去）", () => {
+    expect(myOpenRoom(rooms, "h")?.code).toBe("AAA111");
+    expect(myOpenRoom(rooms, "nobody")).toBeNull();
+    expect(myOpenRoom(rooms, null)).toBeNull();
+  });
+
+  test("沒有房也不會炸", () => {
+    expect(openRoomList(null, { bossKey: "x" })).toEqual([]);
+    expect(openRoomList([undefined], {})).toEqual([]);
   });
 });
