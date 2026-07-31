@@ -15,10 +15,11 @@
 // ─────────────────────────────────────────────────────────────
 
 import {
-  collection, doc, getDoc, onSnapshot, runTransaction, serverTimestamp, setDoc, updateDoc,
+  collection, doc, getDoc, getDocs, onSnapshot, runTransaction,
+  serverTimestamp, setDoc, updateDoc,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { endAcceptance, endResult } from "../worldboss/domain/matchScore";
+import { arrowPoints, arrowRecord, endAcceptance, endResult } from "../worldboss/domain/matchScore";
 
 const M = "raidMatches";
 
@@ -135,6 +136,86 @@ export async function submitMatchEnd(matchId, memberId, endIndex, arrows) {
     });
     return { ok: true, duplicate, end: r };
   } catch (e) { return { ok: false, reason: humanError(e) }; }
+}
+
+/**
+ * 送出**一支箭**（作者 2026-08-01：一箭一箭送，不能連續三箭射出）。
+ *
+ * ⚠️ 為什麼要一箭一次：現場是射一支、記一支。三箭一起補登，
+ *    中間離場或斷線就會整組不見，而且記錯了也回想不出是哪一支。
+ *
+ * ⚠️ 落點寫在**子文件**（shots/{memberId}），不寫進主文件：
+ *    主文件每次寫入都會推給全場所有監聽者。幾千筆落點掛在上面，
+ *    等於每射一箭就把整份落點資料傳給每一個人。
+ *    主文件只留聚合（分數／箭數／傷害），統計表要看細節才另外抓。
+ *
+ * @param arrowIndex 這是我的第幾支箭（從 0 開始）＝**冪等鍵**，重送不會重複計分。
+ */
+export async function submitMatchArrow(matchId, memberId, arrowIndex, arrow) {
+  if (!matchId || !memberId) return { ok: false, reason: "參數錯誤" };
+  const ref = doc(db, M, matchId);
+  const shotRef = doc(db, M, matchId, "shots", memberId);
+  const points = arrowPoints(arrow);
+  try {
+    let duplicate = false;
+    let end = 0;
+    let playerName = memberId;
+    await runTransaction(db, async tx => {
+      const snap = await tx.get(ref);
+      if (!snap.exists()) throw new Error("這場比賽不存在了");
+      const p = snap.data()?.players?.[memberId];
+      if (!p) throw new Error("你還沒加入這場比賽");
+      playerName = p.name || memberId;
+
+      const recorded = Number(p.arrows) || 0;
+      if (Number(arrowIndex) < recorded) { duplicate = true; return; }
+      if (Number(arrowIndex) !== recorded) throw new Error("箭序對不上，請重新整理");
+
+      end = Math.floor(recorded / 3);
+
+      tx.update(ref, {
+        [`players.${memberId}.score`]: (Number(p.score) || 0) + points,
+        [`players.${memberId}.damage`]: (Number(p.damage) || 0) + points * 120,
+        [`players.${memberId}.arrows`]: recorded + 1,
+        [`players.${memberId}.xCount`]: (Number(p.xCount) || 0) + (arrow?.label === "X" ? 1 : 0),
+        [`players.${memberId}.tens`]: (Number(p.tens) || 0) + (points === 10 ? 1 : 0),
+        [`players.${memberId}.ends`]: Math.floor((recorded + 1) / 3),
+        [`players.${memberId}.lastArrow`]: arrow?.label ?? String(points),
+        [`players.${memberId}.lastAt`]: Date.now(),
+        [`players.${memberId}.active`]: true,
+        updatedAt: serverTimestamp(),
+      });
+    });
+
+    // ⚠️ 落點**另外寫、而且失敗不擋分數**（作者 2026-08-01 比賽當天）：
+    //    分數掉了選手要重射，落點掉了只是少一筆檢討資料——
+    //    兩者不能綁在同一個交易裡，不然規則沒開就整場記不到分。
+    if (!duplicate) {
+      try {
+        const shotSnap = await getDoc(shotRef);
+        const list = Array.isArray(shotSnap.data()?.shots) ? shotSnap.data().shots : [];
+        await setDoc(shotRef, {
+          memberId, name: playerName,
+          shots: [...list, arrowRecord(arrow, { end })],
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+      } catch (e) {
+        console.warn("[raidMatch] 落點沒存到（分數已記錄）:", e?.message);
+      }
+    }
+    return { ok: true, duplicate, points };
+  } catch (e) { return { ok: false, reason: humanError(e) }; }
+}
+
+/** 統計表用：**要看細節才抓**，不做即時監聽（那等於把幾千筆推給所有人）。 */
+export async function getMatchShots(matchId) {
+  if (!matchId) return {};
+  try {
+    const snap = await getDocs(collection(db, M, matchId, "shots"));
+    const out = {};
+    snap.docs.forEach(d => { out[d.id] = d.data(); });
+    return out;
+  } catch { return {}; }
 }
 
 /** 離場。⚠️ 只把 active 關掉——**分數留著**，榜上還看得到他。 */

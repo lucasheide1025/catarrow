@@ -27,18 +27,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import {
-  MATCH_BOSS_MAX_HP, closeMatch, joinMatch, leaveMatch, reopenMatch,
-  submitMatchEnd, subscribeMatch, todayMatchId,
+  MATCH_BOSS_MAX_HP, closeMatch, getMatchShots, joinMatch, leaveMatch, reopenMatch,
+  submitMatchArrow, subscribeMatch, todayMatchId,
 } from "../lib/raidMatchDb";
 import {
-  MATCH_ARROWS_PER_END, MATCH_FACE, endResult,
+  MATCH_ARROWS_PER_END, MATCH_FACE, arrowPoints, endResult,
   matchBossRatio, matchLeaderboard, matchTotals, myStanding,
 } from "./domain/matchScore";
-import { milestoneFor, pickCheer } from "./domain/matchCheer";
+import { arrowFeedback, milestoneFor, pickCheer } from "./domain/matchCheer";
 import { createRaidState } from "./domain/raidFlow";
 import { RAID_LOBBY_BG, randomRaidBackground } from "./raidAssets";
 import MatchBossSVG from "./ui/MatchBossSVG";
 import MatchLeaderboard from "./ui/MatchLeaderboard";
+import MatchStats from "./ui/MatchStats";
 import RaidScreen from "./ui/RaidScreen";
 import "./ui/raidFx.css";
 
@@ -75,7 +76,13 @@ export default function MatchGate({ onBack, isAdmin = false }) {
   const [confirmLeave, setConfirmLeave] = useState(false);
   const sendingRef = useRef(false);
   const prevCheerRef = useRef(null);
-  const lastEndRef = useRef(null);      // 沒送出去時要重送的那一輪
+  const lastArrowRef = useRef(null);    // 沒送出去時要重送的那一支箭
+  const prevArrowLineRef = useRef(null);
+  const [arrowFx, setArrowFx] = useState(null);   // 每一支箭的即時特效
+  const [stats, setStats] = useState(null);       // 📊 落點統計（點開才抓）
+  const [loadingStats, setLoadingStats] = useState(false);
+  // 一回合＝三箭，湊滿才跳激勵詞
+  const endBufRef = useRef([]);
 
   useEffect(() => subscribeMatch(matchId, setMatch), [matchId]);
 
@@ -124,11 +131,11 @@ export default function MatchGate({ onBack, isAdmin = false }) {
     if (screen === "lobby" && players?.[myId]?.active && !closed && !battle) startBattle();
   }, [players, myId, screen, closed, battle, startBattle]);
 
-  /** 真正把一輪寫進去。抽出來是為了「重送」走同一條路。 */
-  const sendEnd = useCallback(async (arrows) => {
-    const endIndex = Number(players?.[myId]?.ends) || 0;
-    const res = await submitMatchEnd(matchId, myId, endIndex, arrows);
-    setError(res.ok ? "" : (res.reason || "這一輪沒送出去，請按重送"));
+  /** 把**一支箭**寫進去。抽出來是為了「重送」走同一條路。 */
+  const sendArrow = useCallback(async (arrow) => {
+    const idx = Number(players?.[myId]?.arrows) || 0;
+    const res = await submitMatchArrow(matchId, myId, idx, arrow);
+    setError(res.ok ? "" : (res.reason || "這一箭沒送出去，請按重送"));
     return res;
   }, [matchId, myId, players]);
 
@@ -138,31 +145,49 @@ export default function MatchGate({ onBack, isAdmin = false }) {
    *    射完就跳等於在說「戲演完了」，那句話反而變成打斷。
    */
   const onRoundDone = useCallback(async (next, log) => {
-    const myArrows = (log || []).filter(e => e.type === "arrow" && e.memberId === myId);
-    if (!myArrows.length) return;
-    const r = endResult(myArrows);
-    lastEndRef.current = myArrows;
+    const shot = (log || []).find(e => e.type === "arrow" && e.memberId === myId);
+    if (!shot) return;
+    lastArrowRef.current = shot;
 
-    const c = pickCheer(r, { prevLine: prevCheerRef.current });
-    prevCheerRef.current = c.line;
+    // ① 這一支箭的即時回饋：高分給爽的特效，低分給加油
+    const fb = arrowFeedback(arrowPoints(shot), shot.label, { prevLine: prevArrowLineRef.current });
+    prevArrowLineRef.current = fb.line;
+    setArrowFx({ ...fb, label: shot.label, key: Date.now() });
+    setTimeout(() => setArrowFx(null), fb.big ? 1000 : 1100);
+
+    // ② 三箭湊滿才跳整輪的激勵詞
+    endBufRef.current = [...endBufRef.current, shot];
     const arrowsBefore = Number(players?.[myId]?.arrows) || 0;
-    setCheer({
-      ...c, damage: r.damage,
-      milestone: milestoneFor(arrowsBefore, arrowsBefore + r.arrows),
-    });
+    if (endBufRef.current.length >= MATCH_ARROWS_PER_END) {
+      const r = endResult(endBufRef.current);
+      endBufRef.current = [];
+      const c = pickCheer(r, { prevLine: prevCheerRef.current });
+      prevCheerRef.current = c.line;
+      setTimeout(() => setCheer({
+        ...c, damage: r.damage,
+        milestone: milestoneFor(arrowsBefore, arrowsBefore + r.arrows),
+      }), fb.big ? 900 : 1000);          // 等單箭特效播完
+    }
 
     if (sendingRef.current) return;
     sendingRef.current = true;
-    await sendEnd(myArrows);
+    await sendArrow(shot);
     sendingRef.current = false;
-  }, [myId, players, sendEnd]);
+  }, [myId, players, sendArrow]);
 
   const retrySend = useCallback(async () => {
-    if (!lastEndRef.current) return;
+    if (!lastArrowRef.current) return;
     setBusy(true);
-    await sendEnd(lastEndRef.current);
+    await sendArrow(lastArrowRef.current);
     setBusy(false);
-  }, [sendEnd]);
+  }, [sendArrow]);
+
+  const openStats = useCallback(async () => {
+    setLoadingStats(true);
+    const shots = await getMatchShots(matchId);
+    setLoadingStats(false);
+    setStats(shots);
+  }, [matchId]);
 
   const doLeave = useCallback(async () => {
     await leaveMatch(matchId, myId);
@@ -259,7 +284,18 @@ export default function MatchGate({ onBack, isAdmin = false }) {
             </div>
             {/* 場外看得到正確分數 ＋ 傷害 */}
             <MatchLeaderboard board={board} myId={myId} show="both" />
+            <button type="button" onClick={openStats} disabled={loadingStats || !board.length}
+              style={{
+                width: "100%", marginTop: 10, padding: "11px 0", borderRadius: 10,
+                border: "1px solid rgba(168,85,247,.5)", background: "rgba(88,28,135,.28)",
+                color: "#e9d5ff", fontWeight: 900, fontSize: 12.5,
+                cursor: board.length ? "pointer" : "not-allowed", opacity: board.length ? 1 : .5,
+              }}>{loadingStats ? "載入中…" : "📊 落點統計（每一箭的位置）"}</button>
           </div>
+
+          {stats && (
+            <MatchStats board={board} shotsByMember={stats} myId={myId} onClose={() => setStats(null)} />
+          )}
 
           {isAdmin && (
             <div style={{ ...card, border: "1px solid rgba(148,163,184,.3)" }}>
@@ -294,7 +330,7 @@ export default function MatchGate({ onBack, isAdmin = false }) {
         bgUrl={bgUrl}
         targetFmt={MATCH_FACE}
         meId={myId}
-        arrowsPerRound={MATCH_ARROWS_PER_END}
+        arrowsPerRound={1}
         endless
         onState={next => setBattle(next)}
         onRoundDone={onRoundDone}
@@ -310,6 +346,11 @@ export default function MatchGate({ onBack, isAdmin = false }) {
               border: "1px solid rgba(251,191,36,.55)", background: "rgba(251,191,36,.16)",
               color: "#fde68a", fontSize: 11.5, fontWeight: 900,
             }}>🏆 第 {mine?.rank ?? "-"} 名／{board.length} 人</button>
+            <button type="button" onClick={openStats} style={{
+              flexShrink: 0, padding: "4px 9px", borderRadius: 999, cursor: "pointer",
+              border: "1px solid rgba(168,85,247,.5)", background: "rgba(88,28,135,.3)",
+              color: "#e9d5ff", fontSize: 11, fontWeight: 900,
+            }}>📊 落點</button>
 
             {/* 同場玩家：誰在射、打了多少（只給傷害） */}
             {board.slice(0, 8).map(p => (
@@ -329,6 +370,28 @@ export default function MatchGate({ onBack, isAdmin = false }) {
           </div>
         }
       />
+
+      {/* 🎯 每一支箭的即時特效。高分爽、低分只給一句加油——
+          那支箭已經射出去了，講它不好只會讓下一支更緊。 */}
+      {arrowFx && (
+        <div key={arrowFx.key} className={`match-hit ${arrowFx.fx === "nova" ? "match-nova" : ""}`}
+          style={{ color: arrowFx.color }}>
+          {arrowFx.fx && <span className="match-ring" />}
+          {arrowFx.fx === "spark" && Array.from({ length: 8 }, (_, i) => {
+            const a = (i / 8) * Math.PI * 2;
+            return (
+              <span key={i} className="match-spark" style={{
+                "--sx": `${Math.cos(a) * 70}px`, "--sy": `${Math.sin(a) * 70}px`,
+                animationDelay: `${i * 20}ms`,
+              }} />
+            );
+          })}
+          {arrowFx.big && (
+            <span className="match-hit-label">{arrowFx.icon} {arrowFx.label}</span>
+          )}
+          <span className="match-hit-line">{arrowFx.big ? "" : `${arrowFx.icon} `}{arrowFx.line}</span>
+        </div>
+      )}
 
       {/* 🏆 演出跑完才跳的激勵詞。⚠️ 場內只給傷害，不給正確分數。 */}
       {cheer && (
@@ -400,6 +463,11 @@ export default function MatchGate({ onBack, isAdmin = false }) {
             }}>回到戰鬥</button>
           </div>
         </div>
+      )}
+
+      {/* 📊 落點統計：場內也看得到（但這是點開才抓的，不影響即時效能） */}
+      {stats && (
+        <MatchStats board={board} shotsByMember={stats} myId={myId} onClose={() => setStats(null)} />
       )}
 
       {/* ⚠️ 離場要二次確認——按錯就中斷比賽了 */}

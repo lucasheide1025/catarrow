@@ -533,6 +533,10 @@ service cloud.firestore {
     // 一天一顆文件，所有人共用；登入者可讀寫（分數在自己的欄位，交易保護冪等）。
     match /raidMatches/{matchId} {
       allow read, write: if isLoggedIn();
+      // 每位射手的逐箭落點（統計表用，刻意不放主文件——見 raidMatchDb.js）
+      match /shots/{memberId} {
+        allow read, write: if isLoggedIn();
+      }
     }
 
     // zombieRooms：殭屍生存模式房間（Phase 0）

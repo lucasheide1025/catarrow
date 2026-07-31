@@ -1,4 +1,4 @@
-import { CHEER_TIERS, milestoneFor, pickCheer } from "./matchCheer";
+import { ARROW_TIERS, CHEER_TIERS, arrowFeedback, milestoneFor, pickCheer } from "./matchCheer";
 
 const r = over => ({ score: 0, xCount: 0, tens: 0, misses: 0, ...over });
 
@@ -63,5 +63,49 @@ describe("里程碑", () => {
   test("沒跨過就沒有", () => {
     expect(milestoneFor(0, 3)).toBeNull();
     expect(milestoneFor(null, null)).toBeNull();
+  });
+});
+
+describe("🎯 每一支箭的即時回饋", () => {
+  test("X 比一般十環更大的特效——內十環值得", () => {
+    const x = arrowFeedback(10, "X");
+    const ten = arrowFeedback(10, "10");
+    expect(x.tier).toBe("inner_ten");
+    expect(ten.tier).toBe("ten");
+    expect(x.fx).toBe("nova");
+  });
+
+  test("高分才有大特效與震動", () => {
+    expect(arrowFeedback(10).big).toBe(true);
+    expect(arrowFeedback(9).big).toBe(true);
+    expect(arrowFeedback(6).big).toBe(false);
+    expect(arrowFeedback(2).shake).toBeNull();
+  });
+
+  test("⚠️ 低分那一級絕不能是負面的——那支箭已經射出去了", () => {
+    for (const p of [0, 1, 2, 3, 5]) {
+      const f = arrowFeedback(p);
+      expect(f.line).not.toMatch(/差|爛|糟|失敗|不行/);
+    }
+    expect(arrowFeedback(0, "M").line).toMatch(/沒關係|下一箭|忘掉/);
+    expect(arrowFeedback(2).line).toMatch(/加油|深呼吸|不要急/);
+  });
+
+  test("每一級都有完整的顯示資料", () => {
+    for (const t of ARROW_TIERS) {
+      expect(t.icon && t.color).toBeTruthy();
+      expect(t.lines.length).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  test("不會連續跳同一句", () => {
+    const a = arrowFeedback(9, null, { rand: () => 0 });
+    const b = arrowFeedback(9, null, { prevLine: a.line, rand: () => 0 });
+    expect(b.line).not.toBe(a.line);
+  });
+
+  test("壞值一律當脫靶處理，不會炸", () => {
+    expect(arrowFeedback(null).tier).toBe("miss");
+    expect(arrowFeedback(undefined).line).toBeTruthy();
   });
 });

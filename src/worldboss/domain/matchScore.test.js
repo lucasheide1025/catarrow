@@ -1,6 +1,9 @@
 import { getTargetFaceFormat } from "../../lib/targetFace";
 import {
   MATCH_ARROWS_PER_END,
+  arrowRecord,
+  biasLabel,
+  shotStats,
   MATCH_FACE,
   MATCH_MAX_END_SCORE,
   arrowPoints,
@@ -204,5 +207,71 @@ describe("⚠️ 靶紙固定 1~10 分全靶（作者 2026-08-01）", () => {
 
   test("全靶最低有效環是 1 分（半靶的 6 分底線不適用）", () => {
     expect(arrowPoints(a("1", 1))).toBe(1);
+  });
+});
+
+describe("⚠️ 每一箭的落點都要留（作者 2026-08-01）", () => {
+  test("存得下座標、環值、標籤、第幾回合", () => {
+    const r = arrowRecord({ nx: 0.123456, ny: -0.5, label: "9", score: 9 }, { at: 111, end: 2 });
+    expect(r).toEqual({ p: 9, l: "9", x: 0.123, y: -0.5, e: 2, t: 111 });
+  });
+
+  test("座標壞掉不會存進 NaN（Firestore 會整筆拒絕）", () => {
+    const r = arrowRecord({ label: "M" });
+    expect(r.x).toBe(0);
+    expect(r.y).toBe(0);
+    expect(Number.isFinite(r.x)).toBe(true);
+  });
+
+  test("刻意用短欄位名——這份會累積到幾千筆", () => {
+    expect(Object.keys(arrowRecord({})).sort()).toEqual(["e", "l", "p", "t", "x", "y"]);
+  });
+});
+
+describe("落點統計：教練要看的是系統性偏差", () => {
+  const shots = [
+    { p: 9, l: "9", x: 0.3, y: 0.3 },
+    { p: 8, l: "8", x: 0.35, y: 0.25 },
+    { p: 10, l: "X", x: 0.28, y: 0.32 },
+  ];
+
+  test("平均落點與離散度算得出來", () => {
+    const st = shotStats(shots);
+    expect(st.shots).toBe(3);
+    expect(st.total).toBe(27);
+    expect(st.centerX).toBeCloseTo(0.31, 2);
+    expect(st.spread).toBeGreaterThan(0);
+  });
+
+  test("⚠️ 離散度是離**自己的平均落點**，不是離靶心——那才是穩定度", () => {
+    const tight = shotStats([
+      { p: 8, l: "8", x: 0.5, y: 0.5 }, { p: 8, l: "8", x: 0.5, y: 0.5 },
+    ]);
+    const loose = shotStats([
+      { p: 10, l: "X", x: 0, y: 0 }, { p: 6, l: "6", x: 0.6, y: 0.6 },
+    ]);
+    expect(tight.spread).toBe(0);                    // 分數低但超穩
+    expect(loose.spread).toBeGreaterThan(tight.spread);
+  });
+
+  test("脫靶不算進落點平均（M 沒有位置可言）", () => {
+    const st = shotStats([...shots, { p: 0, l: "M", x: 0, y: 0 }]);
+    expect(st.misses).toBe(1);
+    expect(st.onTarget).toBe(3);
+    expect(st.centerX).toBeCloseTo(0.31, 2);
+  });
+
+  test("翻成一句教練當場看得懂的話", () => {
+    expect(biasLabel(0.3, 0.3)).toBe("偏下偏右");
+    expect(biasLabel(-0.3, -0.3)).toBe("偏上偏左");
+    expect(biasLabel(0.01, 0.01)).toBe("落點居中");
+    expect(biasLabel(0, -0.4)).toBe("偏上");
+  });
+
+  test("沒有箭也不會除以零", () => {
+    const st = shotStats([]);
+    expect(st.average).toBe(0);
+    expect(st.spread).toBe(0);
+    expect(st.bias).toBe("落點居中");
   });
 });

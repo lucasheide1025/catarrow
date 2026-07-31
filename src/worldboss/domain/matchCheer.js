@@ -107,3 +107,60 @@ export function milestoneFor(arrowsBefore, arrowsAfter) {
   const hit = CHEER_MILESTONES.find(m => before < m.arrows && after >= m.arrows);
   return hit ? hit.text : null;
 }
+
+// ─────────────────────────────────────────────────────────────
+// 🎯 **每一支箭**的即時回饋（作者 2026-08-01）。
+//
+// ⚠️ 現在是一箭一箭送，所以每支箭都要有反應——高分給爽的攻擊特效，
+//    低分給加油。**低分那一級絕對不能是負面的**：那支箭已經射出去了，
+//    講它不好沒有任何用處，只會讓下一支更緊。
+// ─────────────────────────────────────────────────────────────
+
+export const ARROW_TIERS = Object.freeze([
+  {
+    id: "inner_ten", min: 11, icon: "💥", color: "#f5b942", fx: "nova",
+    shake: "hard", lines: ["正中紅心！", "X！完美的一箭", "牠的核心被貫穿了"],
+  },
+  {
+    id: "ten", min: 10, icon: "⚡", color: "#fbbf24", fx: "burst",
+    shake: "hard", lines: ["十環！", "滿環命中", "這一箭很痛"],
+  },
+  {
+    id: "great", min: 9, icon: "🔥", color: "#fb923c", fx: "burst",
+    shake: "soft", lines: ["九環，穩！", "非常接近了", "手感抓到了"],
+  },
+  {
+    id: "good", min: 7, icon: "✨", color: "#4ade80", fx: "spark",
+    shake: "soft", lines: ["扎實命中", "有效傷害", "不錯，繼續"],
+  },
+  {
+    id: "ok", min: 4, icon: "🏹", color: "#60a5fa", fx: "spark",
+    shake: null, lines: ["上靶了，穩住", "調整一下，下一箭更好", "沒問題，慢慢來"],
+  },
+  {
+    id: "low", min: 1, icon: "💪", color: "#94a3b8", fx: null,
+    shake: null, lines: ["有中就有分，加油", "深呼吸，下一箭", "不要急，動作先做完"],
+  },
+  {
+    id: "miss", min: 0, icon: "🌱", color: "#64748b", fx: null,
+    shake: null, lines: ["沒關係，放掉它", "下一箭重新來", "教練說過：忘掉上一箭"],
+  },
+]);
+
+/**
+ * @param points 這支箭的環值（0~10）
+ * @param label  "X" 要跟一般的 10 分開——內十環值得更大的特效
+ */
+export function arrowFeedback(points, label = null, { prevLine = null, rand = Math.random } = {}) {
+  const p = Number(points) || 0;
+  const effective = label === "X" ? 11 : p;
+  const tier = ARROW_TIERS.find(t => effective >= t.min) || ARROW_TIERS[ARROW_TIERS.length - 1];
+  const pool = tier.lines.filter(l => l !== prevLine);
+  const lines = pool.length ? pool : tier.lines;
+  return {
+    tier: tier.id, icon: tier.icon, color: tier.color,
+    fx: tier.fx, shake: tier.shake,
+    line: lines[Math.floor(rand() * lines.length) % lines.length],
+    big: effective >= 9,          // 高分才放大特效
+  };
+}

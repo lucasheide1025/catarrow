@@ -52,6 +52,63 @@ export function endResult(arrows = []) {
   };
 }
 
+/**
+ * 一支箭要存下來的樣子。
+ * ⚠️ **落點座標一定要留**（作者 2026-08-01）：比賽後的檢討要看分佈，
+ *    只存環數看不出「偏左下」這種系統性偏差——那才是教練要的東西。
+ *    nx/ny 是 -1~1 的靶面座標，圓心是 (0,0)。
+ * ⚠️ 刻意只留這幾個欄位：這份會累積到幾千筆，多一個欄位就是多幾十 KB。
+ */
+export function arrowRecord(arrow, { at = Date.now(), end = 0 } = {}) {
+  const nx = Number(arrow?.nx);
+  const ny = Number(arrow?.ny);
+  return {
+    p: arrowPoints(arrow),
+    l: arrow?.label ?? String(arrowPoints(arrow)),
+    x: Number.isFinite(nx) ? Math.round(nx * 1000) / 1000 : 0,
+    y: Number.isFinite(ny) ? Math.round(ny * 1000) / 1000 : 0,
+    e: Math.max(0, Math.round(end)),
+    t: at,
+  };
+}
+
+/** 落點統計：教練要看的是**系統性偏差**，不是單箭好壞 */
+export function shotStats(shots = []) {
+  const list = (Array.isArray(shots) ? shots : []).filter(Boolean);
+  const onTarget = list.filter(s => s.l !== "M");
+  const n = onTarget.length;
+  const mx = n ? onTarget.reduce((a, s) => a + (Number(s.x) || 0), 0) / n : 0;
+  const my = n ? onTarget.reduce((a, s) => a + (Number(s.y) || 0), 0) / n : 0;
+  // 離散度＝離自己的平均落點多遠（不是離靶心）——那才是穩定度
+  const spread = n
+    ? Math.sqrt(onTarget.reduce((a, s) => a + ((s.x - mx) ** 2 + (s.y - my) ** 2), 0) / n)
+    : 0;
+  const total = list.reduce((a, s) => a + (Number(s.p) || 0), 0);
+  return {
+    shots: list.length,
+    onTarget: n,
+    misses: list.length - n,
+    total,
+    average: list.length ? total / list.length : 0,
+    xCount: list.filter(s => s.l === "X").length,
+    tens: list.filter(s => Number(s.p) === 10).length,
+    centerX: Math.round(mx * 1000) / 1000,
+    centerY: Math.round(my * 1000) / 1000,
+    spread: Math.round(spread * 1000) / 1000,
+    bias: biasLabel(mx, my),
+  };
+}
+
+/** 把平均落點翻成一句話——教練當場看得懂才有用 */
+export function biasLabel(mx, my) {
+  const x = Number(mx) || 0;
+  const y = Number(my) || 0;
+  if (Math.hypot(x, y) < 0.08) return "落點居中";
+  const v = y < -0.08 ? "偏上" : y > 0.08 ? "偏下" : "";
+  const h = x < -0.08 ? "偏左" : x > 0.08 ? "偏右" : "";
+  return `${v}${h}` || "落點居中";
+}
+
 /** 這一回合能不能送出（三箭射滿才算一回合） */
 export function canSubmitEnd(arrows = []) {
   return Array.isArray(arrows) && arrows.length >= MATCH_ARROWS_PER_END;
