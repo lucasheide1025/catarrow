@@ -20,6 +20,9 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { arrowPoints, arrowRecord, endAcceptance, endResult } from "../worldboss/domain/matchScore";
+import { matchRewardFor, normalizeRewardConfig } from "../worldboss/domain/matchRewards";
+import { addArcherXP, addChests, addCoins, createNotification } from "./db";
+import { addCatXP } from "./catDb";
 
 const M = "raidMatches";
 
@@ -51,7 +54,7 @@ export const MATCH_BOSS_MAX_HP = 500000;
  * ⚠️ **重進不能把分數歸零**——斷線、關掉 App、手機沒電再開，都會走到這裡。
  *    已經有紀錄的人只把 active 打開，score 一個字都不動。
  */
-export async function joinMatch(matchId, memberId, memberName, { bowType = null } = {}) {
+export async function joinMatch(matchId, memberId, memberName, { bowType = null, catId = null } = {}) {
   if (!matchId || !memberId) return { ok: false, reason: "參數錯誤" };
   const ref = doc(db, M, matchId);
   try {
@@ -65,6 +68,8 @@ export async function joinMatch(matchId, memberId, memberName, { bowType = null 
           players: {
             [memberId]: {
               name: memberName || "射手", bowType: bowType || null,
+              // 發獎勵時要知道貓貓經驗該加給誰
+              catId: catId || null,
               score: 0, damage: 0, arrows: 0, ends: 0, xCount: 0, tens: 0,
               active: true, joinedAt: Date.now(), lastAt: Date.now(),
             },
@@ -78,6 +83,7 @@ export async function joinMatch(matchId, memberId, memberName, { bowType = null 
         tx.update(ref, {
           [`players.${memberId}.active`]: true,
           [`players.${memberId}.name`]: memberName || existing.name || "射手",
+          [`players.${memberId}.catId`]: catId || existing.catId || null,
           [`players.${memberId}.lastAt`]: Date.now(),
           updatedAt: serverTimestamp(),
         });
@@ -86,6 +92,7 @@ export async function joinMatch(matchId, memberId, memberName, { bowType = null 
       tx.update(ref, {
         [`players.${memberId}`]: {
           name: memberName || "射手", bowType: bowType || null,
+          catId: catId || null,
           score: 0, damage: 0, arrows: 0, ends: 0, xCount: 0, tens: 0,
           active: true, joinedAt: Date.now(), lastAt: Date.now(),
         },
@@ -277,6 +284,124 @@ export async function resetMatchPlayer(matchId, memberId) {
       },
       updatedAt: serverTimestamp(),
     }, { merge: true });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: humanError(e) }; }
+}
+
+// ── 教練：獎勵設定 ────────────────────────────────────────
+export async function saveMatchRewardConfig(matchId, cfg) {
+  try {
+    await setDoc(doc(db, M, matchId), {
+      reward: normalizeRewardConfig(cfg), updatedAt: serverTimestamp(),
+    }, { merge: true });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: humanError(e) }; }
+}
+
+/**
+ * 教練發放獎勵。
+ *
+ * ⚠️ **一個人一個人發，而且逐一標記 rewarded**——不是整批寫完才標。
+ *    發到一半網路斷掉時，已經發出去的必須留下紀錄，
+ *    不然教練再按一次，前面那些人會領第二次。
+ *
+ * ⚠️ 先標記再發，還是先發再標記？選**先發再標記**：
+ *    重複發總比沒發到好處理（教練看得到誰多領了），
+ *    但標記失敗的機率遠低於發放失敗，所以實務上不會重複。
+ */
+export async function grantMatchRewards(matchId, { onProgress = null } = {}) {
+  const snap = await getDoc(doc(db, M, matchId)).catch(() => null);
+  if (!snap?.exists()) return { ok: false, reason: "這場比賽不存在" };
+  const data = snap.data();
+  const cfg = normalizeRewardConfig(data.reward);
+  const players = data.players || {};
+  const ids = Object.keys(players).filter(id => players[id] && !players[id].rewarded);
+
+  const done = [];
+  const failed = [];
+  for (const memberId of ids) {
+    const p = players[memberId];
+    const r = matchRewardFor(p, cfg);
+    if (!r.eligible) continue;
+    try {
+      if (r.archerXP > 0) await addArcherXP(memberId, r.archerXP);
+      if (r.coins > 0) await addCoins(memberId, r.coins);
+      if (r.catXP > 0 && p.catId) await addCatXP(memberId, p.catId, r.catXP);
+
+      const chests = [];
+      const stamp = Date.now();
+      for (let i = 0; i < r.chests; i += 1) {
+        chests.push({
+          id: `match_${matchId}_${memberId}_m${i}`, type: r.chestType,
+          family: "match", tier: r.chestType,
+          from: `比賽模式（${r.arrows} 箭）`, ts: stamp + i,
+        });
+      }
+      for (let i = 0; i < r.coinChests; i += 1) {
+        chests.push({
+          id: `match_${matchId}_${memberId}_c${i}`, type: "coin",
+          tier: r.coinChestTier, family: "match",
+          from: `比賽模式（${r.arrows} 箭）`, ts: stamp + 100 + i,
+        });
+      }
+      if (chests.length) await addChests(memberId, chests);
+
+      await updateDoc(doc(db, M, matchId), {
+        [`players.${memberId}.rewarded`]: true,
+        [`players.${memberId}.rewardedAt`]: Date.now(),
+        updatedAt: serverTimestamp(),
+      });
+      createNotification({
+        type: "worldboss",
+        title: "🏆 比賽獎勵已發放",
+        content: `${r.arrows} 箭 ${r.score} 分：射手經驗 +${r.archerXP}、金幣 +${r.coins}、材料箱 ×${r.chests}、金幣箱 ×${r.coinChests}`,
+        targetMemberId: memberId,
+      }).catch(() => {});
+      done.push({ memberId, name: p.name, ...r });
+    } catch (e) {
+      failed.push({ memberId, name: p.name, reason: e?.message });
+    }
+    onProgress?.(done.length + failed.length, ids.length);
+  }
+  return { ok: true, granted: done, failed };
+}
+
+/**
+ * 教練：重置整場比賽。
+ * ⚠️ 落點子文件也要一起清掉，不然重置後統計表會混進上一輪的箭。
+ */
+export async function resetMatch(matchId) {
+  try {
+    const shots = await getDocs(collection(db, M, matchId, "shots")).catch(() => null);
+    if (shots) {
+      for (const d of shots.docs) {
+        await setDoc(d.ref, { shots: [], updatedAt: serverTimestamp() }, { merge: true }).catch(() => {});
+      }
+    }
+    // ⚠️ 一定要用 updateDoc 直接覆蓋 players——merge:true 只會把新舊 map 合併，
+    //    清不掉舊的射手 key（村莊那邊踩過同一個坑）。
+    await updateDoc(doc(db, M, matchId), {
+      players: {}, status: "open", resetAt: Date.now(), updatedAt: serverTimestamp(),
+    });
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: humanError(e) }; }
+}
+
+/** 教練：只清一個人（記錯了要重來） */
+export async function resetMatchMember(matchId, memberId) {
+  try {
+    await updateDoc(doc(db, M, matchId), {
+      [`players.${memberId}.score`]: 0,
+      [`players.${memberId}.damage`]: 0,
+      [`players.${memberId}.arrows`]: 0,
+      [`players.${memberId}.ends`]: 0,
+      [`players.${memberId}.xCount`]: 0,
+      [`players.${memberId}.tens`]: 0,
+      [`players.${memberId}.rewarded`]: false,
+      updatedAt: serverTimestamp(),
+    });
+    await setDoc(doc(db, M, matchId, "shots", memberId),
+      { shots: [], updatedAt: serverTimestamp() }, { merge: true }).catch(() => {});
     return { ok: true };
   } catch (e) { return { ok: false, reason: humanError(e) }; }
 }

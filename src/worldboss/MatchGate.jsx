@@ -27,8 +27,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../hooks/useAuth";
 import {
-  MATCH_BOSS_MAX_HP, closeMatch, getMatchShots, joinMatch, leaveMatch, reopenMatch,
-  submitMatchArrow, subscribeMatch, todayMatchId,
+  MATCH_BOSS_MAX_HP, closeMatch, getMatchShots, grantMatchRewards, joinMatch, leaveMatch,
+  reopenMatch, resetMatch, saveMatchRewardConfig, submitMatchArrow, subscribeMatch, todayMatchId,
 } from "../lib/raidMatchDb";
 import {
   MATCH_ARROWS_PER_END, MATCH_FACE, arrowPoints, endResult,
@@ -40,6 +40,7 @@ import { RAID_LOBBY_BG, randomRaidBackground } from "./raidAssets";
 import MatchBossSVG from "./ui/MatchBossSVG";
 import MatchLeaderboard from "./ui/MatchLeaderboard";
 import MatchStats from "./ui/MatchStats";
+import MatchAdminPanel from "./ui/MatchAdminPanel";
 import RaidScreen from "./ui/RaidScreen";
 import "./ui/raidFx.css";
 
@@ -120,11 +121,13 @@ export default function MatchGate({ onBack, isAdmin = false }) {
 
   const enter = useCallback(async () => {
     setBusy(true); setError("");
-    const res = await joinMatch(matchId, myId, myName, { bowType: profile?.bowType || null });
+    const res = await joinMatch(matchId, myId, myName, {
+      bowType: profile?.bowType || null, catId: profile?.equippedCat?.catId || null,
+    });
     setBusy(false);
     if (!res.ok) { setError(res.reason || "加入失敗"); return; }
     startBattle();
-  }, [matchId, myId, myName, profile?.bowType, startBattle]);
+  }, [matchId, myId, myName, profile?.bowType, profile?.equippedCat?.catId, startBattle]);
 
   // ⚠️ 已經在比賽裡（重整／斷線回來）就直接回戰鬥畫面，不要退回大廳
   useEffect(() => {
@@ -298,16 +301,13 @@ export default function MatchGate({ onBack, isAdmin = false }) {
           )}
 
           {isAdmin && (
-            <div style={{ ...card, border: "1px solid rgba(148,163,184,.3)" }}>
-              <div style={label}>教練</div>
-              <button type="button"
-                onClick={() => (closed ? reopenMatch(matchId) : closeMatch(matchId))}
-                style={{
-                  width: "100%", padding: "10px 0", borderRadius: 9,
-                  border: "1px solid #64748b", background: "transparent",
-                  color: "#cbd5e1", fontWeight: 900, fontSize: 12, cursor: "pointer",
-                }}>{closed ? "重新開放送分" : "🏁 收榜（停止送分）"}</button>
-            </div>
+            <MatchAdminPanel
+              matchId={matchId} players={players} closed={closed} config={match?.reward}
+              onSaveConfig={cfg => saveMatchRewardConfig(matchId, cfg)}
+              onGrant={() => grantMatchRewards(matchId)}
+              onReset={() => resetMatch(matchId)}
+              onToggleClose={() => (closed ? reopenMatch(matchId) : closeMatch(matchId))}
+            />
           )}
         </div>
       </div>
