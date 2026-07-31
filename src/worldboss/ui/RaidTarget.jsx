@@ -10,7 +10,7 @@
 //   ④ 即時顯示標準環值（半靶只有 6~10 環，印在紙上的環數跨靶紙不能比）
 import { useState } from "react";
 import { getTargetFaceFormat, getTargetRings } from "../../lib/targetFace";
-import { faceCountOf } from "../domain/raidFaces";
+import { faceCountOf, maxArrowsPerFace } from "../domain/raidFaces";
 import { standardScoreFromRatio } from "../domain/weakPoints";
 
 // 靶外可點的比例：1.0 = 靶紙邊緣，1.3 = 再往外 30%
@@ -24,8 +24,12 @@ export default function RaidTarget({
   onArrow,
   disabled = false,
   radius = 120,
+  onFullFace,             // 點到已經滿的靶時通知上層（要提醒玩家）
 }) {
   const faceCount = faceCountOf(fmtId);
+  const cap = maxArrowsPerFace(fmtId);
+  const usedOn = i => arrows.filter(a => (a.faceIndex || 0) === i).length;
+  const isFull = i => cap != null && usedOn(i) >= cap;
   // 多張靶時每張要縮小才排得下
   const R = faceCount > 1 ? radius / 1.8 : radius;
   const PAD = R * OUTSIDE_PAD;
@@ -57,6 +61,8 @@ export default function RaidTarget({
 
   function commit(px, py) {
     const faceIndex = faceOf(px, py);
+    // 這張靶已經吃滿了 → 不收這一箭，改成提醒（不要讓玩家白白浪費）
+    if (isFull(faceIndex)) { onFullFace?.(faceIndex); return; }
     const nx = (px - centreX(faceIndex)) / R;
     const ny = (py - CY) / R;
     const ratio = Math.sqrt(nx * nx + ny * ny);
@@ -101,9 +107,15 @@ export default function RaidTarget({
             <circle cx={centreX(i)} cy={CY} r={format.innerTenRatio * R}
               fill="none" stroke="rgba(30,30,30,.75)" strokeWidth="0.8" />
           )}
+          {/* 滿了就整張壓暗，玩家一眼看到不能再射這張 */}
+          {isFull(i) && (
+            <circle cx={centreX(i)} cy={CY} r={PAD} fill="rgba(2,6,23,.72)" />
+          )}
           {faceCount > 1 && (
-            <text x={centreX(i)} y={CY + PAD - 3} textAnchor="middle" fontSize="9" fill="#64748b" fontWeight="800">
-              {FACE_LABELS[i] || i + 1}
+            <text x={centreX(i)} y={CY + PAD - 3} textAnchor="middle" fontSize="10"
+              fill={isFull(i) ? "#f87171" : "#94a3b8"} fontWeight="900">
+              {FACE_LABELS[i] || i + 1}{cap != null ? `　${usedOn(i)}/${cap}` : ""}
+              {isFull(i) ? " 已滿" : ""}
             </text>
           )}
         </g>

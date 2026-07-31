@@ -163,8 +163,8 @@ lastCheckinDate // "YYYY-MM-DD"，submitCheckin 當下 + approveCheckin 補寫�
 | 檔案 | 用途 |
 |------|------|
 | `domain/weakPoints.js` | 彩色弱點圈：`WEAK_SPOTS`、`rollWeakSpots()`、`hitSpot()`、`resolveWeakPointHit()` |
-| `domain/raidFaces.js` | 四種靶紙（半靶/全靶/三連靶/原野靶）、`faceCountOf()` |
-| `domain/raidRange.js` | 射程加成，**基準 5 米 × 半靶 ＝ ×1.00** |
+| `domain/raidFaces.js` | 四種靶紙與**靶紙倍率**（半靶1.0/全靶1.2/原野靶1.4/三連靶1.5）、`maxArrowsPerFace()` |
+| `domain/raidRange.js` | 距離倍率（**5 米 ＝ ×1.00**，18 米 ×1.90） |
 | `domain/raidRookie.js` | **新手扶助（50 級以下）——戰鬥模型外面的補償層** |
 | `domain/raidPhases.js` | 三階段 |
 | `domain/breakGauge.js` | 破防槽（算次數不算傷害）與爆發 |
@@ -178,7 +178,8 @@ lastCheckinDate // "YYYY-MM-DD"，submitCheckin 當下 + approveCheckin 補寫�
 **三條不能忘的規則**：
 1. **打中弱點 → 一般傷害算滿分**（圈可能長在外圈，不然沒人想拚）
 2. **弱點固定傷害不乘 ATK**（乘了就等於整個改版白做）
-3. **補償不放戰鬥模型裡**——新手加成一律走 `raidRookie.js`（作者 2026-07-31 明確指示）
+3. **三連靶每張靶最多吃 2 箭**（六箭 2/2/2），超過的箭完全沒效果，UI 要擋下來並提醒
+4. **補償不放戰鬥模型裡**——新手加成一律走 `raidRookie.js`（作者 2026-07-31 明確指示）
 
 ⚠️ 平衡模擬要**平均多場**（`raidBalance.test.js` 用 120 場）：一場才 30 箭，單一 seed 沒有意義。
 ⚠️ 音效：`sfxRaidEvent(event)` 一支對應所有 log 事件（sound.js 末段），別在 UI 裡各自判斷。

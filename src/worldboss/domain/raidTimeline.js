@@ -43,6 +43,7 @@ export function describeEvent(event) {
         ? `⚡ ${event.intent.name}：命中弱點 ${event.intent.interruptRequired} 次可打斷`
         : "牠在等你出手。";
     case "arrow": {
+      if (event.overCap) return "這張靶已經滿了——這箭沒有效果";
       if (event.missed) return "脫靶";
       if (event.hit) return `${event.bullseye ? "🎯正中 " : ""}${event.spot?.icon || ""}${event.spot?.name || "弱點"}（算滿分）−${event.damage}`;
       return `上靶但沒中弱點 −${event.damage}`;

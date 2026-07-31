@@ -7,9 +7,8 @@
 import { useMemo, useState } from "react";
 import { WORLD_BOSSES } from "../../lib/worldBossData";
 import { WORLD_BOSS_SKILLS } from "../../lib/worldBossSkillData";
-import { getTargetFaceFormat } from "../../lib/targetFace";
-import { DEFAULT_RAID_FACE, RAID_FACES } from "../domain/raidFaces";
-import { RAID_DISTANCES, RAID_DEFAULT_DISTANCE, rangeLabel, rangeMultiplier } from "../domain/raidRange";
+import { DEFAULT_RAID_FACE, RAID_FACES, faceMultiplier } from "../domain/raidFaces";
+import { RAID_DISTANCES, RAID_DEFAULT_DISTANCE, distanceMultiplier, rangeLabel, rangeMultiplier } from "../domain/raidRange";
 import { createRaidState } from "../domain/raidFlow";
 import { raidBackground } from "../raidAssets";
 import RaidScreen from "./RaidScreen";
@@ -50,7 +49,6 @@ export default function RaidSandbox() {
       },
       stats: { atk: p.atk, def: p.def, hp: p.hp },
       distanceM,
-      faceSizeCm: getTargetFaceFormat(targetFmt).faceSizeCm,
       targetFmt,
     }));
     setRunId(n => n + 1);
@@ -159,17 +157,24 @@ export default function RaidSandbox() {
         <input type="range" min={RAID_DISTANCES[0]} max={RAID_DISTANCES[RAID_DISTANCES.length - 1]}
           value={distanceM} onChange={e => setDistanceM(Number(e.target.value))} style={{ width: "100%" }} />
         {(() => {
-          const mult = rangeMultiplier({ distanceM, faceSizeCm: getTargetFaceFormat(targetFmt).faceSizeCm });
+          const dm = distanceMultiplier(distanceM);
+          const fm = faceMultiplier(targetFmt);
+          const mult = rangeMultiplier({ distanceM, targetFmt });
           const lab = rangeLabel(mult);
           return (
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginTop: 4 }}>
-              <span style={{ color: "#94a3b8" }}>{distanceM} 米</span>
-              <span style={{ color: lab.color, fontWeight: 900 }}>{lab.text}　傷害 ×{mult.toFixed(2)}</span>
-            </div>
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginTop: 4 }}>
+                <span style={{ color: "#94a3b8" }}>{distanceM} 米</span>
+                <span style={{ color: lab.color, fontWeight: 900 }}>傷害 ×{mult.toFixed(2)}</span>
+              </div>
+              <div style={{ fontSize: 10, color: "#64748b", marginTop: 4 }}>
+                距離 ×{dm.toFixed(2)} × 靶紙 ×{fm.toFixed(1)}
+              </div>
+            </>
           );
         })()}
         <div style={{ fontSize: 10, color: "#64748b", marginTop: 6, lineHeight: 1.6 }}>
-          難度看的是「視角大小」＝靶紙直徑 ÷ 距離。17cm 靶射 18 米比 40cm 靶射 18 米難得多，加成也高。
+          5 米＝新手標準射程（×1.00），退越遠加成越高（18 米 ×1.90）。靶紙倍率另外相乘。
         </div>
       </div>
 

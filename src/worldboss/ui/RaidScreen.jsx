@@ -4,7 +4,7 @@
 // ⚠️ 演出鐵律：domain 產生 log，這裡**照 log 的原順序**重播（buildRaidTimeline）。
 //    不按事件類型分桶——公會就是那樣才會「怪物全滅前直接跳過戰鬥動畫」。
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { raidFaceLabel } from "../domain/raidFaces";
+import { maxArrowsPerFace, raidFaceLabel } from "../domain/raidFaces";
 import { sfxLockOn, sfxRaidEvent, sfxTap, unlockAudio, vibrate } from "../../lib/sound";
 import { burstMultiplier, isBurstActive } from "../domain/breakGauge";
 import { intentForRound } from "../domain/bossIntent";
@@ -153,6 +153,7 @@ export default function RaidScreen({
   const full = pending.length >= RAID_ARROWS_PER_ROUND;
 
   const range = rangeLabel(state.rangeMult || 1);
+  const faceCap = maxArrowsPerFace(targetFmt);
 
   return (
     <div className="raid-stage" style={{
@@ -240,7 +241,16 @@ export default function RaidScreen({
           arrows={pending}
           radius={122}
           onArrow={rec => addArrow(rec)}
+          onFullFace={i => {
+            setMessage(`${["左", "中", "右"][i] || ""}靶已經吃滿 ${faceCap} 箭了——換一張射。`);
+            sfxTap();
+          }}
         />
+        {faceCap != null && (
+          <div style={{ fontSize: 10.5, color: "#fbbf24", textAlign: "center", lineHeight: 1.6 }}>
+            ⚠️ 三連靶：每張靶最多只吃 <b>{faceCap} 箭</b>，六箭要平均分到左／中／右
+          </div>
+        )}
 
         <div style={{ display: "flex", gap: 8 }}>
           {pending.length > 0 && !playing && (

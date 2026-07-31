@@ -15,7 +15,7 @@ import { currentPhase, phaseTransition } from "./raidPhases";
 import { resolveWeakPointHit, rollWeakSpots } from "./weakPoints";
 import { rangeMultiplier } from "./raidRange";
 import { rookieMultiplier } from "./raidRookie";
-import { faceCountOf } from "./raidFaces";
+import { faceCountOf, maxArrowsPerFace } from "./raidFaces";
 
 export const RAID_TOTAL_ROUNDS = 5;
 
@@ -35,8 +35,7 @@ export function createRaidState({
   dmgReducePct = 0,
   gauge = null,               // 進場快照（全場共享；戰鬥中只用本地樂觀值）
   distanceM = 10,             // 射程（5~18 米）
-  faceSizeCm = 17,            // 靶紙直徑；貓小隊常用 17cm 半靶
-  targetFmt = "half_17",      // 三連靶時圈會分佈在三張靶上
+  targetFmt = "half_17",      // 決定靶紙倍率、張數、每張上限
   archerLevel = 1,            // 射手等級 → 新手扶助（50 級以下，見 raidRookie.js）
   rand = Math.random,
 } = {}) {
@@ -50,8 +49,8 @@ export function createRaidState({
     bossHp: Math.max(0, Math.min(maxHp, Number(boss?.hp ?? maxHp))),
     stats: { atk: Number(stats?.atk) || 0, def: Number(stats?.def) || 0, hp: Number(stats?.hp) || 100 },
     participantBonus, dmgBonusPct, dmgReducePct,
-    distanceM, faceSizeCm,
-    rangeMult: rangeMultiplier({ distanceM, faceSizeCm }),
+    distanceM,
+    rangeMult: rangeMultiplier({ distanceM, targetFmt }),
     archerLevel,
     // 補償在戰鬥模型「外面」：一個乘在最後的倍率，跟弱點數值完全分離
     rookieMult: rookieMultiplier(archerLevel),
@@ -97,6 +96,9 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
   log.push({ type: "intent", round, intent, staggered });
 
   let spotHits = 0;
+  // 三連靶：每張靶最多吃 2 箭的傷害，六箭必須 2/2/2 分完
+  const faceCap = maxArrowsPerFace(s.targetFmt);
+  const arrowsOnFace = {};
   let combo = 0;
   let roundDamage = 0;
   let roundBreak = 0;
@@ -125,12 +127,17 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
       s.stats.atk, s.boss.def, s.participantBonus, s.dmgBonusPct,
     ) * hit.normalMult * RAID_NORMAL_DAMAGE_SCALE;
 
-    const flat = hit.flatDamage;
-    const breakGain = hit.breakPoints;
+    // 這張靶滿了嗎（只有三連靶會有上限）
+    const faceIdx = arrow?.faceIndex || 0;
+    arrowsOnFace[faceIdx] = (arrowsOnFace[faceIdx] || 0) + 1;
+    const overCap = faceCap != null && arrowsOnFace[faceIdx] > faceCap;
+
+    const flat = overCap ? 0 : hit.flatDamage;
+    const breakGain = overCap ? 0 : hit.breakPoints;
 
     const burst = burstMultiplier(s.gauge, round);
     // 射程倍率乘在整箭上：距離是這一場的設定，對新手老手一視同仁，不影響貢獻比
-    const damage = Math.max(0, Math.round(
+    const damage = overCap ? 0 : Math.max(0, Math.round(
       (normal + flat) * burst * (s.rangeMult || 1) * (s.rookieMult || 1),
     ));
 
@@ -138,7 +145,7 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
     roundDamage += damage;
     s.totals.damage += damage;
 
-    if (hit.hit) {
+    if (hit.hit && !overCap) {
       combo += 1;
       s.totals.weakHits += 1;
       s.totals.bestCombo = Math.max(s.totals.bestCombo, combo);
@@ -154,8 +161,8 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
     log.push({
       type: "arrow", round, index,
       label: arrow?.label ?? String(arrow?.score ?? ""),
-      spot: hit.spot, hit: hit.hit, missed: hit.missed, bullseye: hit.bullseye,
-      maxScored: hit.hit,
+      spot: hit.spot, hit: hit.hit && !overCap, missed: hit.missed, bullseye: hit.bullseye && !overCap,
+      maxScored: hit.hit && !overCap, overCap, faceIndex: faceIdx,
       grazed: !hit.hit && !hit.missed,
       nx: arrow?.nx, ny: arrow?.ny,
       bonuses: hit.bonuses, burst: burst > 1,

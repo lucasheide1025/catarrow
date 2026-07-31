@@ -8,7 +8,8 @@
 import { calcWorldBossArrowDmg } from "../../lib/damage";
 import { RAID_TOTAL_ROUNDS, createRaidState, resolveRaidRound } from "./raidFlow";
 import { WEAK_SPOTS, WEAK_SPOT_MAP } from "./weakPoints";
-import { RANGE_MAX_MULT, RANGE_MIN_MULT, rangeMultiplier } from "./raidRange";
+import { distanceMultiplier, rangeMultiplier } from "./raidRange";
+import { RAID_FACES, faceMultiplier, maxArrowsPerFace } from "./raidFaces";
 import { rookieMultiplier } from "./raidRookie";
 
 const BOSS_HP = 200000;
@@ -180,32 +181,116 @@ describe("破防貢獻：新手真的排得上去", () => {
   });
 });
 
-describe("射程加成（貓小隊：17cm 半靶、5~18 米）", () => {
-  test("同一張靶紙，退得越遠加成越高", () => {
-    const at = d => rangeMultiplier({ distanceM: d, faceSizeCm: 17 });
-    expect(at(18)).toBeGreaterThan(at(12));
-    expect(at(12)).toBeGreaterThan(at(5));
+describe("環境倍率＝距離 × 靶紙（作者 2026-07-31 定案）", () => {
+  test("距離：5 米＝×1.00（新手標準射程），退越遠越高", () => {
+    expect(distanceMultiplier(5)).toBe(1);
+    expect(distanceMultiplier(10)).toBeGreaterThan(distanceMultiplier(5));
+    expect(distanceMultiplier(18)).toBeGreaterThan(distanceMultiplier(12));
   });
 
-  test("同一個距離，靶紙越小加成越高——這才是難度的來源", () => {
-    expect(rangeMultiplier({ distanceM: 18, faceSizeCm: 17 }))
-      .toBeGreaterThan(rangeMultiplier({ distanceM: 18, faceSizeCm: 40 }));
-    expect(rangeMultiplier({ distanceM: 18, faceSizeCm: 40 }))
-      .toBeGreaterThan(rangeMultiplier({ distanceM: 18, faceSizeCm: 122 }));
+  test("距離開平方是刻意的：難度加倍不讓傷害也加倍", () => {
+    expect(distanceMultiplier(18) / distanceMultiplier(9)).toBeLessThan(2);
   });
 
-  test("開平方是刻意的：難度加倍不讓傷害也加倍，否則大家只會一路退到 18 米", () => {
-    expect(rangeMultiplier({ distanceM: 18, faceSizeCm: 17 })
-      / rangeMultiplier({ distanceM: 9, faceSizeCm: 17 })).toBeLessThan(2);
+  test("靶紙倍率：半靶 1.0 / 全靶 1.2 / 原野靶 1.4 / 三連靶 1.5", () => {
+    expect(faceMultiplier("half_17")).toBe(1.0);
+    expect(faceMultiplier("full_110")).toBe(1.2);
+    expect(faceMultiplier("field_16")).toBe(1.4);
+    expect(faceMultiplier("triple")).toBe(1.5);
   });
 
-  test("倍率有上下限，不會失控", () => {
-    expect(rangeMultiplier({ distanceM: 1, faceSizeCm: 122 })).toBe(RANGE_MIN_MULT);
-    expect(rangeMultiplier({ distanceM: 90, faceSizeCm: 10 })).toBe(RANGE_MAX_MULT);
+  test("兩者相乘＝這一場的環境倍率", () => {
+    expect(rangeMultiplier({ distanceM: 5, targetFmt: "half_17" })).toBe(1);
+    expect(rangeMultiplier({ distanceM: 5, targetFmt: "triple" })).toBe(1.5);
+    expect(rangeMultiplier({ distanceM: 18, targetFmt: "half_17" })).toBeCloseTo(1.9, 1);
   });
 
-  test("靶紙沒有尺寸資料（原野靶）→ 不給也不扣", () => {
-    expect(rangeMultiplier({ distanceM: 18, faceSizeCm: null })).toBe(1);
+  test("壞資料不會炸", () => {
     expect(rangeMultiplier({})).toBe(1);
+    expect(rangeMultiplier({ distanceM: 0, targetFmt: "nope" })).toBe(1);
+  });
+
+  test("環境倍率對新手老手一視同仁——不影響貢獻比", () => {
+    const gapAt = opts => {
+      const run = p2 => {
+        let total = 0;
+        for (let i = 1; i <= 40; i += 1) {
+          const rand = seeded((i * 2654435761) % 2147483647);
+          let state = createRaidState({
+            boss: { key: "s", hp: BOSS_HP, maxHp: BOSS_HP, atk: 120, def: 50 },
+            stats: { atk: p2.atk, def: 60, hp: 300 },
+            archerLevel: 99, rand, ...opts,
+          });
+          for (let r = 0; r < RAID_TOTAL_ROUNDS; r += 1) {
+            const spots = state.spots || [];
+            const arrows = Array.from({ length: 6 }, (_, k) =>
+              arrowAt(spots.length ? spots[k % spots.length] : null, p2, rand));
+            state = { ...resolveRaidRound({ state, arrows, rand }).state, bossHp: BOSS_HP };
+          }
+          total += state.totals.damage;
+        }
+        return total;
+      };
+      return run(PROFILES.veteran) / run(PROFILES.rookie);
+    };
+    const near = gapAt({ distanceM: 5, targetFmt: "half_17" });
+    const far = gapAt({ distanceM: 18, targetFmt: "half_17" });
+    expect(Math.abs(near - far)).toBeLessThan(0.2);
+  });
+});
+
+describe("三連靶：每張靶最多吃 2 箭", () => {
+  test("只有三連靶有上限", () => {
+    expect(maxArrowsPerFace("triple")).toBe(2);
+    for (const f of RAID_FACES.filter(x => x.id !== "triple")) {
+      expect(maxArrowsPerFace(f.id)).toBeNull();
+    }
+  });
+
+  test("同一張靶的第 3 箭之後完全沒有傷害", () => {
+    const spot = { ...WEAK_SPOT_MAP.green, cx: 0, cy: 0, faceIndex: 0, key: "t" };
+    const state = {
+      ...createRaidState({
+        boss: { key: "s", hp: BOSS_HP, maxHp: BOSS_HP, atk: 120, def: 50 },
+        stats: { atk: 150, def: 60, hp: 300 },
+        targetFmt: "triple", archerLevel: 99,
+      }),
+      spots: [spot],
+    };
+    const arrows = Array.from({ length: 6 }, () => ({ nx: 0, ny: 0, faceIndex: 0, score: 10 }));
+    const { log } = resolveRaidRound({ state, arrows });
+    const shots = log.filter(e => e.type === "arrow");
+    expect(shots.slice(0, 2).every(e => e.damage > 0)).toBe(true);
+    expect(shots.slice(2).every(e => e.damage === 0 && e.overCap)).toBe(true);
+  });
+
+  test("分散到三張靶就不會浪費（2/2/2）", () => {
+    const spots = [0, 1, 2].map(i => ({ ...WEAK_SPOT_MAP.green, cx: 0, cy: 0, faceIndex: i, key: `t${i}` }));
+    const state = {
+      ...createRaidState({
+        boss: { key: "s", hp: BOSS_HP, maxHp: BOSS_HP, atk: 120, def: 50 },
+        stats: { atk: 150, def: 60, hp: 300 },
+        targetFmt: "triple", archerLevel: 99,
+      }),
+      spots,
+    };
+    const arrows = [0, 0, 1, 1, 2, 2].map(i => ({ nx: 0, ny: 0, faceIndex: i, score: 10 }));
+    const { log } = resolveRaidRound({ state, arrows });
+    expect(log.filter(e => e.type === "arrow").every(e => e.damage > 0 && !e.overCap)).toBe(true);
+  });
+
+  test("超過上限的箭不算弱點命中、也不給破防", () => {
+    const spot = { ...WEAK_SPOT_MAP.red, cx: 0, cy: 0, faceIndex: 1, key: "t" };
+    const state = {
+      ...createRaidState({
+        boss: { key: "s", hp: BOSS_HP, maxHp: BOSS_HP, atk: 120, def: 50 },
+        stats: { atk: 150, def: 60, hp: 300 },
+        targetFmt: "triple", archerLevel: 99,
+      }),
+      spots: [spot],
+    };
+    const arrows = Array.from({ length: 5 }, () => ({ nx: 0, ny: 0, faceIndex: 1, score: 10 }));
+    const { state: after } = resolveRaidRound({ state, arrows });
+    expect(after.totals.weakHits).toBe(2);
   });
 });
