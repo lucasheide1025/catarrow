@@ -11,6 +11,8 @@ export default function RaidPlayerCard({
   cats = [],
   appearance = "baobao",
   compact = false,
+  baseStats = null,      // 有組隊加成時傳原始值，顯示「100 → 130」
+  teamLabel = "",
 }) {
   const pct = Math.max(0, Math.min(100, (hp / (maxHp || 1)) * 100));
   const rookie = rookieBadge(archerLevel);
@@ -58,8 +60,16 @@ export default function RaidPlayerCard({
 
         {!compact && (
           <div style={{ fontSize: 9.5, color: "#94a3b8", marginTop: 2 }}>
-            ⚔️{atk}　🛡️{def}
+            ⚔️{baseStats && baseStats.atk !== atk
+              ? <><s style={{ opacity: .5 }}>{baseStats.atk}</s> <b style={{ color: "#4ade80" }}>{atk}</b></>
+              : atk}
+            　🛡️{baseStats && baseStats.def !== def
+              ? <><s style={{ opacity: .5 }}>{baseStats.def}</s> <b style={{ color: "#4ade80" }}>{def}</b></>
+              : def}
           </div>
+        )}
+        {teamLabel && (
+          <div style={{ fontSize: 9, color: "#4ade80", fontWeight: 900, marginTop: 2 }}>🤝 {teamLabel}</div>
         )}
       </div>
 

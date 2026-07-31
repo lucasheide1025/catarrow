@@ -26,7 +26,19 @@ export const RAID_MIN_TEAM = 2;
 //    不放大則四個人每回合都能破防、打斷變成免費。0.6 / 0.7 是讓
 //    「人多比較容易，但還是要配合」的係數。
 export const TEAM_INTERRUPT_SCALE = 0.6;
-export const TEAM_GAUGE_SCALE = 0.7;
+// ⚠️ 2026-07-31 從 0.7 一路調到 0.2——作者要「破防更快」，而 0.7 時四人的槽是 93，
+//    推進雖然快 4 倍，門檻也長了 3.1 倍，玩家**感覺不到差別**。
+//    現在四人是 48：輸入 4 倍、門檻 1.6 倍 → 實際快 2.5 倍，這才叫更快。
+//
+// ⚠️ 為什麼不用「每次命中推的點數 ×倍率」那種做法：綠點只有 1 點，
+//    Math.round(1 × 1.45) 還是 1——**取整會把加成整個吃掉**（測試抓到的）。
+//    調門檻沒有這個問題，而且只有一個旋鈕，好懂也好調。
+export const TEAM_GAUGE_SCALE = 0.2;
+
+// 組隊三維加成：每多一位隊友，全隊一起變強
+// ⚠️ 跟「參戰助戰」（getParticipantBonus，全場人數 +5% ATK）是**兩套**，不要混。
+//    那個是被動的、沒組隊也吃得到；這個是組隊專屬的。
+export const TEAM_STAT_BONUS = Object.freeze({ atk: 0.10, def: 0.08, hp: 0.12 });
 
 export function teamSizeOf(state) {
   return Math.max(1, Math.min(RAID_MAX_TEAM, state?.members?.length || 1));
@@ -43,6 +55,29 @@ export function teamInterruptRequired(phaseId = 1, teamSize = 1) {
 export function teamGaugeMax(teamSize = 1) {
   const n = Math.max(1, Math.min(RAID_MAX_TEAM, teamSize));
   return Math.ceil(BREAK_GAUGE_MAX * (1 + (n - 1) * TEAM_GAUGE_SCALE));
+}
+
+/**
+ * 組隊三維加成。單人時全部是 1（不會偷偷加成）。
+ *   2 人 → ATK+10% DEF+8% HP+12%
+ *   4 人 → ATK+30% DEF+24% HP+36%
+ */
+export function teamStatBonus(teamSize = 1) {
+  const extra = Math.max(0, Math.min(RAID_MAX_TEAM, teamSize) - 1);
+  return {
+    atk: 1 + TEAM_STAT_BONUS.atk * extra,
+    def: 1 + TEAM_STAT_BONUS.def * extra,
+    hp: 1 + TEAM_STAT_BONUS.hp * extra,
+    label: extra ? `隊伍加成 ATK+${Math.round(TEAM_STAT_BONUS.atk * extra * 100)}%・DEF+${Math.round(TEAM_STAT_BONUS.def * extra * 100)}%・HP+${Math.round(TEAM_STAT_BONUS.hp * extra * 100)}%` : "",
+  };
+}
+
+// 破防「實際上快多少倍」——給 UI 講人話用。
+// ＝ 人數（每回合的箭數）÷ 門檻成長
+export function teamBreakSpeedup(teamSize = 1) {
+  const n = Math.max(1, Math.min(RAID_MAX_TEAM, teamSize));
+  const threshold = teamGaugeMax(n) / teamGaugeMax(1);
+  return Math.round((n / threshold) * 100) / 100;
 }
 
 /**

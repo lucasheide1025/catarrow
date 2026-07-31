@@ -16,7 +16,7 @@ import { resolveWeakPointHit, rollWeakSpots } from "./weakPoints";
 import { rangeMultiplier } from "./raidRange";
 import { rookieMultiplier } from "./raidRookie";
 import { faceCountOf, maxArrowsPerFace } from "./raidFaces";
-import { teamGaugeMax, teamInterruptRequired, teamSizeOf } from "./raidTeam";
+import { teamGaugeMax, teamInterruptRequired, teamSizeOf, teamStatBonus } from "./raidTeam";
 
 export const RAID_TOTAL_ROUNDS = 5;
 
@@ -50,13 +50,23 @@ export function createRaidState({
 } = {}) {
   const maxHp = Math.max(1, Number(boss?.maxHp || boss?.hp) || 1);
 
-  const roster = (Array.isArray(members) && members.length ? members : [{
+  const rawRoster = (Array.isArray(members) && members.length ? members : [{
     memberId: "me", name: "我", stats, archerLevel, cats,
-  }]).map((m, i) => {
-    const st = { atk: Number(m.stats?.atk) || 0, def: Number(m.stats?.def) || 0, hp: Number(m.stats?.hp) || 100 };
+  }]);
+  // 組隊三維加成：人越多全隊越強（單人時倍率全是 1）
+  const buff = teamStatBonus(rawRoster.length);
+
+  const roster = rawRoster.map((m, i) => {
+    const base = { atk: Number(m.stats?.atk) || 0, def: Number(m.stats?.def) || 0, hp: Number(m.stats?.hp) || 100 };
+    const st = {
+      atk: Math.round(base.atk * buff.atk),
+      def: Math.round(base.def * buff.def),
+      hp: Math.round(base.hp * buff.hp),
+    };
     return {
       memberId: m.memberId || `m${i}`,
       name: m.name || `隊員${i + 1}`,
+      baseStats: base,
       stats: st,
       archerLevel: Number(m.archerLevel) || 1,
       rookieMult: rookieMultiplier(Number(m.archerLevel) || 1),
@@ -76,6 +86,7 @@ export function createRaidState({
     },
     bossHp: Math.max(0, Math.min(maxHp, Number(boss?.hp ?? maxHp))),
     members: roster,
+    teamBuff: buff,
     stats: roster[0].stats,
     participantBonus, dmgBonusPct, dmgReducePct,
     distanceM,
@@ -212,6 +223,8 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
     });
 
     if (breakGain > 0) {
+      // 「破防更快」是靠門檻成長比人數慢做到的（見 raidTeam.TEAM_GAUGE_SCALE），
+      // 不是靠加乘每次命中的點數——那樣會被取整吃掉。
       shooter.breakPoints += breakGain;
       const adv = advanceBreakGauge(s.gauge, breakGain, {
         phaseGaugeMult: phaseNow.gaugeMult, round, gaugeMax: teamGaugeMax(teamSize),

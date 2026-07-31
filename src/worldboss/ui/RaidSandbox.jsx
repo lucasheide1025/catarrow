@@ -10,7 +10,7 @@ import { WORLD_BOSS_SKILLS } from "../../lib/worldBossSkillData";
 import { DEFAULT_RAID_FACE, RAID_FACES, faceMultiplier } from "../domain/raidFaces";
 import { RAID_DISTANCES, RAID_DEFAULT_DISTANCE, distanceMultiplier, rangeLabel, rangeMultiplier } from "../domain/raidRange";
 import { rookieMultiplier } from "../domain/raidRookie";
-import { RAID_MAX_TEAM, canTeamDepart, teamGaugeMax, teamInterruptRequired } from "../domain/raidTeam";
+import { RAID_MAX_TEAM, canTeamDepart, teamBreakSpeedup, teamGaugeMax, teamInterruptRequired, teamStatBonus } from "../domain/raidTeam";
 import { RAID_DAILY_ATTEMPTS, consumeAttempt } from "../domain/raidQuota";
 import { CATS, CAT_TYPE_MAP } from "../../lib/catData";
 import { calcCatCombatStats } from "../../lib/catCombat";
@@ -224,9 +224,12 @@ export default function RaidSandbox() {
           const check = canTeamDepart(roster, "2026-07-31");
           return (
             <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 10, color: "#4ade80", fontWeight: 900, lineHeight: 1.7 }}>
+                🤝 {teamStatBonus(teamCount).label}
+              </div>
               <div style={{ fontSize: 10, color: "#94a3b8", lineHeight: 1.7 }}>
-                打斷需求 {teamInterruptRequired(1, teamCount)} 次（單人 {teamInterruptRequired(1, 1)}）
-                破防槽 {teamGaugeMax(teamCount)}（單人 {teamGaugeMax(1)}）
+                破防槽 {teamGaugeMax(teamCount)}（單人 {teamGaugeMax(1)}）→ <b style={{ color: "#fbbf24" }}>破防快 {teamBreakSpeedup(teamCount)}×</b><br />
+                打斷需求 {teamInterruptRequired(1, teamCount)} 次／{teamCount * 6} 箭（單人 {teamInterruptRequired(1, 1)}／6 箭）
               </div>
               <button type="button"
                 onClick={() => setSpentIdx(spentIdx === 1 ? -1 : 1)}

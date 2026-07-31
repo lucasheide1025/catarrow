@@ -270,6 +270,8 @@ export default function RaidScreen({
             atk={state.stats.atk} def={state.stats.def}
             archerLevel={state.archerLevel} cats={state.cats}
             appearance={appearance}
+            baseStats={state.members?.[0]?.baseStats}
+            teamLabel={teamSize > 1 ? (state.teamBuff?.label || "") : ""}
           />
 
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>

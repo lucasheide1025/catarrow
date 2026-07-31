@@ -9,6 +9,8 @@ import {
   teamGaugeMax,
   teamInterruptRequired,
   teamQuotaSummary,
+  teamBreakSpeedup,
+  teamStatBonus,
 } from "./raidTeam";
 import { RAID_DAILY_ATTEMPTS, attemptsUsed, canRaid, consumeAttempt, remainingAttempts } from "./raidQuota";
 import { RAID_TOTAL_ROUNDS, createRaidState, resolveRaidRound } from "./raidFlow";
@@ -222,5 +224,90 @@ describe("組隊實際結算", () => {
     }
     expect(state.finished).toBe(true);
     expect(state.totals.damage).toBeGreaterThan(0);
+  });
+});
+
+describe("組隊三維加成（作者 2026-07-31）", () => {
+  test("單人完全沒有加成——不能偷偷加", () => {
+    const b = teamStatBonus(1);
+    expect(b.atk).toBe(1);
+    expect(b.def).toBe(1);
+    expect(b.hp).toBe(1);
+    expect(b.label).toBe("");
+  });
+
+  test("人越多三維越高，且三種都會漲", () => {
+    const two = teamStatBonus(2);
+    const four = teamStatBonus(4);
+    expect(two.atk).toBeGreaterThan(1);
+    expect(four.atk).toBeGreaterThan(two.atk);
+    expect(four.def).toBeGreaterThan(two.def);
+    expect(four.hp).toBeGreaterThan(two.hp);
+  });
+
+  test("超過上限不會繼續疊", () => {
+    expect(teamStatBonus(9).atk).toBe(teamStatBonus(RAID_MAX_TEAM).atk);
+  });
+
+  test("加成真的套進隊員數值（不是只有標籤）", () => {
+    const solo = createRaidState({
+      boss: { key: "t", hp: 1000, maxHp: 1000, atk: 10, def: 5 },
+      members: [{ memberId: "a", stats: { atk: 100, def: 50, hp: 200 } }],
+    });
+    const team = createRaidState({
+      boss: { key: "t", hp: 1000, maxHp: 1000, atk: 10, def: 5 },
+      members: Array.from({ length: 4 }, (_, i) => ({ memberId: `m${i}`, stats: { atk: 100, def: 50, hp: 200 } })),
+    });
+    expect(team.members[0].stats.atk).toBeGreaterThan(solo.members[0].stats.atk);
+    expect(team.members[0].stats.def).toBeGreaterThan(solo.members[0].stats.def);
+    expect(team.members[0].maxHp).toBeGreaterThan(solo.members[0].maxHp);
+    // 原始值要留著，UI 才能顯示「100 → 130」
+    expect(team.members[0].baseStats.atk).toBe(100);
+  });
+
+  test("加成後的 HP 就是起始 HP（不會加了上限卻沒補血）", () => {
+    const team = createRaidState({
+      boss: { key: "t", hp: 1000, maxHp: 1000, atk: 10, def: 5 },
+      members: Array.from({ length: 3 }, (_, i) => ({ memberId: `m${i}`, stats: { atk: 100, def: 50, hp: 200 } })),
+    });
+    for (const m of team.members) expect(m.hp).toBe(m.maxHp);
+  });
+});
+
+describe("破防更快（作者 2026-07-31）", () => {
+  test("⚠️ 綜合起來破防真的更快——門檻成長比「人數 × 默契」慢", () => {
+    expect(teamBreakSpeedup(1)).toBe(1);
+    expect(teamBreakSpeedup(2)).toBeGreaterThan(1.2);
+    expect(teamBreakSpeedup(4)).toBeGreaterThan(2);
+  });
+
+  test("⚠️ 不用「每次命中 ×倍率」——綠點只有 1 點，round(1×1.45) 還是 1，加成會被取整吃掉", () => {
+    // 這條是實測踩到的：門檻調整沒有這個問題
+    expect(teamGaugeMax(4) / teamGaugeMax(1)).toBeLessThan(4);
+  });
+
+  // ⚠️ 要量的是「一回合把槽推了幾成」，不是原始點數——
+  //    點數本來就跟人數成正比（4 人 = 4 倍），那不叫更快。
+  test("實際結算：四人一回合把破防槽推得比單人多得多（比例）", () => {
+    const spot = { ...WEAK_SPOT_MAP.green, cx: 0, cy: 0, key: "t" };
+    const run = n => {
+      const st = {
+        ...createRaidState({
+          boss: { key: "t", hp: 900000, maxHp: 900000, atk: 120, def: 50 },
+          members: Array.from({ length: n }, (_, i) => ({
+            memberId: `m${i}`, stats: { atk: 120, def: 60, hp: 250 }, archerLevel: 60,
+          })),
+        }),
+        spots: [spot],
+      };
+      const arrows = st.members.flatMap(m =>
+        Array.from({ length: 6 }, () => ({ memberId: m.memberId, nx: 0, ny: 0, score: 10 })));
+      const after = resolveRaidRound({ state: st, arrows }).state;
+      return after.gauge.gauge / teamGaugeMax(n);     // 推了幾成
+    };
+    const solo = run(1);
+    const four = run(4);
+    expect(four).toBeGreaterThan(solo * 2);           // 四人至少快兩倍以上
+    expect(four / solo).toBeCloseTo(teamBreakSpeedup(4), 1);
   });
 });
