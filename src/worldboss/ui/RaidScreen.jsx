@@ -399,8 +399,36 @@ export default function RaidScreen({
           <RaidSpotLegend spots={spots} />
 
           <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
-            {/* 左：玩家資訊一塊 */}
+            {/* 左：玩家資訊一塊。
+                ⚠️ **開始戰鬥後整塊隱藏**（作者 2026-07-31）：小隊站位已經有「我」的立繪
+                   與王卡皇冠，這裡再放一次就是同一個人出現兩次。
+                   演出期間改成一行精簡狀態，資訊不掉但不佔高度也不重複。 */}
             <div style={{ flex: 1, minWidth: 0 }}>
+              {teamRevealed ? (
+                <div style={{
+                  display: "flex", flexDirection: "column", justifyContent: "center",
+                  height: "100%", gap: 4, paddingLeft: 2,
+                }}>
+                  <div style={{ fontSize: 11, fontWeight: 900, color: "#cbd5e1" }}>
+                    {playing ? "⚔️ 戰鬥進行中" : "⏳ 等隊友送出"}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{ flex: 1, height: 5, borderRadius: 3, background: "rgba(255,255,255,.1)", overflow: "hidden", maxWidth: 120 }}>
+                      <div style={{
+                        height: "100%", transition: "width .3s",
+                        width: `${Math.max(0, Math.min(100, (state.playerHp / (state.playerMaxHp || 1)) * 100))}%`,
+                        background: state.playerHp / (state.playerMaxHp || 1) > 0.3 ? "#22c55e" : "#ef4444",
+                      }} />
+                    </div>
+                    <span style={{ fontSize: 9.5, color: "#94a3b8", whiteSpace: "nowrap" }}>
+                      {Math.max(0, Math.round(state.playerHp))}/{Math.round(state.playerMaxHp)}
+                      　{Math.min(state.round, RAID_TOTAL_ROUNDS)}/{RAID_TOTAL_ROUNDS} 回合
+                      {burstOn && <b style={{ color: "#fde68a" }}>　💥×{burstMultiplier(displayGauge, state.round)}</b>}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+              <>
               <RaidPlayerCard
                 name={playerName} hp={state.playerHp} maxHp={state.playerMaxHp}
                 atk={state.stats.atk} def={state.stats.def}
@@ -427,6 +455,8 @@ export default function RaidScreen({
                   {burstOn && <b style={{ color: "#fde68a" }}>　💥×{burstMultiplier(displayGauge, state.round)}</b>}
                 </span>
               </div>
+              </>
+              )}
             </div>
 
             {/* 右：小按鈕 */}
