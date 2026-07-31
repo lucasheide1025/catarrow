@@ -14,6 +14,7 @@ import { RAID_ARROWS_PER_ROUND, RAID_TOTAL_ROUNDS, raidHpRatio, resolveRaidRound
 import { buildRaidTimeline, describeEvent } from "../domain/raidTimeline";
 import { RaidBossBar, RaidGauge, RaidIntent, RaidSpotLegend, RaidTeamBar } from "./RaidHud";
 import { teamGaugeMax, teamSizeOf } from "../domain/raidTeam";
+import { botTeamArrows } from "../domain/raidBot";
 import RaidBoss from "./RaidBoss";
 import RaidTarget from "./RaidTarget";
 import RaidPlayerCard from "./RaidPlayerCard";
@@ -28,6 +29,8 @@ export default function RaidScreen({
   bgUrl = null,
   playerName = "射手",
   appearance = "baobao",
+  // 沙盒用：自動幫隊友出手，單機也驗得到組隊邏輯。正式組隊時是 null（箭來自真人）
+  botSkill = null,
   // ⚠️ 靶面輸入是**強制**的（作者 2026-07-31）：弱點的精準判定要靠落點，
   //    按分數鍵給不出位置，整套「射在紙上的位置＝射在牠身上的位置」就不成立。
   targetFmt = "half_17",
@@ -86,7 +89,16 @@ export default function RaidScreen({
     if (playing || state.finished || !pending.length) return;
     setPlaying(true);
     setMessage("");
-    const { state: next, log } = resolveRaidRound({ state, arrows: pending });
+    // 模擬隊友出手：把 bot 的箭跟我的箭合在一起結算，才驗得到組隊的邏輯
+    const meId = state.members?.[0]?.memberId;
+    const mine = pending.map(a => ({ ...a, memberId: meId }));
+    const botArrows = botSkill
+      ? botTeamArrows({
+        members: state.members, meId, spots,
+        skill: botSkill, arrows: RAID_ARROWS_PER_ROUND, targetFmt,
+      })
+      : [];
+    const { state: next, log } = resolveRaidRound({ state, arrows: [...mine, ...botArrows] });
     const timeline = buildRaidTimeline(log);
     let liveLegs = 0;
 
@@ -199,7 +211,7 @@ export default function RaidScreen({
       onState?.(next, log);
       if (next.finished) onFinish?.(next);
     }, total + 240));
-  }, [playing, pending, state, onState, onFinish, pushFloat]);
+  }, [playing, pending, state, spots, botSkill, targetFmt, onState, onFinish, pushFloat]);
 
   const full = pending.length >= RAID_ARROWS_PER_ROUND;
 

@@ -12,6 +12,7 @@ import { RAID_DISTANCES, RAID_DEFAULT_DISTANCE, distanceMultiplier, rangeLabel, 
 import { rookieMultiplier } from "../domain/raidRookie";
 import { RAID_MAX_TEAM, canTeamDepart, teamBreakSpeedup, teamGaugeMax, teamInterruptRequired, teamStatBonus } from "../domain/raidTeam";
 import { RAID_DAILY_ATTEMPTS, consumeAttempt } from "../domain/raidQuota";
+import { BOT_SKILLS } from "../domain/raidBot";
 import { CATS, CAT_TYPE_MAP } from "../../lib/catData";
 import { calcCatCombatStats } from "../../lib/catCombat";
 import { createRaidState } from "../domain/raidFlow";
@@ -39,6 +40,7 @@ export default function RaidSandbox() {
   const [archerLevel, setArcherLevel] = useState(10);
   const [teamCount, setTeamCount] = useState(1);
   const [spentIdx, setSpentIdx] = useState(-1);   // 模擬「某個隊員次數用完」
+  const [botSkill, setBotSkill] = useState("mid");
   const [hpScale, setHpScale] = useState(0.05);   // 沙盒預設把血調低，才看得到階段轉換
   const [runId, setRunId] = useState(0);
   const [state, setState] = useState(null);
@@ -86,6 +88,7 @@ export default function RaidSandbox() {
         bossTitle={boss?.title}
         participants={24}
         playerName={`${PRESETS[preset].label}`}
+        botSkill={teamCount > 1 ? botSkill : null}
         appearance={catId === "none" ? "baobao" : catId}
         bgUrl={raidBackground(boss?.family)}
         targetFmt={targetFmt}
@@ -230,6 +233,23 @@ export default function RaidSandbox() {
               <div style={{ fontSize: 10, color: "#94a3b8", lineHeight: 1.7 }}>
                 破防槽 {teamGaugeMax(teamCount)}（單人 {teamGaugeMax(1)}）→ <b style={{ color: "#fbbf24" }}>破防快 {teamBreakSpeedup(teamCount)}×</b><br />
                 打斷需求 {teamInterruptRequired(1, teamCount)} 次／{teamCount * 6} 箭（單人 {teamInterruptRequired(1, 1)}／6 箭）
+              </div>
+              <div style={{ fontSize: 10, fontWeight: 900, color: "#c7d2fe", marginTop: 8, marginBottom: 4 }}>
+                模擬隊友的準度（單機也驗得到組隊邏輯）
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 5 }}>
+                {BOT_SKILLS.map(sk => (
+                  <button key={sk.id} type="button" onClick={() => setBotSkill(sk.id)}
+                    style={{
+                      padding: "7px 2px", borderRadius: 8, cursor: "pointer",
+                      border: `2px solid ${botSkill === sk.id ? "#60a5fa" : "rgba(255,255,255,.1)"}`,
+                      background: botSkill === sk.id ? "rgba(96,165,250,.16)" : "#1e293b",
+                      color: "#e2e8f0", fontSize: 11, fontWeight: 900,
+                    }}>
+                    {sk.label}
+                    <div style={{ fontSize: 8, color: "#94a3b8", fontWeight: 700 }}>{sk.desc}</div>
+                  </button>
+                ))}
               </div>
               <button type="button"
                 onClick={() => setSpentIdx(spentIdx === 1 ? -1 : 1)}

@@ -213,6 +213,41 @@ blockers 會指名道姓，UI 才說得出是誰卡住。
 每支箭用射手自己的 ATK 與**自己的**新手扶助結算，傷害與破防記在各自名下；
 王的大招與平砍打**全隊**；全隊倒下才算結束。
 
+## 7.6 Firestore 房間與逐回合同步
+
+`worldBossRaidRooms/{roomId}`（規則比照 `villageBoardRooms`，登入者可讀寫）：
+
+```
+code / hostId / status(waiting|active|done)
+bossKey / targetFmt / distanceM
+round / seq
+members: { [id]: { name, atk, def, hp, archerLevel, cats, ready } }
+submissions: { [id]: { round, arrows:[{nx,ny,faceIndex,score,label}] } }
+state: <序列化的戰鬥狀態>   lastLog: <這回合的 log，隊員照播>
+```
+
+**一回合的流程**：每人射完 → `submitRaidArrows`（自己寫自己那格）→
+全員送出（`roomPhase.canResolve`）→ **房主** `resolveRaidRoomRound` 在自己裝置上跑純函數 →
+寫回 `state` / `lastLog` / `seq+1` / 清空 submissions → 隊員看到 `seq` 變了就重播 log。
+
+> ⚠️ **成本**：一回合寫 5 次（4 人送出 + 房主結算），4 個監聽者 → 20 次讀取／回合，
+> 一場約 100 次。**絕對不要改成「每射一箭就寫房間」**——那就是 `changelog.md:310`
+> 那個 4000 次讀取的坑。
+
+**序列化的兩個坑**（`raidRoomState.js`，有測試守著）：
+1. `boss.skillConfig` **不進 Firestore**——那是 24 王的完整技能表，每回合搬一次太貴。
+   改存 `bossKey`，讀回來再用 `WORLD_BOSS_SKILLS` 掛上。
+2. **不能有 `undefined`**——Firestore 會拒絕整筆寫入。序列化用**白名單**（之後 state
+   長出新欄位也不會被順手同步上去）。
+
+## 7.7 模擬隊友出手（沙盒）
+
+`raidBot.js`：用箭群散佈模擬隊友的準度（新手／中階／老手），
+產生跟真人同形狀的箭直接餵進結算——**一個人開不了四個裝置，組隊邏輯只能這樣驗**。
+會把箭分散到場上的圈、三連靶時分到不同張靶，所以「每張限 2 箭」也驗得到。
+
+⚠️ 這是沙盒／測試用的；正式組隊的箭一律來自真人（`submitRaidArrows`）。
+
 ## 8. 架構
 
 ```

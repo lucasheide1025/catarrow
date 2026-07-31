@@ -524,6 +524,11 @@ service cloud.firestore {
       allow read, write: if isLoggedIn();
     }
 
+    // worldBossRaidRooms：世界王組隊討伐房間，登入者可讀寫（比照 villageBoardRooms）
+    match /worldBossRaidRooms/{roomId} {
+      allow read, write: if isLoggedIn();
+    }
+
     // zombieRooms：殭屍生存模式房間（Phase 0）
     // Phase 0 使用寬鬆規則（比照 dungeonRooms/partyRooms），
     // 後續 Phase 加入主機驗證與欄位層級控管。
