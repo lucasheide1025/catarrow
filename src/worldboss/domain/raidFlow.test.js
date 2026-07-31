@@ -1,7 +1,7 @@
 import { BREAK_GAUGE_MAX, advanceBreakGauge, applyUltGaugePenalty, burstMultiplier, emptyGaugeState, isBurstActive } from "./breakGauge";
 import { INTERRUPT_REQUIRED, intentForRound, isChargeRound, resolveIntent } from "./bossIntent";
 import { RAID_TOTAL_ROUNDS, createRaidState, raidHpRatio, resolveRaidRound } from "./raidFlow";
-import { buildRaidTimeline, describeEvent, timelineDuration } from "./raidTimeline";
+import { buildRaidTimeline, describeEvent, groupRaidVolleys, timelineDuration } from "./raidTimeline";
 import { WB_PHASES, currentPhase, phaseTransition } from "./raidPhases";
 import { WEAK_SPOT_MAP } from "./weakPoints";
 
@@ -289,6 +289,8 @@ describe("結束條件（2026-07-31 抓到的洞：回合會一直往上加）",
   test("玩家被打倒也算結束", () => {
     const weak = newState();
     weak.round = 4;                     // R4 終結技才可能打死
+    // ⚠️ 組隊重構後血量在 members[]，playerHp 只是「我」的鏡像
+    weak.members = weak.members.map(m => ({ ...m, hp: 1 }));
     weak.playerHp = 1;
     weak.stats = { ...weak.stats, def: 0 };
     weak.boss = { ...weak.boss, atk: 9999, skillConfig: { r4Finisher: { skillId: "x", name: "終結", baseMultiplier: 2.2, canKnockOut: true } } };
@@ -400,5 +402,139 @@ describe("王的技能演出（2026-07-31）", () => {
     for (const e of log.filter(x => ["ultCast", "ultHit", "counterSwing"].includes(x.type))) {
       expect(describeEvent(e)).toBeTruthy();
     }
+  });
+});
+
+describe("齊射分組（2026-07-31：組隊逐箭播太長）", () => {
+  const arrowEvt = (memberId, i, over = {}) => ({
+    type: "arrow", round: 1, memberId, shooterName: memberId, index: i,
+    damage: 10, hit: false, bossHp: 100 - i, ...over,
+  });
+
+  test("同一人的箭三支一組——6 箭變成 2 次演出", () => {
+    const log = Array.from({ length: 6 }, (_, i) => arrowEvt("a", i));
+    const grouped = groupRaidVolleys(log, 3);
+    expect(grouped.filter(e => e.type === "volley")).toHaveLength(2);
+    expect(grouped[0].arrows).toHaveLength(3);
+  });
+
+  test("⚠️ 換人就切開——不然傷害會記到別人頭上", () => {
+    const log = [arrowEvt("a", 0), arrowEvt("a", 1), arrowEvt("b", 2), arrowEvt("b", 3)];
+    const grouped = groupRaidVolleys(log, 3);
+    expect(grouped).toHaveLength(2);
+    expect(grouped[0].memberId).toBe("a");
+    expect(grouped[1].memberId).toBe("b");
+  });
+
+  test("傷害與命中數是整組加總，一支都不會漏", () => {
+    const log = [
+      arrowEvt("a", 0, { damage: 10, hit: true }),
+      arrowEvt("a", 1, { damage: 20 }),
+      arrowEvt("a", 2, { damage: 30, hit: true, bullseye: true }),
+    ];
+    const [v] = groupRaidVolleys(log, 3);
+    expect(v.damage).toBe(60);
+    expect(v.hits).toBe(2);
+    expect(v.bullseyes).toBe(1);
+    expect(v.arrows).toHaveLength(3);
+  });
+
+  test("只有一支箭就不併（維持原本的事件）", () => {
+    const grouped = groupRaidVolleys([arrowEvt("a", 0)], 3);
+    expect(grouped[0].type).toBe("arrow");
+  });
+
+  test("非箭矢事件原樣保留，順序不變", () => {
+    const log = [
+      { type: "roundStart", round: 1 },
+      arrowEvt("a", 0), arrowEvt("a", 1),
+      { type: "breakthrough", round: 1 },
+      arrowEvt("a", 2), arrowEvt("a", 3),
+      { type: "roundEnd", round: 1 },
+    ];
+    const types = groupRaidVolleys(log, 3).map(e => e.type);
+    expect(types).toEqual(["roundStart", "volley", "breakthrough", "volley", "roundEnd"]);
+  });
+
+  test("貓貓協戰也分組", () => {
+    const log = Array.from({ length: 4 }, (_, i) => ({
+      type: "catAssist", round: 1, cat: { name: `貓${i}` }, damage: 5, bossHp: 90 - i,
+    }));
+    const grouped = groupRaidVolleys(log, 3);
+    expect(grouped[0].type).toBe("catVolley");
+    expect(grouped[0].cats).toHaveLength(3);
+    expect(grouped[0].damage).toBe(15);
+  });
+
+  test("⚠️ 隊友的貓也會出手——8 人各帶一隻就有 8 次協戰", () => {
+    const st = createRaidState({
+      boss: boss(900000),
+      members: Array.from({ length: 8 }, (_, i) => ({
+        memberId: `m${i}`, name: `隊員${i}`,
+        stats: { atk: 100, def: 50, hp: 200 },
+        cats: [{ catId: `c${i}`, name: `貓${i}`, atk: 70 }],
+      })),
+    });
+    const { log } = resolveRaidRound({ state: { ...st, spots: [] }, arrows: [] });
+    expect(log.filter(e => e.type === "catAssist")).toHaveLength(8);
+    // 分組後仍然是 8 隻貓的傷害，一隻都沒少
+    const grouped = groupRaidVolleys(log, 3);
+    const total = grouped.filter(e => e.type === "catVolley").reduce((a, e) => a + e.damage, 0)
+      + grouped.filter(e => e.type === "catAssist").reduce((a, e) => a + e.damage, 0);
+    expect(total).toBe(log.filter(e => e.type === "catAssist").reduce((a, e) => a + e.damage, 0));
+  });
+
+  test("整場演出時間明顯縮短（8 人局）", () => {
+    const log = Array.from({ length: 8 }, (_, m) =>
+      Array.from({ length: 6 }, (_, i) => arrowEvt(`m${m}`, i))).flat();
+    const solo = timelineDuration(buildRaidTimeline(log));
+    const grouped = timelineDuration(buildRaidTimeline(groupRaidVolleys(log, 3)));
+    expect(grouped).toBeLessThan(solo * 0.6);
+  });
+});
+
+describe("破防槽 tick 也要併（實測整場演出砍不下來的真正原因）", () => {
+  test("連續的 gauge 事件合成一個，增量加總、槽值取最後", () => {
+    const log = [
+      { type: "arrow", memberId: "a", damage: 1 },
+      { type: "gauge", gained: 1, gauge: { gauge: 1 } },
+      { type: "gauge", gained: 2, gauge: { gauge: 3 } },
+      { type: "gauge", gained: 1, gauge: { gauge: 4 } },
+      { type: "roundEnd" },
+    ];
+    const grouped = groupRaidVolleys(log, 3);
+    const gauges = grouped.filter(e => e.type === "gauge");
+    expect(gauges).toHaveLength(1);
+    expect(gauges[0].gained).toBe(4);
+    expect(gauges[0].gauge.gauge).toBe(4);
+  });
+
+  test("破防爆發不會被吃掉——那是必須看到的事件", () => {
+    const log = [
+      { type: "gauge", gained: 1, gauge: { gauge: 29 } },
+      { type: "breakthrough", round: 1 },
+      { type: "gauge", gained: 1, gauge: { gauge: 1 } },
+    ];
+    const types = groupRaidVolleys(log, 3).map(e => e.type);
+    expect(types).toEqual(["gauge", "breakthrough", "gauge"]);
+  });
+
+  test("⚠️ 8 人滿編一場的演出要壓在 15 秒內", () => {
+    const st = createRaidState({
+      boss: boss(900000),
+      members: Array.from({ length: 8 }, (_, i) => ({
+        memberId: `m${i}`, name: `隊員${i}`,
+        stats: { atk: 120, def: 60, hp: 250 },
+        cats: [{ catId: `c${i}`, name: `貓${i}`, atk: 70 }],
+      })),
+    });
+    const spot = { ...WEAK_SPOT_MAP.green, cx: 0, cy: 0, key: "t" };
+    const arrows = st.members.flatMap(m =>
+      Array.from({ length: 6 }, () => ({ memberId: m.memberId, nx: 0, ny: 0, score: 10 })));
+    const { log } = resolveRaidRound({ state: { ...st, spots: [spot] }, arrows });
+    const raw = timelineDuration(buildRaidTimeline(log));
+    const grouped = timelineDuration(buildRaidTimeline(groupRaidVolleys(log)));
+    expect(grouped).toBeLessThan(15000);
+    expect(grouped).toBeLessThan(raw * 0.5);
   });
 });

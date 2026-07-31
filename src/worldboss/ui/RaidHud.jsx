@@ -148,7 +148,7 @@ export function RaidSpotTable() {
 /* 小隊站位。比照冒險者公會的擺法（GuildTeamBattle 的小隊站位）：
    **立繪大、沒有外框、只有名字與血條**——加了外框跟傷害數字反而把立繪擠小，
    一排四個人在手機上根本看不清是誰。傷害留到結算頁再看。 */
-export function RaidTeamBar({ members = [], submitted = {}, meId = null }) {
+export function RaidTeamBar({ members = [], submitted = {}, meId = null, activeId = null }) {
   if (members.length < 2) return null;
   // ⚠️ 上限是 8 人（射箭場容量），一排 8 個 58px 在手機上排不下。
   //    人多就縮小並允許換行——寧可小一點也不要被切掉。
@@ -166,7 +166,9 @@ export function RaidTeamBar({ members = [], submitted = {}, meId = null }) {
         const isMe = m.memberId === meId;
         const hpPct = Math.max(0, Math.min(100, (m.hp / (m.maxHp || 1)) * 100));
         return (
-          <div key={m.memberId} style={{ textAlign: "center", opacity: dead ? 0.42 : 1 }}>
+          <div key={m.memberId}
+            className={`raid-member${m.memberId === activeId ? " raid-member-active raid-member-step" : ""}`}
+            style={{ textAlign: "center", opacity: dead ? 0.42 : 1 }}>
             <img
               src={raidArcherArt(m.appearance || archerForMember(m.memberId))} alt=""
               onError={e => { e.currentTarget.style.visibility = "hidden"; }}

@@ -1386,6 +1386,11 @@ export function sfxRaidEvent(event) {
       if (event.grazed || event.blocked) return sfxDeflect();
       if (event.hit) { sfxWeakHit(); if (event.combo >= 3) sfxCombo(event.combo); return; }
       return sfxArrowHit();
+    case "volley":
+      // 齊射：只放一次音，三聲疊在一起會糊掉
+      if (event.hits) { sfxWeakHit(); if (event.combo >= 3) sfxCombo(event.combo); return; }
+      return sfxArrowHit();
+    case "catVolley":  return sfxWeakHit();
     case "gauge":        return sfxGaugeTick((event.gauge?.gauge || 0) / 30);
     case "breakthrough": return sfxBreakthrough();
     case "interrupt":    return sfxInterrupt();

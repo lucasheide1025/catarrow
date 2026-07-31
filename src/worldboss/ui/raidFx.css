@@ -148,7 +148,9 @@
   -webkit-text-stroke: 1.5px #b45309;
   animation: raid-dmg-weak 1.15s cubic-bezier(.15,.95,.25,1) forwards;
 }
-.raid-dmg-normal { font-size: 24px; color: #f1f5f9; }
+/* 上靶但沒中弱點：照樣顯示扣了多少血，但視覺明顯小一號——
+   跟弱點命中的金色大字一眼分得出來，玩家才知道「有用，但沒打到點上」 */
+.raid-dmg-normal { font-size: 21px; color: #cbd5e1; opacity: .92; }
 .raid-dmg-graze  { font-size: 19px; color: #94a3b8; }
 @keyframes raid-dmg-pop {
   0%   { transform: translate(-50%,0) scale(.5); opacity: 0; }
@@ -329,4 +331,25 @@
 @media (prefers-reduced-motion: reduce) {
   .raid-boss-windup, .raid-boss-lunge, .raid-skill-banner { animation: none !important; }
   .raid-hurt { animation-duration: .01s; opacity: 0; }
+}
+
+/* ── 輪到誰誰上前（2026-07-31）──────────────────────────
+   組隊時 8 個人站一排，不標示的話根本不知道現在誰在射。
+   比照公會的 gt-aim：上前一步＋放大＋外框發光。 */
+.raid-member { transition: transform .22s cubic-bezier(.3,1.3,.5,1), filter .22s; }
+.raid-member-active {
+  transform: translateY(-11px) scale(1.16);
+  z-index: 5;
+}
+.raid-member-active img { filter: drop-shadow(0 4px 10px rgba(0,0,0,.7)) drop-shadow(0 0 9px #fbbf24) !important; }
+.raid-member-step { animation: raid-member-step .5s ease-out; }
+@keyframes raid-member-step {
+  0%   { transform: translateY(0) scale(1); }
+  30%  { transform: translateY(-14px) scale(1.2); }
+  100% { transform: translateY(-11px) scale(1.16); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .raid-member, .raid-member-active, .raid-member-step { animation: none !important; transform: none !important; }
+  .raid-member-active img { filter: drop-shadow(0 0 9px #fbbf24) !important; }
 }

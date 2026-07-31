@@ -11,7 +11,7 @@ import { intentForRound } from "../domain/bossIntent";
 import { hitSpot } from "../domain/weakPoints";
 import { PHASE_TINTS, currentPhase } from "../domain/raidPhases";
 import { RAID_ARROWS_PER_ROUND, RAID_TOTAL_ROUNDS, raidHpRatio, resolveRaidRound } from "../domain/raidFlow";
-import { buildRaidTimeline, describeEvent } from "../domain/raidTimeline";
+import { buildRaidTimeline, describeEvent, groupRaidVolleys } from "../domain/raidTimeline";
 import { RaidBossBar, RaidGauge, RaidIntent, RaidSpotLegend, RaidTeamBar } from "./RaidHud";
 import { teamGaugeMax, teamSizeOf } from "../domain/raidTeam";
 import { botTeamArrows } from "../domain/raidBot";
@@ -48,6 +48,8 @@ export default function RaidScreen({
   const [hurt, setHurt] = useState(false);
   const [skillBanner, setSkillBanner] = useState(null);
   const [pierceMark, setPierceMark] = useState(null);
+  // 輪到誰誰上前——8 個人站一排，不標的話不知道現在誰在射
+  const [activeShooter, setActiveShooter] = useState(null);
   const [floats, setFloats] = useState([]);
   const [message, setMessage] = useState("");
   // 手機畫面塞不下「靶面＋狀態列」，所以靶面收進覆蓋層，按「開始射擊」才打開
@@ -100,7 +102,8 @@ export default function RaidScreen({
       })
       : [];
     const { state: next, log } = resolveRaidRound({ state, arrows: [...mine, ...botArrows] });
-    const timeline = buildRaidTimeline(log);
+    // 三箭一組再播：8 人局逐箭要 25 秒，分組後砍到一半以內
+    const timeline = buildRaidTimeline(groupRaidVolleys(log));
     let liveLegs = 0;
 
     timeline.forEach(event => {
@@ -110,6 +113,7 @@ export default function RaidScreen({
 
         switch (event.type) {
           case "arrow": {
+            setActiveShooter(event.memberId || null);
             setShown(s => ({ ...(s || {}), bossHp: event.bossHp, hpRatio: event.bossHpRatio, legHits: liveLegs }));
             if (event.hit) {
               liveLegs += event.spot?.id === "red" ? 2 : 1;
@@ -118,12 +122,15 @@ export default function RaidScreen({
               pushFloat(`-${event.damage}`, "weak");
               vibrate(24);
             } else if (event.missed) {
-              pushFloat("脫靶", "graze");
-            } else if (event.grazed || event.blocked) {
-              pushFloat(event.blocked ? "被護住" : "擦過", "graze");
-              vibrate(8);
+              pushFloat("脫靶", "graze");          // 脫靶＝真的沒傷害
+            } else if (event.overCap) {
+              pushFloat("無效", "graze");          // 這張靶已經吃滿了
             } else {
+              // ⚠️ 上靶但沒中弱點：**照樣要顯示扣了多少血**（作者 2026-07-31）。
+              //    原本這裡只印「擦過」兩個字，把傷害數字吃掉了——玩家會以為這箭沒用。
+              //    但特效要明顯小一號：只有數字＋輕微震動，不撲擊、不噴粒子、不震畫面。
               pushFloat(`-${event.damage}`, "normal");
+              vibrate(6);
             }
             setTimeout(() => { setBossAnim(null); setShake(null); }, 260);
             break;
@@ -133,6 +140,33 @@ export default function RaidScreen({
             setBossAnim("flinch"); setShake("soft");
             pushFloat(`-${event.damage}`, event.skill ? "weak" : "normal");
             setTimeout(() => { setBossAnim(null); setShake(null); }, 240);
+            break;
+          case "volley": {
+            setActiveShooter(event.memberId || null);
+            setShown(s2 => ({ ...(s2 || {}), bossHp: event.bossHp, hpRatio: event.bossHpRatio, legHits: liveLegs }));
+            liveLegs += event.arrows.reduce((a, x) => a + (x.hit ? (x.spot?.id === "red" ? 2 : 1) : 0), 0);
+            setShown(s2 => ({ ...(s2 || {}), legHits: liveLegs }));
+            // 每支箭的數字都要看得到——只是錯開一點，不然疊在一起
+            event.arrows.forEach((a, i) => {
+              setTimeout(() => {
+                if (a.missed) pushFloat("脫靶", "graze");
+                else if (a.overCap) pushFloat("無效", "graze");
+                else pushFloat(`-${a.damage}`, a.hit ? "weak" : "normal");
+              }, i * 130);
+            });
+            if (event.hits) { setBossAnim("flinch"); setShake("soft"); vibrate(24); }
+            else vibrate(6);
+            setTimeout(() => { setBossAnim(null); setShake(null); }, 420);
+            break;
+          }
+          case "catVolley":
+            setActiveShooter(null);          // 貓上場，射手退回站位
+            setShown(s2 => ({ ...(s2 || {}), bossHp: event.bossHp, hpRatio: event.bossHpRatio }));
+            event.cats.forEach((c, i) => {
+              setTimeout(() => pushFloat(`-${c.damage}`, c.skill ? "weak" : "normal"), i * 120);
+            });
+            setBossAnim("flinch"); setShake("soft");
+            setTimeout(() => { setBossAnim(null); setShake(null); }, 380);
             break;
           case "gauge":
             setShown(s => ({ ...(s || {}), gauge: event.gauge }));
@@ -224,6 +258,7 @@ export default function RaidScreen({
     const total = timeline.length ? timeline[timeline.length - 1].atMs + timeline[timeline.length - 1].durationMs : 0;
     timers.current.push(setTimeout(() => {
       setPlaying(false);
+      setActiveShooter(null);
       setScoring(false);
       setPending([]);
       setShown(null);
@@ -279,7 +314,8 @@ export default function RaidScreen({
       <div style={{ position: "relative", zIndex: 4, marginTop: "auto", marginBottom: 4 }}>
         {/* ⚠️ 小隊站位不能用絕對定位——8 個人會壓在王身上 */}
         {teamSize > 1 && (
-          <RaidTeamBar members={shown?.members || state.members} submitted={{}} meId={state.members?.[0]?.memberId} />
+          <RaidTeamBar members={shown?.members || state.members} submitted={{}}
+            meId={state.members?.[0]?.memberId} activeId={activeShooter} />
         )}
 
         <RaidIntent intent={intent} legHits={legHits} />
