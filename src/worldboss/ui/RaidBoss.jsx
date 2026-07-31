@@ -41,6 +41,8 @@ export default function RaidBoss({
   const bossClass = [
     "raid-boss",
     anim === "fall" ? "raid-boss-fall"
+      : anim === "windup" ? "raid-boss-windup"
+      : anim === "lunge" ? "raid-boss-lunge"
       : anim === "roar" ? "raid-boss-roar"
       : anim === "flinch" ? "raid-boss-flinch"
       : staggered ? "raid-boss-stagger"

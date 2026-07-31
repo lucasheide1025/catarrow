@@ -10,7 +10,11 @@ export const RAID_STEP_MS = Object.freeze({
   breakthrough: 1600,   // 全場最重的一個，要讓白閃＋慢動作跑完
   interrupt:    1300,
   phaseShift:   1500,
-  ult:          1100,
+  ultCast:      1100,   // 技能名橫幅掃過＋王的前搖
+  ultHit:       420,    // 每一段命中
+  statusApply:  700,
+  ultEnd:       420,
+  counterSwing: 340,
   counter:      700,
   catAssist:    620,
   bossDown:     2200,
@@ -54,7 +58,16 @@ export function describeEvent(event) {
     case "breakthrough": return "💥 破防！全員增傷";
     case "interrupt":    return `💢 打斷「${event.intent?.name || ""}」——破綻！`;
     case "phaseShift":   return `${event.phase?.name || ""}：${event.phase?.flavor || ""}`;
-    case "ult":          return `${event.intent?.name || "強攻"} 命中 −${event.damage}${event.weakened ? "（已削弱）" : ""}`;
+    case "ultCast":
+      return `${event.intent?.name || "強攻"} 發動！${event.hits > 1 ? `${event.hits} 連擊` : ""}${event.weakened ? "（已被削弱）" : ""}`;
+    case "ultHit":
+      return event.hits > 1
+        ? `第 ${event.index + 1} 擊 −${event.damage}`
+        : `命中 −${event.damage}`;
+    case "statusApply":
+      return `${event.status?.name || "異常"}：${event.status?.effect || ""}`;
+    case "ultEnd":       return "";
+    case "counterSwing": return "牠揮了過來——";
     case "counter":      return `牠反擊 −${event.damage}`;
     case "bossDown":     return "牠倒下了。";
     default:             return "";

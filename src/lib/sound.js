@@ -1361,6 +1361,21 @@ export function sfxWorldBossFall() {
         { gain: 0.16, send: 0.45, spread: true });
 }
 
+// 王的每一段命中：連擊時音高逐段上行，最後一段最重
+export function sfxBossHit(index = 0, last = false) {
+  const step = Math.min(6, index);
+  impact({ dur: last ? 0.34 : 0.18, cut0: 7000, cut1: last ? 140 : 420,
+    gain: last ? 0.38 : 0.26, send: 0.18 });
+  punch({ freq: 220 + step * 40, drop: 0.5, dur: last ? 0.2 : 0.12,
+    gain: last ? 0.3 : 0.2, type: "sawtooth", send: 0.12 });
+  if (last) sub({ freq: 44, dur: 0.4, gain: 0.45 });
+}
+
+// 平砍的前搖：空氣被劃開
+export function sfxBossSwing() {
+  swell({ up: false, dur: 0.26, gain: 0.14, send: 0.2 });
+}
+
 // log 事件 → 音效。UI 只要照時間軸呼叫這一支，不必自己判斷。
 export function sfxRaidEvent(event) {
   if (!event) return;
@@ -1374,7 +1389,10 @@ export function sfxRaidEvent(event) {
     case "gauge":        return sfxGaugeTick((event.gauge?.gauge || 0) / 30);
     case "breakthrough": return sfxBreakthrough();
     case "interrupt":    return sfxInterrupt();
-    case "ult":          return sfxBossUlt();
+    case "ultCast":      return sfxBossUlt();
+    case "ultHit":       return sfxBossHit(event.index || 0, event.last);
+    case "statusApply":  return sfxDebuff();
+    case "counterSwing": return sfxBossSwing();
     case "counter":      return sfxCounter();
     case "phaseShift":   return sfxPhaseShift();
     case "bossDown":     return sfxWorldBossFall();

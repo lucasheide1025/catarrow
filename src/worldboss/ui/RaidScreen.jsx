@@ -40,6 +40,9 @@ export default function RaidScreen({
   const [flash, setFlash] = useState(false);
   const [shake, setShake] = useState(null);
   const [bossAnim, setBossAnim] = useState(null);
+  const [hurt, setHurt] = useState(false);
+  const [skillBanner, setSkillBanner] = useState(null);
+  const [pierceMark, setPierceMark] = useState(null);
   const [floats, setFloats] = useState([]);
   const [message, setMessage] = useState("");
   // 手機畫面塞不下「靶面＋狀態列」，所以靶面收進覆蓋層，按「開始射擊」才打開
@@ -136,9 +139,44 @@ export default function RaidScreen({
             setBanner({ text: event.phase?.name || "", color: "#c084fc" });
             setTimeout(() => { setBossAnim(null); setShake(null); setBanner(null); }, 1400);
             break;
-          case "ult":
-            setShake("hard"); vibrate([60, 40, 60]);
-            setTimeout(() => setShake(null), 520);
+          case "ultCast": {
+            // 技能名血字掃過＋王的前搖。名字與顏色都來自既有的 24 王技能資料。
+            setSkillBanner({
+              name: event.intent?.name || "強攻",
+              color: event.intent?.color || "#f43f5e",
+              sub: event.hits > 1 ? `${event.hits} 連擊` : (event.weakened ? "已被削弱" : ""),
+            });
+            setBossAnim("windup");
+            vibrate(30);
+            setTimeout(() => setSkillBanner(null), 1100);
+            setTimeout(() => setBossAnim(null), 900);
+            // 穿甲／破盾這種副效果也要看得到，不然玩家不知道自己的防具被無視了
+            if (event.pierce) setPierceMark({ text: `🗡️ 穿甲 ${event.pierce}%`, color: "#fca5a5" });
+            else if (event.shieldPierce) setPierceMark({ text: `🛡️💥 破盾 ${event.shieldPierce}%`, color: "#93c5fd" });
+            if (event.pierce || event.shieldPierce) setTimeout(() => setPierceMark(null), 900);
+            break;
+          }
+          case "ultHit":
+            setBossAnim("lunge");
+            setShake(event.last ? "hard" : "soft");
+            setHurt(true);
+            vibrate(event.last ? [60, 40, 60] : 35);
+            setTimeout(() => { setBossAnim(null); setShake(null); setHurt(false); }, event.last ? 460 : 300);
+            break;
+          case "statusApply":
+            setPierceMark({ text: `☠️ ${event.status?.name || "異常"}`, color: "#c084fc" });
+            setTimeout(() => setPierceMark(null), 800);
+            break;
+          case "ultEnd":
+            break;
+          case "counterSwing":
+            setBossAnim("windup");
+            setTimeout(() => setBossAnim(null), 320);
+            break;
+          case "counter":
+            setBossAnim("lunge"); setShake("soft"); setHurt(true);
+            vibrate(25);
+            setTimeout(() => { setBossAnim(null); setShake(null); setHurt(false); }, 320);
             break;
           case "bossDown":
             setBossAnim("fall"); setBanner({ text: "討伐成功", color: "#fde68a", wave: true });
@@ -384,6 +422,19 @@ export default function RaidScreen({
 
       {/* 全螢幕演出層 */}
       {flash && <div className="raid-flash" style={{ zIndex: 20 }} />}
+      {hurt && <div className="raid-hurt" />}
+      {skillBanner && (
+        <div className="raid-skill-banner"
+          style={{ color: skillBanner.color, textShadow: `0 0 26px ${skillBanner.color}, 0 3px 10px rgba(0,0,0,.9)` }}>
+          {skillBanner.name}
+          {skillBanner.sub && <span className="raid-skill-sub" style={{ color: "#e2e8f0" }}>{skillBanner.sub}</span>}
+        </div>
+      )}
+      {pierceMark && (
+        <div className="raid-pierce-mark" style={{ color: pierceMark.color, textShadow: "0 2px 8px rgba(0,0,0,.9)" }}>
+          {pierceMark.text}
+        </div>
+      )}
       {banner && (
         <>
           {banner.wave && <div className="raid-shockwave" style={{ zIndex: 21 }} />}

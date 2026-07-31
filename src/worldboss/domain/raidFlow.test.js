@@ -176,7 +176,8 @@ describe("一個回合的結算", () => {
     base.round = 2;
     base.gauge = { ...emptyGaugeState(), gauge: 20 };
     const { state, log } = resolveRaidRound({ state: base, arrows: outsideSpot() });
-    expect(log.some(e => e.type === "ult")).toBe(true);
+    expect(log.some(e => e.type === "ultCast")).toBe(true);
+    expect(log.some(e => e.type === "ultHit")).toBe(true);
     expect(state.playerHp).toBeLessThan(base.playerHp);
     expect(state.gauge.gauge).toBeLessThan(20);
   });
@@ -342,5 +343,62 @@ describe("貓貓陪練（2026-07-31 補上）", () => {
     nearly.bossHp = 1;
     const { log } = resolveRaidRound({ state: nearly, arrows: atCentre() });
     expect(log.filter(e => e.type === "catAssist")).toHaveLength(0);
+  });
+});
+
+describe("王的技能演出（2026-07-31）", () => {
+  const ultRound = (skill, arrows = outsideSpot()) => {
+    const st = withSpot(newState());
+    st.round = 2;
+    st.boss = { ...st.boss, skillConfig: { r2Strike: { skillId: "s", name: "測試技", baseMultiplier: 1.6, ...skill } } };
+    return resolveRaidRound({ state: st, arrows });
+  };
+
+  test("大招拆成 詠唱 → 命中 → 收尾，UI 才有東西可以演", () => {
+    const { log } = ultRound({});
+    const types = log.map(e => e.type);
+    expect(types.indexOf("ultCast")).toBeLessThan(types.indexOf("ultHit"));
+    expect(types.indexOf("ultHit")).toBeLessThan(types.indexOf("ultEnd"));
+  });
+
+  test("⚠️ hits 是純演出段數——分段打但合計傷害不變", () => {
+    const one = ultRound({ hits: 1 });
+    const three = ultRound({ hits: 3 });
+    const sum = r => r.log.filter(e => e.type === "ultHit").reduce((a, e) => a + e.damage, 0);
+    expect(three.log.filter(e => e.type === "ultHit")).toHaveLength(3);
+    expect(sum(three)).toBe(sum(one));
+    expect(three.state.playerHp).toBe(one.state.playerHp);
+  });
+
+  test("最後一段有 last 旗標（給最重的那個演出用）", () => {
+    const hits = ultRound({ hits: 3 }).log.filter(e => e.type === "ultHit");
+    expect(hits.filter(e => e.last)).toHaveLength(1);
+    expect(hits[hits.length - 1].last).toBe(true);
+  });
+
+  test("穿甲／破盾帶進 ultCast，玩家才知道防具被無視", () => {
+    expect(ultRound({ armorPiercePct: 25 }).log.find(e => e.type === "ultCast").pierce).toBe(25);
+    expect(ultRound({ shieldPiercePct: 30 }).log.find(e => e.type === "ultCast").shieldPierce).toBe(30);
+  });
+
+  test("有異常才會有 statusApply", () => {
+    const withStatus = ultRound({ status: { id: "atkDownPct", name: "威壓", effect: "atkDownPct", strength: 20, duration: 1 } });
+    expect(withStatus.log.some(e => e.type === "statusApply")).toBe(true);
+    expect(ultRound({}).log.some(e => e.type === "statusApply")).toBe(false);
+  });
+
+  test("平砍也有前搖事件，不會憑空掉血", () => {
+    const st = withSpot(newState());
+    st.round = 1;
+    const { log } = resolveRaidRound({ state: st, arrows: outsideSpot() });
+    const types = log.map(e => e.type);
+    expect(types.indexOf("counterSwing")).toBeLessThan(types.indexOf("counter"));
+  });
+
+  test("每個新事件都有可顯示的文案（ultEnd 例外，它只收尾）", () => {
+    const { log } = ultRound({ hits: 2, armorPiercePct: 10 });
+    for (const e of log.filter(x => ["ultCast", "ultHit", "counterSwing"].includes(x.type))) {
+      expect(describeEvent(e)).toBeTruthy();
+    }
   });
 });

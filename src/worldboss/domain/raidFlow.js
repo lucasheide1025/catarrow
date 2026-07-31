@@ -224,17 +224,45 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
       const dealt = Math.max(1, Math.round(base * mult));
       // R2 保 1 血、R4 才可能打死（沿用既有 canKnockOut 設定）
       const floor = intent.skill?.canKnockOut ? 0 : 1;
-      s.playerHp = Math.max(floor, s.playerHp - dealt);
+      // ⚠️ skill.hits 是**純演出段數**（資料層註解寫得很清楚：合計傷害不變）。
+      //    拆成一段一段打，玩家才看得出「三連射」跟「一記重擊」的差別。
+      const hits = Math.max(1, Math.floor(Number(intent.skill?.hits) || 1));
+      log.push({
+        type: "ultCast", round, intent,
+        hits, weakened: outcome.ultMultiplier < 1,
+        pierce: intent.skill?.armorPiercePct || 0,
+        shieldPierce: intent.skill?.shieldPiercePct || 0,
+      });
+
+      let left = dealt;
+      for (let i = 0; i < hits; i += 1) {
+        const portion = i === hits - 1 ? left : Math.max(1, Math.round(dealt / hits));
+        left -= portion;
+        s.playerHp = Math.max(floor, s.playerHp - portion);
+        log.push({
+          type: "ultHit", round, intent, index: i, hits,
+          damage: portion, playerHp: s.playerHp,
+          knockedOut: s.playerHp <= 0 && intent.skill?.canKnockOut,
+          last: i === hits - 1,
+        });
+        if (s.playerHp <= floor && floor > 0) break;
+      }
+
+      if (intent.skill?.status) {
+        log.push({ type: "statusApply", round, status: intent.skill.status, intent });
+      }
+
       s.gauge = applyUltGaugePenalty(s.gauge);
       s.weakenStacks = 0;
       log.push({
-        type: "ult", round, intent, damage: dealt,
+        type: "ultEnd", round, intent, damage: dealt,
         weakened: outcome.ultMultiplier < 1, playerHp: s.playerHp,
         knockedOut: s.playerHp <= 0, gauge: { ...s.gauge },
       });
     } else {
       const base = calcWorldBossCounter(s.boss.atk, s.stats.def, s.dmgReducePct);
       s.playerHp = Math.max(1, s.playerHp - base);
+      log.push({ type: "counterSwing", round });
       log.push({ type: "counter", round, damage: base, playerHp: s.playerHp });
     }
   }
