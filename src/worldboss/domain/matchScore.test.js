@@ -1,5 +1,8 @@
+import { getTargetFaceFormat } from "../../lib/targetFace";
 import {
   MATCH_ARROWS_PER_END,
+  MATCH_FACE,
+  MATCH_MAX_END_SCORE,
   arrowPoints,
   canSubmitEnd,
   endAcceptance,
@@ -174,5 +177,26 @@ describe("⚠️ 重送不能重複計分（射箭場網路差，玩家一定會
   test("壞值當 0 處理", () => {
     expect(endAcceptance(undefined, undefined).accept).toBe(true);
     expect(endAcceptance(null, 0).accept).toBe(true);
+  });
+});
+
+describe("⚠️ 靶紙固定 1~10 分全靶（作者 2026-08-01）", () => {
+  test("就是 full_110，不給玩家選", () => {
+    expect(MATCH_FACE).toBe("full_110");
+  });
+
+  test("環值範圍真的是 1~10——半靶只印 6~10，混榜就不能比了", () => {
+    const fmt = getTargetFaceFormat(MATCH_FACE);
+    expect(fmt.minScore).toBe(1);
+    expect(fmt.maxScore).toBe(10);
+  });
+
+  test("一回合滿分 30", () => {
+    expect(MATCH_MAX_END_SCORE).toBe(30);
+    expect(endResult([a("X", 10), a("10", 10), a("10", 10)]).score).toBe(MATCH_MAX_END_SCORE);
+  });
+
+  test("全靶最低有效環是 1 分（半靶的 6 分底線不適用）", () => {
+    expect(arrowPoints(a("1", 1))).toBe(1);
   });
 });

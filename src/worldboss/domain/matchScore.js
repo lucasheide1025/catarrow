@@ -3,8 +3,8 @@
 // 🏆 比賽模式的計分。**這是真的比賽的計分系統**，不是遊戲數值。
 //
 // ⚠️ 所以分數一律是**靶紙上印的環數**（`arrow.score`），不是遊戲的
-//    standardScore、更不是傷害。半靶印 6~10 環，全靶印 1~10 環——
-//    比賽當天大家用同一種靶紙，照印的算才對得上紙本記分表。
+//    standardScore、更不是傷害。照印的算才對得上紙本記分表。
+//    靶紙固定 `full_110`（1~10 環全靶），整場一致才有可比性。
 //
 // ⚠️ 傷害是**裝飾**：只是把分數放大讓王的血條動起來，不進排名。
 //    排名永遠看 score。
@@ -13,6 +13,12 @@
 // ─────────────────────────────────────────────────────────────
 
 export const MATCH_ARROWS_PER_END = 3;      // 三箭一回合（作者指定）
+
+// ⚠️ 比賽靶紙**固定是 1~10 分的全靶**（作者 2026-08-01），不給玩家選。
+//    半靶只印 6~10 環——混在同一個排行榜上分數根本不能比。
+export const MATCH_FACE = "full_110";
+export const MATCH_MAX_ARROW_SCORE = 10;
+export const MATCH_MAX_END_SCORE = MATCH_ARROWS_PER_END * MATCH_MAX_ARROW_SCORE;   // 30
 export const MATCH_DAMAGE_PER_POINT = 120;  // 純視覺：1 分 = 120 傷害
 
 /** 一支箭的環值。M（脫靶）＝0，X＝10。 */

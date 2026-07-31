@@ -22,10 +22,9 @@ import {
   closeMatch, joinMatch, leaveMatch, reopenMatch, submitMatchEnd, subscribeMatch, todayMatchId,
 } from "../lib/raidMatchDb";
 import {
-  MATCH_ARROWS_PER_END, canSubmitEnd, endResult, matchBossRatio,
-  matchLeaderboard, matchTotals, myStanding,
+  MATCH_ARROWS_PER_END, MATCH_FACE, MATCH_MAX_END_SCORE, canSubmitEnd, endResult,
+  matchBossRatio, matchLeaderboard, matchTotals, myStanding,
 } from "./domain/matchScore";
-import { RAID_FACES } from "./domain/raidFaces";
 import { RAID_LOBBY_BG } from "./raidAssets";
 import MatchBossSVG from "./ui/MatchBossSVG";
 import MatchLeaderboard from "./ui/MatchLeaderboard";
@@ -33,7 +32,6 @@ import RaidTarget from "./ui/RaidTarget";
 import "./ui/raidFx.css";
 
 const PENDING_KEY = "wb_match_pending_v1";
-const FMT_KEY = "wb_match_fmt_v1";
 
 const card = {
   background: "rgba(15,23,42,.9)", borderRadius: 14, padding: 13, marginBottom: 10,
@@ -61,7 +59,6 @@ export default function MatchGate({ onBack, isAdmin = false }) {
 
   const [match, setMatch] = useState(null);
   const [screen, setScreen] = useState("lobby");      // lobby | shooting
-  const [targetFmt, setTargetFmt] = useState(() => localStorage.getItem(FMT_KEY) || "half_17");
   const [pending, setPending] = useState(() => loadPending(matchId));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -72,7 +69,6 @@ export default function MatchGate({ onBack, isAdmin = false }) {
 
   useEffect(() => subscribeMatch(matchId, setMatch), [matchId]);
   useEffect(() => { savePending(matchId, pending); }, [matchId, pending]);
-  useEffect(() => { localStorage.setItem(FMT_KEY, targetFmt); }, [targetFmt]);
 
   const players = match?.players || {};
   const board = useMemo(() => matchLeaderboard(players), [players]);
@@ -254,32 +250,13 @@ export default function MatchGate({ onBack, isAdmin = false }) {
           )}
         </div>
 
-        {/* 靶紙選擇：比賽當天可能換靶 */}
-        <div style={{ ...card, padding: 10 }}>
-          <div style={{ display: "grid", gridTemplateColumns: `repeat(${RAID_FACES.length},1fr)`, gap: 5 }}>
-            {RAID_FACES.map(f => (
-              <button key={f.id} type="button" onClick={() => setTargetFmt(f.id)}
-                disabled={pending.length > 0}
-                style={{
-                  padding: "7px 2px", borderRadius: 8,
-                  border: `2px solid ${targetFmt === f.id ? "#60a5fa" : "rgba(255,255,255,.1)"}`,
-                  background: targetFmt === f.id ? "rgba(96,165,250,.16)" : "#1e293b",
-                  color: "#e2e8f0", fontSize: 11, fontWeight: 900,
-                  cursor: pending.length ? "not-allowed" : "pointer",
-                  opacity: pending.length ? .45 : 1,
-                }}>{f.label}</button>
-            ))}
-          </div>
-          {pending.length > 0 && (
-            <div style={{ fontSize: 9.5, color: "#64748b", marginTop: 5, textAlign: "center" }}>
-              這回合射完才能換靶紙
-            </div>
-          )}
-        </div>
-
-        {/* 靶面 */}
+        {/* 靶面。⚠️ 固定全靶（1~10 環），不給選——整場要用同一種靶紙分數才可比 */}
         <div style={{ ...card, padding: 8 }}>
-          <RaidTarget fmtId={targetFmt} arrows={pending} radius={128}
+          <div style={{
+            fontSize: 10.5, color: "#94a3b8", fontWeight: 800,
+            textAlign: "center", marginBottom: 4,
+          }}>🎯 122cm 十環全靶（1~10 環）</div>
+          <RaidTarget fmtId={MATCH_FACE} arrows={pending} radius={128}
             onArrow={arrow => setPending(p => (p.length >= MATCH_ARROWS_PER_END ? p : [...p, arrow]))} />
           <div style={{ display: "flex", justifyContent: "center", gap: 7, marginTop: 8 }}>
             {Array.from({ length: MATCH_ARROWS_PER_END }, (_, i) => (
@@ -294,7 +271,7 @@ export default function MatchGate({ onBack, isAdmin = false }) {
               minWidth: 52, height: 34, borderRadius: 8, display: "grid", placeItems: "center",
               background: "rgba(15,23,42,.9)", border: "1px solid rgba(148,163,184,.2)",
               fontSize: 15, fontWeight: 900, color: "#fbbf24",
-            }}>{end.score}</div>
+            }}>{end.score}<span style={{ fontSize: 9, color: "#94a3b8" }}>/{MATCH_MAX_END_SCORE}</span></div>
           </div>
         </div>
 
