@@ -22,7 +22,7 @@ export function emptyGaugeState() {
  * 累積破防點數。phase 的 gaugeMult 在這裡吃（第三階段 ×1.5）。
  * 滿了就爆發並歸零——溢出的點數留到下一輪，連續破防才不會被吃掉。
  */
-export function advanceBreakGauge(state, points, { phaseGaugeMult = 1, round = 1 } = {}) {
+export function advanceBreakGauge(state, points, { phaseGaugeMult = 1, round = 1, gaugeMax = BREAK_GAUGE_MAX } = {}) {
   const prev = { ...emptyGaugeState(), ...(state || {}) };
   const gained = Math.max(0, Math.round((Number(points) || 0) * phaseGaugeMult));
   let gauge = prev.gauge + gained;
@@ -30,10 +30,11 @@ export function advanceBreakGauge(state, points, { phaseGaugeMult = 1, round = 1
   let burstUntilRound = prev.burstUntilRound;
   let bursts = prev.bursts;
 
-  if (gauge >= BREAK_GAUGE_MAX) {
+  const cap = Math.max(1, Math.round(Number(gaugeMax) || BREAK_GAUGE_MAX));
+  if (gauge >= cap) {
     triggered = true;
     bursts += 1;
-    gauge -= BREAK_GAUGE_MAX;            // 溢出保留
+    gauge -= cap;                        // 溢出保留
     burstUntilRound = round + BREAK_BURST_ROUNDS;
   }
 
@@ -56,7 +57,8 @@ export function burstMultiplier(state, round) {
   return isBurstActive(state, round) ? BREAK_BURST_MULT : 1;
 }
 
-export function gaugeRatio(state) {
+export function gaugeRatio(state, gaugeMax = BREAK_GAUGE_MAX) {
   const s = { ...emptyGaugeState(), ...(state || {}) };
-  return Math.max(0, Math.min(1, s.gauge / BREAK_GAUGE_MAX));
+  const cap = Math.max(1, Number(gaugeMax) || BREAK_GAUGE_MAX);
+  return Math.max(0, Math.min(1, s.gauge / cap));
 }

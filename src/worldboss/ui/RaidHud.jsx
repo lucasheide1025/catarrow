@@ -79,8 +79,8 @@ export function RaidIntent({ intent, legHits = 0, broken = false }) {
 }
 
 /* 破防槽：全場共享，算命中次數不算傷害——新手真的推得動的那一條 */
-export function RaidGauge({ gauge = 0, burstActive = false }) {
-  const filled = Math.round((gauge / BREAK_GAUGE_MAX) * GAUGE_CELLS);
+export function RaidGauge({ gauge = 0, max = BREAK_GAUGE_MAX, burstActive = false }) {
+  const filled = Math.round((gauge / (max || BREAK_GAUGE_MAX)) * GAUGE_CELLS);
   const near = filled >= GAUGE_CELLS - 4;
   return (
     <div style={{ padding: "5px 12px" }}>
@@ -88,7 +88,7 @@ export function RaidGauge({ gauge = 0, burstActive = false }) {
         <span style={{ color: burstActive ? "#fde68a" : "#cbd5e1" }}>
           {burstActive ? "💥 破防中！全員增傷" : "破防槽（全場共享）"}
         </span>
-        <span style={{ color: "#94a3b8" }}>{gauge} / {BREAK_GAUGE_MAX}</span>
+        <span style={{ color: "#94a3b8" }}>{gauge} / {max}</span>
       </div>
       <div style={{ display: "flex", gap: 2 }}>
         {Array.from({ length: GAUGE_CELLS }).map((_, i) => (
@@ -140,6 +140,40 @@ export function RaidSpotTable() {
           <span style={{ color: "#94a3b8" }}>{spot.desc}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+/* 組隊列：房主要等全隊送出，所以「誰還沒送」必須一眼看到 */
+export function RaidTeamBar({ members = [], submitted = {}, meId = null }) {
+  if (members.length < 2) return null;
+  return (
+    <div style={{ display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap" }}>
+      {members.map(m => {
+        const done = Array.isArray(submitted[m.memberId]) && submitted[m.memberId].length > 0;
+        const dead = m.hp <= 0;
+        const hpPct = Math.max(0, Math.min(100, (m.hp / (m.maxHp || 1)) * 100));
+        return (
+          <div key={m.memberId}
+            style={{
+              minWidth: 74, padding: "5px 8px", borderRadius: 9,
+              border: `1.5px solid ${dead ? "#7f1d1d" : done ? "#4ade80" : "rgba(255,255,255,.14)"}`,
+              background: m.memberId === meId ? "rgba(96,165,250,.14)" : "rgba(15,23,42,.85)",
+              opacity: dead ? 0.5 : 1,
+            }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 900, color: "#e2e8f0" }}>
+              <span>{dead ? "✕" : done ? "✓" : "…"}</span>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</span>
+            </div>
+            <div style={{ height: 4, borderRadius: 3, background: "rgba(255,255,255,.1)", marginTop: 3, overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${hpPct}%`, background: hpPct > 30 ? "#4ade80" : "#f87171" }} />
+            </div>
+            <div style={{ fontSize: 8.5, color: "#94a3b8", marginTop: 2 }}>
+              傷害 {Math.round(m.damage || 0).toLocaleString()}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

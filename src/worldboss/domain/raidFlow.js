@@ -16,6 +16,7 @@ import { resolveWeakPointHit, rollWeakSpots } from "./weakPoints";
 import { rangeMultiplier } from "./raidRange";
 import { rookieMultiplier } from "./raidRookie";
 import { faceCountOf, maxArrowsPerFace } from "./raidFaces";
+import { teamGaugeMax, teamInterruptRequired, teamSizeOf } from "./raidTeam";
 
 export const RAID_TOTAL_ROUNDS = 5;
 
@@ -42,9 +43,31 @@ export function createRaidState({
   targetFmt = "half_17",      // 決定靶紙倍率、張數、每張上限
   archerLevel = 1,            // 射手等級 → 新手扶助（50 級以下，見 raidRookie.js）
   cats = [],                  // 貓貓陪練 [{ catId, name, atk, skillGroup }]
+  // 組隊：2~4 人同一場。**單人就是一人的隊伍**——刻意只留一條程式路徑，
+  // 兩套流程各長各的遲早會漂移（公會就吃過這個虧）。
+  members = null,             // [{ memberId, name, stats, archerLevel, cats }]
   rand = Math.random,
 } = {}) {
   const maxHp = Math.max(1, Number(boss?.maxHp || boss?.hp) || 1);
+
+  const roster = (Array.isArray(members) && members.length ? members : [{
+    memberId: "me", name: "我", stats, archerLevel, cats,
+  }]).map((m, i) => {
+    const st = { atk: Number(m.stats?.atk) || 0, def: Number(m.stats?.def) || 0, hp: Number(m.stats?.hp) || 100 };
+    return {
+      memberId: m.memberId || `m${i}`,
+      name: m.name || `隊員${i + 1}`,
+      stats: st,
+      archerLevel: Number(m.archerLevel) || 1,
+      rookieMult: rookieMultiplier(Number(m.archerLevel) || 1),
+      cats: (m.cats || []).filter(c => c && Number(c.atk) > 0),
+      hp: st.hp,
+      maxHp: st.hp,
+      damage: 0,
+      breakPoints: 0,
+    };
+  });
+
   return {
     boss: {
       key: boss?.key || "boss", name: boss?.name || "世界王",
@@ -52,16 +75,18 @@ export function createRaidState({
       maxHp, skillConfig: boss?.skillConfig || null,
     },
     bossHp: Math.max(0, Math.min(maxHp, Number(boss?.hp ?? maxHp))),
-    stats: { atk: Number(stats?.atk) || 0, def: Number(stats?.def) || 0, hp: Number(stats?.hp) || 100 },
+    members: roster,
+    stats: roster[0].stats,
     participantBonus, dmgBonusPct, dmgReducePct,
     distanceM,
     rangeMult: rangeMultiplier({ distanceM, targetFmt }),
-    archerLevel,
-    cats: (cats || []).filter(c => c && Number(c.atk) > 0),
+    archerLevel: roster[0].archerLevel,
+    cats: roster[0].cats,
     // 補償在戰鬥模型「外面」：一個乘在最後的倍率，跟弱點數值完全分離
-    rookieMult: rookieMultiplier(archerLevel),
-    playerHp: Number(stats?.hp) || 100,
-    playerMaxHp: Number(stats?.hp) || 100,
+    rookieMult: roster[0].rookieMult,
+    // playerHp / playerMaxHp 是「我」的鏡像，單人畫面直接用它
+    playerHp: roster[0].hp,
+    playerMaxHp: roster[0].maxHp,
     round: 1,
     gauge: { ...emptyGaugeState(), ...(gauge || {}) },
     staggered: false,          // 上回合打斷成功 → 這回合王硬直
@@ -94,9 +119,15 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
   const round = s.round;
   const phase = currentPhase(raidHpRatio(s));
   const intent = intentForRound({ config: s.boss.skillConfig, round, phaseId: phase.id });
+  // 組隊時打斷需求次線性放大——不然四個人每回合都能斷，等於免費
+  if (intent.charging) intent.interruptRequired = teamInterruptRequired(phase.id, teamSizeOf(state));
   const staggered = !!s.staggered;
 
   const spots = state.spots || [];
+  s.members = (state.members || []).map(m => ({ ...m }));
+  const teamSize = teamSizeOf(s);
+  const byId = Object.fromEntries(s.members.map(m => [m.memberId, m]));
+  const shooterOf = arrow => byId[arrow?.memberId] || s.members[0];
 
   log.push({ type: "roundStart", round, phase, staggered, spots });
   log.push({ type: "intent", round, intent, staggered });
@@ -128,9 +159,10 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
     const effectiveScore = hit.hit
       ? MAX_ARROW_SCORE
       : (arrow?.label === "X" ? MAX_ARROW_SCORE : Number(arrow?.score) || 0);
+    const shooter = shooterOf(arrow);
     const normal = calcWorldBossArrowDmg(
       effectiveScore,
-      s.stats.atk, s.boss.def, s.participantBonus, s.dmgBonusPct,
+      shooter.stats.atk, s.boss.def, s.participantBonus, s.dmgBonusPct,
     ) * hit.normalMult * RAID_NORMAL_DAMAGE_SCALE;
 
     // 這張靶滿了嗎（只有三連靶會有上限）
@@ -143,13 +175,15 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
 
     const burst = burstMultiplier(s.gauge, round);
     // 射程倍率乘在整箭上：距離是這一場的設定，對新手老手一視同仁，不影響貢獻比
+    // 新手扶助是**射手自己的**——組隊時各算各的，不會因為隊友是老手就被拉低
     const damage = overCap ? 0 : Math.max(0, Math.round(
-      (normal + flat) * burst * (s.rangeMult || 1) * (s.rookieMult || 1),
+      (normal + flat) * burst * (s.rangeMult || 1) * (shooter.rookieMult || 1),
     ));
 
     s.bossHp = Math.max(0, s.bossHp - damage);
     roundDamage += damage;
     s.totals.damage += damage;
+    shooter.damage += damage;
 
     if (hit.hit && !overCap) {
       combo += 1;
@@ -169,6 +203,7 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
       label: arrow?.label ?? String(arrow?.score ?? ""),
       spot: hit.spot, hit: hit.hit && !overCap, missed: hit.missed, bullseye: hit.bullseye && !overCap,
       maxScored: hit.hit && !overCap, overCap, faceIndex: faceIdx,
+      memberId: shooter.memberId, shooterName: shooter.name,
       grazed: !hit.hit && !hit.missed,
       nx: arrow?.nx, ny: arrow?.ny,
       bonuses: hit.bonuses, burst: burst > 1,
@@ -177,7 +212,10 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
     });
 
     if (breakGain > 0) {
-      const adv = advanceBreakGauge(s.gauge, breakGain, { phaseGaugeMult: phaseNow.gaugeMult, round });
+      shooter.breakPoints += breakGain;
+      const adv = advanceBreakGauge(s.gauge, breakGain, {
+        phaseGaugeMult: phaseNow.gaugeMult, round, gaugeMax: teamGaugeMax(teamSize),
+      });
       s.gauge = adv.state;
       roundBreak += adv.gained;
       s.totals.breakPoints += adv.gained;
@@ -194,8 +232,9 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
   });
 
   // ── 貓貓陪練：每回合幫忙咬一口（在王行動之前，牠們比較急）──
-  if (s.bossHp > 0 && s.cats.length) {
-    for (const cat of s.cats) {
+  if (s.bossHp > 0) {
+    for (const member of s.members) {
+    for (const cat of member.cats) {
       if (s.bossHp <= 0) break;
       // 貓不吃射程/靶紙/新手扶助那些「射手環境」倍率——牠又沒有在射箭
       const base = calcWorldBossArrowDmg(8, cat.atk, s.boss.def, s.participantBonus, s.dmgBonusPct);
@@ -205,8 +244,14 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
       roundDamage += dealt;
       s.totals.damage += dealt;
       s.totals.catDamage += dealt;
-      log.push({ type: "catAssist", round, cat, damage: dealt, skill: crit, bossHp: s.bossHp, bossHpRatio: raidHpRatio(s) });
+      member.damage += dealt;
+      log.push({
+        type: "catAssist", round, cat, damage: dealt, skill: crit,
+        memberId: member.memberId, shooterName: member.name,
+        bossHp: s.bossHp, bossHpRatio: raidHpRatio(s),
+      });
       if (s.bossHp <= 0) log.push({ type: "bossDown", round });
+    }
     }
   }
 
@@ -238,14 +283,17 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
       for (let i = 0; i < hits; i += 1) {
         const portion = i === hits - 1 ? left : Math.max(1, Math.round(dealt / hits));
         left -= portion;
-        s.playerHp = Math.max(floor, s.playerHp - portion);
+        // 王的大招打**全隊**——有人快死了，其他人就得決定要不要分箭去打斷
+        for (const m of s.members) m.hp = Math.max(floor, m.hp - portion);
+        s.playerHp = s.members[0].hp;
         log.push({
           type: "ultHit", round, intent, index: i, hits,
           damage: portion, playerHp: s.playerHp,
-          knockedOut: s.playerHp <= 0 && intent.skill?.canKnockOut,
+          members: s.members.map(m => ({ memberId: m.memberId, hp: m.hp })),
+          knockedOut: s.members.every(m => m.hp <= 0) && intent.skill?.canKnockOut,
           last: i === hits - 1,
         });
-        if (s.playerHp <= floor && floor > 0) break;
+        if (s.members.every(m => m.hp <= floor) && floor > 0) break;
       }
 
       if (intent.skill?.status) {
@@ -260,10 +308,19 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
         knockedOut: s.playerHp <= 0, gauge: { ...s.gauge },
       });
     } else {
-      const base = calcWorldBossCounter(s.boss.atk, s.stats.def, s.dmgReducePct);
-      s.playerHp = Math.max(1, s.playerHp - base);
       log.push({ type: "counterSwing", round });
-      log.push({ type: "counter", round, damage: base, playerHp: s.playerHp });
+      // 平砍也是打全隊，但每個人吃自己的防禦
+      let shown = 0;
+      for (const m of s.members) {
+        const base = calcWorldBossCounter(s.boss.atk, m.stats.def, s.dmgReducePct);
+        m.hp = Math.max(1, m.hp - base);
+        if (m === s.members[0]) shown = base;
+      }
+      s.playerHp = s.members[0].hp;
+      log.push({
+        type: "counter", round, damage: shown, playerHp: s.playerHp,
+        members: s.members.map(m => ({ memberId: m.memberId, hp: m.hp })),
+      });
     }
   }
 
@@ -275,7 +332,7 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
     phaseId: currentPhase(raidHpRatio(s)).id,
     faceCount: faceCountOf(s.targetFmt),
   });
-  s.finished = s.bossHp <= 0 || s.round > RAID_TOTAL_ROUNDS || s.playerHp <= 0;
+  s.finished = s.bossHp <= 0 || s.round > RAID_TOTAL_ROUNDS || s.members.every(m => m.hp <= 0);
 
   log.push({
     type: "roundEnd", round,

@@ -10,6 +10,8 @@ import { WORLD_BOSS_SKILLS } from "../../lib/worldBossSkillData";
 import { DEFAULT_RAID_FACE, RAID_FACES, faceMultiplier } from "../domain/raidFaces";
 import { RAID_DISTANCES, RAID_DEFAULT_DISTANCE, distanceMultiplier, rangeLabel, rangeMultiplier } from "../domain/raidRange";
 import { rookieMultiplier } from "../domain/raidRookie";
+import { RAID_MAX_TEAM, canTeamDepart, teamGaugeMax, teamInterruptRequired } from "../domain/raidTeam";
+import { RAID_DAILY_ATTEMPTS, consumeAttempt } from "../domain/raidQuota";
 import { CATS, CAT_TYPE_MAP } from "../../lib/catData";
 import { calcCatCombatStats } from "../../lib/catCombat";
 import { createRaidState } from "../domain/raidFlow";
@@ -35,6 +37,8 @@ export default function RaidSandbox() {
   const [distanceM, setDistanceM] = useState(RAID_DEFAULT_DISTANCE);
   const [catId, setCatId] = useState("baobao");
   const [archerLevel, setArcherLevel] = useState(10);
+  const [teamCount, setTeamCount] = useState(1);
+  const [spentIdx, setSpentIdx] = useState(-1);   // 模擬「某個隊員次數用完」
   const [hpScale, setHpScale] = useState(0.05);   // 沙盒預設把血調低，才看得到階段轉換
   const [runId, setRunId] = useState(0);
   const [state, setState] = useState(null);
@@ -54,6 +58,15 @@ export default function RaidSandbox() {
       },
       stats: { atk: p.atk, def: p.def, hp: p.hp },
       archerLevel,
+      members: teamCount < 2 ? null : Array.from({ length: teamCount }, (_, i) => ({
+        memberId: `m${i}`, name: i === 0 ? "我" : `隊友${i}`,
+        stats: { atk: p.atk, def: p.def, hp: p.hp },
+        archerLevel: i === 0 ? archerLevel : 60,
+        cats: catId === "none" ? [] : [(() => {
+          const st = calcCatCombatStats({ catId, catXP: 4000, bond: 20 }, catId);
+          return { catId, name: CATS[catId]?.name || catId, atk: st.catATK };
+        })()],
+      })),
       cats: catId === "none" ? [] : [(() => {
         const st = calcCatCombatStats({ catId, catXP: 4000, bond: 20 }, catId);
         return { catId, name: CATS[catId]?.name || catId, atk: st.catATK, skillGroup: CAT_TYPE_MAP[catId] };
@@ -188,6 +201,53 @@ export default function RaidSandbox() {
         <div style={{ fontSize: 10, color: "#64748b", marginTop: 6, lineHeight: 1.6 }}>
           5 米＝新手標準射程（×1.00），退越遠加成越高（18 米 ×1.90）。靶紙倍率另外相乘。
         </div>
+      </div>
+
+      <div style={cardStyle}>
+        <div style={labelStyle}>組隊人數（各扣各的每日次數）</div>
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(${RAID_MAX_TEAM},1fr)`, gap: 6 }}>
+          {Array.from({ length: RAID_MAX_TEAM }, (_, i) => i + 1).map(n => (
+            <button key={n} type="button" onClick={() => { setTeamCount(n); setSpentIdx(-1); }}
+              style={{
+                padding: "9px 0", borderRadius: 9, cursor: "pointer",
+                border: `2px solid ${teamCount === n ? "#4ade80" : "rgba(255,255,255,.1)"}`,
+                background: teamCount === n ? "rgba(74,222,128,.16)" : "#1e293b",
+                color: "#e2e8f0", fontSize: 12, fontWeight: 900,
+              }}>{n === 1 ? "單人" : `${n} 人`}</button>
+          ))}
+        </div>
+        {teamCount > 1 && (() => {
+          const roster = Array.from({ length: teamCount }, (_, i) => ({
+            memberId: `m${i}`, name: i === 0 ? "我" : `隊友${i}`, ready: true,
+            participant: i === spentIdx ? consumeAttempt({}, "2026-07-31") : {},
+          }));
+          const check = canTeamDepart(roster, "2026-07-31");
+          return (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 10, color: "#94a3b8", lineHeight: 1.7 }}>
+                打斷需求 {teamInterruptRequired(1, teamCount)} 次（單人 {teamInterruptRequired(1, 1)}）
+                破防槽 {teamGaugeMax(teamCount)}（單人 {teamGaugeMax(1)}）
+              </div>
+              <button type="button"
+                onClick={() => setSpentIdx(spentIdx === 1 ? -1 : 1)}
+                style={{
+                  marginTop: 6, padding: "6px 10px", borderRadius: 8, fontSize: 10.5, fontWeight: 900,
+                  border: "1px solid #475569", background: "transparent",
+                  color: spentIdx === 1 ? "#f87171" : "#94a3b8", cursor: "pointer",
+                }}>
+                {spentIdx === 1 ? "✓ 隊友1 次數已用完（點此還原）" : "模擬「隊友1 次數用完」"}
+              </button>
+              <div style={{
+                marginTop: 6, fontSize: 10.5, fontWeight: 900,
+                color: check.ok ? "#4ade80" : "#f87171", lineHeight: 1.6,
+              }}>
+                {check.ok
+                  ? `✓ 全隊都還有次數，可以出發（每人今日上限 ${RAID_DAILY_ATTEMPTS} 次）`
+                  : check.blockers.map(bl => `✕ ${bl.text}`).join("　")}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       <div style={cardStyle}>

@@ -12,7 +12,8 @@ import { hitSpot } from "../domain/weakPoints";
 import { PHASE_TINTS, currentPhase } from "../domain/raidPhases";
 import { RAID_ARROWS_PER_ROUND, RAID_TOTAL_ROUNDS, raidHpRatio, resolveRaidRound } from "../domain/raidFlow";
 import { buildRaidTimeline, describeEvent } from "../domain/raidTimeline";
-import { RaidBossBar, RaidGauge, RaidIntent, RaidSpotLegend } from "./RaidHud";
+import { RaidBossBar, RaidGauge, RaidIntent, RaidSpotLegend, RaidTeamBar } from "./RaidHud";
+import { teamGaugeMax, teamSizeOf } from "../domain/raidTeam";
 import RaidBoss from "./RaidBoss";
 import RaidTarget from "./RaidTarget";
 import RaidPlayerCard from "./RaidPlayerCard";
@@ -204,6 +205,8 @@ export default function RaidScreen({
 
   const range = rangeLabel(state.rangeMult || 1);
   const faceCap = maxArrowsPerFace(targetFmt);
+  const teamSize = teamSizeOf(state);
+  const gaugeMax = teamGaugeMax(teamSize);
 
   return (
     <div className="raid-stage" style={{
@@ -243,7 +246,7 @@ export default function RaidScreen({
       {/* 意圖 ＋ 破防槽 */}
       <div style={{ position: "relative", zIndex: 3 }}>
         <RaidIntent intent={intent} legHits={legHits} />
-        <RaidGauge gauge={displayGauge.gauge} burstActive={burstOn} />
+        <RaidGauge gauge={displayGauge.gauge} max={gaugeMax} burstActive={burstOn} />
       </div>
 
       {/* 戰報 */}
@@ -260,6 +263,7 @@ export default function RaidScreen({
           padding: "10px 12px 14px", display: "flex", flexDirection: "column", gap: 9,
         }}>
           <RaidSpotLegend spots={spots} />
+          <RaidTeamBar members={state.members} submitted={{}} meId={state.members?.[0]?.memberId} />
 
           <RaidPlayerCard
             name={playerName} hp={state.playerHp} maxHp={state.playerMaxHp}
