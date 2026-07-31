@@ -69,6 +69,16 @@ ARCHERS = {
     "black":  "a (solid black fur:1.5) cat adventurer in a midnight blue hood with a crescent brooch, holding a slim spear",
 }
 
+# 擊倒動畫用的「拉弓射擊」姿勢。
+# ⚠️ 這裡**要**有弓——是唯一需要弓的地方，所以負面詞不排除弓，
+#    改用側身拉弓的明確描述提高成功率（正面持弓最容易畫壞）。
+SHOOTERS = {
+    "shoot_a": "a (calico:1.3) cat archer seen from the side, drawing a longbow at full draw, arrow nocked, focused expression, cloak flowing",
+    "shoot_b": "a (grey tabby:1.3) cat archer seen from the side, drawing a recurve bow at full draw, arrow nocked, green hood",
+    "shoot_c": "a (solid black fur:1.4) cat archer seen from the side, drawing a dark bow at full draw, arrow nocked, midnight blue cloak",
+    "shoot_d": "a (ginger orange:1.3) cat archer seen from the side, drawing a horn bow at full draw, arrow nocked, desert scarf",
+}
+
 MEDALS = {
     "victory": "a golden laurel wreath medal with a star centre and red ribbon, triumphant",
     "breaker": "a bronze shattered-shield medal with cracks and an orange ribbon",
@@ -159,6 +169,17 @@ def do_archer(key, force=False):
     print(f"  OK -> {outpath}", flush=True)
 
 
+def do_shooter(key, force=False):
+    outpath = os.path.abspath(os.path.join(OUTDIR, f"{key}.webp"))
+    if os.path.exists(outpath) and not force:
+        print(f"[shooter/{key}] 已存在，跳過", flush=True); return
+    print(f"[shooter/{key}] generating...", flush=True)
+    neg = NEG_ARCHER.replace("(bow:1.5)(longbow:1.5)(arrow:1.4)(quiver:1.3), ", "")
+    png = generate(STYLE_ARCHER + SHOOTERS[key], neg, 1216, 832)
+    save_cutout(png, outpath, 512, 0.04)
+    print(f"  OK -> {outpath}", flush=True)
+
+
 def do_medal(key, force=False):
     outpath = os.path.abspath(os.path.join(OUTDIR, f"medal_{key}.webp"))
     if os.path.exists(outpath) and not force:
@@ -189,6 +210,8 @@ if __name__ == "__main__":
     jobs = []
     if group in ("all", "archers"):
         jobs += [(do_archer, k) for k in (ARCHERS if not only else [only]) if k in ARCHERS]
+    if group in ("all", "shooters"):
+        jobs += [(do_shooter, k) for k in (SHOOTERS if not only else [only]) if k in SHOOTERS]
     if group in ("all", "medals"):
         jobs += [(do_medal, k) for k in (MEDALS if not only else [only]) if k in MEDALS]
     if group in ("all", "lobby"):

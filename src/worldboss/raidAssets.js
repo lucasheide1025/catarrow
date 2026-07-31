@@ -45,3 +45,12 @@ export const RAID_MEDALS = Object.freeze({
 });
 
 export const RAID_LOBBY_BG = "/assets/raid/lobby_bg.webp";
+
+// ── 擊倒演出用的「拉弓射擊」姿勢 ──────────────────────────
+// ⚠️ 這是**唯一需要弓**的素材（側身拉弓的姿勢，成功率比正面持弓高很多）。
+//    隊伍列的 archer_* 刻意沒有弓——兩套不要混用。
+export const RAID_SHOOTERS = Object.freeze(["shoot_a", "shoot_b", "shoot_c", "shoot_d"]);
+
+export function raidShooterArt(id) {
+  return `/assets/raid/${RAID_SHOOTERS.includes(id) ? id : "shoot_a"}.webp`;
+}

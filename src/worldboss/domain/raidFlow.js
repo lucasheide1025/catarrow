@@ -18,6 +18,7 @@ import { rookieMultiplier } from "./raidRookie";
 import { faceCountOf, maxArrowsPerFace } from "./raidFaces";
 import { teamGaugeMax, teamInterruptRequired, teamSizeOf, teamStatBonus } from "./raidTeam";
 import { hasWorldBossCard, worldBossCardCount } from "./raidCards";
+import { detectKillStyle } from "./raidKill";
 
 export const RAID_TOTAL_ROUNDS = 5;
 
@@ -158,6 +159,7 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
   arrows.forEach((arrow, index) => {
     if (s.bossHp <= 0) return;
     const ratioBefore = raidHpRatio(s);
+    const hpBeforeArrow = s.bossHp;
     const phaseNow = currentPhase(ratioBefore);
 
     const hit = resolveWeakPointHit({
@@ -245,7 +247,20 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
     const shifted = phaseTransition(ratioBefore, raidHpRatio(s));
     if (shifted) log.push({ type: "phaseShift", round, phase: shifted });
 
-    if (s.bossHp <= 0) log.push({ type: "bossDown", round, index });
+    if (s.bossHp <= 0) {
+      // ⚠️ bossDown 要帶**補刀當下的完整脈絡**，不然事後拼湊不出「怎麼打倒的」
+      const style = detectKillStyle({
+        bySpot: hit.spot?.id || null, bullseye: hit.bullseye,
+        burst: burst > 1, staggered, byCat: false,
+        combo, damage, hpBefore: hpBeforeArrow, teamSize,
+      });
+      log.push({
+        type: "bossDown", round, index,
+        killerId: shooter.memberId, killerName: shooter.name,
+        byCat: false, style,
+        finishingArrow: { label: arrow?.label ?? null, spot: hit.spot?.id || null, bullseye: hit.bullseye },
+      });
+    }
   });
 
   // ── 貓貓陪練：每回合幫忙咬一口（在王行動之前，牠們比較急）──
@@ -267,7 +282,14 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
         memberId: member.memberId, shooterName: member.name,
         bossHp: s.bossHp, bossHpRatio: raidHpRatio(s),
       });
-      if (s.bossHp <= 0) log.push({ type: "bossDown", round });
+      if (s.bossHp <= 0) {
+        log.push({
+          type: "bossDown", round,
+          killerId: member.memberId, killerName: member.name,
+          byCat: true, catName: cat.name,
+          style: detectKillStyle({ byCat: true, teamSize, damage: dealt, hpBefore: dealt }),
+        });
+      }
     }
     }
   }

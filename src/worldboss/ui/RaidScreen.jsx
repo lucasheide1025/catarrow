@@ -19,9 +19,11 @@ import { allSubmitted, pendingMembers } from "../domain/raidTeam";
 import { clearRaidProgress, saveRaidProgress } from "../domain/raidResume";
 import { RAID_MEDALS } from "../raidAssets";
 import { rewardRows, rollSortieRewards } from "../domain/raidRewards";
+import { findKillingBlow, killAnnouncement, lastHitReward } from "../domain/raidKill";
 import RaidBoss from "./RaidBoss";
 import RaidTarget from "./RaidTarget";
 import RaidPlayerCard from "./RaidPlayerCard";
+import RaidKillCutscene from "./RaidKillCutscene";
 import { rangeLabel } from "../domain/raidRange";
 import "./raidFx.css";
 
@@ -61,6 +63,8 @@ export default function RaidScreen({
   const [submissions, setSubmissions] = useState({});
   // 結算獎勵：一場出擊結束就結算，**沒擊倒也給**（作者 2026-07-31）
   const [reward, setReward] = useState(null);
+  const [killInfo, setKillInfo] = useState(null);   // 尾刀：誰打倒的、怎麼打倒的
+  const [cutscene, setCutscene] = useState(null);   // 擊倒演出
   // ⚠️ 短螢幕（iPhone SE 可用高度只有 ~553px）本來會把按鈕擠到摺線下方。
   //    王的尺寸跟著畫面高度縮，整頁才不用捲動。
   const [bossSize, setBossSize] = useState(() =>
@@ -262,8 +266,10 @@ export default function RaidScreen({
             setTimeout(() => { setBossAnim(null); setShake(null); setHurt(false); }, 320);
             break;
           case "bossDown":
-            setBossAnim("fall"); setBanner({ text: "討伐成功", color: "#fde68a", wave: true });
+            setBossAnim("fall");
             vibrate([80, 60, 120]);
+            // 擊倒演出取代原本的「討伐成功」大字——射手真的跑出來射一箭
+            setCutscene({ killerId: event.killerId, style: event.style });
             break;
           default:
             break;
@@ -283,6 +289,18 @@ export default function RaidScreen({
       // 防重整：每回合存一次；打完就清掉（不然重整可以再結算一次）
       if (next.finished) {
         clearRaidProgress();
+        // ⚠️ 王的血是全伺服器共享的——擊倒才有尾刀獎勵，而且要記下「誰、怎麼打倒的」
+        const down = log.find(e => e.type === "bossDown");
+        if (down) {
+          setKillInfo({
+            ...down,
+            reward: lastHitReward(down.style),
+            announcement: killAnnouncement({
+              killerName: down.killerName, bossName: next.boss.name, style: down.style,
+              teamNames: (next.members || []).map(m => m.name),
+            }),
+          });
+        }
         setReward(rollSortieRewards({
           boss: bossMeta || { family: null },
           totals: next.totals,
@@ -635,6 +653,45 @@ export default function RaidScreen({
               <div>最高連擊　<b>{state.totals.bestCombo}</b></div>
               <div>成功打斷　<b style={{ color: "#4ade80" }}>{state.totals.interrupts}</b></div>
             </div>
+            {/* 尾刀：全服只有一個人（或一隊）拿得到 */}
+            {killInfo && (
+              <div style={{
+                marginTop: 12, borderRadius: 12, padding: "10px 12px",
+                background: `linear-gradient(135deg, ${killInfo.style.color}22, rgba(15,23,42,.92))`,
+                border: `1px solid ${killInfo.style.color}`, textAlign: "left",
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 900, color: killInfo.style.color }}>
+                  {killInfo.style.icon} {killInfo.style.name}
+                  <span style={{ fontSize: 9.5, marginLeft: 6, opacity: .8 }}>尾刀</span>
+                </div>
+                <div style={{ fontSize: 10.5, color: "#cbd5e1", marginTop: 3, lineHeight: 1.6 }}>
+                  {killInfo.style.flavour}
+                </div>
+                <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 5 }}>
+                  由 <b style={{ color: "#e2e8f0" }}>{killInfo.killerName}</b>
+                  {killInfo.byCat ? `的 ${killInfo.catName}` : ""} 補刀
+                </div>
+                <div style={{ display: "flex", gap: 10, marginTop: 6, fontSize: 11, fontWeight: 900, color: "#fde68a" }}>
+                  <span>💰 +{killInfo.reward.coins}</span>
+                  {killInfo.reward.catBoxes > 0 && <span>🎁 貓貓箱 ×{killInfo.reward.catBoxes}</span>}
+                  {killInfo.reward.cardPacks > 0 && <span>🃏 卡包 ×{killInfo.reward.cardPacks}</span>}
+                </div>
+              </div>
+            )}
+
+            {/* 全服擊倒發放：王死了才有，由既有的 worldBossDb 依傷害佔比分給所有參戰者 */}
+            {killInfo && (
+              <div style={{
+                marginTop: 8, borderRadius: 10, padding: "8px 11px", textAlign: "left",
+                background: "rgba(30,58,138,.28)", border: "1px solid rgba(96,165,250,.4)",
+              }}>
+                <div style={{ fontSize: 11, fontWeight: 900, color: "#93c5fd" }}>🌐 全服擊倒獎勵</div>
+                <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 3, lineHeight: 1.6 }}>
+                  這隻王是全伺服器一起打的——所有參戰者會依傷害佔比收到發放，稍後入帳。
+                </div>
+              </div>
+            )}
+
             {/* ⚠️ 沒擊倒也要給獎勵——來射箭這件事本身就該有回饋 */}
             {reward && (
               <div style={{
@@ -643,7 +700,7 @@ export default function RaidScreen({
                 border: reward.wbCard ? "1px solid #f5b942" : "1px solid rgba(255,255,255,.08)",
               }}>
                 <div style={{ fontSize: 11, fontWeight: 900, color: "#c7d2fe", marginBottom: 6 }}>
-                  🎁 出擊獎勵　<span style={{ color: "#64748b", fontWeight: 700 }}>貢獻 {Math.round(reward.ratio * 100)}%</span>
+                  🎁 參戰獎勵　<span style={{ color: "#64748b", fontWeight: 700 }}>貢獻 {Math.round(reward.ratio * 100)}%</span>
                 </div>
                 <div style={{ display: "grid", gap: 4 }}>
                   {rewardRows(reward).map(row => (
@@ -672,6 +729,12 @@ export default function RaidScreen({
       )}
 
       {/* 全螢幕演出層 */}
+      {cutscene && (
+        <RaidKillCutscene
+          members={state.members} killerId={cutscene.killerId} style={cutscene.style}
+          onDone={() => setCutscene(null)}
+        />
+      )}
       {flash && <div className="raid-flash" style={{ zIndex: 20 }} />}
       {hurt && <div className="raid-hurt" />}
       {skillBanner && (

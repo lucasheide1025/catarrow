@@ -353,3 +353,82 @@
   .raid-member, .raid-member-active, .raid-member-step { animation: none !important; transform: none !important; }
   .raid-member-active img { filter: drop-shadow(0 0 9px #fbbf24) !important; }
 }
+
+/* ── 擊倒演出（2026-07-31）──────────────────────────────
+   射手衝出來 → 拉弓 → 箭飛過去 → 王倒下 → 寶物噴出來。
+   全部 transform/opacity，粒子播完即移除。 */
+.raid-cut { overflow: hidden; }
+.raid-cut-dim {
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 50% 45%, rgba(0,0,0,.15), rgba(2,6,23,.82));
+  animation: raid-cut-dim .5s ease-out;
+}
+@keyframes raid-cut-dim { from { opacity: 0; } to { opacity: 1; } }
+
+.raid-cut-flash {
+  position: absolute; inset: 0; background: #fff;
+  animation: raid-cut-flash .55s ease-out forwards;
+}
+@keyframes raid-cut-flash {
+  0% { opacity: 0; } 10% { opacity: .85; } 100% { opacity: 0; }
+}
+
+/* 射手滑進來 */
+.raid-cut-shooter { animation-fill-mode: both; }
+.raid-cut-in { animation: raid-cut-in .55s cubic-bezier(.2,1.2,.4,1); }
+@keyframes raid-cut-in {
+  0%   { transform: translateX(-140%) scale(.8); opacity: 0; }
+  100% { transform: translateX(0) scale(1); opacity: 1; }
+}
+/* 放箭的後座力 */
+.raid-cut-draw { animation: raid-cut-draw .5s ease-out; }
+@keyframes raid-cut-draw {
+  0%   { transform: translateX(0) scale(1); }
+  22%  { transform: translateX(-9px) scale(1.05); }
+  40%  { transform: translateX(6px) scale(.99); }
+  100% { transform: translateX(0) scale(1); }
+}
+
+/* 箭飛過去 */
+.raid-cut-arrow {
+  position: absolute; left: 18%;
+  font-size: 26px; color: #fde68a;
+  text-shadow: 0 0 12px rgba(253,230,138,.9);
+  animation: raid-cut-arrow .5s cubic-bezier(.4,0,.9,.6) forwards;
+}
+@keyframes raid-cut-arrow {
+  0%   { transform: translateX(0) scaleX(.7); opacity: 0; }
+  15%  { opacity: 1; }
+  100% { transform: translateX(230%) scaleX(1.6); opacity: 0; }
+}
+
+/* 寶物噴出來 */
+.raid-cut-loot {
+  position: absolute; left: 50%; top: 46%;
+  font-size: 28px; pointer-events: none;
+  animation: raid-cut-loot 1.25s cubic-bezier(.2,.8,.4,1) forwards;
+}
+@keyframes raid-cut-loot {
+  0%   { transform: translate(-50%,-50%) scale(.3); opacity: 0; }
+  25%  { transform: translate(calc(-50% + var(--lx)), calc(-50% + var(--ly))) scale(1.25); opacity: 1; }
+  100% { transform: translate(calc(-50% + var(--lx)), calc(-50% + var(--ly) + 60px)) scale(.9); opacity: 0; }
+}
+
+/* 擊倒方式字卡 */
+.raid-cut-title {
+  position: absolute; left: 0; right: 0; top: 24%;
+  text-align: center; pointer-events: none;
+  text-shadow: 0 0 24px currentColor, 0 3px 12px rgba(0,0,0,.95);
+  animation: raid-cut-title .7s cubic-bezier(.2,1.1,.3,1) both;
+}
+@keyframes raid-cut-title {
+  0%   { transform: scale(1.8); opacity: 0; filter: blur(8px); }
+  100% { transform: scale(1); opacity: 1; filter: blur(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .raid-cut-in, .raid-cut-draw, .raid-cut-arrow, .raid-cut-loot, .raid-cut-title {
+    animation-duration: .01s !important;
+  }
+  .raid-cut-flash { display: none; }
+}

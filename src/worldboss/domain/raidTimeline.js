@@ -165,7 +165,10 @@ export function describeEvent(event) {
     case "ultEnd":       return "";
     case "counterSwing": return "牠揮了過來——";
     case "counter":      return `牠反擊 −${event.damage}`;
-    case "bossDown":     return "牠倒下了。";
+    case "bossDown":
+      return event.style
+        ? `${event.style.icon} ${event.killerName || "有人"}：${event.style.name}——牠倒下了。`
+        : "牠倒下了。";
     default:             return "";
   }
 }
