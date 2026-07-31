@@ -12,6 +12,7 @@ import { RAID_DISTANCES, RAID_DEFAULT_DISTANCE, distanceMultiplier, rangeLabel, 
 import { rookieMultiplier } from "../domain/raidRookie";
 import { RAID_MAX_TEAM, canTeamDepart, teamBreakSpeedup, teamGaugeMax, teamInterruptRequired, teamStatBonus } from "../domain/raidTeam";
 import { RAID_DAILY_ATTEMPTS, consumeAttempt } from "../domain/raidQuota";
+import { clearRaidProgress, loadRaidProgress, resumeLabel } from "../domain/raidResume";
 import { BOT_SKILLS } from "../domain/raidBot";
 import { CATS, CAT_TYPE_MAP } from "../../lib/catData";
 import { calcCatCombatStats } from "../../lib/catCombat";
@@ -24,6 +25,8 @@ const PRESETS = {
   mid:     { label: "中階玩家", atk: 120, def: 60, hp: 260 },
   veteran: { label: "114 級好裝", atk: 300, def: 95, hp: 380 },
 };
+
+const DEFAULT_BOSS_FOR_RESUME = null;   // 沙盒不限定王，載入時再比對
 
 const BOSS_CHOICES = ["cat_baobao", "ghost_boss_r1", "head_coach"]
   .filter(key => WORLD_BOSSES[key])
@@ -46,6 +49,8 @@ export default function RaidSandbox() {
   const [runId, setRunId] = useState(0);
   const [state, setState] = useState(null);
   const [summary, setSummary] = useState(null);
+  // 防重整：一進來就看看有沒有沒打完的場次
+  const [resume, setResume] = useState(() => loadRaidProgress({ bossKey: DEFAULT_BOSS_FOR_RESUME }));
 
   const boss = WORLD_BOSSES[bossKey];
 
@@ -99,7 +104,7 @@ export default function RaidSandbox() {
         bgUrl={raidBackground(boss?.family)}
         targetFmt={targetFmt}
         onState={next => setState(next)}
-        onFinish={next => setSummary(next)}
+        onFinish={next => { setSummary(next); clearRaidProgress(); }}
         onExit={() => setState(null)}
       />
     );
@@ -120,6 +125,32 @@ export default function RaidSandbox() {
       <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 14, lineHeight: 1.7 }}>
         假資料驅動，不會碰到線上的世界王。用來確認版式與聲光效果——確認 OK 才接真的。
       </div>
+
+      {resume && !state && (
+        <div style={{ ...cardStyle, border: "1px solid #60a5fa" }}>
+          <div style={{ fontSize: 12.5, fontWeight: 900, color: "#93c5fd", marginBottom: 4 }}>
+            🔌 有一場沒打完的討伐
+          </div>
+          <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 8 }}>
+            {resumeLabel(resume.record)}　斷線或重整都接得回來。
+          </div>
+          <div style={{ display: "flex", gap: 7 }}>
+            <button type="button"
+              onClick={() => { setState(resume.state); setRunId(n => n + 1); setResume(null); }}
+              style={{
+                flex: 1, padding: "10px 0", borderRadius: 9, border: "none",
+                background: "linear-gradient(135deg,#2563eb,#1e40af)", color: "#fff",
+                fontWeight: 900, fontSize: 13, cursor: "pointer",
+              }}>接續戰鬥</button>
+            <button type="button"
+              onClick={() => { clearRaidProgress(); setResume(null); }}
+              style={{
+                padding: "10px 14px", borderRadius: 9, border: "1px solid #475569",
+                background: "transparent", color: "#94a3b8", fontWeight: 900, fontSize: 12, cursor: "pointer",
+              }}>放棄</button>
+          </div>
+        </div>
+      )}
 
       {summary && (
         <div style={{ ...cardStyle, border: "1px solid #f59e0b" }}>

@@ -16,6 +16,7 @@ import { RaidBossBar, RaidGauge, RaidIntent, RaidSpotLegend, RaidTeamBar } from 
 import { teamGaugeMax, teamSizeOf } from "../domain/raidTeam";
 import { botRoundArrows } from "../domain/raidBot";
 import { allSubmitted, pendingMembers } from "../domain/raidTeam";
+import { clearRaidProgress, saveRaidProgress } from "../domain/raidResume";
 import { RAID_MEDALS } from "../raidAssets";
 import RaidBoss from "./RaidBoss";
 import RaidTarget from "./RaidTarget";
@@ -27,6 +28,9 @@ export default function RaidScreen({
   state,                       // createRaidState 的結果
   onState,                     // (nextState, roundLog) => void
   bossKey, bossTitle,
+  eventId = null,
+  isHost = true,               // 只有房主看得到強制推進
+  onForceAdvance = null,       // 組隊接線上時由外層提供（沙盒直接本機推進）
   participants = 0,
   bgUrl = null,
   playerName = "射手",
@@ -272,6 +276,9 @@ export default function RaidScreen({
       setPending([]);
       setSubmissions({});
       setShown(null);
+      // 防重整：每回合存一次；打完就清掉（不然重整可以再結算一次）
+      if (next.finished) clearRaidProgress();
+      else saveRaidProgress(next, { bossKey: next.boss?.key || bossKey, eventId });
       onState?.(next, log);
       if (next.finished) onFinish?.(next);
     }, total + 240));
@@ -327,6 +334,9 @@ export default function RaidScreen({
   const teamSize = teamSizeOf(state);
   // 送出之後（等隊友／演出中）才顯示小隊立繪
   const teamRevealed = playing || Object.keys(submissions).length > 0;
+  // 還在等誰（房主的強制推進按鈕吃這個）
+  const waitingNames = (!playing && Object.keys(submissions).length > 0)
+    ? pendingMembers(state.members || [], submissions) : [];
   const gaugeMax = teamGaugeMax(teamSize);
 
   return (
@@ -478,6 +488,26 @@ export default function RaidScreen({
                     padding: "8px 0", borderRadius: 10, border: "1px solid #f59e0b",
                     background: "transparent", color: "#fbbf24", fontWeight: 900, fontSize: 11, cursor: "pointer",
                   }}>✅ 送出</button>
+              )}
+
+              {/* ⚠️ 房主的強制推進：有人斷線就永遠等不到他，全隊會卡死。
+                     用「已經交上來的箭」直接結算，沒交的人這回合就是空手——
+                     替他生箭等於幫他打，那是作弊。 */}
+              {isHost && !playing && waitingNames.length > 0 && (
+                <button type="button"
+                  onClick={() => {
+                    if (onForceAdvance) { onForceAdvance(submissions); return; }
+                    const roster = state.members || [];
+                    setMessage(`強制推進——跳過 ${waitingNames.join("、")}`);
+                    playRound(roster.flatMap(m => submissions[m.memberId] || []));
+                  }}
+                  style={{
+                    padding: "8px 0", borderRadius: 10, border: "1px solid #f87171",
+                    background: "transparent", color: "#fca5a5", fontWeight: 900, fontSize: 10.5,
+                    cursor: "pointer", lineHeight: 1.3,
+                  }}>
+                  ⏭️ 強制推進<br />跳過 {waitingNames.length} 人
+                </button>
               )}
 
               {onExit && !playing && (

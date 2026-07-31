@@ -237,6 +237,64 @@ export async function disbandRaidRoom(roomId, hostId) {
   } catch (e) { return { ok: false, reason: e?.message }; }
 }
 
+/**
+ * ⚠️ 房主的強制推進：**有人斷線就永遠等不到他，全隊會卡死。**
+ * 用「已經交上來的箭」直接結算——沒交的人這回合就是空手，不補假箭
+ * （替他生箭等於幫他打，那是作弊；空手是誠實的結果）。
+ * 比照 villageBoardTeamDb.forceAdvanceRoom 的解卡設計。
+ */
+export async function forceAdvanceRaidRoom(roomId, hostId) {
+  try {
+    const ref = doc(db, R, roomId);
+    const s = await getDoc(ref);
+    if (!s.exists()) return { ok: false, reason: "房間不存在" };
+    const data = s.data();
+    if (data.hostId !== hostId) return { ok: false, reason: "只有房主可以強制推進" };
+    if (data.status !== "active") return { ok: false, reason: "討伐還沒開始" };
+
+    const phase = roomPhase(data);
+    const arrows = collectRoomArrows(data);
+    if (!arrows.length) return { ok: false, reason: "還沒有任何人送出，沒有東西可以結算" };
+
+    const state = hydrateRaidState(data.state);
+    if (!state) return { ok: false, reason: "戰鬥狀態遺失" };
+
+    const { state: next, log } = resolveRaidRound({ state, arrows });
+    await updateDoc(ref, {
+      state: serializeRaidState(next),
+      lastLog: JSON.parse(JSON.stringify(log)),
+      round: next.round,
+      seq: (Number(data.seq) || 0) + 1,
+      submissions: {},
+      status: next.finished ? "done" : "active",
+      forcedAt: serverTimestamp(),
+      forcedSkipped: phase.waitingFor,        // 誰被跳過，前端可以提示
+      ...(next.finished ? { finishedAt: serverTimestamp() } : {}),
+      updatedAt: serverTimestamp(),
+    });
+    return { ok: true, skipped: phase.waitingNames, finished: next.finished };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+/**
+ * 防斷線／防重整：找回我還在進行中的房間。
+ * 比照 villageBoardTeamDb.findReconnectableBoardRoom。
+ */
+export async function findReconnectableRaidRoom(memberId) {
+  if (!memberId) return { ok: false, room: null };
+  try {
+    const snap = await getDocs(query(collection(db, R), where("status", "in", ["waiting", "active"])));
+    const rooms = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .filter(r => r.members?.[memberId])
+      .sort((a, b) => {
+        const ta = a.updatedAt?.toMillis?.() || a.updatedAt || 0;
+        const tb = b.updatedAt?.toMillis?.() || b.updatedAt || 0;
+        return tb - ta;
+      });
+    return { ok: true, room: rooms[0] || null };
+  } catch (e) { return { ok: false, reason: e?.message, room: null }; }
+}
+
 /** 房主的解卡工具：有人斷線就永遠等不到他，比照 villageBoardTeamDb.kickBoardMember */
 export async function kickRaidMember(roomId, hostId, memberId) {
   try {
