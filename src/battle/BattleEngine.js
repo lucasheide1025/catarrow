@@ -10,6 +10,14 @@ import { calcStandardCounter, resolvePlayerCounter, resolveStandardArrowHit } fr
 import { labelToValue } from '../lib/score';
 import { getPotion } from '../lib/itemData';
 import { shouldTriggerEvent, drawRandomEvent } from '../lib/randomEvents';
+// 🎯 玩家側加成（卡片天賦＋裝備專精）與 ☠️ 對怪物施加的異常狀態。
+// ⚠️ 公式一律走這兩支，**不要抄進這個檔**——抄一次就會漂一次。
+import {
+  applyIncoming, applyOutgoing, applyRoundEnd, buildCombatModifiers, effectiveDefense, reflectDamage,
+} from '../lib/combatModifiers';
+import {
+  mergeMonsterStatus, monsterBlocked, monsterStatMods, rollInflict, tickMonsterStatuses,
+} from '../lib/monsterStatus';
 import { ARROWS_PER_ROUND, DISTANCE_START, randomDistStep } from './BattleConfig';
 import {
   createArrowEvent, createThrowPotionEvent, createCounterEvent,
@@ -104,6 +112,12 @@ export function processMonsterRound(config, ctx, arrows, catCtx = null) {
   let curATKMod     = ctx.archerATKMod;
   let potionShield  = ctx.potionShield || 0;
   let poisonEffect  = ctx.poisonEffect || null;
+  // 玩家帶的加成（沒帶就是全 0 的一包，公式照走不用分支）
+  const mods = ctx.mods || buildCombatModifiers();
+  // ☠️ 怪物身上的異常狀態
+  let monsterStatuses = [...(ctx.monsterStatuses || [])];
+  const statMods = monsterStatMods(monsterStatuses);
+  const blocked = monsterBlocked(monsterStatuses);
   let revived       = ctx.revived;
   let roundTotalDmg = 0;
   let roundDmgRecvd = 0; // 本回合承受的傷害累計
@@ -220,13 +234,33 @@ export function processMonsterRound(config, ctx, arrows, catCtx = null) {
       ? Math.min(boostedRaw + 5, 10)
       : boostedRaw;
 
+    // 🔨 破防（怪物身上的異常）→ 🗡️ 破甲/穿甲（玩家的加成），依序削防禦
+    const statusedDef = ctx.monster.def * (1 - statMods.defDownPct / 100);
+    const effDef = effectiveDefense(statusedDef, mods);
     const hit = resolveStandardArrowHit(
-      { label: isX ? "X" : (score >= 10 ? "10" : rawLabel), score }, effATK, ctx.monster.def, curUnlocked,
+      { label: isX ? "X" : (score >= 10 ? "10" : rawLabel), score }, effATK, effDef, curUnlocked,
       (consumableBuffs.dmgMult || 1) * (1 + (ctx.monsterDmgTakenPct || 0) / 100) - 1,
     );
     const part = hit.part;
     curUnlocked = hit.unlockedParts;
-    const dmg = hit.dmg;
+    // 💪 玩家的傷害加成（傷害%/高品質/對王/蓄勁/終結/連擊）
+    const out = applyOutgoing({
+      baseDamage: hit.dmg,
+      score: isX ? "X" : score,
+      bossTagged: !!(ctx.monster.bossTagged || (ctx.monster.encounter && ctx.monster.encounter !== "normal")),
+      mods, round: ctx.round,
+      monsterHpRatio: ctx.monster.maxHp ? monsterHP / ctx.monster.maxHp : 1,
+    });
+    const dmg = out.damage;
+
+    // ☠️ 射得準才施加異常（9 環以上／X）——這是射箭遊戲，準度要換成戰術優勢
+    if (dmg > 0) {
+      for (const status of rollInflict({ score: isX ? "X" : score, inflict: mods.inflict })) {
+        monsterStatuses = mergeMonsterStatus(monsterStatuses, status);
+        events.push(createThrowPotionEvent(-1, getPotion("throw_poison"), 0,
+          `${status.icon} ${ctx.monster.name} 陷入「${status.name}」！`, {}));
+      }
+    }
 
     if (part.id === 'head') headHitCount++;
 
@@ -325,10 +359,24 @@ export function processMonsterRound(config, ctx, arrows, catCtx = null) {
     const isCrit = Math.random() < critChance;
     const headStunned = headHitCount > 0 && battleMode === 'zombie';
     const effectiveDef = Math.round((ctx.archerStats.def || 0) * (consumableBuffs.defMult || 1));
-    let cdmg = calcStandardCounter(ctx.monster.atk, effectiveDef, headStunned, isCrit);
+    // 😱 虛弱壓怪物攻擊 → ⚡ 麻痺有機率整個擋掉
+    const counterAtk = ctx.monster.atk * (1 - statMods.atkDownPct / 100);
+    let cdmg = blocked.counterBlocked
+      ? 0
+      : calcStandardCounter(counterAtk, effectiveDef, headStunned, isCrit);
     if (ctx.counterReducePct) cdmg = Math.round(cdmg * (1 - ctx.counterReducePct / 100));
+    // 🧱 玩家的減傷（堅韌／守護／堅盾），合計有 80% 上限
+    cdmg = applyIncoming({
+      damage: cdmg, currentHp: archerHP, maxHp: ctx.archerStats.hp || archerHP, mods,
+    }).damage;
     const counterHit = resolvePlayerCounter({ arrows, baseDamage:cdmg, maxHP:ctx.archerStats.hp || archerHP });
     cdmg = counterHit.damage;
+    // 🌵 荊棘：對方打你多少就彈回去多少
+    const thorns = reflectDamage(cdmg, mods);
+    if (thorns > 0 && monsterHP > 0) {
+      monsterHP = Math.max(0, monsterHP - thorns);
+      roundTotalDmg += thorns;
+    }
 
     // 貓貓防禦盾
     let finalCdmg = cdmg;
@@ -427,6 +475,33 @@ export function processMonsterRound(config, ctx, arrows, catCtx = null) {
 
   // ── Phase 6：回合結算 ──────────────────────────────────
   const totalScore = processedArrowScores.reduce((s, v) => s + v, 0);
+  // ☠️ 回合末：怪物身上的異常結算並倒數
+  if (monsterStatuses.length && monsterHP > 0) {
+    const tick = tickMonsterStatuses({
+      list: monsterStatuses, monsterHp: monsterHP,
+      monsterMaxHp: ctx.monster.maxHp || ctx.monsterHP,
+      playerAtk: (ctx.archerStats?.atk || 0) + curATKMod,
+    });
+    if (tick.totalDamage > 0) {
+      roundTotalDmg += tick.totalDamage;
+      for (const log of tick.logs) {
+        if (!log.damage) continue;
+        events.push(createThrowPotionEvent(-1, getPotion("throw_poison"), log.damage,
+          `${log.icon} ${log.name}：-${log.damage}`, {}));
+      }
+    }
+    monsterHP = tick.monsterHp;
+    monsterStatuses = tick.statuses;
+  }
+
+  // 🌿 回合末回血（睡飽專精＋汲取天賦）。倒下的人不回。
+  if (archerHP > 0) {
+    const healed = applyRoundEnd({
+      currentHp: archerHP, maxHp: ctx.archerStats?.hp || archerHP, mods, alive: true,
+    });
+    archerHP = healed.hp;
+  }
+
   events.push(createRoundResultEvent(ctx.round, totalScore, roundTotalDmg, monsterHP));
 
   // 本回合所有 headHitCount 用途結束，正式重置
@@ -442,6 +517,7 @@ export function processMonsterRound(config, ctx, arrows, catCtx = null) {
       ...ctx,
       monsterHP, archerHP, distance: curDist,
       unlockedParts: curUnlocked, skipCounter: false, archerATKMod: 0, potionShield, poisonEffect,
+      monsterStatuses,          // ☠️ 帶到下一回合
       headHitCount: 0,
       totalDmgDealt: ctx.totalDmgDealt + roundTotalDmg,
       totalDmgRecvd: ctx.totalDmgRecvd + roundDmgRecvd,

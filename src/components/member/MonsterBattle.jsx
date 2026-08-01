@@ -1,5 +1,5 @@
 // src/components/member/MonsterBattle.jsx
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
 import CatMsg from "../cat/CatMsg";
@@ -35,6 +35,9 @@ import { resolveSoloMonsterAbility } from "../../lib/soloMonsterAbilityEngine";
 import { calcStandardCounter } from "../../lib/damage";
 import { MATERIAL_BY_ID as EXPANSION_MATERIAL_BY_ID } from "../../lib/monsterEconomyCatalog";
 import { calcCardCombatEffectsFromCollection } from "../../lib/cardTalents";
+// 🎯 玩家側加成統一走這支——不要再把公式抄進元件
+import { buildCombatModifiers } from "../../lib/combatModifiers";
+import { getEquipSpecializations, toEquipSpecSlots } from "../../lib/equipSpecializationDb";
 import { SOLO_CHALLENGE_LEVELS, applyChallengeLevel } from "../../lib/monsterExpansionAdapter";
 import { createDispatch } from "../../battle/BattleAnimation";
 import { RoundController } from "../../battle/RoundController";
@@ -175,6 +178,8 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   const [monsterDmgTakenPct, setMonsterDmgTakenPct] = useState(0);
   const [counterReducePct, setCounterReducePct] = useState(0);
   const [poisonEffect, setPoisonEffect] = useState(null);
+  // ☠️ 怪物身上的異常狀態（玩家射準時施加）
+  const [monsterStatuses, setMonsterStatuses] = useState([]);
   const [distance, setDistance]         = useState(DISTANCE_START);
   const [round, setRound]               = useState(1);
   const [log, setLog]                   = useState([]);
@@ -262,6 +267,25 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   const lastPickedRef = useRef(null);
   const phaseRef = useRef("select");
   const [cardColl, setCardColl] = useState({ cards: {}, equipped: [] });
+  // 🎯 玩家帶的卡片天賦 ＋ 裝備專精。
+  // ⚠️ 以前這兩樣在打怪**完全沒有作用**——只有 BattleScreen（沒上線的那個檔）有接。
+  const [equipSpec, setEquipSpec] = useState(null);
+  const combatMods = useMemo(
+    () => buildCombatModifiers({
+      cardFx: calcCardCombatEffectsFromCollection(cardColl || {}),
+      equipSpec,
+    }),
+    [cardColl, equipSpec],
+  );
+  // 專精只讀一次（不會在戰鬥中改變）
+  useEffect(() => {
+    if (!profile?.id) return undefined;
+    let cancelled = false;
+    getEquipSpecializations(profile.id)
+      .then(spec => { if (!cancelled) setEquipSpec(toEquipSpecSlots(spec)); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [profile?.id]);
   const cardCollRef = useRef({ cards: {}, equipped: [] }); // 供 startBattle 同步讀取
   const extraDexRef = useRef({}); // monsterDex/craftStats/... 不放 dep array，用 ref 同步最新值
   extraDexRef.current = { monsterDex, craftStats, chestStats, potionDex, duelStats, cardColl };
@@ -369,6 +393,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
       battleSessionId: battleSessionIdRef.current,
       runtimeSnapshot: battleRuntimeSnapshot,
       activeCarryBuffs, potionShield, monsterDmgTakenPct, counterReducePct, poisonEffect,
+      mods: combatMods, monsterStatuses,
       log: log.slice(-8),
     });
     try { sessionStorage.setItem("mb_battle_save", JSON.stringify(save)); } catch {}
@@ -678,6 +703,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
       headHitCount: 0, revived, archerATKMod,
       totalDmgDealt, totalDmgRecvd, critCount,
       consumableBuffs, potionShield, monsterDmgTakenPct, counterReducePct, poisonEffect,
+      mods: combatMods, monsterStatuses,
     };
     const catCtx = hasCat ? {
       hasCat, catName,
@@ -841,6 +867,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     setPotionShield(finalState.potionShield || 0);
     setCounterReducePct(0);
     setPoisonEffect(finalState.poisonEffect || null);
+    setMonsterStatuses(finalState.monsterStatuses || []);
     setTotalDmgDealt(finalState.totalDmgDealt);
     setTotalDmgRecvd(finalState.totalDmgRecvd);
     setCritCount(finalState.critCount);
@@ -894,6 +921,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     setMonsterDmgTakenPct(s.monsterDmgTakenPct || 0);
     setCounterReducePct(s.counterReducePct || 0);
     setPoisonEffect(s.poisonEffect || null);
+    setMonsterStatuses(s.monsterStatuses || []);
     setSelectedDistance(s.selectedDistance || 15);
     setDistanceMode(s.distanceMode || "fixed");
     if (s.battleStats) setBattleStats(s.battleStats);

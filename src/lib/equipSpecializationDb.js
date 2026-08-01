@@ -47,6 +47,21 @@ export function normalizeSpecializations(data) {
   };
 }
 
+/**
+ * 專精文件 → combatModifiers 要的 { weapon, armor, accessory } 形狀。
+ * ⚠️ 抽出來是因為**五個戰鬥模式都要用**；各自抄一份就會漂
+ *    （卡片天賦當初就是這樣只剩一個畫面有效的）。
+ */
+export function toEquipSpecSlots(spec) {
+  const src = normalizeSpecializations(spec);
+  const pick = slot => {
+    const trackId = src[slot]?.activeTrackId;
+    const level = trackId ? src[slot]?.tracks?.[trackId]?.level || 0 : 0;
+    return trackId && level > 0 ? { trackId, level } : null;
+  };
+  return { weapon: pick("weapon"), armor: pick("armor"), accessory: pick("accessory") };
+}
+
 export async function getEquipSpecializations(memberId) {
   if (!memberId) return normalizeSpecializations(null);
   try {
