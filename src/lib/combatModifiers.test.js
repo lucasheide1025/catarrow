@@ -19,7 +19,11 @@ const spec = (slot, trackId, level) => ({ [slot]: { trackId, level } });
 describe("彙總", () => {
   test("沒帶任何東西時全部是 0，不會是 NaN", () => {
     const m = buildCombatModifiers();
-    for (const v of Object.values(m)) expect(Number.isFinite(v)).toBe(true);
+    // inflict 是物件（能施加哪些異常），其餘一律是數字
+    for (const [k, v] of Object.entries(m)) {
+      if (k === "inflict") { expect(v).toEqual({}); continue; }
+      expect(Number.isFinite(v)).toBe(true);
+    }
     expect(m.damagePct).toBe(0);
   });
 
@@ -215,5 +219,28 @@ describe("UI 說明", () => {
 
   test("什麼都沒帶就沒有列", () => {
     expect(describeModifiers(buildCombatModifiers())).toEqual([]);
+  });
+});
+
+describe("拆開後的新鍵（2026-08-01）", () => {
+  test("⚠️ 蓄勁只在第一回合——有條件才有辨識度", () => {
+    const m = buildCombatModifiers({ cardFx: { firstStrikePct: 20 } });
+    expect(applyOutgoing({ baseDamage: 100, score: 5, mods: m, round: 1 }).damage).toBe(120);
+    expect(applyOutgoing({ baseDamage: 100, score: 5, mods: m, round: 2 }).damage).toBe(100);
+  });
+
+  test("⚠️ 終結只在怪物殘血（3 成以下）", () => {
+    const m = buildCombatModifiers({ cardFx: { finisherPct: 20 } });
+    expect(applyOutgoing({ baseDamage: 100, score: 5, mods: m, monsterHpRatio: 1 }).damage).toBe(100);
+    expect(applyOutgoing({ baseDamage: 100, score: 5, mods: m, monsterHpRatio: 0.2 }).damage).toBe(120);
+  });
+
+  test("inflict 會被帶進 mods 給戰鬥端用", () => {
+    const m = buildCombatModifiers({ cardFx: { inflict: { poison: { chancePct: 12, strength: 3 } } } });
+    expect(m.inflict.poison.chancePct).toBe(12);
+  });
+
+  test("沒有 inflict 時是空物件，不是 undefined", () => {
+    expect(buildCombatModifiers().inflict).toEqual({});
   });
 });

@@ -4,6 +4,7 @@
 // 所有數值集中此檔;戰鬥端只吃 calcCardCombatEffects 的彙總結果(各鍵有 cap)。
 
 import { getSignatureEffect } from "./signatureEffectCatalog";
+import { FAMILY_STATUS, MONSTER_STATUSES, procCapFor } from "./monsterStatus";
 
 // ── 族系套裝（2張/4張兩階）────────────────────────────────
 export const FAMILY_SET_BONUSES = Object.freeze({
@@ -17,22 +18,32 @@ export const FAMILY_SET_BONUSES = Object.freeze({
 });
 
 // ── 招牌天賦映射（積木 → 天賦;每卡取第一個命中,Tier 放大 T1-2×1/T3-4×1.5/T5-6×2）──
+//
+// ⚠️ 2026-08-01 重寫：舊版有 4 條規則擠在同一個 damagePct（蓄勁/淬毒/挑戰者/蠻力），
+//    252 張卡實際只有 9 種效果，而且大量是「+1~2% 傷害」的保底——玩家換卡感覺不到差別。
+//    現在每條規則都有**自己的鍵**，換卡才有換打法的感覺。
+//
+// ⚠️ 「淬毒」以前是假的（只是 +1% 傷害）。現在它真的會施加異常狀態，
+//    種類由**卡片的族系**決定（見 monsterStatus.FAMILY_STATUS）。
 const TALENT_RULES = [
-  { key: "armorPiercePct",  base: 1,  icon: "🗡️", label: "穿甲",   match: b => b.type === "damage" && b.pierceDefPct > 0 },
-  { key: "shieldPiercePct", base: 1,  icon: "💥", label: "破盾",   match: b => b.type === "damage" && b.pierceShieldPct > 0 },
-  { key: "critRatePct",     base: 1,  icon: "⚡", label: "連擊",   match: b => b.type === "damage" && (b.hits || 1) >= 2 },
-  { key: "damagePct",       base: 1,  icon: "⏳", label: "蓄勁",   match: b => b.type === "delayedBurst" },
-  { key: "openingShieldPct",base: 1,  icon: "🛡️", label: "護體",   match: b => b.type === "selfShield" },
-  { key: "damageReductionPct", base: 1, icon: "🧱", label: "堅盾", match: b => b.type === "selfReduction" },
-  { key: "reflectPct",      base: 1,  icon: "🌵", label: "荊棘",   match: b => b.type === "selfReflect" },
-  { key: "monsterAtkDownPct", base: 1, icon: "😱", label: "威嚇",  match: b => b.type === "playerStatus" && b.id === "atkDown" },
-  { key: "monsterDefDownPct", base: 1, icon: "🔨", label: "破防",  match: b => b.type === "playerStatus" && b.id === "defDown" },
-  { key: "endRoundHeal",    base: 2,  icon: "🌿", label: "汲取",   match: b => b.type === "playerStatus" && b.id === "healDown" },
-  { key: "damagePct",       base: 1,  icon: "☠️", label: "淬毒",   match: b => b.type === "playerStatus" && b.id === "poison" },
-  { key: "hqDamagePct",     base: 2,  icon: "🎯", label: "精研",   match: b => b.type === "hqMark" },
-  { key: "critRatePct",     base: 2,  icon: "🏆", label: "挑戰者", match: b => b.type === "challenge" },
+  { key: "armorPiercePct",  base: 2,  icon: "🗡️", label: "穿甲",   match: b => b.type === "damage" && b.pierceDefPct > 0 },
+  { key: "shieldPiercePct", base: 2,  icon: "💥", label: "破盾",   match: b => b.type === "damage" && b.pierceShieldPct > 0 },
+  { key: "critRatePct",     base: 2,  icon: "⚡", label: "連擊",   match: b => b.type === "damage" && (b.hits || 1) >= 2 },
+  // 蓄勁：開場先發制人（原本跟蠻力共用 damagePct，分不出差別）
+  { key: "firstStrikePct",  base: 4,  icon: "⏳", label: "蓄勁",   match: b => b.type === "delayedBurst" },
+  { key: "openingShieldPct",base: 2,  icon: "🛡️", label: "護體",   match: b => b.type === "selfShield" },
+  { key: "damageReductionPct", base: 1.5, icon: "🧱", label: "堅盾", match: b => b.type === "selfReduction" },
+  { key: "reflectPct",      base: 2,  icon: "🌵", label: "荊棘",   match: b => b.type === "selfReflect" },
+  { key: "monsterAtkDownPct", base: 2, icon: "😱", label: "威嚇",  match: b => b.type === "playerStatus" && b.id === "atkDown" },
+  { key: "monsterDefDownPct", base: 2, icon: "🔨", label: "破防",  match: b => b.type === "playerStatus" && b.id === "defDown" },
+  { key: "endRoundHeal",    base: 3,  icon: "🌿", label: "汲取",   match: b => b.type === "playerStatus" && b.id === "healDown" },
+  // ☠️ 淬毒：**真的施加異常**，種類看族系（毒蟲=中毒、西方=灼燒、寶箱=冰凍…）
+  { key: "venomPct",        base: 3,  icon: "☠️", label: "淬毒",   match: b => b.type === "playerStatus" && b.id === "poison" },
+  { key: "hqDamagePct",     base: 3,  icon: "🎯", label: "精研",   match: b => b.type === "hqMark" },
+  // 挑戰者：殘血追擊（原本跟連擊共用 critRatePct）
+  { key: "finisherPct",     base: 4,  icon: "🏆", label: "終結",   match: b => b.type === "challenge" },
 ];
-const DEFAULT_TALENT = { key: "damagePct", base: 1, icon: "💪", label: "蠻力" };
+const DEFAULT_TALENT = { key: "damagePct", base: 2, icon: "💪", label: "蠻力" };
 
 const tierScale = tierIndex => (tierIndex <= 2 ? 1 : tierIndex <= 4 ? 1.5 : 2);
 
@@ -65,16 +76,22 @@ function talentText(key, value) {
     case "monsterDefDownPct": return `怪物 DEF -${value}%`;
     case "endRoundHeal": return `回合末回復 ${value} HP`;
     case "hqDamagePct": return `高品質命中傷害 +${value}%`;
+    case "firstStrikePct": return `第一回合傷害 +${value}%`;
+    case "finisherPct": return `怪物殘血時傷害 +${value}%`;
+    case "venomPct": return `9環以上有 ${value}% 機率附加族系異常`;
     default: return `+${value}`;
   }
 }
 
 // 各天賦鍵彙總上限（防 10 張同天賦疊到失衡）
 // export：供顯示層 cardTalentDisplay 引用同一份上限（不抄數字，避免顯示與實際 cap 漂移）
+// ⚠️ 2026-08-01 一併調高：舊上限（傷害 8%、穿甲 10%）讓 10 張滿編卡片
+//    加起來也感覺不出來。卡片是主要的養成線，要換得出打法。
 export const TALENT_CAPS = Object.freeze({
-  armorPiercePct: 10, shieldPiercePct: 10, critRatePct: 8, damagePct: 8,
-  openingShieldPct: 8, damageReductionPct: 6, reflectPct: 6,
-  monsterAtkDownPct: 6, monsterDefDownPct: 6, endRoundHeal: 20, hqDamagePct: 12,
+  armorPiercePct: 20, shieldPiercePct: 20, critRatePct: 15, damagePct: 15,
+  openingShieldPct: 12, damageReductionPct: 10, reflectPct: 10,
+  monsterAtkDownPct: 12, monsterDefDownPct: 12, endRoundHeal: 25, hqDamagePct: 18,
+  firstStrikePct: 25, finisherPct: 25, venomPct: 30,
 });
 
 // 套裝觸發：同族怪物卡張數 ≥2 / ≥4
@@ -107,7 +124,53 @@ export function calcCardCombatEffects(equippedViews = []) {
     if (set.tier4) for (const [key, value] of Object.entries(config.t4)) total[key] = (total[key] || 0) + value;
   }
   if (total.poisonResistPct) total.poisonResistPct = Math.min(100, total.poisonResistPct);
+  // ☠️ 這副牌能對怪物施加什麼——戰鬥端拿去 rollInflict()
+  total.inflict = calcInflictFromViews(equippedViews, total.venomPct || 0);
   return total;
+}
+
+// ── ☠️ 異常施加：每張卡都替**自己的族系狀態**貢獻一點觸發率 ──────
+//
+// ⚠️ 這是族系識別度的來源：10 張毒蟲卡＝很會下毒，混編＝各種狀態各一點。
+//    「淬毒」天賦的卡再額外加碼（那是它的招牌）。
+//
+// ⚠️ 強度**不隨張數成長**，只有觸發率會——不然滿編毒隊會把怪物毒到見底，
+//    那是傷害不是控場。
+const FAMILY_INFLICT_BASE = 1.5;      // 每張卡替族系狀態 +1.5%（再乘 tier）
+export const STATUS_STRENGTH = Object.freeze({
+  poison: 3,      // 每回合 3% 最大 HP
+  burn: 12,       // 每回合 12% 玩家 ATK
+  bleed: 8,       // 每回合 8% 玩家 ATK（可疊層）
+  defBreak: 12,   // 怪物 DEF -12%
+  weaken: 12,     // 怪物 ATK -12%
+  freeze: 1,      // 控場沒有強度
+  paralyze: 50,   // 50% 機率擋反擊
+});
+
+/**
+ * 算出「這副牌能施加哪些異常、各自多少機率」。
+ * @returns { [statusId]: { chancePct, strength } }
+ */
+export function calcInflictFromViews(equippedViews = [], venomPct = 0) {
+  const chance = {};
+  for (const view of equippedViews) {
+    if (!view || view.source === "wb") continue;
+    const statusId = FAMILY_STATUS[view.family];
+    if (!statusId) continue;
+    chance[statusId] = (chance[statusId] || 0) + FAMILY_INFLICT_BASE * tierScale(view.tierIndex || 1);
+  }
+  const out = {};
+  for (const [id, raw] of Object.entries(chance)) {
+    // 淬毒天賦是全域加碼：帶了淬毒卡，所有族系狀態都更容易觸發
+    const total = Math.min(procCapFor(id), Math.round((raw + Number(venomPct || 0)) * 10) / 10);
+    if (total <= 0) continue;
+    out[id] = {
+      chancePct: total,
+      strength: STATUS_STRENGTH[id] ?? 0,
+      duration: MONSTER_STATUSES[id]?.maxDuration ?? 1,
+    };
+  }
+  return out;
 }
 
 // 從 cardCollections 文件形狀直接彙總（戰鬥端便利入口）

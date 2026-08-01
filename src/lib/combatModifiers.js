@@ -68,6 +68,12 @@ export function buildCombatModifiers({ cardFx = null, equipSpec = null } = {}) {
     bossDamageCardPct: num(fx.bossDamagePct),
     damagePct: num(fx.damagePct),
     critRatePct: num(fx.critRatePct),
+    // 拆開後的三個新鍵（2026-08-01）：讓換卡真的換得出打法
+    firstStrikePct: num(fx.firstStrikePct),   // 蓄勁：第一回合
+    finisherPct: num(fx.finisherPct),         // 終結：怪物殘血時
+    shieldPiercePct: num(fx.shieldPiercePct),
+    // ☠️ 這副牌能對怪物施加什麼異常
+    inflict: fx.inflict || {},
 
     // ── 受擊 ──
     flatReductionPct: specValue(a, "tenacity", "finalDamageReductionPct"),
@@ -122,7 +128,10 @@ export function effectiveDefense(monsterDef, mods) {
  * @param baseDamage 已經用 effectiveDefense() 算過的傷害
  * @param score      這一箭的環數（"X" 或數字）
  */
-export function applyOutgoing({ baseDamage, score = 0, bossTagged = false, mods, rand = Math.random }) {
+export function applyOutgoing({
+  baseDamage, score = 0, bossTagged = false, mods, rand = Math.random,
+  round = 1, monsterHpRatio = 1,
+}) {
   const m = mods || buildCombatModifiers();
   let dmg = Math.max(0, num(baseDamage));
   if (dmg <= 0) return { damage: 0, crit: false, highQuality: false };
@@ -136,6 +145,9 @@ export function applyOutgoing({ baseDamage, score = 0, bossTagged = false, mods,
   if (m.damagePct) dmg *= 1 + pct(m.damagePct);
   if (highQuality && m.hqDamageCardPct) dmg *= 1 + pct(m.hqDamageCardPct);
   if (bossTagged && m.bossDamageCardPct) dmg *= 1 + pct(m.bossDamageCardPct);
+  // ⏳ 蓄勁只在第一回合、🏆 終結只在怪物殘血——都是有條件的，才有辨識度
+  if (round <= 1 && m.firstStrikePct) dmg *= 1 + pct(m.firstStrikePct);
+  if (num(monsterHpRatio, 1) <= 0.3 && m.finisherPct) dmg *= 1 + pct(m.finisherPct);
 
   // ⚠️ X 本來就是爆擊，不再疊「連擊」——不然滿環變成雙重爆擊
   let crit = false;
@@ -217,6 +229,8 @@ export function describeModifiers(mods) {
   };
   add("🗡️", "無視防禦", 100 - (1 - pct(m.defIgnoreSpecPct)) * (1 - pct(m.defIgnoreCardPct)) * 100);
   add("💪", "傷害", m.damagePct);
+  add("⏳", "首回合傷害", m.firstStrikePct);
+  add("🏆", "殘血追擊", m.finisherPct);
   add("🎯", "高品質命中", m.hqDamageSpecPct + m.hqDamageCardPct);
   add("👑", "對王類", m.bossDamageSpecPct + m.bossDamageCardPct);
   add("⚡", "爆擊率", m.critRatePct);
@@ -227,5 +241,8 @@ export function describeModifiers(mods) {
   add("😷", "異常強度減免", m.statusStrengthReductionPct);
   add("🧪", "毒抗", m.poisonResistPct);
   add("🐾", "貓貓攻擊", m.companionAttackPct);
+  for (const [id, cfg] of Object.entries(m.inflict || {})) {
+    rows.push({ icon: "☠️", label: id, text: `附加異常 ${Math.round(cfg.chancePct)}%（9環以上）` });
+  }
   return rows;
 }
