@@ -27,6 +27,11 @@ import { getEquipSpecializations } from "../../lib/equipSpecializationDb";
 import { addRoundArrows, subscribeCardCollection } from "../../lib/db";
 import { getBreakRuleText } from "../../lib/combatSkillEngine";
 import { calcCardCombatEffectsFromCollection } from "../../lib/cardTalents";
+// ☠️ 玩家對怪物施加的異常狀態（2026-08-01 新機制）
+import {
+  MONSTER_STATUSES, describeMonsterStatuses, mergeMonsterStatus, monsterBlocked, monsterStatMods,
+  rollInflict, tickMonsterStatuses,
+} from "../../lib/monsterStatus";
 import { useAuth } from "../../hooks/useAuth";
 import { createBattleScreenSnapshot, restoreBattleScreenSnapshot } from "../../lib/battleScreenSnapshot";
 
@@ -165,6 +170,7 @@ const initBattle = {
   equipSpec:null, monsterBossTagged:false,
   // 卡片天賦+族系套裝彙總（cardTalents.calcCardCombatEffects;null=未載入/訪客）
   cardFx:null,
+  monsterStatuses:[],   // ☠️ 怪物身上的異常
 };
 
 function effectivePlayerStat(state, stat) {
@@ -211,6 +217,9 @@ function battleReducer(state, action) {
       if(wSpec?.trackId==="armorBreak")monDef=Math.max(0,monDef*(1-getSpecializationEffect("armorBreak",wSpec.level).defenseIgnorePct/100));
       // 卡片天賦「穿甲」與專精破甲疊加
       if(state.cardFx?.armorPiercePct)monDef=Math.max(0,monDef*(1-state.cardFx.armorPiercePct/100));
+      // 🔨 怪物身上的「破防」異常再削一層
+      const mStat=monsterStatMods(state.monsterStatuses||[]);
+      if(mStat.defDownPct)monDef=Math.max(0,monDef*(1-mStat.defDownPct/100));
       let dmg=action.previewDamage===false?0:calcStandardArrowDmg(numScore,effectivePlayerStat(state,"atk"),monDef,partMult,score);
       let extraCrit=false;
       if(dmg>0){
@@ -222,6 +231,9 @@ function battleReducer(state, action) {
         if(fx?.damagePct)dmg=Math.round(dmg*(1+fx.damagePct/100));
         if(fx?.hqDamagePct&&(isX||numScore>=8))dmg=Math.round(dmg*(1+fx.hqDamagePct/100));
         if(fx?.bossDamagePct&&state.monsterBossTagged)dmg=Math.round(dmg*(1+fx.bossDamagePct/100));
+        // ⏳ 蓄勁只在第一回合、🏆 終結只在怪物殘血——有條件才有辨識度
+        if(fx?.firstStrikePct&&state.round<=1)dmg=Math.round(dmg*(1+fx.firstStrikePct/100));
+        if(fx?.finisherPct&&state.monsterMaxHp>0&&state.monsterHp/state.monsterMaxHp<=0.3)dmg=Math.round(dmg*(1+fx.finisherPct/100));
         if(fx?.critRatePct&&!isX&&numScore>0&&Math.random()<fx.critRatePct/100){extraCrit=true;dmg=Math.round(dmg*1.3);}
         // 招牌自身減傷（期限內）→ 高品質標記加成（8環+/X）→ 挑戰完成加成
         if(state.monsterReducePct&&(state.monsterReduceRound||0)>=state.round)dmg=Math.max(1,Math.round(dmg*(1-state.monsterReducePct/100)));
@@ -230,7 +242,20 @@ function battleReducer(state, action) {
       }
       const isCrit=action.previewDamage===false?false:(isZombie?(part&&part.mult>=1.8):(isX||extraCrit));
       const newArrows=[...state.arrows,{score,displayLabel:displayLabel||score,dmg,isCrit,part:isZombie?part:null}];
-      return{...state,arrows:newArrows,arrowIdx:state.arrowIdx+1,unlockedParts:isZombie?newUnlocked:(state.unlockedParts||new Set()),lastArrowDmg:dmg,lastArrowCrit:isCrit,lastArrowPart:isZombie&&part?`${part.icon} ${part.name} ×${part.mult}`:(numScore===0?"脫靶":(isX?"X環":`${numScore}環`))};
+      // ☠️ 射得準（9環以上/X）才施加異常。⚠️ 一定要寫進 messages——
+      //    沒有文字告知的話，就算真的中了玩家也不知道發生什麼事。
+      let nextStatuses=state.monsterStatuses||[];
+      const statusMsgs=[];
+      if(dmg>0&&action.previewDamage!==false){
+        for(const st of rollInflict({score:isX?"X":numScore,inflict:state.cardFx?.inflict})){
+          nextStatuses=mergeMonsterStatus(nextStatuses,st);
+          statusMsgs.push(st.kind==="control"
+            ?`${st.icon} ${state.monsterName} 陷入「${st.name}」——${st.id==="freeze"?"這回合放不出技能":"可能無法反擊"}！`
+            :`${st.icon} ${state.monsterName} 陷入「${st.name}」（${st.duration} 回合）`);
+        }
+      }
+      return{...state,arrows:newArrows,arrowIdx:state.arrowIdx+1,monsterStatuses:nextStatuses,
+      ...(statusMsgs.length?{messages:[...state.messages,...statusMsgs]}:{}),unlockedParts:isZombie?newUnlocked:(state.unlockedParts||new Set()),lastArrowDmg:dmg,lastArrowCrit:isCrit,lastArrowPart:isZombie&&part?`${part.icon} ${part.name} ×${part.mult}`:(numScore===0?"脫靶":(isX?"X環":`${numScore}環`))};
     }
     case"UNDO_ARROW":{
       if(state.arrows.length===0)return state;const newArrows=state.arrows.slice(0,-1);const last=newArrows[newArrows.length-1];
@@ -268,7 +293,11 @@ function battleReducer(state, action) {
       // 反擊：招牌有傷害積木時「取代」標準反擊（含穿甲/破盾;倍率已含破解減幅）
       const effDef=effectivePlayerStat(statusState,"def");
       const skillMult=reso?.skillDamageMult||0;
-      const baseCounter=skipCounter===true?0:calcStandardCounter(state.monsterAtk,skillMult>0?effDef*(1-(reso?.pierceDefPct||0)/100):effDef);
+      // 😱 虛弱壓怪物攻擊 → ⚡ 麻痺有機率整個擋掉反擊
+      const mStatC=monsterStatMods(state.monsterStatuses||[]);
+      const blockedC=monsterBlocked(state.monsterStatuses||[]);
+      const atkAfterStatus=Math.max(1,state.monsterAtk*(1-mStatC.atkDownPct/100));
+      const baseCounter=(skipCounter===true||blockedC.counterBlocked)?0:calcStandardCounter(atkAfterStatus,skillMult>0?effDef*(1-(reso?.pierceDefPct||0)/100):effDef);
       const rawCounter=skillMult>0?Math.round(baseCounter*skillMult):baseCounter;
       // 上回合延遲攻擊（倍率已含當時破解減幅）本回合落地
       const delayedExtra=state.pendingDelayedMult?Math.round(calcStandardCounter(state.monsterAtk,effDef)*state.pendingDelayedMult):0;
@@ -290,7 +319,20 @@ function battleReducer(state, action) {
       const monsterReducePct=reso?.selfReductionPct||(keepReduce?state.monsterReducePct:0);
       const monsterReduceRound=reso?.selfReductionPct?state.round+(reso.selfReductionDuration||1):(keepReduce?state.monsterReduceRound:0);
       const monsterHeal=reso?.monsterHealMaxHpPct?Math.round(state.monsterMaxHp*reso.monsterHealMaxHpPct/100):0;
-      return{...state,playerHp:Math.max(1,state.playerHp-poisonDamage-reflectDamage),monsterHp:Math.min(state.monsterMaxHp,state.monsterHp+monsterHeal),activeStatuses,lastAbilityResolution:reso,roundDmg:totalDmg,roundCrits:crits,totalDmgAllRounds:(state.totalDmgAllRounds||0)+totalDmg,pendingCounter,counterDmg:pendingCounter,
+      // ☠️ 回合末：怪物身上的異常結算並倒數。⚠️ 每一筆都要寫進 messages。
+      const healedHp=Math.min(state.monsterMaxHp,state.monsterHp+monsterHeal);
+      const tick=tickMonsterStatuses({
+        list:state.monsterStatuses||[],monsterHp:healedHp,monsterMaxHp:state.monsterMaxHp,
+        playerAtk:effectivePlayerStat(state,"atk"),
+      });
+      const tickMsgs=tick.logs.map(l=>l.expired
+        ?`${l.icon} ${state.monsterName} 的「${l.name}」結束了`
+        :`${l.icon} ${l.name}持續生效：${state.monsterName} 失去 ${l.damage} HP`);
+      if(blockedC.counterBlocked)tickMsgs.unshift(`⚡ ${state.monsterName} 麻痺中，這回合的反擊被打斷！`);
+      if(blockedC.skillBlocked)tickMsgs.unshift(`❄️ ${state.monsterName} 被凍住，放不出技能！`);
+      return{...state,playerHp:Math.max(1,state.playerHp-poisonDamage-reflectDamage),monsterHp:tick.monsterHp,monsterStatuses:tick.statuses,
+        ...(tickMsgs.length?{messages:[...state.messages,...tickMsgs]}:{}),
+        activeStatuses,lastAbilityResolution:reso,roundDmg:totalDmg+tick.totalDamage,roundCrits:crits,totalDmgAllRounds:(state.totalDmgAllRounds||0)+totalDmg+tick.totalDamage,pendingCounter,counterDmg:pendingCounter,
         pendingDelayedMult:reso?.delayedMult||0,monsterShield,monsterReducePct,monsterReduceRound,
         hqMarkPct:reso?.hqMarkPct||0,nextRoundDmgBuffPct:reso?.challenge?.damageBuffPct||0,
         phase:PHASE.PROCESSING};
@@ -363,6 +405,7 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
     player, monster, battleMode="score", scoreInput="keypad", targetFormat="full_110", difficulty={hp:1,atk:1,def:1}, hideMonsterStats=false,
     arrowsPerRound=6, allies=[], cat=null, potions=[], bgImage, onBattleEnd, onShootingAbandon, onPotionUsed, hideStandaloneResult=false,
     autoStart=false, scoringMode=false, onSubmit, fullScreen=false, renderMonster, renderPlayer,
+    cardFxOverride=null,   // 🧪 後台模擬台專用：直接指定卡片效果
     partyMode=false, partySubmitted=false, partyRound, partyRoundEvent=null, partyEventToken=null, onLeaveBattle,
     partyRole, partyRearChoice, onPartyRearChoice,
     partyMembers=[], partyIsHost=false, partyProcessing=false, onForceSkipMember,
@@ -380,7 +423,9 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
   const { profile: authedProfile } = useAuth();
   const [equipSpec, setEquipSpec] = useState(null);
   // 卡片天賦＋族系套裝彙總（裝備卡變動即重算）
-  const [cardFx, setCardFx] = useState(null);
+  const [cardFxRaw, setCardFx] = useState(null);
+  // 🧪 後台模擬台可以直接指定卡片效果（正式對局是 null，走玩家真實的卡片）
+  const cardFx = cardFxOverride || cardFxRaw;
   useEffect(() => {
     if (!authedProfile?.id) { setCardFx(null); return undefined; }
     return subscribeCardCollection(authedProfile.id, collection => {
@@ -1017,6 +1062,31 @@ let abilityResolution=null;if(battleId&&monster?.signatureSkillId){const ability
     {/* 🐱 貓貓訊息彈窗 */}
     {catMsg&&<div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",zIndex:25,background:"rgba(6,10,18,.88)",border:`1px solid ${catGlowColor}66`,borderRadius:16,padding:"10px 18px",fontSize:13,fontWeight:700,lineHeight:1.4,color:"#fff",backdropFilter:"blur(8px)",boxShadow:`0 0 30px ${catGlowColor}44, 0 0 60px ${catGlowColor}22`,animation:"msgIn .25s ease-out, catPulse 1.5s ease-in-out infinite",whiteSpace:"nowrap",pointerEvents:"none",textAlign:"center",borderLeft:`4px solid ${catGlowColor}`}}>{catMsg}</div>}
 
+    {/* 🎯 我帶了什麼加成——⚠️ 玩家看不到投資有沒有效，就等於沒有效。
+        這一塊同時是「異常施加機率」的唯一告知處。 */}
+    {showBattleUI&&inBattle&&(()=>{
+      const fx=battle.cardFx||{};
+      const chips=[];
+      if(fx.armorPiercePct)chips.push(`🗡️穿甲${fx.armorPiercePct}%`);
+      if(fx.damagePct)chips.push(`💪傷害+${fx.damagePct}%`);
+      if(fx.hqDamagePct)chips.push(`🎯高品質+${fx.hqDamagePct}%`);
+      if(fx.critRatePct)chips.push(`⚡爆擊${fx.critRatePct}%`);
+      if(fx.firstStrikePct)chips.push(`⏳首回合+${fx.firstStrikePct}%`);
+      if(fx.finisherPct)chips.push(`🏆殘血+${fx.finisherPct}%`);
+      if(fx.damageReductionPct)chips.push(`🧱減傷${fx.damageReductionPct}%`);
+      if(fx.reflectPct)chips.push(`🌵反彈${fx.reflectPct}%`);
+      if(fx.endRoundHeal)chips.push(`🌿回復${fx.endRoundHeal}`);
+      for(const [id,cfg] of Object.entries(fx.inflict||{})){
+        const def=MONSTER_STATUSES[id];
+        if(def)chips.push(`${def.icon}${def.name}${Math.round(cfg.chancePct)}%`);
+      }
+      if(!chips.length)return null;
+      return(<div style={{position:"absolute",zIndex:3,top:8,right:11,maxWidth:"44%",display:"flex",flexWrap:"wrap",gap:3,justifyContent:"flex-end",pointerEvents:"none"}}>
+        {chips.map(c=>(<span key={c} style={{fontSize:9,fontWeight:900,padding:"1px 5px",borderRadius:999,
+          background:"rgba(6,10,20,.85)",border:"1px solid rgba(148,163,184,.35)",color:"#cbd5e1",whiteSpace:"nowrap"}}>{c}</span>))}
+      </div>);
+    })()}
+
     {/* 戰鬥訊息 */}
     {showBattleUI&&<div style={{position:"absolute",zIndex:3,top:56,left:11,maxWidth:"46%",display:"flex",flexDirection:"column",gap:4,pointerEvents:"none"}}>
       {battle.messages.length>0&&(<div style={{background:"rgba(6,10,20,.88)",border:"1px solid rgba(255,255,255,.12)",borderRadius:10,padding:"6px 9px",maxHeight:104,overflowY:"auto",display:"flex",flexDirection:"column",gap:2,pointerEvents:"auto",boxShadow:"0 4px 14px rgba(0,0,0,.55)"}}>
@@ -1064,6 +1134,18 @@ let abilityResolution=null;if(battleId&&monster?.signatureSkillId){const ability
             {(()=>{const t=TIER_LABEL[monster?.tier]||{};return(<span style={{fontSize:9,fontWeight:900,padding:"1px 6px",borderRadius:4,color:t.color,background:t.bg||"transparent",border:`1px solid ${t.color}44`,whiteSpace:"nowrap"}}>{t.label||monster?.tier||"?"}</span>)})()}
           </div>
           {isWon&&<div style={{fontSize:11,fontWeight:900,color:"#4ade80",textAlign:"center",textShadow:"0 2px 6px #000"}}>擊敗！</div>}
+          {/* ☠️ 怪物身上的異常狀態——**要看得到還剩幾回合**，
+              不然玩家不知道現在能不能趁勝追擊 */}
+          {inBattle&&!isWon&&describeMonsterStatuses(battle.monsterStatuses).length>0&&(
+            <div style={{display:"flex",flexWrap:"wrap",gap:3}}>
+              {describeMonsterStatuses(battle.monsterStatuses).map(st=>(
+                <span key={st.id} style={{fontSize:9.5,fontWeight:900,padding:"1px 6px",borderRadius:999,
+                  color:st.color,background:`${st.color}22`,border:`1px solid ${st.color}66`,whiteSpace:"nowrap"}}>
+                  {st.text}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         {!hideMonsterStats&&<><div style={{height:8,borderRadius:99,background:"#020617",overflow:"hidden",boxShadow:"inset 0 0 0 1px rgba(255,255,255,.3)"}}><div style={{width:`${hpPct}%`,height:"100%",borderRadius:99,background:isWon?"#4ade80":hpPct>60?"linear-gradient(90deg,#ff7a7a,#e03b3b)":hpPct>30?"linear-gradient(90deg,#fbbf24,#ea580c)":"linear-gradient(90deg,#f87171,#dc2626)",transition:"width .4s ease-out"}}/></div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:10,color:"#e2e8f0",fontWeight:800,marginTop:3,fontVariantNumeric:"tabular-nums",textShadow:"none"}}><span style={{display:"inline-flex",alignItems:"center",gap:3}}><StatGlyph type="hp" color="#5ff0a3" />HP</span><span><b style={{color:"#ffffff"}}>{inBattle?shownMonsterHp.toLocaleString():"?"}</b> / {inBattle?shownMonsterMaxHp.toLocaleString():"?"}</span></div>

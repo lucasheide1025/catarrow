@@ -10,6 +10,8 @@ import { calcCatCombatStats } from "../../lib/catCombat";
 import { POTIONS } from "../../lib/itemData";
 import BattleSoundIndicator from "../shared/BattleSoundIndicator";
 import BattleScreen from "../battle/BattleScreen";
+// 🧪 模擬玩家的卡片天賦與異常施加——正式對局要靠機率碰運氣，測不動
+import { MONSTER_STATUSES, PROC_CAP, procCapFor } from "../../lib/monsterStatus";
 
 function getRealMonster(id) { return ALL_MONSTERS.find(m => m.id === id); }
 const FAMILY_COLORS = { ghost:"#6366f1", mountain:"#16a34a", insect:"#ca8a04", workplace:"#dc2626", exam:"#7c3aed", temple:"#ea580c" };
@@ -67,6 +69,30 @@ export default function AdminBattleTest() {
   const [selectedCatId, setSelectedCatId] = useState(null);
   const [battleActive, setBattleActive] = useState(false);
   const [battleResult, setBattleResult] = useState(null);
+  // 🧪 模擬台：卡片天賦 / 異常施加 / 怪物耐打度
+  const [simTalents, setSimTalents] = useState(false);
+  const [simInflictAll, setSimInflictAll] = useState(false);
+  const [hpScale, setHpScale] = useState(1);
+
+  // ⚠️ 100% 觸發是**模擬台限定**：正式對局的上限是 PROC_CAP（控場更低）。
+  //    測試要看得到效果，不然射 12 支箭都不觸發根本不知道有沒有接對。
+  const simCardFx = useMemo(() => {
+    if (!simTalents && !simInflictAll) return null;
+    const fx = simTalents ? {
+      armorPiercePct: 20, damagePct: 15, hqDamagePct: 18, critRatePct: 15,
+      firstStrikePct: 25, finisherPct: 25, damageReductionPct: 10,
+      reflectPct: 10, endRoundHeal: 25, openingShieldPct: 12,
+      monsterAtkDownPct: 12, monsterDefDownPct: 12,
+    } : {};
+    if (simInflictAll) {
+      fx.inflict = Object.fromEntries(Object.values(MONSTER_STATUSES).map(def => [
+        def.id,
+        { chancePct: 100, strength: def.id === "poison" ? 5 : def.id === "paralyze" ? 100 : 15,
+          duration: def.maxDuration },
+      ]));
+    }
+    return fx;
+  }, [simTalents, simInflictAll]);
 
   const battleRef = useRef(null);
   const mon  = MONSTERS[mIdx];
@@ -137,7 +163,8 @@ export default function AdminBattleTest() {
       ) : (
         <BattleScreen ref={battleRef} key={`battle-${mIdx}-${dIdx}-${battleMode}`}
           player={player} monster={mon} battleMode={battleMode} scoreInput={scoreInput}
-          difficulty={diff} arrowsPerRound={ARROWS_PER_ROUND}
+          difficulty={{ ...diff, hp: (diff.hp || 1) * hpScale }} arrowsPerRound={ARROWS_PER_ROUND}
+          cardFxOverride={simCardFx}
           allies={playerCount > 1 ? allies : []} cat={catProp} potions={potions} bgImage={bgUrl}
           onBattleEnd={handleBattleEnd} onPotionUsed={()=>{}} />)}
 
@@ -147,6 +174,28 @@ export default function AdminBattleTest() {
             <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
               {MONSTERS.map((m,i)=>(<Chip key={m.id} active={mIdx===i} onClick={()=>{if(!battleActive)setMIdx(i);}} disabled={battleActive}><MonsterSVG id={m.id} size={18} /> {m.name}</Chip>))}
             </div></CtrlGroup>
+          <CtrlGroup title='🧪 模擬（測異常/天賦用）'>
+            <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:8}}>
+              <Chip active={simTalents} onClick={()=>setSimTalents(v=>!v)} disabled={battleActive}>
+                🎯 卡片天賦拉滿
+              </Chip>
+              <Chip active={simInflictAll} onClick={()=>setSimInflictAll(v=>!v)} disabled={battleActive}>
+                ☠️ 異常 100% 觸發
+              </Chip>
+            </div>
+            <div style={{fontSize:11,color:'#94a3b8',marginBottom:6}}>
+              怪物血量 ×{hpScale}（低血怪兩回合就死，測不出持續效果）
+            </div>
+            <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+              {[1,3,5,10,20].map(v=>(
+                <Chip key={v} active={hpScale===v} onClick={()=>{if(!battleActive)setHpScale(v);}} disabled={battleActive}>×{v}</Chip>
+              ))}
+            </div>
+            <div style={{fontSize:10.5,color:'#64748b',marginTop:6,lineHeight:1.6}}>
+              ⚠️ 100% 觸發是模擬台限定；正式對局上限 {PROC_CAP}%（控場 {procCapFor('freeze')}%）。
+            </div>
+          </CtrlGroup>
+
           <CtrlGroup title='難度'>
             <div style={{display:'flex',gap:6}}>
               {DIFF_MULTS.map((d,i)=>(<Chip key={d.id} active={dIdx===i} onClick={()=>{if(!battleActive)setDIdx(i);}} disabled={battleActive}>{d.label}</Chip>))}
