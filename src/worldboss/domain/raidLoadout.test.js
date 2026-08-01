@@ -212,3 +212,51 @@ describe("🏆 弱點固定在正中心（作者 2026-08-01）", () => {
     expect(seen.size).toBeGreaterThan(1);
   });
 });
+
+describe("⚠️ 比賽當天事故：王被打光血後全場卡住（2026-08-01）", () => {
+  const matchState = hp => ({
+    ...createRaidState({
+      boss: { key: "m", name: "靶紙王", hp, maxHp: 1000, atk: 0, def: 0 },
+      members: [member("me", { targetFmt: "full_110" })],
+      noRetaliation: true, endless: true, fixedSpots: true,
+    }),
+    spots: [{ ...WEAK_SPOT_MAP.red, cx: 0, cy: 0, key: "k" }],
+  });
+  const shots = n => Array.from({ length: n }, () => ({ memberId: "me", nx: 0, ny: 0, score: 10 }));
+
+  test("⚠️ 王剩 1 滴血時，整輪的箭**還是要全部記到 log**——不然分數完全進不去", () => {
+    const { log } = resolveRaidRound({ state: matchState(1), arrows: shots(3) });
+    expect(log.filter(e => e.type === "arrow")).toHaveLength(3);
+  });
+
+  test("王被打倒就換下一隻，血回滿", () => {
+    const { state } = resolveRaidRound({ state: matchState(1), arrows: shots(3) });
+    expect(state.bossHp).toBe(state.boss.maxHp);
+    expect(state.bossKills).toBeGreaterThan(0);
+    expect(state.finished).toBe(false);
+  });
+
+  test("連打好幾輪都不會卡在 0 血", () => {
+    let st = matchState(1000);
+    for (let i = 0; i < 10; i += 1) {
+      const out = resolveRaidRound({ state: st, arrows: shots(3) });
+      st = out.state;
+      expect(out.log.filter(e => e.type === "arrow")).toHaveLength(3);
+      expect(st.bossHp).toBeGreaterThan(0);
+    }
+  });
+
+  test("一般討伐不受影響：王死了就停止收箭", () => {
+    const st = {
+      ...createRaidState({
+        boss: { key: "t", name: "測試王", hp: 1, maxHp: 1000, atk: 1, def: 0 },
+        members: [member("me")],
+      }),
+      spots: [{ ...WEAK_SPOT_MAP.red, cx: 0, cy: 0, key: "k" }],
+    };
+    const { state, log } = resolveRaidRound({ state: st, arrows: shots(6) });
+    expect(log.filter(e => e.type === "arrow").length).toBeLessThan(6);
+    expect(state.bossHp).toBe(0);
+    expect(state.finished).toBe(true);
+  });
+});

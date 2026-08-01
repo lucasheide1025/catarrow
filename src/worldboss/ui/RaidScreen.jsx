@@ -311,6 +311,8 @@ export default function RaidScreen({
             // 擊倒演出取代原本的「討伐成功」大字——射手真的跑出來射一箭。
             // ⚠️ 這裡也走 payload：自己看到的跟全服重播看到的必須是**同一段演出**，
             //    兩條路徑分開寫，改了一邊忘了另一邊就會不一致。
+            // 🏆 比賽模式的王會一直換，每輪都播整段擊倒演出會擋住比賽節奏
+            if (endless) break;
             setCutscene(buildKillPayload({
               bossKey: next.boss?.key, bossName: next.boss?.name,
               killerId: event.killerId, killerName: event.killerName,

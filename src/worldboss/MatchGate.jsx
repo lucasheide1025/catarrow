@@ -104,7 +104,7 @@ export default function MatchGate({ onBack, isAdmin = false }) {
       boss: {
         ...MATCH_BOSS,
         // 王的血是**全場共享**的：帶當下剩餘，別人打掉的也算
-        hp: Math.max(1, bossMaxHp - totals.damage),
+        hp: bossMaxHp - (totals.damage % bossMaxHp),
         maxHp: bossMaxHp,
       },
       members: [{
@@ -219,7 +219,9 @@ export default function MatchGate({ onBack, isAdmin = false }) {
 
   // 別人也在打——王的血條要跟著全場走（差太多才更新，免得每次推播都重繪）
   useEffect(() => {
-    const shared = Math.max(1, bossMaxHp - totals.damage);
+    // ⚠️ 全場傷害超過王的血時要**繞回去**（取餘數），不能夾在 1——
+    //    夾住的話王每一輪都被秒殺，所有人的箭都記不進去（比賽當天踩過）。
+    const shared = bossMaxHp - (totals.damage % bossMaxHp);
     setBattle(b => (b && Math.abs(b.bossHp - shared) > bossMaxHp * 0.002
       ? { ...b, bossHp: shared } : b));
   }, [totals.damage, bossMaxHp]);

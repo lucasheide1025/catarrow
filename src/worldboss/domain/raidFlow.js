@@ -197,7 +197,10 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
   let roundBreak = 0;
 
   arrows.forEach((arrow, index) => {
-    if (s.bossHp <= 0) return;
+    // ⚠️ 比賽模式的王被打光血**不能停止收箭**（2026-08-01 比賽當天事故）：
+    //    王死了就 return，整輪 log 一支箭都沒有 → 分數完全記不進去，
+    //    全場所有人同時卡住。討伐才需要「死了就停」。
+    if (s.bossHp <= 0 && !s.endless) return;
     // 倒地的人這回合是後衛，他的箭不算（正式版 UI 也不會讓他射）
     if ((byId[arrow?.memberId]?.hp ?? 1) <= 0) return;
     const ratioBefore = raidHpRatio(s);
@@ -309,10 +312,10 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
   });
 
   // ── 貓貓陪練：每回合幫忙咬一口（在王行動之前，牠們比較急）──
-  if (s.bossHp > 0) {
+  if (s.bossHp > 0 || s.endless) {
     for (const member of s.members) {
     for (const cat of member.cats) {
-      if (s.bossHp <= 0) break;
+      if (s.bossHp <= 0 && !s.endless) break;
       // 貓不吃射程/靶紙/新手扶助那些「射手環境」倍率——牠又沒有在射箭
       const base = calcWorldBossArrowDmg(8, cat.atk, s.boss.def, s.participantBonus, s.dmgBonusPct);
       const crit = Math.random() < CAT_SKILL_CHANCE;
@@ -438,6 +441,13 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
   // 結束條件：王倒下／回合用完／**全員陣亡**。
   // ⚠️ 單人被打倒就是全員陣亡＝直接結束（沒有後衛可以撐）；
   //    組隊時還有人站著就繼續打，倒下的人轉後衛（見 raidSupport）。
+  // 🏆 比賽模式：王被打倒就**換下一隻**（血回滿、記一筆擊倒）。
+  //    停在 0 血的話後面所有人都白射——比賽是打不完的。
+  if (s.endless && s.bossHp <= 0) {
+    s.bossKills = (s.bossKills || 0) + 1;
+    s.bossHp = s.boss.maxHp;
+  }
+
   // 🏆 比賽模式：沒有回合上限、王也打不死人——只有外面按離場才結束
   s.finished = s.endless
     ? false
