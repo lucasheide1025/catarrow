@@ -529,6 +529,13 @@ service cloud.firestore {
       allow read, write: if isLoggedIn();
     }
 
+    // tournaments：🏛️ 對外賽事歷史紀錄（資格賽／對抗賽）。
+    // 所有人可讀（成績本來就是要給大家看的），只有教練能寫。
+    match /tournaments/{tid} {
+      allow read: if isLoggedIn();
+      allow write: if isAdmin();
+    }
+
     // raidMatches：🏆 比賽模式（實體比賽當天的計分系統）。
     // 一天一顆文件，所有人共用；登入者可讀寫（分數在自己的欄位，交易保護冪等）。
     match /raidMatches/{matchId} {

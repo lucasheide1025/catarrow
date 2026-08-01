@@ -36,12 +36,14 @@ import {
 } from "./domain/matchScore";
 import { arrowFeedback, milestoneFor, pickCheer } from "./domain/matchCheer";
 import { matchRewardFor } from "./domain/matchRewards";
+import { entriesFromMatchBoard } from "./domain/tournament";
 import { createRaidState } from "./domain/raidFlow";
 import { RAID_LOBBY_BG, randomRaidBackground } from "./raidAssets";
 import MatchBossArt from "./ui/MatchBossArt";
 import MatchLeaderboard from "./ui/MatchLeaderboard";
 import MatchStats from "./ui/MatchStats";
 import MatchAdminPanel from "./ui/MatchAdminPanel";
+import TournamentGate from "./TournamentGate";
 import RaidScreen from "./ui/RaidScreen";
 import "./ui/raidFx.css";
 
@@ -83,6 +85,8 @@ export default function MatchGate({ onBack, isAdmin = false }) {
   const [arrowFx, setArrowFx] = useState(null);   // 每一支箭的即時特效
   const [stats, setStats] = useState(null);       // 📊 落點統計（點開才抓）
   const [loadingStats, setLoadingStats] = useState(false);
+  // 🏛️ 對外賽事紀錄：null=不開；物件=帶著要匯入的草稿開
+  const [tourney, setTourney] = useState(null);
 
   useEffect(() => subscribeMatch(matchId, setMatch), [matchId]);
 
@@ -355,6 +359,35 @@ export default function MatchGate({ onBack, isAdmin = false }) {
 
           {stats && (
             <MatchStats board={board} shotsByMember={stats} myId={myId} onClose={() => setStats(null)} />
+          )}
+
+          {tourney && (
+            <TournamentGate isAdmin={isAdmin} importDraft={tourney.draft || null}
+              onBack={() => setTourney(null)} />
+          )}
+
+          <button type="button" onClick={() => setTourney({ open: true })} style={{
+            width: "100%", padding: "11px 0", borderRadius: 10, marginBottom: 10,
+            border: "1px solid rgba(251,191,36,.45)", background: "rgba(251,191,36,.12)",
+            color: "#fde68a", fontWeight: 900, fontSize: 12.5, cursor: "pointer",
+          }}>🏛️ 對外賽事紀錄（資格賽・對抗賽）</button>
+
+          {isAdmin && board.length > 0 && (
+            <button type="button"
+              onClick={() => setTourney({
+                draft: {
+                  name: `館內比賽 ${matchId}`,
+                  date: matchId,
+                  type: "internal",
+                  entries: entriesFromMatchBoard(board),
+                  sourceMatchId: matchId,
+                },
+              })}
+              style={{
+                width: "100%", padding: "11px 0", borderRadius: 10, marginBottom: 10,
+                border: "1px solid #a855f7", background: "rgba(88,28,135,.3)",
+                color: "#e9d5ff", fontWeight: 900, fontSize: 12.5, cursor: "pointer",
+              }}>📥 把這場成績結算進對外賽事紀錄（{board.length} 人）</button>
           )}
 
           {isAdmin && (
