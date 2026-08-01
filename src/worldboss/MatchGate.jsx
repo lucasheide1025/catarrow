@@ -35,9 +35,10 @@ import {
   matchBossRatio, matchLeaderboard, matchTotals, myStanding,
 } from "./domain/matchScore";
 import { arrowFeedback, milestoneFor, pickCheer } from "./domain/matchCheer";
+import { matchRewardFor } from "./domain/matchRewards";
 import { createRaidState } from "./domain/raidFlow";
 import { RAID_LOBBY_BG, randomRaidBackground } from "./raidAssets";
-import MatchBossSVG from "./ui/MatchBossSVG";
+import MatchBossArt from "./ui/MatchBossArt";
 import MatchLeaderboard from "./ui/MatchLeaderboard";
 import MatchStats from "./ui/MatchStats";
 import MatchAdminPanel from "./ui/MatchAdminPanel";
@@ -93,6 +94,12 @@ export default function MatchGate({ onBack, isAdmin = false }) {
   const mine = myStanding(board, myId);
   const closed = match?.status === "closed";
   const bossMaxHp = Number(match?.bossMaxHp) || MATCH_BOSS_MAX_HP;
+  // ⚠️ 獎勵是比賽後教練統一發的，但**現在就要看得到累積了多少**（作者 2026-08-01）：
+  //    看不到累積量，玩家不知道多射有什麼用。這是純前端計算，不多讀一次 Firestore。
+  const myReward = useMemo(
+    () => matchRewardFor(players?.[myId] || {}, match?.reward),
+    [players, myId, match?.reward],
+  );
 
   const startBattle = useCallback(() => {
     setBattle(createRaidState({
@@ -228,7 +235,7 @@ export default function MatchGate({ onBack, isAdmin = false }) {
           </div>
 
           <div style={{ ...card, textAlign: "center" }}>
-            <MatchBossSVG size={150} ratio={matchBossRatio(totals.damage, bossMaxHp)} name="靶紙王" />
+            <MatchBossArt size={150} ratio={matchBossRatio(totals.damage, bossMaxHp)} name="靶紙王" />
             <div style={{ fontSize: 16, fontWeight: 900, color: "#fde68a", letterSpacing: 2, marginTop: 4 }}>
               靶紙王
             </div>
@@ -280,6 +287,43 @@ export default function MatchGate({ onBack, isAdmin = false }) {
             </button>
           )}
 
+          {/* 🎁 累積獎勵：比賽後由教練統一發放，但現在就看得到 */}
+          {mine && (
+            <div style={{ ...card, border: "1px solid rgba(251,191,36,.4)" }}>
+              <div style={{ ...label, display: "flex", justifyContent: "space-between" }}>
+                <span>🎁 我累積的獎勵</span>
+                <span style={{ color: "#64748b", fontWeight: 800 }}>
+                  {players?.[myId]?.rewarded ? "已發放" : "比賽後由教練發放"}
+                </span>
+              </div>
+              {myReward.eligible ? (
+                <>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6 }}>
+                    {[["射手XP", myReward.archerXP], ["貓貓XP", myReward.catXP],
+                      ["金幣", myReward.coins], ["材料箱", myReward.chests],
+                      ["金幣箱", myReward.coinChests], ["箭數", myReward.arrows]].map(([k, v]) => (
+                      <div key={k} style={{
+                        background: "#1e293b", borderRadius: 9, padding: "7px 0", textAlign: "center",
+                      }}>
+                        <div style={{ fontSize: 9, color: "#94a3b8", fontWeight: 800 }}>{k}</div>
+                        <div style={{ fontSize: 14, fontWeight: 900, color: "#fbbf24" }}>+{v}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {myReward.accurate && (
+                    <div style={{ fontSize: 10.5, color: "#bbf7d0", fontWeight: 800, marginTop: 6 }}>
+                      🎯 平均 {myReward.average.toFixed(1)} 環——準度加碼，兩種寶箱各 +1
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 800 }}>
+                  再射 {Math.max(0, 3 - (myReward.arrows || 0))} 箭就開始累積獎勵
+                </div>
+              )}
+            </div>
+          )}
+
           <div style={card}>
             <div style={{ ...label, display: "flex", justifyContent: "space-between" }}>
               <span>即時排行</span>
@@ -323,7 +367,7 @@ export default function MatchGate({ onBack, isAdmin = false }) {
         bossKey="match_target"
         bossTitle="全場共同討伐"
         renderBoss={size => (
-          <MatchBossSVG size={size} ratio={matchBossRatio(totals.damage, bossMaxHp)} name="靶紙王" />
+          <MatchBossArt size={size} ratio={matchBossRatio(totals.damage, bossMaxHp)} name="靶紙王" />
         )}
         participants={totals.players}
         playerName={myName}
@@ -351,6 +395,14 @@ export default function MatchGate({ onBack, isAdmin = false }) {
               border: "1px solid rgba(168,85,247,.5)", background: "rgba(88,28,135,.3)",
               color: "#e9d5ff", fontSize: 11, fontWeight: 900,
             }}>📊 落點</button>
+            {/* 累積獎勵——看不到的話玩家不知道多射有什麼用 */}
+            <div style={{
+              flexShrink: 0, padding: "4px 10px", borderRadius: 999,
+              border: "1px solid rgba(74,222,128,.45)", background: "rgba(21,128,61,.22)",
+              color: "#bbf7d0", fontSize: 10.5, fontWeight: 900, whiteSpace: "nowrap",
+            }}>
+              🎁 XP+{myReward.archerXP}・🪙{myReward.coins}・📦{myReward.chests}・🪙箱{myReward.coinChests}
+            </div>
 
             {/* 同場玩家：誰在射、打了多少（只給傷害） */}
             {board.slice(0, 8).map(p => (
@@ -416,6 +468,10 @@ export default function MatchGate({ onBack, isAdmin = false }) {
                 {cheer.milestone}
               </div>
             )}
+            <div style={{ fontSize: 11, color: "#bbf7d0", fontWeight: 800, marginTop: 3 }}>
+              🎁 累積 射手XP {myReward.archerXP}・金幣 {myReward.coins}
+              ・材料箱 {myReward.chests}・金幣箱 {myReward.coinChests}
+            </div>
             <button type="button" onClick={() => setCheer(null)} style={{
               marginTop: 8, padding: "6px 20px", borderRadius: 8, border: "none",
               background: "rgba(148,163,184,.22)", color: "#cbd5e1",
