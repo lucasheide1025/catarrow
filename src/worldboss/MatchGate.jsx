@@ -83,8 +83,6 @@ export default function MatchGate({ onBack, isAdmin = false }) {
   const [arrowFx, setArrowFx] = useState(null);   // 每一支箭的即時特效
   const [stats, setStats] = useState(null);       // 📊 落點統計（點開才抓）
   const [loadingStats, setLoadingStats] = useState(false);
-  // 一回合＝三箭，湊滿才跳激勵詞
-  const endBufRef = useRef([]);
 
   useEffect(() => subscribeMatch(matchId, setMatch), [matchId]);
 
@@ -141,12 +139,27 @@ export default function MatchGate({ onBack, isAdmin = false }) {
     if (screen === "lobby" && players?.[myId]?.active && !closed && !battle) startBattle();
   }, [players, myId, screen, closed, battle, startBattle]);
 
-  /** 把**一支箭**寫進去。抽出來是為了「重送」走同一條路。 */
-  const sendArrow = useCallback(async (arrow) => {
-    const idx = Number(players?.[myId]?.arrows) || 0;
-    const res = await submitMatchArrow(matchId, myId, idx, arrow);
-    setError(res.ok ? "" : (res.reason || "這一箭沒送出去，請按重送"));
-    return res;
+  /**
+   * 把這一輪的箭**一支一支**寫進去。
+   *
+   * ⚠️ 輸入是三箭一次（作者 2026-08-01：一箭一箭輸入太慢），
+   *    但**寫入仍然是逐箭**——落點要一筆一筆留，而且箭序當冪等鍵，
+   *    重送不會重複計分。兩件事不要混為一談。
+   *
+   * ⚠️ 序號要用**本機遞增**：三次寫入之間監聽還沒回來，
+   *    每次都讀 players[myId].arrows 會拿到同一個舊值，第二箭就被當成重送。
+   */
+  const sendArrows = useCallback(async (arrows) => {
+    const base = Number(players?.[myId]?.arrows) || 0;
+    for (let i = 0; i < arrows.length; i += 1) {
+      const res = await submitMatchArrow(matchId, myId, base + i, arrows[i]);
+      if (!res.ok) {
+        setError(res.reason || `第 ${i + 1} 箭沒送出去，請按重送`);
+        return { ok: false, sent: i };
+      }
+    }
+    setError("");
+    return { ok: true, sent: arrows.length };
   }, [matchId, myId, players]);
 
   /**
@@ -155,42 +168,40 @@ export default function MatchGate({ onBack, isAdmin = false }) {
    *    射完就跳等於在說「戲演完了」，那句話反而變成打斷。
    */
   const onRoundDone = useCallback(async (next, log) => {
-    const shot = (log || []).find(e => e.type === "arrow" && e.memberId === myId);
-    if (!shot) return;
-    lastArrowRef.current = shot;
+    const shots = (log || []).filter(e => e.type === "arrow" && e.memberId === myId);
+    if (!shots.length) return;
+    lastArrowRef.current = shots;
 
-    // ① 這一支箭的即時回饋：高分給爽的特效，低分給加油
-    const fb = arrowFeedback(arrowPoints(shot), shot.label, { prevLine: prevArrowLineRef.current });
+    // ① 特效用**這一輪最好的那一箭**——射到 X 就該看到 X 的演出，
+    //    三箭各播一次會疊在一起，反而什麼都看不清楚。
+    const best = shots.reduce((a, b) => (arrowPoints(b) > arrowPoints(a) ? b : a));
+    const fb = arrowFeedback(arrowPoints(best), best.label, { prevLine: prevArrowLineRef.current });
     prevArrowLineRef.current = fb.line;
-    setArrowFx({ ...fb, label: shot.label, key: Date.now() });
+    setArrowFx({ ...fb, label: best.label, key: Date.now() });
     setTimeout(() => setArrowFx(null), fb.big ? 1000 : 1100);
 
-    // ② 三箭湊滿才跳整輪的激勵詞
-    endBufRef.current = [...endBufRef.current, shot];
+    // ② 整輪的激勵詞（等單箭特效播完再跳）
+    const r = endResult(shots);
     const arrowsBefore = Number(players?.[myId]?.arrows) || 0;
-    if (endBufRef.current.length >= MATCH_ARROWS_PER_END) {
-      const r = endResult(endBufRef.current);
-      endBufRef.current = [];
-      const c = pickCheer(r, { prevLine: prevCheerRef.current });
-      prevCheerRef.current = c.line;
-      setTimeout(() => setCheer({
-        ...c, damage: r.damage,
-        milestone: milestoneFor(arrowsBefore, arrowsBefore + r.arrows),
-      }), fb.big ? 900 : 1000);          // 等單箭特效播完
-    }
+    const c = pickCheer(r, { prevLine: prevCheerRef.current });
+    prevCheerRef.current = c.line;
+    setTimeout(() => setCheer({
+      ...c, damage: r.damage,
+      milestone: milestoneFor(arrowsBefore, arrowsBefore + r.arrows),
+    }), fb.big ? 900 : 1000);
 
     if (sendingRef.current) return;
     sendingRef.current = true;
-    await sendArrow(shot);
+    await sendArrows(shots);
     sendingRef.current = false;
-  }, [myId, players, sendArrow]);
+  }, [myId, players, sendArrows]);
 
   const retrySend = useCallback(async () => {
-    if (!lastArrowRef.current) return;
+    if (!lastArrowRef.current?.length) return;
     setBusy(true);
-    await sendArrow(lastArrowRef.current);
+    await sendArrows(lastArrowRef.current);
     setBusy(false);
-  }, [sendArrow]);
+  }, [sendArrows]);
 
   const openStats = useCallback(async () => {
     setLoadingStats(true);
@@ -374,7 +385,7 @@ export default function MatchGate({ onBack, isAdmin = false }) {
         bgUrl={bgUrl}
         targetFmt={MATCH_FACE}
         meId={myId}
-        arrowsPerRound={1}
+        arrowsPerRound={MATCH_ARROWS_PER_END}
         endless
         onState={next => setBattle(next)}
         onRoundDone={onRoundDone}
