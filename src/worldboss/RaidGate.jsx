@@ -25,7 +25,7 @@ import { CATS, CAT_TYPE_MAP } from "../lib/catData";
 import {
   createRaidRoom, disbandRaidRoom, findReconnectableRaidRoom, forceAdvanceRaidRoom,
   joinRaidRoom, kickRaidMember, leaveRaidRoom, resolveRaidRoomRound, setRaidLoadout,
-  setRaidReady, startRaidRoom, submitRaidArrows, subscribeRaidRoom,
+  setRaidReady, startRaidRoom, submitRaidArrows, subscribeOpenRaidRooms, subscribeRaidRoom,
 } from "../lib/raidTeamDb";
 import { createRaidState } from "./domain/raidFlow";
 import { roundResultFromLog, raidRoundResults } from "./domain/raidReport";
