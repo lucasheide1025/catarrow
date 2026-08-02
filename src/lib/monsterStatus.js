@@ -185,6 +185,32 @@ export function tickMonsterStatuses({ list = [], monsterHp, monsterMaxHp, player
   return { monsterHp: hp, statuses: next, logs, totalDamage: logs.reduce((a, l) => a + num(l.damage), 0) };
 }
 
+/**
+ * 一整輪的箭 → 這輪施加了哪些異常（權威端用）。
+ *
+ * ⚠️ 組隊／地下城／世界王的傷害是在**權威端**算的，畫面只負責演出。
+ *    所以施加判定也必須在權威端做，不能留在 BattleScreen——
+ *    那邊 partyMode 時 previewDamage=false，根本不會走到判定。
+ *    （這正是「卡片效果只有單人有用」的成因，不要再犯。）
+ */
+export function rollInflictForArrows({ arrows = [], inflict = {}, rand = Math.random } = {}) {
+  let out = [];
+  for (const a of arrows || []) {
+    const score = a?.label ?? a?.score ?? a;
+    for (const st of rollInflict({ score, inflict, rand })) out = mergeMonsterStatus(out, st);
+  }
+  return out;
+}
+
+/** 多個成員各自施加的異常合併進怪物身上 */
+export function mergeAllStatuses(current = [], incomingLists = []) {
+  let list = [...(current || [])];
+  for (const group of incomingLists || []) {
+    for (const st of group || []) list = mergeMonsterStatus(list, st);
+  }
+  return list;
+}
+
 /** UI 用的一行字 */
 export function describeMonsterStatuses(list = []) {
   return (list || []).map(s => {

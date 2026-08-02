@@ -12,6 +12,8 @@ import {
   monsterStatMods,
   procCapFor,
   rollInflict,
+  rollInflictForArrows,
+  mergeAllStatuses,
   tickMonsterStatuses,
 } from "./monsterStatus";
 
@@ -214,5 +216,39 @@ describe("UI 說明", () => {
 
   test("不認識的狀態會被濾掉，不會印出空白列", () => {
     expect(describeMonsterStatuses([{ id: "亂寫" }])).toEqual([]);
+  });
+});
+
+describe("⚠️ 權威端結算（組隊／地下城／世界王）", () => {
+  const inflict = { poison: { chancePct: 100, strength: 5, duration: 3 } };
+
+  test("一整輪的箭一次判定", () => {
+    const out = rollInflictForArrows({ arrows: ["X", "10", "5"], inflict, rand: () => 0 });
+    expect(out).toHaveLength(1);          // 同種不疊加
+    expect(out[0].id).toBe("poison");
+  });
+
+  test("整輪都射不準就不會有任何異常", () => {
+    expect(rollInflictForArrows({ arrows: ["5", "6", "M"], inflict, rand: () => 0 })).toEqual([]);
+  });
+
+  test("吃得下 { label } 物件（房間文件存的是這個形狀）", () => {
+    const out = rollInflictForArrows({ arrows: [{ label: "X" }], inflict, rand: () => 0 });
+    expect(out).toHaveLength(1);
+  });
+
+  test("多位成員的施加會合併，同種取較強", () => {
+    const merged = mergeAllStatuses([], [
+      [{ id: "poison", strength: 3, duration: 2 }],
+      [{ id: "poison", strength: 8, duration: 1 }],
+      [{ id: "burn", strength: 10, duration: 2 }],
+    ]);
+    expect(merged).toHaveLength(2);
+    expect(merged.find(s => s.id === "poison").strength).toBe(8);
+  });
+
+  test("空輸入不會炸", () => {
+    expect(rollInflictForArrows()).toEqual([]);
+    expect(mergeAllStatuses()).toEqual([]);
   });
 });

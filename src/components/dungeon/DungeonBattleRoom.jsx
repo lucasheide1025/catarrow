@@ -30,6 +30,7 @@ import {
 } from "../../lib/sound";
 import { playBattleSound } from "../../lib/battleSound";
 import BattleScreen from "../battle/BattleScreen";
+import { calcCardCombatEffectsFromCollection } from "../../lib/cardTalents";
 import BattleSoundIndicator from "../shared/BattleSoundIndicator";
 import DungeonShop from "./DungeonShop";
 import DungeonEvent from "./DungeonEvent";
@@ -216,6 +217,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   const shootingProfileRef   = useRef(null);
 
   // ── 統一 Firestore 回合生命週期 ────────────────────────────
+  // ☠️ 我的卡片能施加什麼異常。⚠️ 用 ref：submit 的閉包比 myCardColl 早建立。
+  const myInflictRef = useRef({});
   const {
     room: fsRoom,
     submitted,
@@ -228,7 +231,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   } = useFirestoreRound({
     roomId, myId,
     subscribe: subscribeDungeonRoom,
-    submit: (roomId, id, arrows, choice) => submitDungeonArrows(roomId, id, arrows, choice),
+    // ☠️ 把「我的卡片能施加什麼異常」一起送上去——權威端才判定得了
+    submit: (roomId, id, arrows, choice) => submitDungeonArrows(roomId, id, arrows, choice, myInflictRef.current),
     processRound: processDungeonRound,
     getMembers: (r) => Object.entries(r.members || {}).map(([id, m]) => ({ id, ...m })),
     isProcessing: (r) => r.processing,
@@ -457,6 +461,12 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     if (!myId || isLimitedAccount || cardCollection !== undefined) return;
     return subscribeCardCollection(myId, setMyCardColl);
   }, [myId, isLimitedAccount, cardCollection]);
+
+  useEffect(() => {
+    try {
+      myInflictRef.current = calcCardCombatEffectsFromCollection(myCardColl || {}).inflict || {};
+    } catch { myInflictRef.current = {}; }
+  }, [myCardColl]);
 
   // Must be derived before any conditional return: the shared BattleScreen
   // branch uses it while the room is active.

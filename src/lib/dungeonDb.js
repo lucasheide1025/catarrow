@@ -25,6 +25,9 @@ import {
 } from "./dungeonData";
 import { createOrdinaryChestLoot } from "./dungeonChestLoot";
 import { planDungeonRoundAbility, tickDungeonStatuses, getStatusStatMods } from "./dungeonAbilityRound";
+import {
+  mergeAllStatuses, monsterStatMods, rollInflictForArrows, tickMonsterStatuses,
+} from "./monsterStatus";
 
 const D = "dungeonRooms";
 
@@ -149,12 +152,16 @@ export async function applyDungeonUtilityPotion(roomId, memberId, potionId) {
 }
 
 // ── 送出箭分 ─────────────────────────────────────────────────
-export async function submitDungeonArrows(roomId, memberId, arrows, rearChoice = null) {
+export async function submitDungeonArrows(roomId, memberId, arrows, rearChoice = null, inflict = null) {
   try {
     const upd = {
       [`members.${memberId}.arrows`]: arrows,
       [`members.${memberId}.ready`]:  true,
     };
+    // ☠️ 玩家的卡片能施加什麼異常——**必須帶進權威端**。
+    // ⚠️ 傷害是 host 算的，BattleScreen 在 partyMode 下 previewDamage=false，
+    //    判定留在畫面端等於永遠不會觸發（卡片效果只有單人有用就是這樣來的）。
+    if (inflict && Object.keys(inflict).length) upd[`members.${memberId}.inflict`] = inflict;
     if (rearChoice !== null) upd[`members.${memberId}.rearChoice`] = rearChoice;
     await updateDoc(doc(db, D, roomId), upd);
     return { ok:true };
@@ -250,7 +257,10 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
             partName: rearHeal ? "治癒" : "助攻",
             label:arrow?.label || arrow,
           })) }
-        : calcDmgFn(scoreArrows, effectiveAtk, room.monster.def, contract, dmgMult);
+        // 🔨 破防：怪物身上的異常先削一層防禦（全隊都吃得到）
+        : calcDmgFn(scoreArrows, effectiveAtk,
+            Math.max(0, room.monster.def * (1 - monsterStatMods(room.monsterStatuses || []).defDownPct / 100)),
+            contract, dmgMult);
       const arrowBreakdown = (raw.arrowBreakdown || []).map((entry, index) => {
         const arrow = (m.arrows || [])[index];
         return Number.isFinite(arrow?.nx) && Number.isFinite(arrow?.ny)
@@ -308,6 +318,15 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
     const arrowsPerRound = room.arrowsPerRound || 6;
     const miniRounds  = [];
     let   monsterHP   = room.monsterHP || 0;
+    // ☠️ 玩家施加的異常：每位前衛用自己的箭與卡片判定，合併到怪物身上。
+    // ⚠️ 在**權威端**做，因為傷害也在這裡算——放在畫面端 partyMode 下不會觸發。
+    let monsterStatuses = mergeAllStatuses(
+      room.monsterStatuses || [],
+      aliveIds.map(id => rollInflictForArrows({
+        arrows: (members[id]?.arrows || []),
+        inflict: members[id]?.inflict || {},
+      })),
+    );
     const memberHPNow = {};
     for (const id of aliveIds) memberHPNow[id] = members[id].hp || 0;
     const potionShieldNow = Object.fromEntries(aliveIds.map(id => [id, members[id].potionBuffs?.shield || 0]));
@@ -424,6 +443,30 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
         isCat:true, skillTriggered, skillName, skillBonus,
       });
     }
+    // ☠️ 回合末：怪物身上的異常結算並倒數（放在貓貓之前，先讓 DOT 生效）
+    if (monsterStatuses.length && monsterHP > 0) {
+      const avgAtk = aliveIds.length
+        ? Math.round(aliveIds.reduce((sum, id) => sum + (members[id]?.atk || 0), 0) / aliveIds.length)
+        : 0;
+      const tick = tickMonsterStatuses({
+        list: monsterStatuses, monsterHp: monsterHP,
+        monsterMaxHp: room.monster?.hp || monsterHP, playerAtk: avgAtk,
+      });
+      if (tick.totalDamage > 0) {
+        monsterHP = tick.monsterHp;
+        miniRounds.push({
+          miniRound: "status", isCounter: false, isStatus: true,
+          playerLog: tick.logs.filter(l => l.damage).map(l => ({
+            id: `status_${l.id}`, name: `${l.icon} ${l.name}`, dmg: l.damage, ctr: 0,
+            arrowBreakdown: [], crits: 0,
+          })),
+          totalDmg: tick.totalDamage, monsterHPAfter: monsterHP,
+          statusLogs: tick.logs,
+        });
+      }
+      monsterStatuses = tick.statuses;
+    }
+
     if (catTotalDmg > 0 && monsterHP > 0) {
       const hpBeforeCatAttack = monsterHP;
       monsterHP = Math.max(0, monsterHP - catTotalDmg);
@@ -738,7 +781,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
 
     await updateDoc(doc(db, D, roomId), {
       ...memberUpd,
-      monsterHP, round: round + 1,
+      monsterHP, monsterStatuses, round: round + 1,   // ☠️ 異常帶到下一回合
       log: arrayUnion(logEntry),
       result, status: newStatus,
       pendingDungeonNextStatus,
