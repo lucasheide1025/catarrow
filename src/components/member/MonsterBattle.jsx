@@ -30,14 +30,11 @@ import {
 import { LOOT_TABLE_GUEST, drawLoot, isRareLoot, rollCoins, rollMaterialDrop, rollMaterialDrops, rollMaterialDropsGuaranteed, rollCardDrop, makeCoinChest, COIN_CHEST_CHANCE_BY_MODE } from "../../lib/lootTable";
 import LootBox from "./LootBox";
 import { EventType } from "../../battle/BattleEvents";
-import { processMonsterRound } from "../../battle/BattleEngine";
 import { resolveSoloMonsterAbility } from "../../lib/soloMonsterAbilityEngine";
 import { calcStandardCounter } from "../../lib/damage";
 import { MATERIAL_BY_ID as EXPANSION_MATERIAL_BY_ID } from "../../lib/monsterEconomyCatalog";
 import { calcCardCombatEffectsFromCollection } from "../../lib/cardTalents";
 import { SOLO_CHALLENGE_LEVELS, applyChallengeLevel } from "../../lib/monsterExpansionAdapter";
-import { createDispatch } from "../../battle/BattleAnimation";
-import { RoundController } from "../../battle/RoundController";
 import { sfxEpic, sfxBattleIntro, sfxVictoryFanfare, sfxSuccess, sfxTap, sfxSoftFail, sfxCast, sfxBuff, sfxDebuff, sfxArrowHit, sfxCritBoom, sfxOrganHit, sfxCounter, sfxCounterCrit, sfxMonsterDead, sfxRevive, sfxRoundEnd, sfxPotionDrink, unlockAudio, vibrate } from "../../lib/sound";
 import BattleCard from "./BattleCard";
 import MonsterSVG, { MonsterBattleImg } from "../MonsterSVG";
@@ -496,39 +493,14 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   }
 
   // ⚡ 動畫派遣器 + 回合控制器（只在首次渲染時建立）
-  const dispatchRef = useRef(null);
-  const controllerRef = useRef(null);
+  // ⚠️ 舊 inline UI 的動畫派遣器（createDispatch / RoundController）已刪除——
+  //    戰鬥演出現在全由 BattleScreen 自己處理。
+  //    ⚠️ 但下面這幾個 ref **還有人在用**，刪的時候差點一起帶走
+  //       （只搜函式名會漏掉變數宣告，這個坑踩過不只一次）。
   const randomEventResolveRef = useRef(null); // 等玩家確認隨機事件彈窗再繼續
   const abilityNonceRef = useRef(Date.now());          // 每場戰鬥的技能 once-only 基底
-  const resolvedAbilityKeysRef = useRef(new Set());    // 已結算技能 key（防動畫重播重複扣血）
-  const sessionArrowsRef = useRef(0); // 本場 session 累積箭數（供跨回合里程碑計算）
-  if (!dispatchRef.current) {
-    dispatchRef.current = createDispatch(
-      {
-        shoot() { setAnimArcherShoot(true); setTimeout(()=>setAnimArcherShoot(false), 500); },
-        hit(isCrit) {
-          setAnimHit(true); setTimeout(()=>setAnimHit(false), 600);
-          if (isCrit) { setAnimHitCrit(true); setTimeout(()=>setAnimHitCrit(false), 700); }
-        },
-        crit() { setAnimArcherCrit(true); setTimeout(()=>setAnimArcherCrit(false), 700); },
-        miss() { setAnimArcherMiss(true); setTimeout(()=>setAnimArcherMiss(false), 600); },
-        archerHit() { setAnimArcherHit(true); },
-        monsterAttack(isCrit) { if (isCrit) setAnimMonsterCritAtk(true); else setAnimMonsterAttack(true); },
-        monsterAttackReset() { setAnimMonsterAttack(false); setAnimMonsterCritAtk(false); setAnimArcherHit(false); },
-        counterCrit() { setAnimCounterCrit(true); setTimeout(()=>setAnimCounterCrit(false), 900); },
-      },
-      { arrowHit: sfxArrowHit, critBoom: sfxCritBoom, organHit: sfxOrganHit, softFail: sfxSoftFail,
-        counter: sfxCounter, counterCrit: sfxCounterCrit, revive: sfxRevive, roundEnd: sfxRoundEnd,
-        buff: sfxBuff, debuff: sfxDebuff, cast: sfxCast },
-      { floatDmg: showFloatDmg, floatCounterDmg: showFloatCounterDmg, archerEffect: showArcherEffect, vibrate },
-      addLog, delay,
-    );
-  }
-  if (!controllerRef.current) {
-    controllerRef.current = new RoundController(dispatchRef.current);
-  }
-  const dispatch = dispatchRef.current;
-  const controller = controllerRef.current;
+  const resolvedAbilityKeysRef = useRef(new Set());    // 已結算技能 key
+  const sessionArrowsRef = useRef(0);                  // 本場累積箭數（跨回合里程碑）
 
   function rerollMonsters() {
     if (!archerStats) return;
@@ -583,11 +555,9 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     ));
   }
 
-  function handleTargetSubmit() {
-    if (targetPending) return; // 防止重複觸發疊加多個 timeout
-    setTargetPending(true);
-    setTimeout(() => { setTargetPending(false); submitRound(); }, 2000);
-  }
+  // ⚠️ 舊的 inline 戰鬥 UI（submitRound / handleTargetSubmit / BattleEngine）已於 2026-08-02 刪除：
+  //    這個元件一進戰鬥就 `return <BattleScreen>`，那條路徑從來不會被走到。
+  //    留著它害我判斷錯過一次（以為卡片天賦沒接上，其實接在 BattleScreen）。
   // 🧪 使用攜帶型藥水（回合開始喝）
   function useCarryPotion(potion) {
     if (potionUsedThisRound || processing) return;
@@ -643,230 +613,6 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     setBottomTab("score");
   }
 
-  async function submitRound() {
-    if (arrows.length<arrowsPerRound||processing) return;
-    setProcessing(true);
-    setBattlePhase("processing");
-    // 🧪 批次消耗擱置藥水
-    const pendingPotions = pendingPotionRef.current;
-    if (pendingPotions.length > 0) {
-      pendingPotionRef.current = [];
-      if (profile?.id && !isLimitedAccount) {
-        usePotions(profile.id, pendingPotions).catch(()=>{});
-        recordPotionUsed(profile.id, pendingPotions).catch(()=>{});
-      }
-    }
-    // ── 立即更新終身箭數（每回合送出即計，不需報到）──────────────
-    if (profile?.id) {
-      const submittedArrowCount = arrows.length;
-      addRoundArrows(profile.id, submittedArrowCount).catch(error => {
-        console.warn("MonsterBattle arrow progress sync failed; local mileage was preserved:", error?.message || error);
-      });
-    }
-
-    try {
-    const bSt = battleStats || archerStats;
-
-    // ── 1. 建立引擎輸入 ─────────────────────────────────
-    const roundConfig = { mode, battleMode, targetFmt, selectedDistance, distanceMode, arrowsPerRound };
-    const consumableBuffs = calcPotionBuffs(Object.values(activeCarryBuffs).map(entry => entry.id));
-    const roundCtx = {
-      monster, archerStats: bSt,
-      monsterHP, archerHP, distance, round,
-      unlockedParts: new Set(unlockedParts),
-      skipCounter, skipBigRound,
-      headHitCount: 0, revived, archerATKMod,
-      totalDmgDealt, totalDmgRecvd, critCount,
-      consumableBuffs, potionShield, monsterDmgTakenPct, counterReducePct, poisonEffect,
-    };
-    const catCtx = hasCat ? {
-      hasCat, catName,
-      catCurrentHP: catCurrentHPRef.current,
-      catMaxHP, catBaseDEF,
-      catDefShield: catDefShieldRef.current,
-      calcCatRoundDamage, triggerCatSkill,
-    } : null;
-    if (catCtx?.catDefShield) catDefShieldRef.current = null; // 引擎會消耗，同步清 ref
-
-    // ── 2. 呼叫引擎 ─────────────────────────────────────
-    let events, finalState;
-    try {
-      const result = processMonsterRound(roundConfig, roundCtx, arrows, catCtx);
-      events = result.events;
-      finalState = result.finalState;
-    } catch (engineErr) {
-      console.error('BattleEngine error:', engineErr);
-      setArrows([]); setArcherATKMod(0); setRound(r=>r+1); setBattlePhase("input"); setProcessing(false);
-      return;
-    }
-    if (catCtx) catCurrentHPRef.current = catCtx.catCurrentHP;
-
-    // ── 2.5 怪物技能結算（招牌/共用;MonsterBattle 自有流程,BattleEngine 不含技能）──
-    // 傷害=標準反擊×技能倍率（已含破解減幅）;ATK 減益立即掛到下一回合;once-only key 防重複。
-    if (monster?.signatureSkillId) {
-      if (round === 1) { abilityNonceRef.current = Date.now(); resolvedAbilityKeysRef.current.clear(); }
-      const hpRatio = (monster.hp || 1) > 0 ? Math.max(0, (finalState?.monsterHP ?? monsterHP) / monster.hp) : 1;
-      const ability = resolveSoloMonsterAbility({
-        battleId: `mb:${monster.id}:${abilityNonceRef.current}`,
-        monster, round,
-        arrows: arrows.map(a => a?.label ?? a?.score ?? a),
-        targetFmt, monsterHpRatio: hpRatio,
-      });
-      const resolved = ability?.resolved;
-      if (resolved?.resolvedKey && !resolvedAbilityKeysRef.current.has(resolved.resolvedKey)) {
-        resolvedAbilityKeysRef.current.add(resolved.resolvedKey);
-        const lv = resolved.outcome?.level;
-        const breakText = lv === "full" ? "🛡️ 完全破解！技能無效"
-          : lv === "major" ? "💪 高分破解！大幅削弱"
-          : lv === "partial" ? "👍 部分破解！效果減半" : "💢 未破解，全額生效";
-        addLog({ type:"counter_crit", text:`⚡ ${monster.name} 發動「${resolved.name || ability.scheduled?.name || "技能"}」！${breakText}` });
-        if (resolved.skillDamageMult > 0) {
-          const skillDmg = Math.max(0, Math.round(calcStandardCounter(monster.atk || 10, bSt.def || 0) * resolved.skillDamageMult));
-          if (skillDmg > 0) {
-            setArcherHP(h => Math.max(1, h - skillDmg));
-            showFloatCounterDmg(skillDmg, lv === "none");
-            addLog({ type:"counter", text:`💥 技能傷害：-${skillDmg} HP` });
-          }
-        }
-        for (const st of (resolved.statuses || [])) {
-          if (st.id === "atkDown" && typeof st.strength === "number") {
-            const drop = Math.round((bSt.atk || 10) * st.strength / 100);
-            setArcherATKMod(m => m - drop);
-            addLog({ type:"debuff", text:`🌀 ${st.name || "虛弱"}：ATK -${st.strength}%（下一回合）` });
-          } else if (st.id === "poison" && typeof st.strength === "number") {
-            const poisonDmg = Math.max(1, Math.round((bSt.hp || 100) * st.strength / 100));
-            setArcherHP(h => Math.max(1, h - poisonDmg));
-            addLog({ type:"debuff", text:`🕷️ 中毒：-${poisonDmg} HP（毒不致死）` });
-          } else {
-            addLog({ type:"debuff", text:`🌀 附加「${st.name || st.id}」（${st.duration || 1} 回合）` });
-          }
-        }
-        if (resolved.selfShieldMaxHpPct > 0) addLog({ type:"buff", text:`🛡 ${monster.name} 展開護盾！` });
-        if (resolved.delayedMult > 0) addLog({ type:"buff", text:`⏳ ${monster.name} 正在蓄力，下回合追加攻擊！` });
-      }
-    }
-
-    // ── 3. 事件驅動 via RoundController ───────────────
-    addLog({ type:"system", text:`── 第 ${round} 回合，距離 ${distance}米 ──` });
-    await delay(400);
-
-    const eventCtx = { monster, catName, bSt };
-
-    const { battleEnded, battleResult } = await controller.playEvents(events, eventCtx, {
-      // ── 狀態更新 handler ──────────────────────────────
-      [EventType.ARROW_HIT]: (p) => {
-        if (p.dmg>0) {
-          setTotalDmgDealt(v=>v+p.dmg);
-          setMonsterHP(prev => Math.max(0, prev - p.dmg));
-        }
-        if (p.score>=10) setCritCount(v=>v+1);
-      },
-      [EventType.ARROW_CRIT]: (p) => {
-        if (p.dmg>0) {
-          setTotalDmgDealt(v=>v+p.dmg);
-          setMonsterHP(prev => Math.max(0, prev - p.dmg));
-        }
-        if (p.score>=10) setCritCount(v=>v+1);
-      },
-      [EventType.ARROW_ORGAN_HIT]: (p) => {
-        if (p.dmg>0) {
-          setTotalDmgDealt(v=>v+p.dmg);
-          setMonsterHP(prev => Math.max(0, prev - p.dmg));
-        }
-        if (p.score>=10) setCritCount(v=>v+1);
-      },
-      [EventType.ARROW_THROW_POTION]: (p) => {
-        const ee = p.extraEffects||{};
-        if (ee.monAtkPct) setMonster(m=>({...m,atk:Math.max(1,Math.round((ee.oldAtk||m.atk)*(100-ee.monAtkPct)/100))}));
-        if (ee.monDefPct) setMonster(m=>({...m,def:Math.max(0,Math.round((ee.oldDef||m.def)*(100-ee.monDefPct)/100))}));
-        if (p.dmg>0) {
-          setTotalDmgDealt(v=>v+p.dmg);
-          setMonsterHP(prev => Math.max(0, prev - p.dmg));
-        }
-      },
-      [EventType.COUNTER]: (p) => {
-        if (p.dmg>0) {
-          setTotalDmgRecvd(v=>v+p.dmg);
-          setArcherHP(prev => Math.max(0, prev - p.dmg));
-        }
-      },
-      [EventType.COUNTER_CRIT]: (p) => {
-        if (p.dmg>0) {
-          setTotalDmgRecvd(v=>v+p.dmg);
-          setArcherHP(prev => Math.max(0, prev - p.dmg));
-        }
-      },
-      [EventType.COUNTER_HEAD_STUNNED]: (p) => {
-        if (p.dmg>0) {
-          setTotalDmgRecvd(v=>v+p.dmg);
-          setArcherHP(prev => Math.max(0, prev - p.dmg));
-        }
-      },
-      [EventType.COUNTER_REDUCED]: (p) => {
-        if (p.dmg>0) {
-          setTotalDmgRecvd(v=>v+p.dmg);
-          setArcherHP(prev => Math.max(0, prev - p.dmg));
-        }
-      },
-      [EventType.RANDOM_EVENT]: (p) => { setCurrentEvent(p.event); setBattlePhase('event'); },
-      [EventType.DISTANCE_CHANGE]: (p) => { setDistance(p.newDist); },
-      [EventType.CAT_DEFEND]: (p) => { catDefShieldRef.current = { reduction: p.reduction, blockFull: p.blockFull }; },
-      [EventType.CAT_HIT]: (p) => { setCatCurrentHP(catCtx?.catCurrentHP || 0); },
-      [EventType.BATTLE_WIN]: (p) => {
-        const roundArr = arrows.map(arrowLabelToVal);
-        setAllArrows(prev=>[...prev,...roundArr]);
-        setRoundScores(prev=>[...prev,{round,scores:roundArr,total:roundArr.reduce((s,v)=>s+v,0)}]);
-      },
-      [EventType.BATTLE_LOSE]: (p) => {
-        const roundArr = arrows.map(arrowLabelToVal);
-        setAllArrows(prev=>[...prev,...roundArr]);
-        setRoundScores(prev=>[...prev,{round,scores:roundArr,total:roundArr.reduce((s,v)=>s+v,0)}]);
-      },
-      onRandomEventEnd: () => new Promise(resolve => {
-        // 把 resolve 存起來，讓玩家點「確認」後才繼續後續事件
-        randomEventResolveRef.current = resolve;
-      }),
-    });
-    const battleResultStr = battleResult === EventType.BATTLE_WIN ? 'win' : 'lose';
-
-    // ── 4. 套用最終狀態 ─────────────────────────────────
-    setMonsterHP(finalState.monsterHP);
-    setArcherHP(finalState.archerHP);
-    setDistance(finalState.distance);
-    setUnlockedParts(finalState.unlockedParts);
-    setSkipCounter(finalState.skipCounter);
-    setSkipBigRound(finalState.skipBigRound);
-    setRevived(finalState.revived);
-    setArcherATKMod(finalState.archerATKMod);
-    setPotionShield(finalState.potionShield || 0);
-    setCounterReducePct(0);
-    setPoisonEffect(finalState.poisonEffect || null);
-    setTotalDmgDealt(finalState.totalDmgDealt);
-    setTotalDmgRecvd(finalState.totalDmgRecvd);
-    setCritCount(finalState.critCount);
-    if (catCtx) setCatCurrentHP(catCtx.catCurrentHP);
-
-    if (battleEnded) {
-      const roundArr = arrows.map(arrowLabelToVal);
-      await endBattle(battleResultStr, finalState.archerHP, finalState.monsterHP, roundArr);
-      setProcessing(false);
-      return;
-    }
-
-    // ── 5. 下一回合準備 ─────────────────────────────────
-    // 累積非最終回合的分數（讓 endBattle 的 practiceRounds 包含所有回合）
-    const midRoundArr = arrows.map(arrowLabelToVal);
-    setRoundScores(prev => [...prev, { round, scores: midRoundArr, total: midRoundArr.reduce((s,v)=>s+v,0) }]);
-    await delay(500);
-    setArrows([]); setArcherATKMod(0); setRound(r=>r+1); setBattlePhase("input"); setProcessing(false);
-    } catch(err) {
-      setCurrentEvent(null);
-      setSkipCounter(false);
-      setArcherATKMod(0);
-      setBattlePhase("input");
-      setProcessing(false);
-    }
-  }
 
   function restoreBattle(s) {
     s = normalizeMonsterBattleSnapshot(s);

@@ -53,6 +53,10 @@ export default function RaidScreen({
   // 🏆 比賽模式：三箭一回合、沒有回合上限、演出跑完跳一句激勵詞
   arrowsPerRound = RAID_ARROWS_PER_ROUND,
   endless = false,
+  // 🏆 比賽模式：**只輸入分數，不點靶面**（作者 2026-08-02）。
+  // ⚠️ 實體比賽現場每射一支就要記一支，點靶面對位太慢；
+  //    而且比賽的成績是環數，落點只是附帶資訊。
+  scoreInput = "target",   // "target" | "keypad" 
   onRoundDone = null,          // (state, log) => void  **演出跑完才叫**
   renderBoss = null,           // (size) => ReactNode  換掉中間那張王的圖
   statusExtra = null,          // 狀態列上方要多塞的東西（比賽模式放同場玩家與名次）
@@ -685,14 +689,37 @@ export default function RaidScreen({
           <RaidSpotLegend spots={spots} />
 
           <div style={{ flex: 1, display: "grid", placeItems: "center", minHeight: 0 }}>
-            <RaidTarget
-              fmtId={targetFmt}
-              spots={spots}
-              disabled={playing || full}
-              arrows={pending}
-              radius={150}
-              onArrow={rec => addArrow(rec)}
-            />
+            {scoreInput === "keypad" ? (
+              /* 🏆 比賽模式：直接按環數。落點記中心（成績看環數，不看落點） */
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, width: "100%", maxWidth: 340 }}>
+                {["X", 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, "M"].map(v => (
+                  <button key={v} type="button" disabled={playing || full}
+                    onClick={() => addArrow({
+                      nx: 0, ny: 0, faceIndex: 0, ratio: 0,
+                      label: String(v),
+                      score: v === "X" ? 10 : v === "M" ? 0 : Number(v),
+                      standardScore: v === "X" ? 10 : v === "M" ? 0 : Number(v),
+                    })}
+                    style={{
+                      padding: "16px 0", borderRadius: 12, cursor: playing || full ? "not-allowed" : "pointer",
+                      border: v === "X" ? "2px solid #fbbf24" : "1px solid rgba(148,163,184,.3)",
+                      background: v === "X" ? "rgba(251,191,36,.18)" : v === "M" ? "rgba(127,29,29,.4)" : "#1e293b",
+                      color: v === "X" ? "#fde68a" : v === "M" ? "#fca5a5" : "#e2e8f0",
+                      fontSize: 19, fontWeight: 900,
+                      opacity: playing || full ? .4 : 1,
+                    }}>{v}</button>
+                ))}
+              </div>
+            ) : (
+              <RaidTarget
+                fmtId={targetFmt}
+                spots={spots}
+                disabled={playing || full}
+                arrows={pending}
+                radius={150}
+                onArrow={rec => addArrow(rec)}
+              />
+            )}
           </div>
 
           {faceCap != null && (

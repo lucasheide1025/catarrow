@@ -421,6 +421,7 @@ export default function MatchGate({ onBack, isAdmin = false }) {
         targetFmt={MATCH_FACE}
         meId={myId}
         arrowsPerRound={MATCH_ARROWS_PER_END}
+        scoreInput="keypad"   /* 🏆 比賽只輸入分數，不點靶面 */
         endless
         onState={next => setBattle(next)}
         onRoundDone={onRoundDone}
