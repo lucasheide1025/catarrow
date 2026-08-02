@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import ArcheryAnalysis from "./ArcheryAnalysis";
 import { useAuth } from "../../hooks/useAuth";
 import { bootstrapRecentPerformanceCache, bootstrapRecentPerformanceSummaries, correctTargetPlotArrow, ensureMemberPerformanceSync, flushPendingShootingSessions, getCachedGamePerformanceSummaries, getCachedShootingSessionEnds, getCachedShootingSessionSummaries, getChangedGamePerformanceSummaries, getChangedShootingSessionSummaries, getMemberPerformanceSync, getMembers, getShootingSessionEnds, getShootingSessionHistory, getLocalPerformanceCacheMeta, setLocalPerformanceCacheMeta } from "../../lib/db";
 import { calculateSessionMetrics } from "../../lib/shootingPerformance";
@@ -498,56 +499,20 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
       <section><ST>場次分析</ST>{!filtered.length ? <Empty icon="🏹" message="此條件下沒有符合的場次。" /> : <><div className="mb-2 flex items-center justify-between gap-2"><span className="text-[11px]" style={{ color:"var(--text-secondary)" }}>顯示最近場次</span><div className="flex gap-1">{[5, 10, 20].map(count => <button key={count} type="button" onClick={() => setSessionListLimit(count)} className={`rounded px-2 py-1 text-[11px] font-bold ${sessionListLimit === count ? "bg-blue-500 text-white" : "bg-white/10"}`} style={sessionListLimit === count ? undefined : { color:"var(--text-secondary)" }}>{count} 場</button>)}</div></div><div className="flex flex-col gap-2">{visibleSessions.map(session => { const metrics = sessionMetrics(session); const isSelected = selectedSessionId === session.id; const config = session.shootingConfig || {}; return <Card key={session.id} className="p-3"><button className="w-full text-left" onClick={() => setSelectedSessionId(isSelected ? null : session.id)}><div className="flex items-start justify-between gap-3"><div><div className="font-bold text-sm" style={{ color:"var(--text-primary)" }}>{SOURCE_LABELS[session.source?.mode] || session.source?.mode || "射擊紀錄"}</div><div className="mt-1 text-[11px]" style={{ color:"var(--text-secondary)" }}>{displayDate(session)} ・ {config.bowType || "未記錄弓種"} ・ {config.distanceM ?? "—"}m ・ {config.targetFaceCode || "未記錄靶面"} ・ {config.arrowsPerEnd || "—"}箭制</div></div><div className="text-right"><div className="text-lg font-black text-blue-300">{Number(metrics.averageArrow || 0).toFixed(2)}</div><div className="text-[11px]" style={{ color:"var(--text-secondary)" }}>{metrics.totalScore || 0} 分 / {metrics.arrowCount || session.arrowCount} 箭</div></div></div><div className="mt-2 flex gap-3 text-[11px]" style={{ color:"var(--text-secondary)" }}><span>X {metrics.xCount || 0}</span><span>M {metrics.missCount || 0}</span><span>回合波動 {Number(metrics.endStdDev || 0).toFixed(2)}</span><span>後段差 {Number(metrics.fatigueDelta || 0).toFixed(2)}</span></div></button>{isSelected && <SessionDetail session={session} canCorrect={canCorrectTargetPlot} correctedBy={profile?.id} onCorrected={handleSessionCorrected} />}</Card>; })}</div>{historicalSessions.length > 0 && <Card className="mt-3 p-3"><button type="button" onClick={() => setShowSessionHistory(value => !value)} className="flex w-full items-center justify-between text-left"><span className="text-sm font-bold" style={{ color:"var(--text-primary)" }}>歷史紀錄</span><span className="text-xs text-blue-300">{showSessionHistory ? "收起" : `查看其餘 ${historicalSessions.length} 場`}</span></button>{showSessionHistory && <div className="mt-3 flex flex-col gap-2 border-t pt-3" style={{ borderColor:"var(--border-subtle)" }}>{historicalSessions.map(session => { const metrics = sessionMetrics(session); const isSelected = selectedSessionId === session.id; return <button key={session.id} type="button" onClick={() => setSelectedSessionId(isSelected ? null : session.id)} className="flex items-center justify-between gap-3 text-left text-xs"><div><div className="font-bold" style={{ color:"var(--text-primary)" }}>{SOURCE_LABELS[session.source?.mode] || session.source?.mode || "射擊紀錄"}</div><div className="mt-0.5" style={{ color:"var(--text-secondary)" }}>{displayDate(session)} ・ {session.shootingConfig?.distanceM ?? "—"}m ・ {metrics.arrowCount || session.arrowCount} 箭</div>{isSelected && <SessionDetail session={session} canCorrect={canCorrectTargetPlot} correctedBy={profile?.id} onCorrected={handleSessionCorrected} />}</div><div className="font-black text-blue-300">{Number(metrics.averageArrow || 0).toFixed(2)}</div></button>; })}</div>}</Card>}</>}</section>
     </>}
 
-    {/* ─── 📊 深度分析 ─── */}
-    {tab === "analysis" && <>
-      {error && <Card className="p-4 text-sm text-red-300">{error}</Card>}
-      {!comparableFiltered.length ? <Empty icon="📊" message="尚無足夠資料進行深度分析。" /> : <>
-        {/* ── 射手狀態判斷 ── */}
-        <section><ST>射手狀態判斷</ST><div className="flex flex-col gap-2"><DiagnosisReport diagnosis={diagnosis} /></div></section>
-
-        {/* ── 靶面偏移分析（多種疊加模式） ── */}
-        {shotGroupSessions.length > 0 && <section><ST>靶面偏移分析</ST><Card className="p-3">
-          <div className="flex flex-wrap gap-1.5 mb-2">{[["session","分場分色"],["merged","全部合併"],["phase","前段/後段"],["heat","密度熱區"]].map(([m,l]) => <button key={m} type="button" onClick={() => setOverlayMode(m)} className={`rounded-full px-3 py-1 text-[11px] font-bold ${overlayMode===m ? "bg-blue-600 text-white" : "bg-white/10"}`} style={overlayMode===m?undefined:{ color:"var(--text-secondary)" }}>{l}</button>)}</div>
-          <div className="flex items-center gap-2 mb-2"><span className="text-[10px]" style={{ color:"var(--text-secondary)" }}>疊加場數</span>{[3,5,10].map(n => <button key={n} type="button" onClick={() => setOverlayRange(n)} className={`rounded px-2 py-0.5 text-[10px] font-bold ${overlayRange===n ? "bg-emerald-500 text-white" : "bg-white/10"}`} style={overlayRange===n?undefined:{ color:"var(--text-secondary)" }}>近{n}場</button>)}</div>
-          <div className="flex justify-center"><ShotGroupOverlay sessions={shotGroupSessions.slice(0, overlayRange)} mode={overlayMode} size={230} /></div>
-          <p className="mt-2 text-[10px] text-center" style={{ color:"var(--text-secondary)" }}>僅計入靶面點擊紀錄的場次（共 {shotGroupSessions.length} 場可用）</p>
-        </Card></section>}
-
-        {/* ── 趨勢圖表 ── */}
-        <div className="pt-1"><ST>趨勢圖表</ST></div>
-        <Card className="p-3">
-          <div className="text-sm font-bold mb-1" style={{ color:"var(--text-primary)" }}>📈 每箭平均趨勢</div>
-          <p className="text-[10px] mb-2" style={{ color:"var(--text-secondary)" }}>逐場平均分變化，可觀察長期進步或衰退</p>
-          <TrendLine series={trendData.avgSeries} yLabel="平均分" formatY={v => v.toFixed(2)} />
-        </Card>
-        <Card className="p-3">
-          <div className="text-sm font-bold mb-1" style={{ color:"var(--text-primary)" }}>✅ 命中率趨勢</div>
-          <p className="text-[10px] mb-2" style={{ color:"var(--text-secondary)" }}>每場命中率（1 - M率）變化</p>
-          <TrendLine series={trendData.hitSeries} yLabel="命中率" formatY={v => `${(v * 100).toFixed(0)}%`} />
-        </Card>
-        <Card className="p-3">
-          <div className="text-sm font-bold mb-1" style={{ color:"var(--text-primary)" }}>⭐ X率趨勢</div>
-          <p className="text-[10px] mb-2" style={{ color:"var(--text-secondary)" }}>近中心箭（X）比例變化</p>
-          <TrendLine series={trendData.xSeries} yLabel="X率" formatY={v => `${(v * 100).toFixed(0)}%`} />
-        </Card>
-        {trendData.stabilitySeries && (
-          <Card className="p-3">
-            <div className="text-sm font-bold mb-1" style={{ color:"var(--text-primary)" }}>📊 穩定性趨勢</div>
-            <p className="text-[10px] mb-2" style={{ color:"var(--text-secondary)" }}>回合波動標準差的正規化指標（越高越穩定）</p>
-            <TrendLine series={trendData.stabilitySeries} yLabel="穩定性" formatY={v => (v * 100).toFixed(0)} />
-          </Card>
-        )}
-        {trendData.fatigueSeries && (
-          <Card className="p-3">
-            <div className="text-sm font-bold mb-1" style={{ color:"var(--text-primary)" }}>⚡ 疲勞差趨勢</div>
-            <p className="text-[10px] mb-2" style={{ color:"var(--text-secondary)" }}>後段 vs 前段平均分差異；負值代表後段衰退，正值代表後段反而更好</p>
-            <TrendLine series={trendData.fatigueSeries} yLabel="疲勞差" formatY={v => v.toFixed(2)} />
-          </Card>
-        )}
-        {/* ── 雷達圖 ── */}
-        {radarDatasets.length === 2 && <Card className="p-3"><div className="text-sm font-bold mb-1" style={{ color:"var(--text-primary)" }}>🎯 綜合能力雷達</div><p className="text-[10px] mb-2" style={{ color:"var(--text-secondary)" }}>近 30 箭 vs 前 30 箭 多維度對比</p><div className="flex justify-center"><RadarChart datasets={radarDatasets} size={240} /></div></Card>}
-      </>}
-    </>}
+    {/* ─── 📊 深度分析（2026-08-02 重做）───
+        ⚠️ 舊版放的是遊戲數據（平均/命中率/X率折線圖），教練看完不知道要修什麼。
+           新版只放能導向動作修正的指標，而且結論先講。
+        ⚠️ 不主動抓網路：資料全從本機快取來，要最新的按「載入最新」。 */}
+    {tab === "analysis" && (
+      <ArcheryAnalysis
+        arrows={exactArrows}
+        ends={shotGroupSessions.flatMap(s => s.ends || [])}
+        sessions={comparableFiltered}
+        refreshing={transferring}
+        lastSyncedAt={syncInfo?.cloud?.revision ? `版本 ${syncInfo.cloud.revision}` : null}
+        onRefresh={transferRecentHistory}
+      />
+    )}
 
     {/* ─── ⚔️ 遊戲戰績（RPG 風格） ─── */}
     {tab === "games" && <>
