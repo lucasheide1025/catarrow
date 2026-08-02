@@ -43,6 +43,17 @@ function periodStartMs(period) {
   if (period === "week") now.setDate(now.getDate() - ((now.getDay() + 6) % 7));
   return now.getTime();
 }
+/**
+ * 指定月份（YYYY-MM）或指定場次的篩選。
+ * ⚠️ 相對期間（近 N 天）回答不了「上個月比較好還是這個月？」——
+ *    要檢討就得挑得出**具體的月份與那一天**。
+ */
+function monthKeyOf(session) {
+  const ms = session.finalizedAt?.toMillis?.() || session.createdAt?.toMillis?.() || 0;
+  if (!ms) return "";
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
 function sessionTimeMs(session) {
   return session.finalizedAt?.toMillis?.() || session.createdAt?.toMillis?.() || 0;
 }
@@ -255,7 +266,12 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
   }), [sourceSessions]);
   const filtered = useMemo(() => sourceSessions.filter(item => {
     const config = item.shootingConfig || {};
-    return sessionTimeMs(item) >= periodStartMs(filters.period) && (filters.bow === ALL || config.bowType === filters.bow) && (filters.distance === ALL || String(config.distanceM) === filters.distance) && (filters.face === ALL || config.targetFaceCode === filters.face) && (filters.capture === ALL || item.captureMode === filters.capture) && (filters.arrows === ALL || String(config.arrowsPerEnd) === filters.arrows) && (filters.source === ALL || item.source?.mode === filters.source);
+    // 指定了月份或單場時，相對期間就不再套用（不然會互相打架）
+    if (filters.session && filters.session !== ALL) return item.id === filters.session;
+    if (filters.month && filters.month !== ALL) {
+      if (monthKeyOf(item) !== filters.month) return false;
+    } else if (sessionTimeMs(item) < periodStartMs(filters.period)) return false;
+    return (filters.bow === ALL || config.bowType === filters.bow) && (filters.distance === ALL || String(config.distanceM) === filters.distance) && (filters.face === ALL || config.targetFaceCode === filters.face) && (filters.capture === ALL || item.captureMode === filters.capture) && (filters.arrows === ALL || String(config.arrowsPerEnd) === filters.arrows) && (filters.source === ALL || item.source?.mode === filters.source);
   }), [sourceSessions, filters]);
   // Main coaching metrics must never average unlike shooting conditions.
   // When no explicit condition filter is selected, use the newest comparable
@@ -508,6 +524,11 @@ export default function MemberPerformance({ profileOverride = null, coachView = 
         arrows={exactArrows}
         ends={shotGroupSessions.flatMap(s => s.ends || [])}
         sessions={comparableFiltered}
+        allSessions={sourceSessions}
+        period={filters.period}
+        month={filters.month || ALL}
+        session={filters.session || ALL}
+        onFilterChange={patch => setFilters(current => ({ ...current, ...patch }))}
         refreshing={transferring}
         lastSyncedAt={syncInfo?.cloud?.revision ? `版本 ${syncInfo.cloud.revision}` : null}
         onRefresh={transferRecentHistory}

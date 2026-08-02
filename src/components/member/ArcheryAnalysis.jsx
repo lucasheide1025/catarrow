@@ -19,6 +19,9 @@ const card = {
   border: "1px solid rgba(148,163,184,.16)",
   boxShadow: "0 8px 28px rgba(0,0,0,.35)",
 };
+// ⚠️ 這個 sentinel 必須跟 MemberPerformance 的 ALL 一致（"all"）——
+//    不一致會讓「未指定月份」被誤判成「已指定」，整頁資料變空。
+const NONE = "all";
 const label = {
   fontSize: 10, fontWeight: 900, letterSpacing: 2,
   color: "#7c8db5", textTransform: "uppercase",
@@ -115,10 +118,102 @@ function Stat({ k, v, unit = "", tone = "#e2e8f0", hint }) {
   );
 }
 
+/**
+ * 期間選擇。
+ * ⚠️ 只有相對期間（近 N 天）回答不了「上個月比較好還是這個月？」——
+ *    檢討要挑得出**具體的月份與那一天**，所以三層都要有：
+ *    相對期間 → 指定月份 → 指定單場。
+ */
+function PeriodPicker({ period, month, session, months, sessionList, onChange }) {
+  const chip = (active, tone = "#60a5fa") => ({
+    flexShrink: 0, padding: "6px 13px", borderRadius: 999, cursor: "pointer",
+    border: `1px solid ${active ? tone : "rgba(148,163,184,.25)"}`,
+    background: active ? `${tone}22` : "rgba(2,6,23,.5)",
+    color: active ? tone : "#94a3b8", fontSize: 11.5, fontWeight: 900, whiteSpace: "nowrap",
+  });
+  const scroller = { display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4 };
+  const usingMonth = month && month !== NONE;
+  const usingSession = session && session !== NONE;
+
+  return (
+    <div style={{
+      padding: "12px 14px", borderRadius: 16,
+      background: "linear-gradient(160deg, rgba(30,41,59,.9), rgba(15,23,42,.95))",
+      border: "1px solid rgba(148,163,184,.16)",
+      display: "flex", flexDirection: "column", gap: 9,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 10, fontWeight: 900, letterSpacing: 2, color: "#7c8db5" }}>分析範圍</span>
+        {(usingMonth || usingSession) && (
+          <button type="button"
+            onClick={() => onChange({ month: NONE, session: NONE })}
+            style={{ ...chip(false), marginLeft: "auto", padding: "4px 10px", fontSize: 10.5 }}>
+            ✕ 清除指定
+          </button>
+        )}
+      </div>
+
+      {/* ① 相對期間 */}
+      <div style={scroller}>
+        {[["day", "今天"], ["week", "本週"], ["month", "本月"], ["year", "今年"], ["all", "全部"]].map(([v, l]) => (
+          <button key={v} type="button"
+            onClick={() => onChange({ period: v, month: NONE, session: NONE })}
+            style={chip(!usingMonth && !usingSession && period === v)}>{l}</button>
+        ))}
+      </div>
+
+      {/* ② 指定月份 */}
+      {months.length > 0 && (
+        <div style={scroller}>
+          <span style={{ fontSize: 10, color: "#64748b", fontWeight: 800, alignSelf: "center", flexShrink: 0 }}>月份</span>
+          {months.map(m => (
+            <button key={m.key} type="button"
+              onClick={() => onChange({ month: m.key, session: NONE })}
+              style={chip(month === m.key, "#a855f7")}>{m.label}<span style={{ opacity: .6, marginLeft: 4 }}>{m.count}</span></button>
+          ))}
+        </div>
+      )}
+
+      {/* ③ 指定單場（挑那一天） */}
+      {sessionList.length > 0 && (
+        <div style={scroller}>
+          <span style={{ fontSize: 10, color: "#64748b", fontWeight: 800, alignSelf: "center", flexShrink: 0 }}>單場</span>
+          {sessionList.map(s => (
+            <button key={s.id} type="button"
+              onClick={() => onChange({ session: s.id })}
+              style={chip(session === s.id, "#4ade80")}>{s.label}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ArcheryAnalysis({
-  arrows = [], ends = [], sessions = [],
+  arrows = [], ends = [], sessions = [], allSessions = [],
+  period = "all", month = NONE, session = NONE, onFilterChange,
   onRefresh, refreshing = false, lastSyncedAt = null,
 }) {
+  // 月份與單場清單都從**已載入的本機場次**推出來——不額外打網路
+  const months = useMemo(() => {
+    const map = new Map();
+    for (const s of allSessions || []) {
+      const ms = s.finalizedAt?.toMillis?.() || s.createdAt?.toMillis?.() || 0;
+      if (!ms) continue;
+      const d = new Date(ms);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const cur = map.get(key) || { key, label: `${d.getFullYear()}/${d.getMonth() + 1}`, count: 0 };
+      cur.count += 1;
+      map.set(key, cur);
+    }
+    return [...map.values()].sort((a, b) => b.key.localeCompare(a.key)).slice(0, 12);
+  }, [allSessions]);
+
+  const sessionList = useMemo(() => (sessions || []).slice(0, 15).map(s => {
+    const ms = s.finalizedAt?.toMillis?.() || s.createdAt?.toMillis?.() || 0;
+    const d = ms ? new Date(ms) : null;
+    return { id: s.id, label: d ? `${d.getMonth() + 1}/${d.getDate()}` : "—" };
+  }), [sessions]);
   const [showAll, setShowAll] = useState(false);
   const group = useMemo(() => groupAnalysis(arrows), [arrows]);
   const verdict = useMemo(() => groupVerdict(group), [group]);
@@ -130,6 +225,11 @@ export default function ArcheryAnalysis({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+
+      {onFilterChange && (
+        <PeriodPicker period={period} month={month} session={session}
+          months={months} sessionList={sessionList} onChange={onFilterChange} />
+      )}
 
       {/* ⚠️ 手動載入——這頁常態只讀本機快取，不主動打網路 */}
       <div style={{
