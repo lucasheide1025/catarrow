@@ -293,6 +293,9 @@ describe("結束條件（2026-07-31 抓到的洞：回合會一直往上加）",
     weak.members = weak.members.map(m => ({ ...m, hp: 1 }));
     weak.playerHp = 1;
     weak.stats = { ...weak.stats, def: 0 };
+    // ⚠️ 弱點圈是**隨機位置**的，outsideSpot() 有機率誤中 → 觸發打斷 → 王不反擊 →
+    //    玩家活下來，這條就會偶發失敗。清空圈才是在測「被打倒也算結束」這件事。
+    weak.spots = [];
     weak.boss = { ...weak.boss, atk: 9999, skillConfig: { r4Finisher: { skillId: "x", name: "終結", baseMultiplier: 2.2, canKnockOut: true } } };
     const { state } = resolveRaidRound({ state: weak, arrows: outsideSpot() });
     expect(state.playerHp).toBe(0);

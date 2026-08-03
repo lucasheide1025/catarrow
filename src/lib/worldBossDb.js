@@ -12,13 +12,15 @@ import { getFunctions, httpsCallable } from "firebase/functions";
 import { assertCostCapability, COST_CAPABILITIES } from "./costControl";
 import { addCoins, addMaterials, addChests, addCardPack, addWorldBossCard, addArrowdew, addArcherXP, createNotification } from "./db";
 import { addCatXP, addCatBond } from "./catDb";
+import { calcWorldBossRewards } from "./worldBossRewards";
 import { COIN_CHEST_TIERS } from "./lootTable";
 import {
   WORLD_BOSSES, WORLD_BOSS_KEYS, DEFAULT_REWARD, CONSOLATION_REWARD,
   LAST_HIT_EXTRA, BOSS_DURATION_MAX_DAYS, WB_FAMILY_TO_DUNGEON_FAMILY,
   buildKillAnnouncement, drawRandomBot, simulateBotRound, getRewardByBossKey,
   DROP_TABLE_BY_CATEGORY, getDropCategory, WB_CARD_DUPLICATE_COINS, WB_NO_CAT_COIN_RATE,
-  RANK_BONUS, WB_TROPHY_MAP,
+  // 🌍 貨幣改由三層整合模組決定（2026-08-03）：出席保底＋努力分潤＋名次榮譽
+  WB_TROPHY_MAP,
 } from "./worldBossData";
 import { findPendingWorldBossEvents, normalizeWorldBossState } from "./worldBossState";
 import {
@@ -611,41 +613,44 @@ export async function claimWorldBossKillReward(memberId, eventId) {
     const isFamilyBoss = category === "family_small" || category === "family_big";
     const dungeonFamily = isFamilyBoss ? WB_FAMILY_TO_DUNGEON_FAMILY[boss.family] : null;
 
-    const reward = ev.reward || DEFAULT_REWARD;
-    const base = reward.base || {};
-
     const summary = {
       coins: 0, arrowDew: 0, archerXP: 0, catXP: 0, bond: 0,
       coinChests: 0, materialChests: 0, catBoxes: 0, mimiBoxes: 0, cardPacks: 0,
       scrolls: 0, wbCard: null, wbCardDuplicateCoins: 0, trophy: null, rank: null,
+      participation: null, effort: null,
     };
 
-    // ── 保底（沿用既有5檔系統 base 部分）─────────────────────
-    if (base.coins > 0) { await addCoins(memberId, base.coins).catch(() => {}); summary.coins += base.coins; }
+    // ── 貨幣：三層整合（2026-08-03）────────────────────────────
+    // ⚠️ 舊版是「pool × 自己傷害/總傷害，下限 1 金幣」——幫忙的人等於沒獎勵，
+    //    而且人越多每人越少。新的算法在 worldBossRewards.js，理念寫成測試守著：
+    //      出席保底（不看傷害、不被稀釋）＋ 努力分潤（√傷害 × 出席天數）＋ 名次榮譽
+    const allRewards = calcWorldBossRewards(ev.participants || {}, category, {
+      top3Ids: ev.top3Ids || [],
+      lastHitBy: ev.lastHitBy?.memberId || null,
+    });
+    const myReward = allRewards[memberId];
+    if (!myReward) return { ok: false, reason: "此帳號沒有世界王結算資格" };
+    summary.participation = myReward.participation;
+    summary.effort = myReward.effort;
 
-    // ── 比例貨幣（依自己傷害佔全團總傷害% 分配，下限1）────────
-    const totalDamage = Object.values(ev.participants || {}).reduce((s, p) => s + (p.totalDmg || 0), 0) || 1;
-    const myDmgPct = (mine.totalDmg || 0) / totalDamage;
-    const shareOf = pool => Math.max(1, Math.round((pool || 0) * myDmgPct));
-
-    const coinsShare    = shareOf(dropCfg.coinsPool);
-    const arrowDewShare = shareOf(dropCfg.arrowDewPool);
-    const archerXPShare = shareOf(dropCfg.archerXPPool);
-    await addCoins(memberId, coinsShare).catch(() => {});     summary.coins    += coinsShare;
-    await addArrowdew(memberId, arrowDewShare).catch(() => {}); summary.arrowDew += arrowDewShare;
-    await addArcherXP(memberId, archerXPShare).catch(() => {}); summary.archerXP += archerXPShare;
-
+    const owed = myReward.total;
     // 貓咪經驗/羈絆值：讀取結算當下裝備哪隻貓，有裝備才給，沒裝備改發等值金幣
     const memberSnap    = await getDoc(doc(db, "members", memberId));
     const equippedCatId = memberSnap.data()?.equippedCat?.catId || null;
-    const catXPShare  = shareOf(dropCfg.catXPPool);
-    const bondShare   = shareOf(dropCfg.bondPool);
+
+    let coinsToGive = owed.coins || 0;
     if (equippedCatId) {
-      await addCatXP(memberId, equippedCatId, catXPShare).catch(() => {});      summary.catXP += catXPShare;
-      await addCatBond(memberId, equippedCatId, "worldboss", bondShare).catch(() => {}); summary.bond += bondShare;
+      if (owed.catXP > 0) { await addCatXP(memberId, equippedCatId, owed.catXP).catch(() => {}); summary.catXP += owed.catXP; }
+      if (owed.bond > 0)  { await addCatBond(memberId, equippedCatId, "worldboss", owed.bond).catch(() => {}); summary.bond += owed.bond; }
     } else {
-      const noCatCoins = (catXPShare + bondShare) * WB_NO_CAT_COIN_RATE;
-      await addCoins(memberId, noCatCoins).catch(() => {}); summary.coins += noCatCoins;
+      coinsToGive += ((owed.catXP || 0) + (owed.bond || 0)) * WB_NO_CAT_COIN_RATE;
+    }
+    if (coinsToGive > 0)    { await addCoins(memberId, coinsToGive).catch(() => {});        summary.coins    += coinsToGive; }
+    if (owed.arrowDew > 0)  { await addArrowdew(memberId, owed.arrowDew).catch(() => {});   summary.arrowDew += owed.arrowDew; }
+    if (owed.archerXP > 0)  { await addArcherXP(memberId, owed.archerXP).catch(() => {});   summary.archerXP += owed.archerXP; }
+    if (owed.gachaCoins > 0) {
+      const { addGachaCoins } = await import("./db");
+      await addGachaCoins(memberId, owed.gachaCoins).catch(() => {});
     }
 
     // ── 寶箱組裝 ─────────────────────────────────────────────
@@ -727,28 +732,19 @@ export async function claimWorldBossKillReward(memberId, eventId) {
     const rank      = (ev.top3Ids || []).indexOf(memberId) + 1; // 1/2/3，找不到是0
     let trophy = null;
 
-    if (rank >= 1 && rank <= 3) {
-      const rb = RANK_BONUS[rank];
-      if (rb.coins)      { await addCoins(memberId, rb.coins).catch(() => {});         summary.coins    += rb.coins; }
-      if (rb.arrowDew)   { await addArrowdew(memberId, rb.arrowDew).catch(() => {});    summary.arrowDew += rb.arrowDew; }
-      if (rb.gachaCoins) { const { addGachaCoins } = await import("./db"); await addGachaCoins(memberId, rb.gachaCoins).catch(() => {}); }
-      const rankChests = [];
-      for (let i = 0; i < (rb.catBoxes  || 0); i++) rankChests.push({ id: `wb_rank_cat_${memberId}_${Date.now()}_${i}`,  type: "cat_box",  family: "worldboss", tier: "boss", from: `世界王第${rank}名獎勵`, ts: Date.now() });
-      for (let i = 0; i < (rb.mimiBoxes || 0); i++) rankChests.push({ id: `wb_rank_mimi_${memberId}_${Date.now()}_${i}`, type: "mimi_box", family: "worldboss", tier: "boss", from: `世界王第${rank}名獎勵`, ts: Date.now() });
-      if (rankChests.length > 0) await addChests(memberId, rankChests).catch(() => {});
-      summary.catBoxes  += rb.catBoxes  || 0;
-      summary.mimiBoxes += rb.mimiBoxes || 0;
-      summary.rank = rank;
-      trophy = "top3";
-    }
-    if (isLastHit) {
-      const rb = RANK_BONUS.lastHit;
-      if (rb.arrowDew) { await addArrowdew(memberId, rb.arrowDew).catch(() => {}); summary.arrowDew += rb.arrowDew; }
-      if (rb.mimiBoxes > 0) {
-        await addChests(memberId, [{ id: `wb_lasthit_mimi_${memberId}_${Date.now()}`, type: "mimi_box", family: "worldboss", tier: "boss", from: "世界王尾刀獎勵", ts: Date.now() }]).catch(() => {});
-        summary.mimiBoxes += rb.mimiBoxes;
-      }
-      trophy = "lastHit";
+    // ⚠️ 名次的**貨幣**已經在上面的 owed 裡一次發完（榮譽層也算在 total 內），
+    //    這裡只補發名次的**箱子**，不要重複發金幣／箭露／抽獎幣。
+    const honor = myReward.honor || {};
+    if (rank >= 1 && rank <= 3) { summary.rank = rank; trophy = "top3"; }
+    if (isLastHit) trophy = "lastHit";
+    if (honor.catBoxes > 0 || honor.mimiBoxes > 0) {
+      const honorChests = [];
+      const label = isLastHit && rank < 1 ? "世界王尾刀榮譽" : `世界王第${rank || "?"}名榮譽`;
+      for (let i = 0; i < (honor.catBoxes  || 0); i++) honorChests.push({ id: `wb_honor_cat_${memberId}_${Date.now()}_${i}`,  type: "cat_box",  family: "worldboss", tier: "boss", from: label, ts: Date.now() });
+      for (let i = 0; i < (honor.mimiBoxes || 0); i++) honorChests.push({ id: `wb_honor_mimi_${memberId}_${Date.now()}_${i}`, type: "mimi_box", family: "worldboss", tier: "boss", from: label, ts: Date.now() });
+      await addChests(memberId, honorChests).catch(() => {});
+      summary.catBoxes  += honor.catBoxes  || 0;
+      summary.mimiBoxes += honor.mimiBoxes || 0;
     }
 
     // ── 專屬收藏獎盃（跟排名加成疊加，純收藏+成就用）───────────
