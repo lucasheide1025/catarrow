@@ -66,16 +66,27 @@ export const VILLAGE_GOAL_CELEBRATION = Object.freeze([
 ]);
 
 /**
- * 六族。⚠️ 要跟 monsterData 的族別 key 一致，否則開出來的材料對不上圖鑑。
- * （跟 worldBossDb 的 ALL_DUNGEON_FAMILIES 是同一組）
+ * **七族**（含寶箱族 treasure）。
+ *
+ * ⚠️ 作者 2026-08-03 更正：是七族不是六族。這裡最容易抄錯，因為專案裡
+ *    同時存在兩組清單：
+ *      `monsterData.FAMILY_KEYS` / `worldBossDb.ALL_DUNGEON_FAMILIES` = **六族**
+ *        （地下城生成用，刻意排除寶箱族——寶箱怪不是常規狩獵目標）
+ *      `itemData.ALL_FAMILIES` / `monsterData.FAMILIES` = **七族**
+ *        （素材與寶箱用）
+ *    材料箱要用**七族**那組。素材表 EXPANSION_MATERIALS 七族都有（126 ＝ 7 × 18）。
  */
 export const MATERIAL_FAMILIES = Object.freeze([
-  "ghost", "mountain", "insect", "workplace", "exam", "temple",
+  "ghost", "mountain", "insect", "workplace", "exam", "temple", "treasure",
 ]);
 
-/** T1~T6 → 材料箱型別。⚠️ CHEST_TYPES 只有 5 階，T5/T6 都對到 mythic。 */
-const MATERIAL_CHEST_TYPE_BY_TIER = Object.freeze(["wood", "iron", "gold", "epic", "mythic", "mythic"]);
-const MONSTER_TIER_ORDER = Object.freeze(["common", "rare", "elite", "fierce", "boss", "mythic"]);
+/**
+ * ⚠️ **一定要用 `family_mat`（族系素材箱）**，不能用 wood/iron/gold/epic/mythic。
+ *    後者是**通用材料寶箱**：它完全忽略 `chest.family`，固定開出六族該階材料，
+ *    而且**明文排除寶箱族**。拿它來做「每族一箱」等於白做——欄位設了也不會被讀。
+ *    `family_mat` 才會依 `chest.family` + `chest.tierIndex` 開出該族該階的素材。
+ */
+export const MATERIAL_CHEST_TYPE = "family_mat";
 
 /**
  * 完成村目標要發的材料箱清單（**每一族都給**，不是隨機挑一族）。
@@ -85,7 +96,7 @@ const MONSTER_TIER_ORDER = Object.freeze(["common", "rare", "elite", "fierce", "
  * ⚠️ **每族都給**而不是隨機族別，是因為村莊建築需要**指定族**的材料；
  *    隨機的話玩家永遠缺那一族，等於沒解決問題。
  *
- * @returns [{ family, tier }]  tier 是 monsterData 的階級名（common…mythic）
+ * @returns [{ family, tierIndex, chestType }]  tierIndex 是 1~6（family_mat 要的格式）
  */
 export function buildCelebrationChests(tier = 0, rand = Math.random) {
   const cel = villageGoalCelebration(tier);
@@ -94,13 +105,9 @@ export function buildCelebrationChests(tier = 0, rand = Math.random) {
   const out = [];
   for (const family of MATERIAL_FAMILIES) {
     for (let i = 0; i < perFamily; i += 1) {
-      // tierRange 是 1-indexed（T1~T6）
-      const t = Math.min(max, Math.max(min, min + Math.floor(rand() * (max - min + 1))));
-      out.push({
-        family,
-        tier: MONSTER_TIER_ORDER[t - 1],
-        chestType: MATERIAL_CHEST_TYPE_BY_TIER[t - 1],
-      });
+      // tierIndex 是 1-indexed（T1~T6），family_mat 直接吃這個欄位
+      const tierIndex = Math.min(max, Math.max(min, min + Math.floor(rand() * (max - min + 1))));
+      out.push({ family, tierIndex, chestType: MATERIAL_CHEST_TYPE });
     }
   }
   return out;

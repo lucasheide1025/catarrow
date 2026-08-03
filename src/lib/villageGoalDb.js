@@ -370,13 +370,15 @@ export async function claimVillageGoalReward(goalId, memberId) {
       for (let i = 0; i < (cel.mimiBoxes || 0); i++) {
         chests.push({ id: `vg_mimi_${memberId}_${Date.now()}_${i}`, type: "mimi_box", family: "village", tier: "boss", from: "村目標達成慶功", ts: Date.now() });
       }
-      // ⚠️ 各族材料箱：**每一族都給**（村莊建築要指定族的材料，隨機族別
+      // ⚠️ 七族材料箱：**每一族都給**（村莊建築要指定族的材料，隨機族別
       //    等於玩家永遠缺那一族）。清單由 buildCelebrationChests 產生，有測試守著。
+      // ⚠️ 型別是 **family_mat**，它吃的是 `family` + `tierIndex`。
+      //    不要換成 wood/iron/gold——那是通用材料寶箱，會忽略 family 且排除寶箱族。
       const goalTierForChests = Number(reward.tier);
       buildCelebrationChests(Number.isFinite(goalTierForChests) ? goalTierForChests : 0)
         .forEach((c, i) => chests.push({
           id: `vg_mat_${memberId}_${Date.now()}_${i}`, type: c.chestType,
-          family: c.family, tier: c.tier, from: "村目標達成慶功", ts: Date.now(),
+          family: c.family, tierIndex: c.tierIndex, from: "村目標達成慶功", ts: Date.now(),
         }));
       }
       if (chests.length) await addChests(memberId, chests).catch(() => {});

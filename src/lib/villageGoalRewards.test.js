@@ -7,6 +7,7 @@ import {
   MATERIAL_FAMILIES, buildCelebrationChests, celebrationChestCount,
   villageGoalCelebration, villageGoalConsolation, villageGoalParticipation,
 } from "./villageGoalRewards";
+import { EXPANSION_MATERIALS } from "./monsterExpansionCatalog";
 
 const group = (values) => Object.fromEntries(values.map((v, i) => [`p${i}`, { contributed: v }]));
 const dew = (r, id) => r[id].total.arrowdew;
@@ -96,16 +97,34 @@ describe("份量要撐得起「一個月」", () => {
 });
 
 describe("各族材料箱（完成才有，全員一樣）", () => {
-  test("⚠️ **每一族都要給**，不能隨機挑一族", () => {
-    // 村莊建築需要指定族的材料，隨機的話玩家永遠缺那一族
+  test("⚠️ **七族**都要給（含寶箱族），不能隨機挑一族", () => {
+    // 村莊建築需要指定族的材料，隨機的話玩家永遠缺那一族。
+    // ⚠️ 是七族不是六族——專案裡同時有兩組清單，地下城那組刻意排除寶箱族。
     const families = new Set(buildCelebrationChests(1).map(c => c.family));
     expect([...families].sort()).toEqual([...MATERIAL_FAMILIES].sort());
+    expect(MATERIAL_FAMILIES).toHaveLength(7);
+    expect(MATERIAL_FAMILIES).toContain("treasure");
+  });
+
+  test("⚠️ 必須用 family_mat（族系素材箱）——通用材料箱會忽略 family 欄位", () => {
+    // wood/iron/gold/epic/mythic 是「通用材料寶箱」：固定開六族該階材料、
+    // 完全不讀 chest.family，而且明文排除寶箱族。拿它做「每族一箱」等於白做。
+    for (const c of buildCelebrationChests(2)) {
+      expect(c.chestType).toBe("family_mat");
+      expect(["wood", "iron", "gold", "epic", "mythic"]).not.toContain(c.chestType);
+    }
+  });
+
+  test("七族的素材在 EXPANSION_MATERIALS 裡都真的存在", () => {
+    for (const family of MATERIAL_FAMILIES) {
+      expect(EXPANSION_MATERIALS.some(m => m.family === family && m.kind === "normal")).toBe(true);
+    }
   });
 
   test("數量夠「大量」，而且階級越高越多", () => {
     const counts = [0, 1, 2, 3].map(celebrationChestCount);
-    expect(counts[0]).toBeGreaterThanOrEqual(12);   // 六族 × 2
-    expect(counts[3]).toBeGreaterThanOrEqual(30);   // 六族 × 5
+    expect(counts[0]).toBeGreaterThanOrEqual(14);   // 七族 × 2
+    expect(counts[3]).toBeGreaterThanOrEqual(35);   // 七族 × 5
     for (let i = 1; i < counts.length; i += 1) expect(counts[i]).toBeGreaterThan(counts[i - 1]);
     expect(buildCelebrationChests(3, () => 0)).toHaveLength(counts[3]);
   });
@@ -113,15 +132,9 @@ describe("各族材料箱（完成才有，全員一樣）", () => {
   test("⚠️ 箱子階級要落在該階級的範圍內，不能開出超規格的箱子", () => {
     for (const t of [0, 1, 2, 3]) {
       const [min, max] = villageGoalCelebration(t).chestTierRange;
-      const order = ["common", "rare", "elite", "fierce", "boss", "mythic"];
-      for (const c of buildCelebrationChests(t, () => 0)) expect(order.indexOf(c.tier) + 1).toBe(min);
-      for (const c of buildCelebrationChests(t, () => 0.999)) expect(order.indexOf(c.tier) + 1).toBe(max);
+      for (const c of buildCelebrationChests(t, () => 0)) expect(c.tierIndex).toBe(min);
+      for (const c of buildCelebrationChests(t, () => 0.999)) expect(c.tierIndex).toBe(max);
     }
-  });
-
-  test("每個箱子都對得到實際存在的箱型", () => {
-    const valid = ["wood", "iron", "gold", "epic", "mythic"];
-    for (const c of buildCelebrationChests(3)) expect(valid).toContain(c.chestType);
   });
 });
 
