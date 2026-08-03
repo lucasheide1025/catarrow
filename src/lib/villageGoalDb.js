@@ -2,16 +2,17 @@
 
 import {
   collection, doc, addDoc, updateDoc, onSnapshot, getDoc, getDocs,
-  serverTimestamp, increment, query, where, orderBy, limit, Timestamp, runTransaction,
+  serverTimestamp, increment, query, where, orderBy, limit, Timestamp, runTransaction, setDoc,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { assertCostCapability, COST_CAPABILITIES } from "./costControl";
 import { addCoins, addArrowdew, addGachaCoins, createNotification } from "./db";
 import {
-  getGoalTarget, getGoalReward, CONSOLATION_REWARD,
+  getGoalTarget, getGoalReward, getGoalTier, CONSOLATION_REWARD,
   GOAL_TYPE_MAP, buildGoalTitle, buildGoalDesc,
   GOAL_TYPES,
 } from "./villageGoalData";
+import { canAutoSpawn, goalEndAtMs, normalizeGoalSchedule } from "./villageGoalSchedule";
 
 const COLLECTION = "villageGoals";
 
@@ -187,20 +188,43 @@ export async function contributeGatheringToGoal(memberId, {
   }
 }
 
+// ── ⏳ 自動刷新的時間設定（教練可調，sysConfig/villageGoal）───────
+const GOAL_SCHEDULE_DOC = "villageGoal";
+
+export async function getVillageGoalSchedule() {
+  try {
+    const snap = await getDoc(doc(db, "sysConfig", GOAL_SCHEDULE_DOC));
+    return normalizeGoalSchedule(snap.data()?.schedule);
+  } catch {
+    // ⚠️ 讀不到就用預設，不要讓村目標因為設定讀失敗就停擺
+    return normalizeGoalSchedule(null);
+  }
+}
+
+export async function saveVillageGoalSchedule(schedule, operatorId) {
+  try {
+    const normalized = normalizeGoalSchedule(schedule);
+    await setDoc(doc(db, "sysConfig", GOAL_SCHEDULE_DOC), {
+      schedule: normalized, updatedAt: serverTimestamp(), updatedBy: operatorId || null,
+    }, { merge: true });
+    return { ok: true, schedule: normalized };
+  } catch (e) { return { ok: false, reason: e.message }; }
+}
+
 // ── 自動刷新村目標（任何人進入貓村時觸發，內部防重複）──────
 export async function autoSpawnVillageGoal(villageLevel = 1) {
   try {
+    const schedule = await getVillageGoalSchedule();
     const snap = await getDocs(
       query(collection(db, COLLECTION), orderBy("createdAt", "desc"), limit(1))
     );
 
     if (!snap.empty) {
       const latest = { id: snap.docs[0].id, ...snap.docs[0].data() };
-      // 若還有 active 目標 → 不刷新
-      if (latest.status === "active") return { ok: false, reason: "already_active" };
-      // 若上次結束還不到 24 小時 → 不刷新
-      const endMs = latest.endAt?.toMillis?.();
-      if (endMs && Date.now() - endMs < 86400000) return { ok: false, reason: "too_soon" };
+      // ⚠️ 能不能刷的判斷抽到 villageGoalSchedule.js（純函式、有測試）。
+      //    舊版把「還有活躍目標」跟「冷卻中」都回 false，教練看不出是哪一種。
+      const gate = canAutoSpawn(latest, schedule);
+      if (!gate.ok) return { ok: false, reason: gate.reason, remainingMs: gate.remainingMs };
     }
 
     // 防重複：更新最新一筆的 spawnedAt 欄位（先用 addDoc 建立新目標）
@@ -209,7 +233,10 @@ export async function autoSpawnVillageGoal(villageLevel = 1) {
     const targetValue = getGoalTarget(villageLevel, goalType);
     const gatheringTarget = pickGatheringTarget(goalType);
     const rewards = getGoalReward(villageLevel);
-    const endAt = new Date(Date.now() + 86400000); // 24 小時後
+    // ⚠️ **不能寫死 24 小時**。目標值會隨村莊等級成長 16 倍
+    //    （total_arrows 5,000 → 80,000），時間必須跟著階級一起長，
+    //    否則高等村莊的目標永遠打不完。（作者 2026-08-03 回報「完成時間太短」）
+    const endAt = new Date(goalEndAtMs(getGoalTier(villageLevel), schedule));
 
     const ref = await addDoc(collection(db, COLLECTION), {
       goalType,

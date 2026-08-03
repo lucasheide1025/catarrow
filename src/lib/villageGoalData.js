@@ -132,7 +132,9 @@ export function getGoalReward(villageLevel) {
   };
 }
 
-// ── 安慰獎（24h 未完成）─────────────────────────────────────
+// ── 安慰獎（時間到還沒完成）──────────────────────────────────
+// ⚠️ 期限**不再是固定 24h**（2026-08-03）：自然刷出的目標依村莊階級給
+//    3~6 天，且教練可在後台調整。見 villageGoalSchedule.js。
 export const CONSOLATION_REWARD = {
   arrowdew: 30,
   coins:    20,

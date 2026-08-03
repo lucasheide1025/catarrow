@@ -7,7 +7,12 @@ import {
   adminUpdateGoal,
   adminBackfillVillageGoalRewards,
   subscribeActiveGoal,
+  getVillageGoalSchedule,
+  saveVillageGoalSchedule,
 } from "../../lib/villageGoalDb";
+import {
+  SCHEDULE_LIMITS, VILLAGE_GOAL_SCHEDULE_DEFAULTS, describeSchedule,
+} from "../../lib/villageGoalSchedule";
 import { GOAL_TYPES, GOAL_TYPE_MAP } from "../../lib/villageGoalData";
 import { Card, Btn, Inp, Spinner, Empty } from "../shared/UI";
 
@@ -16,6 +21,20 @@ export default function AdminVillageGoals() {
   const [busy, setBusy]                 = useState(false);
   const [msg, setMsg]                   = useState("");
   const [goalEditMode, setGoalEditMode] = useState(false);
+  // ⏳ 自然刷出的時間設定（跟手動建立的 durationHours 是兩回事）
+  const [schedule, setSchedule]         = useState(VILLAGE_GOAL_SCHEDULE_DEFAULTS);
+  const [scheduleBusy, setScheduleBusy] = useState(false);
+  const [scheduleMsg, setScheduleMsg]   = useState("");
+
+  useEffect(() => { getVillageGoalSchedule().then(setSchedule).catch(() => {}); }, []);
+
+  async function handleSaveSchedule() {
+    setScheduleBusy(true); setScheduleMsg("");
+    const res = await saveVillageGoalSchedule(schedule, undefined);
+    setScheduleBusy(false);
+    if (res.ok) setSchedule(res.schedule);
+    setScheduleMsg(res.ok ? "✅ 已儲存（下一個自然刷出的目標套用）" : `❌ ${res.reason}`);
+  }
   const [goalForm, setGoalForm]         = useState({
     goalType: "total_arrows",
     targetValue: 5000,
@@ -315,6 +334,44 @@ export default function AdminVillageGoals() {
               onChange={e => setGoalForm(p => ({ ...p, durationHours: Number(e.target.value) }))}
               style={inputStyle}
             />
+          </div>
+        </div>
+
+        {/* ⏳ 自然刷出的時間設定 —— 跟上面「手動建立」的持續時間是兩回事 */}
+        <div className="rounded-2xl border border-amber-400/25 bg-amber-500/5 p-3.5 space-y-3">
+          <div className="font-black text-amber-200 text-sm">⏳ 自然刷出的完成時間</div>
+          <div className="text-[11px] text-amber-200/80 leading-relaxed">
+            以前<b>寫死 24 小時</b>而且改不了。但目標值會隨村莊等級成長 16 倍
+            （全體箭數 5,000 → 80,000），所以時間要<b>跟著階級一起長</b>，
+            公式是「基礎時數 + 階級 × 每階增量」。
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              ["baseHours", "基礎時數（Lv 低）", SCHEDULE_LIMITS.baseHours],
+              ["perTierHours", "每高一階 +", SCHEDULE_LIMITS.perTierHours],
+              ["cooldownHours", "結束後冷卻", SCHEDULE_LIMITS.cooldownHours],
+            ].map(([key, label, limit]) => (
+              <div key={key}>
+                <span className="text-[11px] text-slate-400">{label}</span>
+                <input type="number" min={limit.min} max={limit.max}
+                  value={schedule[key]}
+                  onChange={e => setSchedule(p => ({ ...p, [key]: Number(e.target.value) }))}
+                  style={inputStyle} />
+              </div>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {describeSchedule(schedule).map(r => (
+              <span key={r.tier} className="px-2 py-1 rounded-lg bg-black/30 text-[11px] text-amber-100 font-bold">
+                Lv 階級 {r.tier}：{r.hours} 小時（{r.days} 天）
+              </span>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <Btn v="warn" size="sm" disabled={scheduleBusy} onClick={handleSaveSchedule}>
+              {scheduleBusy ? "儲存中…" : "儲存刷新設定"}
+            </Btn>
+            {scheduleMsg && <span className="text-[11px] font-bold text-slate-300">{scheduleMsg}</span>}
           </div>
         </div>
 
