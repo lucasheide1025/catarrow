@@ -462,7 +462,7 @@ export function calcArcherStats({ member, certification, certRecords, dexStats }
 
   // ── HP ──────────────────────────────────────────────────
   // 基礎 100 + 圖鑑/8（上限+30）+ 藍/金證（+10/+20）
-  // + 報到次數/4（上限+30）+ 成就章分/8（上限+20）
+  // + 報到次數/4（上限+30）+ 成就章分/3（上限+50）
   // + 飾品欄位數×3（上限+20）+ 射齡×5（上限+30）
   let hp = 200;
   if (dexStats) hp += Math.min(30, Math.floor(dexStats.totalUnlocked / 8));
@@ -470,25 +470,33 @@ export function calcArcherStats({ member, certification, certRecords, dexStats }
   if (certification?.level === "gold") hp += 20;
   const checkinCount = member?.dailyQuestCount || 0;
   hp += Math.min(30, Math.floor(checkinCount / 4));
+  // 🏅 成就章（2026-08-03 調整）：/8 上限20 → /3 上限50。
+  // ⚠️ 成就章是四種榮譽裡**最難拿**的（要 160 點才封頂，而肥貓章 2 個金章就滿），
+  //    回報卻最小。現在 21 點就有 +7、150 點封頂 +50。HP 天花板 800 還有很多空間。
   const achPoints = ((member?.achievement?.black||0)*3 + (member?.achievement?.gold||0)*2 + (member?.achievement?.silver||0));
-  hp += Math.min(20, Math.floor(achPoints / 8));
+  hp += Math.min(50, Math.floor(achPoints / 3));
   const accSlots = (member?.accessorySets || []).reduce((s,set) => s + Object.values(set).filter(Boolean).length, 0);
   hp += Math.min(20, accSlots * 3);
   hp += Math.min(30, ageYears * 5);
   hp = Math.min(800, hp);
 
   // ── ATK ─────────────────────────────────────────────────
-  // 基礎 15 + 肥貓章分/4（上限+25）+ 三弓檢定總等×3（上限+40）
+  // 基礎 15 + 肥貓章分/6（上限+20）+ 三弓檢定總等×4（上限+45）
   // + 弓組欄位數×4（上限+30）+ 賽事積分/10（上限+20）
   // + 報到任務/5（上限+30）
   let atk = 15;
+  // 🐱 肥貓章（2026-08-03 調整）：/4 上限25 → /6 上限20。
+  // ⚠️ 舊值 2 個金章就封頂，之後再拿完全沒感覺。拉長曲線讓中段有成長感，
+  //    讓出來的 5 點給更難拿的射手證。
   const fatPoints = ((member?.fatCat?.gold||0)*50 + (member?.fatCat?.silver||0)*10 + (member?.fatCat?.bronze||0));
-  atk += Math.min(25, Math.floor(fatPoints / 4));
+  atk += Math.min(20, Math.floor(fatPoints / 6));
   const certLevelScore = (certRecords || []).reduce((s, r) => {
     const lv = { 入門:1, 初級:2, 中級:3, 進階:4, 精英:5, 菁英:5 };
     return s + (lv[r.level] || 0);
   }, 0);
-  atk += Math.min(40, certLevelScore * 3);
+  // 🎯 射手證（2026-08-03 調整）：×3 上限40 → ×4 上限45。
+  // ⚠️ 這是**實體檢定**，四種榮譽裡最難的一項，理應最有感。
+  atk += Math.min(45, certLevelScore * 4);
   const bowSlots = (member?.equipment || []).length;
   atk += Math.min(30, bowSlots * 4);
   atk += Math.min(20, Math.floor((member?.eventPoints||0) / 10));
@@ -496,14 +504,16 @@ export function calcArcherStats({ member, certification, certRecords, dexStats }
   atk = Math.min(160, atk);
 
   // ── DEF ─────────────────────────────────────────────────
-  // 基礎 10 + 積分章分/4（上限+25）+ 防具欄位數×3（上限+30）
-  // + 射齡×4（上限+25）+ 期數生+（上限+15）+ 金證（+15）
+  // 基礎 10 + 積分章分/4（上限+30）+ 防具欄位數×3（上限+30）
+  // + 射齡×4（上限+20）+ 期數生+（上限+15）+ 金證（+15）
   let def = 10;
+  // 🏆 積分章（2026-08-03 調整）：上限 25 → 30。賽事積分是真實成績，加重。
   const scorePoints = ((member?.score?.gold||0)*50 + (member?.score?.silver||0)*10 + (member?.score?.bronze||0));
-  def += Math.min(25, Math.floor(scorePoints / 4));
+  def += Math.min(30, Math.floor(scorePoints / 4));
   const armorSlots = (member?.armorSets || []).reduce((s,set) => s + Object.values(set).filter(v=>v&&typeof v==="string"&&v.trim()).length, 0);
   def += Math.min(30, armorSlots * 3);
-  def += Math.min(25, ageYears * 4);
+  // 射齡 25 → 20，讓出 5 點給積分章（⚠️ DEF 各項上限總和必須剛好等於天花板 120）
+  def += Math.min(20, ageYears * 4);
   if (dexStats?.cohortBonus) def += Math.min(15, dexStats.cohortBonus);
   if (certification?.level === "gold") def += 15;
   def = Math.min(120, def);
