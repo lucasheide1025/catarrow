@@ -14,6 +14,10 @@ import { intentForRound, resolveIntent } from "./bossIntent";
 import { currentPhase, phaseTransition } from "./raidPhases";
 import { resolveWeakPointHit, rollWeakSpots } from "./weakPoints";
 import { rangeMultiplier } from "./raidRange";
+// ☠️ 玩家對王施加的異常。⚠️ 接在這裡，單人（本機算）與組隊（房主算）一次到位。
+import {
+  mergeAllStatuses, monsterStatMods, rollInflict, tickMonsterStatuses,
+} from "../../lib/monsterStatus";
 import { rookieMultiplier } from "./raidRookie";
 import { faceCountOf, maxArrowsPerFace } from "./raidFaces";
 import { teamGaugeMax, teamInterruptRequired, teamSizeOf, teamStatBonus } from "./raidTeam";
@@ -88,6 +92,8 @@ export function createRaidState({
       rangeMult: rangeMultiplier({ distanceM: myDist, targetFmt: myFmt }),
       faceCap: maxArrowsPerFace(myFmt),
       faceCount: faceCountOf(myFmt),
+      // ☠️ 這位成員的卡片能對王施加什麼異常
+      inflict: m.inflict || {},
       archerLevel: Number(m.archerLevel) || 1,
       rookieMult: rookieMultiplier(Number(m.archerLevel) || 1),
       cats: (m.cats || []).filter(c => c && Number(c.atk) > 0),
@@ -130,6 +136,7 @@ export function createRaidState({
     playerMaxHp: roster[0].maxHp,
     round: 1,
     noRetaliation, endless, fixedSpots,
+    bossStatuses: [],   // ☠️ 王身上的異常
     gauge: { ...emptyGaugeState(), ...(gauge || {}) },
     staggered: false,          // 上回合打斷成功 → 這回合王硬直
     // ⚠️ 弱點圈必須在**射之前**就抽好並放進 state——UI 要先把圈畫在靶面上，
@@ -187,6 +194,10 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
   }
   log.push({ type: "intent", round, intent, staggered });
 
+  // ☠️ 王身上的異常：先算現有的數值影響，射的過程再累加新施加的
+  let bossStatuses = [...(s.bossStatuses || [])];
+  const bossStatMods = monsterStatMods(bossStatuses);
+
   let spotHits = 0;
   // 三連靶：每張靶最多吃 2 箭的傷害，六箭必須 2/2/2 分完。
   // ⚠️ 上限是**每個人自己那張靶**的——所以 key 要帶 memberId，
@@ -223,9 +234,11 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
       ? MAX_ARROW_SCORE
       : (arrow?.label === "X" ? MAX_ARROW_SCORE : Number(arrow?.score) || 0);
     const shooter = shooterEarly;
+    // 🔨 破防：王身上的異常先削一層防禦（全隊都吃得到）
+    const bossDef = Math.max(0, s.boss.def * (1 - bossStatMods.defDownPct / 100));
     const normal = calcWorldBossArrowDmg(
       effectiveScore,
-      Math.round(shooter.stats.atk * support.atkMult), s.boss.def, s.participantBonus, s.dmgBonusPct,
+      Math.round(shooter.stats.atk * support.atkMult), bossDef, s.participantBonus, s.dmgBonusPct,
     ) * hit.normalMult * RAID_NORMAL_DAMAGE_SCALE;
 
     // 這張靶滿了嗎（只有三連靶會有上限）
@@ -249,6 +262,23 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
     roundDamage += damage;
     s.totals.damage += damage;
     shooter.damage += damage;
+
+    // ☠️ 射得準（9環以上／X）才施加異常
+    if (damage > 0) {
+      // ⚠️ 一定要把 rand 傳下去：resolveRaidRound 本來就吃可注入的亂數源，
+      //    漏傳的話這段變成不可重現，測試會偶發、線上也重播不出同一場。
+      for (const st of rollInflict({
+        score: hit.hit ? MAX_ARROW_SCORE : (Number(arrow?.score) || 0),
+        inflict: shooter.inflict,
+        rand,
+      })) {
+        bossStatuses = mergeAllStatuses(bossStatuses, [[st]]);
+        log.push({
+          type: "statusInflict", round, memberId: shooter.memberId, shooterName: shooter.name,
+          status: st, text: `${st.icon} ${s.boss.name} 陷入「${st.name}」（${st.duration} 回合）`,
+        });
+      }
+    }
 
     if (hit.hit && !overCap) {
       combo += 1;
@@ -427,6 +457,31 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
       log.push({ type: "supportHeal", round, healed, healPct: support.healPct });
     }
   }
+
+  // ☠️ 回合末：王身上的異常結算並倒數
+  if (bossStatuses.length && s.bossHp > 0) {
+    const avgAtk = s.members.length
+      ? Math.round(s.members.reduce((sum, m) => sum + (m.stats?.atk || 0), 0) / s.members.length)
+      : 0;
+    const tick = tickMonsterStatuses({
+      list: bossStatuses, monsterHp: s.bossHp, monsterMaxHp: s.boss.maxHp, playerAtk: avgAtk,
+    });
+    if (tick.totalDamage > 0) {
+      s.bossHp = tick.monsterHp;
+      s.totals.damage += tick.totalDamage;
+      roundDamage += tick.totalDamage;
+      for (const l of tick.logs) {
+        if (!l.damage) continue;
+        log.push({
+          type: "statusTick", round, status: l, damage: l.damage,
+          bossHp: s.bossHp, bossHpRatio: raidHpRatio(s),
+          text: `${l.icon} ${l.name}持續生效：${s.boss.name} 失去 ${l.damage} HP`,
+        });
+      }
+    }
+    bossStatuses = tick.statuses;
+  }
+  s.bossStatuses = bossStatuses;
 
   s.staggered = nextStagger;
   s.round = round + 1;

@@ -18,6 +18,7 @@ import { WORLD_BOSSES } from "../lib/worldBossData";
 import { WORLD_BOSS_SKILLS } from "../lib/worldBossSkillData";
 import { calcArcherStats } from "../lib/monsterData";
 import { calcEquippedBonus, resolveEquippedCards } from "../lib/monsterCards";
+import { calcCardCombatEffectsFromCollection } from "../lib/cardTalents";
 import { archerLevelBonus, archerLevelFromXP } from "../lib/archerLevel";
 import { calcCatCombatStats } from "../lib/catCombat";
 import { CATS, CAT_TYPE_MAP } from "../lib/catData";
@@ -172,6 +173,8 @@ export default function RaidGate({ event, onBack, sharedData, onComplete }) {
       members: [{
         memberId: myId, name: myName, stats, archerLevel, cats,
         targetFmt, distanceM, equipped: resolveEquippedCards(cardColl),
+        // ☠️ 卡片能對王施加什麼異常
+        inflict: calcCardCombatEffectsFromCollection(cardColl || {}).inflict || {},
       }],
       stats, archerLevel, cats, targetFmt, distanceM,
     }));
@@ -303,6 +306,7 @@ export default function RaidGate({ event, onBack, sharedData, onComplete }) {
     const res = await roomAction(() => createRaidRoom({
       hostId: myId, hostName: myName, bossKey: event.bossKey, eventId: event.id,
       targetFmt, distanceM, stats, archerLevel, cats,
+      inflict: calcCardCombatEffectsFromCollection(cardColl || {}).inflict || {},
     }));
     if (res?.ok) { setRoomId(res.roomId); setScreen("wait"); }
   }, [roomAction, myId, myName, event, targetFmt, distanceM, stats, archerLevel, cats]);
@@ -311,6 +315,7 @@ export default function RaidGate({ event, onBack, sharedData, onComplete }) {
     if (!target?.code) return;
     const res = await roomAction(() => joinRaidRoom(target.code, myId, myName, {
       stats, archerLevel, cats, targetFmt, distanceM,
+      inflict: calcCardCombatEffectsFromCollection(cardColl || {}).inflict || {},
     }));
     if (res?.ok) { setRoomId(res.roomId || target.roomId); setScreen("wait"); }
   }, [roomAction, myId, myName, stats, archerLevel, cats, targetFmt, distanceM]);

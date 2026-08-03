@@ -41,6 +41,7 @@ import { MATERIAL_BY_ID as EXPANSION_MATERIAL_BY_ID } from "../../lib/monsterEco
 import { collectBattleArrows } from "../../lib/expeditionRewards";
 import WorldBossCardBadge from "../shared/WorldBossCardBadge";
 import BattleScreen from "../battle/BattleScreen";
+import { calcCardCombatEffectsFromCollection } from "../../lib/cardTalents";
 import { getBattleBackgroundUrl, getBattleMonsterSources } from "../../lib/battleAssets";
 import { normalizePartyBattleSettings } from "../../lib/partyBattleSettings";
 import { isMonsterExpansionEnabled } from "../../lib/monsterExpansionFeature";
@@ -194,6 +195,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   useEffect(() => { localStorage.setItem("party_challenge_level", challengeLevel); }, [challengeLevel]);
 
   // ── 統一 Firestore 回合生命週期 ────────────────────────────
+  // ⚠️ 用 ref：submit 的閉包比 cardCollRef 的訂閱更早建立
+  const myInflictRef = useRef({});
   const {
     room,
     handleSubmit: fsHandleSubmit,
@@ -205,7 +208,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   } = useFirestoreRound({
     roomId, myId, isHost,
     subscribe: subscribePartyRoom,
-    submit: submitArrows,
+    // ☠️ 把「我的卡片能施加什麼異常」一起送上去——傷害在權威端算，判定也在那裡
+    submit: (roomId, id, arrows, role, rearChoice) =>
+      submitArrows(roomId, id, arrows, role, rearChoice, myInflictRef.current),
     processRound: processPartyRound,
     getMembers: (r) => Object.entries(r?.members || {}).map(([id, m]) => ({ id, ...m })),
     isProcessing: (r) => r?.processing,
@@ -301,7 +306,12 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   useEffect(() => {
     if (!myId || isGuestMode) return;
     // cardCollectionVersion written in waiting room stats effect deps; ensures card data loaded before stats write.
-    return subscribeCardCollection(myId, data => { cardCollRef.current = data; setCardCollectionVersion(v => v + 1); });
+    return subscribeCardCollection(myId, data => {
+      cardCollRef.current = data;
+      try { myInflictRef.current = calcCardCombatEffectsFromCollection(data || {}).inflict || {}; }
+      catch { myInflictRef.current = {}; }
+      setCardCollectionVersion(v => v + 1);
+    });
   }, [myId, isGuestMode]); // eslint-disable-line
 
   // 下一場重置：room 回到 waiting 時清掉所有 one-time ref 與本地狀態

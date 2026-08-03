@@ -12,6 +12,7 @@ import { hitSpot } from "../domain/weakPoints";
 import { PHASE_TINTS, currentPhase } from "../domain/raidPhases";
 import { RAID_ARROWS_PER_ROUND, RAID_TOTAL_ROUNDS, raidHpRatio, resolveRaidRound } from "../domain/raidFlow";
 import { buildRaidTimeline, describeEvent, groupRaidVolleys } from "../domain/raidTimeline";
+import { describeMonsterStatuses } from "../../lib/monsterStatus";
 import { RaidBossBar, RaidGauge, RaidIntent, RaidSpotLegend, RaidTeamBar } from "./RaidHud";
 import { teamGaugeMax, teamSizeOf } from "../domain/raidTeam";
 import { botRoundArrows } from "../domain/raidBot";
@@ -497,6 +498,17 @@ export default function RaidScreen({
           name={state.boss.name} title={bossTitle} phase={phase}
           hp={displayHp} maxHp={state.boss.maxHp} participants={participants}
         />
+        {/* ☠️ 王身上的異常——要看得到還剩幾回合 */}
+        {describeMonsterStatuses(state.bossStatuses).length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 3, padding: "3px 11px 0" }}>
+            {describeMonsterStatuses(state.bossStatuses).map(st => (
+              <span key={st.id} style={{
+                fontSize: 9.5, fontWeight: 900, padding: "1px 7px", borderRadius: 999,
+                color: st.color, background: `${st.color}22`, border: `1px solid ${st.color}66`,
+              }}>{st.text}</span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* 舞台：王 ＋ 部位熱點 */}

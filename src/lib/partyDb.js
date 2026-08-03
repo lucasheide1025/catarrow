@@ -4,6 +4,9 @@ import {
   serverTimestamp, arrayUnion, query, where, getDocs, runTransaction,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import {
+  mergeAllStatuses, monsterStatMods, rollInflictForArrows, tickMonsterStatuses,
+} from "./monsterStatus";
 import { assertCostCapability, COST_CAPABILITIES } from "./costControl";
 import { addChests, recordBattleDex } from "./db";
 import { CHEST_TYPES, makeChests, calcPotionBuffs, getPotion } from "./itemData";
@@ -471,10 +474,12 @@ export async function applyPartyUtilityPotion(roomId, memberId, potionId) {
 }
 
 // ── Battle：送出箭分 ──────────────────────────────────────────
-export async function submitArrows(roomId, memberId, arrows, role = "front", rearChoice = null) {
+export async function submitArrows(roomId, memberId, arrows, role = "front", rearChoice = null, inflict = null) {
   try {
     await updateDoc(doc(db, PARTY, roomId), {
       [`members.${memberId}.arrows`]:     arrows,
+      // ☠️ 玩家的卡片能施加什麼異常——傷害在權威端算，判定也必須在這裡
+      ...(inflict && Object.keys(inflict).length ? { [`members.${memberId}.inflict`]: inflict } : {}),
       [`members.${memberId}.ready`]:      true,
       // 曾被房主略過的旗標不能殘留到下一輪；正常送分一律清除。
       [`members.${memberId}.skipped`]:    false,
@@ -601,7 +606,10 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
         mode:"party", playerAtk:buffedAtk, enemyHp:room.monsterHP, enemyMaxHp:room.monster?.hp,
         isBoss:["boss","mythic"].includes(room.monster?.tier),
       }).damage || 0), 0);
-      const raw = calcDmgFn(scoreArrows, buffedAtk, room.monster.def, m.wbBonus?.dmgBonusPct || 0);
+      // 🔨 破防：怪物身上的異常先削一層防禦（全隊都吃得到）
+      const statusedDef = Math.max(0,
+        room.monster.def * (1 - monsterStatMods(room.monsterStatuses || []).defDownPct / 100));
+      const raw = calcDmgFn(scoreArrows, buffedAtk, statusedDef, m.wbBonus?.dmgBonusPct || 0);
       const rawDmg = typeof raw === "number" ? raw : (raw.dmg || 0);
       const rawBreakdown = [
         ...(typeof raw === "object" ? (raw.arrowBreakdown || []) : []),
@@ -642,6 +650,14 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
     ];
     const miniRounds  = [];
     let   monsterHP   = room.monsterHP || 0;
+    // ☠️ 玩家施加的異常：每位成員用自己的箭與卡片判定，合併到怪物身上
+    let monsterStatuses = mergeAllStatuses(
+      room.monsterStatuses || [],
+      aliveIds.map(id => rollInflictForArrows({
+        arrows: (members[id]?.arrows || []),
+        inflict: members[id]?.inflict || {},
+      })),
+    );
     if (partyAbility?.resolved?.monsterHealMaxHpPct) {
       monsterHP = Math.min(room.monsterMaxHP || monsterHP, monsterHP + Math.round((room.monsterMaxHP || monsterHP) * partyAbility.resolved.monsterHealMaxHpPct / 100));
     }
@@ -893,13 +909,29 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       alive: memberUpdates[`members.${id}.alive`] ?? member.alive,
       role: memberUpdates[`members.${id}.role`] ?? member.role,
     }]));
+    // ☠️ 回合末：怪物身上的異常結算並倒數
+    if (monsterStatuses.length && monsterHP > 0) {
+      const avgAtk = aliveIds.length
+        ? Math.round(aliveIds.reduce((sum, id) => sum + (members[id]?.atk || 0), 0) / aliveIds.length)
+        : 0;
+      const tick = tickMonsterStatuses({
+        list: monsterStatuses, monsterHp: monsterHP,
+        monsterMaxHp: room.monsterMaxHP || room.monster?.hp || monsterHP, playerAtk: avgAtk,
+      });
+      if (tick.totalDamage > 0) {
+        monsterHP = tick.monsterHp;
+        if (monsterHP <= 0) bossKilled = true;
+      }
+      monsterStatuses = tick.statuses;
+    }
+
     const nextAbilityPreview = newStatus === "active" && room.monster?.expansionVersion === 1
       ? buildPartyAbilityPreview({ monster:room.monster, round:round + 1, members:nextMembers })
       : null;
 
     await updateDoc(doc(db, PARTY, roomId), stripUndefinedDeep({
       ...memberUpdates,
-      monsterHP,
+      monsterHP, monsterStatuses,   // ☠️ 異常帶到下一回合
       round: round + 1,
       log: arrayUnion(logEntry),
       result,
