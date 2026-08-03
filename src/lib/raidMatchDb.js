@@ -31,6 +31,17 @@ const M = "raidMatches";
  * ⚠️ 比賽當天出事的時候，現場沒有人會去讀 "Missing or insufficient permissions"。
  *    訊息要直接講「該找誰、做什麼」。
  */
+/**
+ * ⚠️ 「找不到文件」要講人話。
+ *
+ * 場次 id 就是日期，所以**過了午夜整場就換一份文件**。教練隔天回來按收榜／發獎，
+ * 打到的是今天這份還不存在的空文件，Firestore 會回 "No document to update"，
+ * 看起來就像「昨天的成績整場不見了」——其實資料好好地在昨天那份 id 底下。
+ * 這是 2026-08-03 真的發生過的事，訊息一定要直接把解法講出來。
+ */
+const NOT_FOUND_HINT = "這個日期還沒有任何比賽紀錄——比賽場次是**用日期分開存**的，"
+  + "過了午夜就是新的一場。要處理昨天的成績，請在上面切換到那天的場次日期。";
+
 function humanError(e) {
   const msg = String(e?.message || e || "");
   if (/insufficient permissions|permission-denied/i.test(msg)) {
@@ -38,6 +49,7 @@ function humanError(e) {
   }
   if (/offline|unavailable|network/i.test(msg)) return "網路連不上，等一下再按一次（分數不會不見）";
   if (/deadline|timeout/i.test(msg)) return "連線太慢，再按一次送出（不會重複計分）";
+  if (/no document to update|not-found/i.test(msg)) return NOT_FOUND_HINT;
   return msg || "操作失敗";
 }
 
@@ -255,6 +267,27 @@ export async function getMatch(matchId) {
     const s = await getDoc(doc(db, M, matchId));
     return s.exists() ? { id: s.id, ...s.data() } : null;
   } catch { return null; }
+}
+
+/**
+ * 教練用：列出所有比賽場次日期（新的在前）。
+ *
+ * ⚠️ 這是**手動觸發**的一次性讀取，不要做成監聽。比賽日文件數量很少，
+ *    但監聽整個 collection 會讓每個教練的每次開頁都掃全表。
+ */
+export async function listMatchDates() {
+  try {
+    const snap = await getDocs(collection(db, M));
+    return snap.docs
+      .map(d => ({
+        id: d.id,
+        players: Object.keys(d.data()?.players || {}).length,
+        status: d.data()?.status || "open",
+        granted: !!d.data()?.grantedAt,
+      }))
+      .filter(r => r.players > 0 || r.id === todayMatchId())
+      .sort((a, b) => (a.id < b.id ? 1 : -1));
+  } catch { return []; }
 }
 
 /** 教練用：收榜（收了就不能再送分，但榜還看得到） */

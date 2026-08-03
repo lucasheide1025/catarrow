@@ -65,7 +65,12 @@ export default function MatchGate({ onBack, isAdmin = false }) {
   const { profile } = useAuth();
   const myId = profile?.id;
   const myName = profile?.name || "射手";
-  const matchId = useMemo(() => todayMatchId(), []);
+  // ⚠️ 場次 id ＝日期，所以**過午夜就是新的一場**。教練隔天要收榜／發獎時，
+  //    預設指到今天這份還不存在的空文件，看起來就像「成績整場不見了」。
+  //    所以教練可以切到過去的場次日期；選手端永遠固定在今天。
+  const todayId = useMemo(() => todayMatchId(), []);
+  const [matchId, setMatchId] = useState(todayId);
+  const pastMatch = matchId !== todayId;
 
   const [match, setMatch] = useState(null);
   const [screen, setScreen] = useState("lobby");      // lobby | battle
@@ -129,6 +134,7 @@ export default function MatchGate({ onBack, isAdmin = false }) {
   }, [bossMaxHp, totals.damage, myId, myName]);
 
   const enter = useCallback(async () => {
+    if (pastMatch) { setError("這是過去的場次，只能檢視與結算，不能再送分"); return; }
     setBusy(true); setError("");
     const res = await joinMatch(matchId, myId, myName, {
       bowType: profile?.bowType || null, catId: profile?.equippedCat?.catId || null,
@@ -136,12 +142,14 @@ export default function MatchGate({ onBack, isAdmin = false }) {
     setBusy(false);
     if (!res.ok) { setError(res.reason || "加入失敗"); return; }
     startBattle();
-  }, [matchId, myId, myName, profile?.bowType, profile?.equippedCat?.catId, startBattle]);
+  }, [matchId, myId, myName, profile?.bowType, profile?.equippedCat?.catId, startBattle, pastMatch]);
 
   // ⚠️ 已經在比賽裡（重整／斷線回來）就直接回戰鬥畫面，不要退回大廳
   useEffect(() => {
+    // ⚠️ 看過去的場次時絕對不能自動進戰鬥——那會把箭射進已經結算的比賽
+    if (pastMatch) return;
     if (screen === "lobby" && players?.[myId]?.active && !closed && !battle) startBattle();
-  }, [players, myId, screen, closed, battle, startBattle]);
+  }, [players, myId, screen, closed, battle, startBattle, pastMatch]);
 
   /**
    * 把這一輪的箭**一支一支**寫進去。
@@ -392,7 +400,8 @@ export default function MatchGate({ onBack, isAdmin = false }) {
 
           {isAdmin && (
             <MatchAdminPanel
-              matchId={matchId} players={players} closed={closed} config={match?.reward}
+              matchId={matchId} todayId={todayId} onPickMatch={setMatchId}
+              players={players} closed={closed} config={match?.reward}
               onSaveConfig={cfg => saveMatchRewardConfig(matchId, cfg)}
               onGrant={() => grantMatchRewards(matchId)}
               onReset={() => resetMatch(matchId)}

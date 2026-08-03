@@ -7,6 +7,7 @@
 // ⚠️ 發放前一定要先看到「總共要發多少、還有幾個人沒發」。
 //    按下去才知道發了什麼，教練不敢按。
 import { useState } from "react";
+import { listMatchDates } from "../../lib/raidMatchDb";
 import { CHEST_TYPES } from "../../lib/itemData";
 import { COIN_CHEST_TIERS } from "../../lib/lootTable";
 import {
@@ -40,13 +41,24 @@ function NumField({ k, text, value, onChange }) {
 }
 
 export default function MatchAdminPanel({
-  matchId, players = {}, closed = false,
+  matchId, todayId = matchId, onPickMatch = null,
+  players = {}, closed = false,
   onSaveConfig, onGrant, onReset, onToggleClose, config,
 }) {
   const [cfg, setCfg] = useState(() => normalizeRewardConfig(config));
   const [confirm, setConfirm] = useState(null);   // "grant" | "reset"
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState("");
+  // 📅 過去的場次：**點了才讀**，不要一開頁就掃整個 collection
+  const [dates, setDates] = useState(null);
+  const [loadingDates, setLoadingDates] = useState(false);
+  const past = matchId !== todayId;
+
+  const loadDates = async () => {
+    setLoadingDates(true);
+    setDates(await listMatchDates());
+    setLoadingDates(false);
+  };
 
   const preview = matchRewardPreview(players, cfg);
   const set = (k, v) => setCfg(c => ({ ...c, [k]: v }));
@@ -63,6 +75,48 @@ export default function MatchAdminPanel({
     <div style={{ ...box, border: "1px solid rgba(251,191,36,.4)" }}>
       <div style={{ fontSize: 13, fontWeight: 900, color: "#fde68a", marginBottom: 8 }}>
         🎓 教練面板　<span style={{ fontSize: 10, color: "#64748b", fontWeight: 800 }}>{matchId}</span>
+      </div>
+
+      {/* ── 📅 場次日期 ──
+          ⚠️ 比賽是**一天一份文件**，過了午夜就換一場。教練隔天回來要收榜／發獎，
+             一定得先切回那一天，否則會對著空的今天按，Firestore 回「找不到文件」，
+             看起來就像成績整場不見了。 */}
+      <div style={box}>
+        <div style={label}>📅 場次日期</div>
+        {past && (
+          <div style={{
+            fontSize: 11, fontWeight: 800, color: "#fca5a5", lineHeight: 1.5,
+            background: "rgba(127,29,29,.35)", borderRadius: 8, padding: "6px 8px", marginBottom: 6,
+          }}>
+            正在檢視<b>過去的場次</b>（{matchId}）——只能結算，選手不能再送分。
+          </div>
+        )}
+        {dates === null ? (
+          <button type="button" onClick={loadDates} disabled={loadingDates}
+            style={{ ...btn("#93c5fd"), width: "100%" }}>
+            {loadingDates ? "讀取中…" : "📂 載入過去的比賽日期"}
+          </button>
+        ) : (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {dates.length === 0 && (
+              <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 700 }}>沒有任何比賽紀錄</div>
+            )}
+            {dates.map(d => (
+              <button key={d.id} type="button" onClick={() => onPickMatch?.(d.id)}
+                style={{
+                  padding: "6px 9px", borderRadius: 8, cursor: "pointer", fontSize: 11, fontWeight: 900,
+                  border: d.id === matchId ? "1px solid #fbbf24" : "1px solid #334155",
+                  background: d.id === matchId ? "rgba(251,191,36,.18)" : "#1e293b",
+                  color: d.id === matchId ? "#fde68a" : "#cbd5e1",
+                }}>
+                {d.id === todayId ? "今天 " : ""}{d.id}
+                <span style={{ color: "#64748b", marginLeft: 4 }}>
+                  {d.players}人{d.granted ? "・已發" : ""}{d.status === "closed" ? "・已收" : ""}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ── 獎勵設定 ── */}
