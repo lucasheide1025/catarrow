@@ -195,10 +195,15 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
   const [rewardPreview, setRewardPreview] = useState(null);
   const [spawnCycle, setSpawnCycle] = useState(null);
 
-  useEffect(() => subscribeWorldBossSpawnCycle(cycle => {
-    setSpawnCycle(cycle);
-    ensureWorldBossLifecycle().catch(() => {});
-  }), []);
+  // ⚠️ **不要把 ensureWorldBossLifecycle 放進訂閱回呼**（2026-08-03 移出）。
+  //    worldBossSpawnCycles/current 這份文件在蓄力期間會**頻繁變動**
+  //    （任何人射箭／通關／擲骰都會推進度），放在回呼裡等於
+  //    「每次進度更新 × 每個開著大廳的人」都各叫一次雲端函式，
+  //    而那支函式內部還會再讀好幾筆文件。而且 ensureCycle 自己也會寫這份文件，
+  //    有機會自我觸發。
+  //    掛載時叫一次就夠；週期性的部分本來就有排程 worldBossLifecycleSchedule 在跑。
+  useEffect(() => subscribeWorldBossSpawnCycle(setSpawnCycle), []);
+  useEffect(() => { ensureWorldBossLifecycle().catch(() => {}); }, []);
 
   useEffect(() => {
     const unsub = subscribeLatestWorldBoss(ev => {

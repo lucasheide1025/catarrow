@@ -216,18 +216,36 @@ export async function saveVillageGoalSchedule(schedule, operatorId) {
 }
 
 // ── 自動刷新村目標（任何人進入貓村時觸發，內部防重複）──────
+// ⚠️ **本頁進入節流**：這支是在「切到村莊分頁」時呼叫的，而 effect 的 deps 是
+//    [tab, profile.id]——玩家每切一次分頁就會多一次 getDocs。目標期限是 30 天，
+//    每 10 分鐘查一次綽綽有餘。省下的是「切分頁次數 - 1」次讀取／每人每次上線。
+const AUTO_SPAWN_THROTTLE_MS = 10 * 60 * 1000;
+let lastAutoSpawnCheckAt = 0;
+
 export async function autoSpawnVillageGoal(villageLevel = 1) {
+  const now = Date.now();
+  if (now - lastAutoSpawnCheckAt < AUTO_SPAWN_THROTTLE_MS) {
+    return { ok: false, reason: "throttled" };
+  }
+  lastAutoSpawnCheckAt = now;
   try {
-    const schedule = await getVillageGoalSchedule();
     const snap = await getDocs(
       query(collection(db, COLLECTION), orderBy("createdAt", "desc"), limit(1))
     );
 
+    // ⚠️ 設定要**延後到真的需要時**才讀。期限是 30 天，絕大多數呼叫都會在
+    //    下面那個 "already_active" 早退——設定放在最前面等於每次進村莊
+    //    白讀一次 sysConfig。
+    let schedulePromise = null;
+    const schedule = () => (schedulePromise ||= getVillageGoalSchedule());
+
     if (!snap.empty) {
       const latest = { id: snap.docs[0].id, ...snap.docs[0].data() };
+      // 還有活躍目標是最常見的情況，這一步不需要任何設定
+      if (latest.status === "active") return { ok: false, reason: "already_active" };
       // ⚠️ 能不能刷的判斷抽到 villageGoalSchedule.js（純函式、有測試）。
       //    舊版把「還有活躍目標」跟「冷卻中」都回 false，教練看不出是哪一種。
-      const gate = canAutoSpawn(latest, schedule);
+      const gate = canAutoSpawn(latest, await schedule());
       if (!gate.ok) return { ok: false, reason: gate.reason, remainingMs: gate.remainingMs };
     }
 
@@ -243,7 +261,7 @@ export async function autoSpawnVillageGoal(villageLevel = 1) {
     // ⚠️ **不能寫死 24 小時**。目標值會隨村莊等級成長 16 倍
     //    （total_arrows 5,000 → 80,000），時間必須跟著階級一起長，
     //    否則高等村莊的目標永遠打不完。（作者 2026-08-03 回報「完成時間太短」）
-    const endAt = new Date(goalEndAtMs(getGoalTier(villageLevel), schedule));
+    const endAt = new Date(goalEndAtMs(getGoalTier(villageLevel), await schedule()));
 
     const ref = await addDoc(collection(db, COLLECTION), {
       goalType,
