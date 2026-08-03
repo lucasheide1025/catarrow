@@ -358,7 +358,12 @@ export async function updateWorldBossHP(eventId, newHP) {
 // ── 攻擊大 Boss（每天一次，最多 5 回合 × 6 箭）────────────────
 // roundResults = [{ arrows, dmg, crits }, ...] 最多 5 回合
 // isGuest = true 時不寫 practiceLog
-export async function attackWorldBoss({ eventId, memberId, memberName, weapon, roundResults, isGuest = false, accountType = "official", sessionSourceId = null, potionDmgMult = 1, bots = [], memberAtk = 10, memberDef = 0, memberHP = 0, killerStyle = "baobao", finishingArrow = null, killPayload = null }) {
+export async function attackWorldBoss({ eventId, memberId, memberName, weapon, roundResults, isGuest = false, accountType = "official", sessionSourceId = null, potionDmgMult = 1, bots = [], memberAtk = 10, memberDef = 0, memberHP = 0, killerStyle = "baobao", finishingArrow = null, killPayload = null,
+  // ⚠️ 呼叫端如果自己會寫練習紀錄，**一定要傳 false**，否則同一次攻擊會被記兩筆。
+  //    舊的 WorldBossAttack.jsx 自己寫一筆、這裡又寫一筆——原本因為這裡缺 date
+  //    查詢撈不到才沒爆出來，補上 date 之後就會變成箭數翻倍。
+  //    新的 RaidGate.jsx 沒有自己寫，靠的就是這一筆。（2026-08-03）
+  logPractice = true }) {
   try {
     const eventRef  = doc(db, WB, eventId);
     const snap      = await getDoc(eventRef);
@@ -489,20 +494,31 @@ export async function attackWorldBoss({ eventId, memberId, memberName, weapon, r
       dailyReward = { coins: rewardCoins, chest: chestType, pct: Math.round(pct * 1000) / 10 };
     }
 
-    // 寫入練習日誌（非訪客）
-    if (!isGuest && memberId) {
+    // 寫入練習日誌（非訪客，且呼叫端沒有自己寫）
+    if (!isGuest && memberId && logPractice) {
       const { addPracticeLog } = await import("./db");
       const totalArrows = roundResults.reduce((s, r) => s + (r.arrows?.length || 0), 0);
       const totalScore  = roundResults.reduce((s, r) =>
         s + (r.arrows || []).reduce((a, b) => a + (b.score || 0), 0), 0);
+      // ⚠️ `date` 與 `totalArrows` **不能少**：
+      //    練習歷史用 orderBy("date","desc") 查，今日箭數用 where("date","==",today)——
+      //    Firestore 會**直接跳過缺少排序欄位的文件**，不會報錯也不會有半點跡象。
+      //    這筆本來只寫 arrows/score，所以世界王射的箭在歷史與今日箭數都是隱形的。
+      //    （2026-08-03 追「數據不同步」時抓到）
+      const todayStr = new Date().toISOString().slice(0, 10);
       await addPracticeLog(memberId, {
-        type:      "world_boss",
-        bossKey:   ev.bossKey,
-        bossName:  ev.bossData.name,
-        dmg:       combinedDmg,
-        arrows:    totalArrows,
-        score:     totalScore,
-        note:      `挑戰世界大 Boss《${ev.bossData.name}》`,
+        date:        todayStr,
+        source:      "worldboss",
+        type:        "world_boss",
+        bossKey:     ev.bossKey,
+        bossName:    ev.bossData.name,
+        dmg:         combinedDmg,
+        totalArrows: totalArrows,
+        total:       totalScore,
+        // 舊欄位保留，避免既有畫面讀不到
+        arrows:      totalArrows,
+        score:       totalScore,
+        note:        `挑戰世界大 Boss《${ev.bossData.name}》`,
       }).catch(() => {});
     }
 

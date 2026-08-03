@@ -22,6 +22,7 @@ import { openVillagePacks } from "./villagePack";
 import { addCatBond, addCatXP } from "./catDb";
 import { catBusyElsewhere, catBusyReason } from "./catAssignment";
 import { albumForCard, albumXpForCard, albumXpFromCards, villageAlbumMultiplier } from "./catVillageAlbums";
+import { sumPracticeLogArrows } from "./practiceLogArrows";
 import { SHOOTING_SCHEMA_VERSION, buildMonsterShootingRecord, buildPracticeShootingRecord, buildShootingEnds, calculateSessionMetrics } from "./shootingPerformance";
 import { assertCostCapability, COST_CAPABILITIES, isCostCapabilityAllowed } from "./costControl";
 import {
@@ -62,11 +63,10 @@ export async function initializeTodayArrows(memberId) {
   let serverTotal = 0;
   try {
     const snap = await getDocs(query(collection(db, C.practiceLogs), where("memberId", "==", memberId), where("date", "==", taipeiDateKey()), limit(500)));
-    serverTotal = snap.docs.reduce((sum, item) => {
-      const data = item.data();
-      if (Number(data.arrowCount) > 0) return sum + Number(data.arrowCount);
-      try { return sum + JSON.parse(data.roundsString || "[]").flat().length; } catch { return sum; }
-    }, 0);
+    // ⚠️ 一定要用 practiceLogArrowCount。這裡本來讀 data.arrowCount，
+    //    但那是**「每組幾箭」**不是總箭數——3 箭 × 20 組的練習被算成 3 箭，
+    //    而里程碑那邊讀的是 totalArrows（正確），兩個數字永遠對不上。
+    serverTotal = sumPracticeLogArrows(snap.docs.map(item => item.data()));
   } catch (error) { console.warn("initializeTodayArrows:", error?.message); }
   const value = Math.max(getLocalTodayArrows(memberId), serverTotal);
   setLocalTodayArrows(memberId, value);
@@ -4825,10 +4825,8 @@ export async function checkAndGrantArrowMilestones(memberId, sessionArrowCount) 
       where("memberId", "==", memberId),
       where("date", "==", today)
     ));
-    for (const logDoc of snap.docs) {
-      const n = logDoc.data()?.totalArrows;
-      if (typeof n === "number") newTotal += n;
-    }
+    // 跟 initializeTodayArrows 走**同一支**函式，否則兩邊又會各自漂移
+    newTotal = sumPracticeLogArrows(snap.docs.map(logDoc => logDoc.data()));
   } catch (_) {}
   // newTotal 是這次查詢當下 practiceLogs 加總的今日箭數。呼叫端通常在 addPracticeLog
   // 沒等待完成（fire-and-forget）的情況下緊接著呼叫這裡，這筆查詢可能剛好還沒撈到

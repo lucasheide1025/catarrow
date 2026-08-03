@@ -954,6 +954,9 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     let res;
     try {
       res = await attackWorldBoss({
+        // ⚠️ 這個畫面**自己**會寫一筆更完整的練習紀錄（含 rounds / 落點 / 靶紙），
+        //    所以要擋掉 attackWorldBoss 內建那一筆，不然同一次攻擊記兩筆＝箭數翻倍。
+        logPractice: false,
         eventId:       event.id,
         memberId:      myId,
         memberName:    myName,
