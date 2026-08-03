@@ -456,6 +456,39 @@ export function calcCounterDamage({ monsterATK, archerDEF, headStunned, isCrit }
 
 // ── 射手數值計算 ─────────────────────────────────────────
 // HP 上限 400 / ATK 上限 160 / DEF 上限 120
+/**
+ * 🏅 實體榮譽加成（三種章）—— **不設上限**。
+ *
+ * ⚠️ 這一層**刻意放在三圍夾制之外**（見 calcArcherStats 末段），跟等級加成同一層。
+ *    放進夾制裡的話，老手早就頂到天花板，再拿章完全沒有感覺。
+ *
+ * ⚠️ **不設上限是作者的決定**（2026-08-03）：「我就是煞車，而且這遊戲會繼續往上攀升」。
+ *    章是教練親手發的實體徽章，發放速度本身就是節流閥；而遊戲數值本來就會隨改版成長。
+ *    → **不要因為「看起來會通膨」就自己加回上限。**
+ *
+ * ⚠️ 難度排序（作者確認，不要從點數權重推）：
+ *      🐱 肥貓章 最難 → ATK，單顆最重
+ *      🏆 積分章 中間 → DEF
+ *      🏅 成就章 最好拿 → HP（HP 單位大、又會被等級稀釋，權重實際最輕）
+ */
+export const HONOR_BONUS_PER_BADGE = Object.freeze({
+  fatCat:      { bronze: 1, silver: 4, gold: 12 },            // → ATK
+  score:       { bronze: 1, silver: 3, gold: 9 },             // → DEF
+  achievement: { silver: 3, gold: 8, black: 15 },             // → HP
+});
+
+const badgeSum = (owned, table) =>
+  Object.entries(table).reduce((sum, [rank, value]) => sum + (Number(owned?.[rank]) || 0) * value, 0);
+
+/** 三種章換算成三圍。回傳的是**要加在夾制之外**的量。 */
+export function calcHonorBonus(member) {
+  return {
+    hp:  badgeSum(member?.achievement, HONOR_BONUS_PER_BADGE.achievement),
+    atk: badgeSum(member?.fatCat, HONOR_BONUS_PER_BADGE.fatCat),
+    def: badgeSum(member?.score, HONOR_BONUS_PER_BADGE.score),
+  };
+}
+
 export function calcArcherStats({ member, certification, certRecords, dexStats }) {
   const joinYear  = member?.joinDate ? new Date(member.joinDate).getFullYear() : new Date().getFullYear();
   const ageYears  = Math.max(0, new Date().getFullYear() - joinYear);
@@ -470,13 +503,6 @@ export function calcArcherStats({ member, certification, certRecords, dexStats }
   if (certification?.level === "gold") hp += 20;
   const checkinCount = member?.dailyQuestCount || 0;
   hp += Math.min(30, Math.floor(checkinCount / 4));
-  // 🏅 成就章（2026-08-03 定案）：/8 上限 20 → **/5 上限 25**。
-  // ⚠️ 三種章裡**成就章最好拿**（作者確認），所以加成最小。
-  //    仍然略微上調並拉長曲線（125 分封頂），因為它是長期累積型的。
-  // ⚠️ HP 在高等會被等級加成稀釋（117 級光等級就 +580），
-  //    所以「最好拿的章配 HP」剛好——影響最小的軸配最容易的榮譽。
-  const achPoints = ((member?.achievement?.black||0)*3 + (member?.achievement?.gold||0)*2 + (member?.achievement?.silver||0));
-  hp += Math.min(25, Math.floor(achPoints / 5));
   const accSlots = (member?.accessorySets || []).reduce((s,set) => s + Object.values(set).filter(Boolean).length, 0);
   hp += Math.min(20, accSlots * 3);
   hp += Math.min(30, ageYears * 5);
@@ -487,12 +513,6 @@ export function calcArcherStats({ member, certification, certRecords, dexStats }
   // + 弓組欄位數×4（上限+30）+ 賽事積分/10（上限+20）
   // + 報到任務/5（上限+25）
   let atk = 15;
-  // 🐱 肥貓章（2026-08-03 定案）：/4 上限 25 → **上限 30**。
-  // ⚠️ 三種章裡**肥貓章最難拿**（作者確認）。不要用「點數權重」推難度——
-  //    成就章要 160 點才封頂看起來最難，但那是計分方式，實際上它最好拿。
-  //    速率維持 /4、只把上限拉高，讓長期累積一直有回報（120 分才封頂）。
-  const fatPoints = ((member?.fatCat?.gold||0)*50 + (member?.fatCat?.silver||0)*10 + (member?.fatCat?.bronze||0));
-  atk += Math.min(30, Math.floor(fatPoints / 4));
   const certLevelScore = (certRecords || []).reduce((s, r) => {
     const lv = { 入門:1, 初級:2, 中級:3, 進階:4, 精英:5, 菁英:5 };
     return s + (lv[r.level] || 0);
@@ -502,18 +522,13 @@ export function calcArcherStats({ member, certification, certRecords, dexStats }
   const bowSlots = (member?.equipment || []).length;
   atk += Math.min(30, bowSlots * 4);
   atk += Math.min(20, Math.floor((member?.eventPoints||0) / 10));
-  // 報到 30 → 25：這是最容易的日常，讓 5 點給最難的肥貓章
-  // ⚠️ ATK 各項上限總和必須剛好等於天花板 160
-  atk += Math.min(25, Math.floor(checkinCount / 5));
+  atk += Math.min(30, Math.floor(checkinCount / 5));
   atk = Math.min(160, atk);
 
   // ── DEF ─────────────────────────────────────────────────
   // 基礎 10 + 積分章分/4（上限+30）+ 防具欄位數×3（上限+30）
   // + 射齡×4（上限+20）+ 期數生+（上限+15）+ 金證（+15）
   let def = 10;
-  // 🏆 積分章（2026-08-03 調整）：上限 25 → 30。賽事積分是真實成績，加重。
-  const scorePoints = ((member?.score?.gold||0)*50 + (member?.score?.silver||0)*10 + (member?.score?.bronze||0));
-  def += Math.min(30, Math.floor(scorePoints / 4));
   const armorSlots = (member?.armorSets || []).reduce((s,set) => s + Object.values(set).filter(v=>v&&typeof v==="string"&&v.trim()).length, 0);
   def += Math.min(30, armorSlots * 3);
   // 射齡 25 → 20，讓出 5 點給積分章（⚠️ DEF 各項上限總和必須剛好等於天花板 120）
@@ -531,6 +546,14 @@ export function calcArcherStats({ member, certification, certRecords, dexStats }
   hp  = Math.min(800, Math.round(hp  * (1 + runeBonus.hp)));
   atk = Math.min(160, Math.round(atk * (1 + runeBonus.atk)));
   def = Math.min(120, Math.round(def * (1 + runeBonus.def)));
+
+  // ── 🏅 實體榮譽（三種章）：**夾制之外、不設上限** ────────────
+  // ⚠️ 一定要在所有 Math.min 之後才加。放進去的話老手早就頂到天花板，
+  //    再拿章完全沒有感覺——那正是 2026-08-03 之前的狀況。
+  const honor = calcHonorBonus(member);
+  hp  += honor.hp;
+  atk += honor.atk;
+  def += honor.def;
 
   return { hp, atk, def };
 }
