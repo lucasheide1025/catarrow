@@ -1,7 +1,7 @@
 // src/components/worldboss/WorldBossLobby.jsx — 世界大 Boss 主瀏覽頁
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { describeSpawnCycle, spawnProgressRatio } from "../../lib/worldBossSpawnCycle";
+import { activeSpawnTypes, describeSpawnCycle, requiredSpawnType, spawnProgressRatio } from "../../lib/worldBossSpawnCycle";
 import { subscribeLatestWorldBoss, subscribeWorldBossSpawnCycle, ensureWorldBossLifecycle, getLatestWorldBossKill, getPendingWorldBossRewards, claimWorldBossKillReward, previewWorldBossKillReward, getWorldBossAttackDateKeys } from "../../lib/worldBossDb";
 import { normalizeWorldBossState } from "../../lib/worldBossState";
 import { WORLD_BOSSES, getBossPhase, PHASE_LABELS, getParticipantBonus } from "../../lib/worldBossData";
@@ -345,12 +345,24 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
                 const value = spawnCycle.progress?.[key] || 0;
                 const target = spawnCycle.targets?.[key] || 1;
                 const ratio = spawnProgressRatio(spawnCycle, key);
-                return <div key={key} className="mb-2">
-                  <div className="flex justify-between text-xs text-slate-300"><span>{label}</span><span>{value.toLocaleString()} / {target.toLocaleString()}</span></div>
-                  <div className="h-1.5 rounded-full bg-black/40 overflow-hidden"><div className="h-full bg-violet-400" style={{width:`${ratio*100}%`}}/></div>
+                // ⚠️ 這一輪只認抽中的那一種。沒抽中的要**明顯淡化**，
+                //    不然玩家會白推一整天還以為有用。
+                const active = activeSpawnTypes(spawnCycle).includes(key);
+                return <div key={key} className={`mb-2 ${active ? "" : "opacity-35"}`}>
+                  <div className="flex justify-between text-xs text-slate-300">
+                    <span>{active && requiredSpawnType(spawnCycle) ? `🎯 ${label}` : label}</span>
+                    <span>{value.toLocaleString()} / {target.toLocaleString()}</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-black/40 overflow-hidden">
+                    <div className={`h-full ${active ? "bg-violet-400" : "bg-slate-600"}`} style={{width:`${ratio*100}%`}}/>
+                  </div>
                 </div>;
               })}
-              <div className="text-[11px] text-slate-400 mt-2">任一條件達成即可開啟異界之門，最晚 48 小時後降臨。</div>
+              <div className="text-[11px] text-slate-400 mt-2">
+                {requiredSpawnType(spawnCycle)
+                  ? "🎯 這一輪的門檻是隨機抽出的，只有標記的那一項算數；就算沒推滿，最晚 48 小時後也會降臨。"
+                  : "任一條件達成即可開啟異界之門，最晚 48 小時後降臨。"}
+              </div>
             </div>
           ) : <div className="text-sm text-slate-500">教練可從後台建立新的世界王挑戰</div>}
         </div>

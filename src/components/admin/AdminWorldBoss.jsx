@@ -87,6 +87,11 @@ function StepCtrl({ label, value, onChange, step = 1, min = 0, max = 9999, unit 
   );
 }
 
+const TYPE_LABEL = {
+  arrows:"全體射箭箭數", dungeonClears:"地下城通關",
+  monsterKills:"全模式怪物擊倒", villageDice:"貓貓村骰子",
+};
+
 export default function AdminWorldBoss() {
   const { profile } = useAuth();
   const [tab, setTab]           = useState("active");   // active | create | history
@@ -131,6 +136,14 @@ export default function AdminWorldBoss() {
   const [cycleConfig, setCycleConfig] = useState({
     restHours:8, deadlineHours:48,
     targets:{ arrows:10000, dungeonClears:30, monsterKills:500, villageDice:300 },
+    // 抽籤池：每一輪只會從這裡面**隨機抽一種**當門檻
+    enabledTypes:["arrows", "dungeonClears", "monsterKills", "villageDice"],
+  });
+  // ⚠️ 至少要留一種，全部關掉就永遠開不出王（雲端也會擋，但這裡要先擋住手滑）
+  const toggleEnabledType = key => setCycleConfig(c => {
+    const cur = c.enabledTypes || [];
+    const next = cur.includes(key) ? cur.filter(t => t !== key) : [...cur, key];
+    return next.length ? { ...c, enabledTypes:next } : c;
   });
   const [cycleBusy, setCycleBusy] = useState(false);
   const [cycleMsg, setCycleMsg] = useState("");
@@ -533,13 +546,27 @@ export default function AdminWorldBoss() {
 
           <div className="bg-white/5 border border-violet-400/25 rounded-2xl p-4 space-y-3">
             <div className="font-black text-violet-200">🌌 世界王誕生進度</div>
+            <div className="rounded-xl bg-violet-500/10 border border-violet-400/25 p-2.5 text-[11px] text-violet-200 leading-relaxed">
+              每一輪會從勾選的項目裡<b>隨機抽一種</b>當門檻，只有抽中的那一項算數
+              （2026-08-03 改；舊制是「任一達標」，每輪都長一樣）。
+              <b>至少要留一種</b>，全部取消就永遠開不出王。
+              {cycle?.requiredType && (
+                <div className="mt-1 text-amber-300 font-black">
+                  🎯 本輪抽中：{TYPE_LABEL[cycle.requiredType] || cycle.requiredType}
+                </div>
+              )}
+            </div>
             <div className="grid grid-cols-2 gap-2 text-xs">
               {[
                 ["arrows","全體射箭箭數"], ["dungeonClears","地下城通關"],
                 ["monsterKills","全模式怪物擊倒"], ["villageDice","貓貓村骰子"],
               ].map(([key,label]) => (
-                <label key={key} className="rounded-xl bg-black/20 p-2">
-                  <span className="block text-slate-400 mb-1">{label}</span>
+                <label key={key} className={`rounded-xl p-2 ${(cycleConfig.enabledTypes || []).includes(key) ? "bg-black/20" : "bg-black/10 opacity-50"}`}>
+                  <span className="flex items-center gap-1.5 text-slate-400 mb-1">
+                    <input type="checkbox" checked={(cycleConfig.enabledTypes || []).includes(key)}
+                      onChange={() => toggleEnabledType(key)} />
+                    {label}
+                  </span>
                   <input type="number" min="1" value={cycleConfig.targets[key]}
                     onChange={e => setCycleConfig(c => ({...c, targets:{...c.targets, [key]:Math.max(1, Number(e.target.value)||1)}}))}
                     className="w-full rounded-lg bg-black/30 border border-white/10 px-2 py-1.5 text-white"/>

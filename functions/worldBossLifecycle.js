@@ -9,6 +9,8 @@ const DEFAULTS = Object.freeze({
   targets: Object.freeze({ arrows:10000, dungeonClears:30, monsterKills:500, villageDice:300 }),
 });
 const TYPES = new Set(Object.keys(DEFAULTS.targets));
+// 抽籤池：哪幾種可以被抽中當「這一輪的條件」。教練可在後台調整。
+const DEFAULT_ENABLED_TYPES = Object.freeze([...TYPES]);
 const TYPE_LIMITS = Object.freeze({ arrows:100, dungeonClears:1, monsterKills:8, villageDice:20 });
 
 function toMillis(value) {
@@ -20,7 +22,13 @@ function normalizedConfig(raw = {}) {
   const deadlineHours = Math.max(restHours, Math.min(48, Number(raw.deadlineHours) || DEFAULTS.deadlineHours));
   const targets = {};
   for (const key of TYPES) targets[key] = Math.max(1, Math.floor(Number(raw.targets?.[key]) || DEFAULTS.targets[key]));
-  return { restHours, deadlineHours, targets };
+  // 抽籤池：過濾掉不認識的值；全部關掉就退回全開（不然永遠開不出王）
+  return { restHours, deadlineHours, targets, enabledTypes:normalizedEnabledTypes(raw.enabledTypes) };
+}
+
+function normalizedEnabledTypes(raw) {
+  const list = Array.isArray(raw) ? raw.filter(type => TYPES.has(type)) : [];
+  return list.length ? list : [...DEFAULT_ENABLED_TYPES];
 }
 
 function buildCycle(eventId, event, nowMs, config) {
@@ -33,6 +41,11 @@ function buildCycle(eventId, event, nowMs, config) {
     deadlineAtMs:defeatedAtMs + config.deadlineHours * 3600000,
     progress:{ arrows:0, dungeonClears:0, monsterKills:0, villageDice:0 },
     targets:config.targets,
+    // ⚠️ 這一輪**只認一種**條件，開週期時抽一次就定了。
+    //    抽籤結果一定要**存進文件**——每次評估重抽的話，玩家看到的條件會一直跳，
+    //    而且進度推到一半條件就換了。
+    requiredType:config.enabledTypes[Math.floor(Math.random() * config.enabledTypes.length)],
+    enabledTypes:config.enabledTypes,
     createdAt:FieldValue.serverTimestamp(),
     updatedAt:FieldValue.serverTimestamp(),
   };
@@ -41,7 +54,11 @@ function buildCycle(eventId, event, nowMs, config) {
 function evaluate(cycle, nowMs) {
   if (!cycle || ["spawning", "spawned"].includes(cycle.status)) return null;
   if (nowMs < Number(cycle.restEndsAtMs || 0)) return null;
-  for (const type of TYPES) {
+  // ⚠️ 只看抽中的那一種。舊版是「任一達標」，等於四條路同時開——
+  //    作者 2026-08-03 改成隨機挑一種，每一輪的目標才有變化。
+  //    舊的週期文件沒有 requiredType，退回舊行為（任一），不然它們會永遠卡住。
+  const required = TYPES.has(cycle.requiredType) ? [cycle.requiredType] : [...TYPES];
+  for (const type of required) {
     if (Number(cycle.progress?.[type] || 0) >= Number(cycle.targets?.[type] || Infinity)) return type;
   }
   return nowMs >= Number(cycle.deadlineAtMs || Infinity) ? "deadline" : null;

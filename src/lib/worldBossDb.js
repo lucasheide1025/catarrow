@@ -247,11 +247,19 @@ export async function autoSpawnWorldBoss() {
   return { ok:false, reason:"automatic_spawn_disabled" };
 }
 
+function normalizeEnabledTypes(raw) {
+  const valid = ["arrows", "dungeonClears", "monsterKills", "villageDice"];
+  const list = Array.isArray(raw) ? raw.filter(t => valid.includes(t)) : [];
+  return list.length ? list : valid;
+}
+
 export async function getWorldBossCycleConfig() {
   try {
     const snap = await getDoc(doc(db, "sysConfig", "worldBossSpawn"));
     const data = snap.data() || {};
     return {
+      // 抽籤池：認不得或全空就退回全開（跟雲端 normalizedEnabledTypes 同一套規則）
+      enabledTypes:normalizeEnabledTypes(data.enabledTypes),
       restHours:Math.max(0, Number(data.restHours) || 8),
       deadlineHours:Math.min(48, Math.max(8, Number(data.deadlineHours) || 48)),
       targets:{
@@ -262,7 +270,8 @@ export async function getWorldBossCycleConfig() {
       },
     };
   } catch {
-    return { restHours:8, deadlineHours:48, targets:{ arrows:10000, dungeonClears:30, monsterKills:500, villageDice:300 } };
+    return { restHours:8, deadlineHours:48, enabledTypes:normalizeEnabledTypes(null),
+      targets:{ arrows:10000, dungeonClears:30, monsterKills:500, villageDice:300 } };
   }
 }
 
@@ -275,6 +284,9 @@ export async function saveWorldBossCycleConfig(config, operatorId) {
         ["arrows", "dungeonClears", "monsterKills", "villageDice"]
           .map(key => [key, Math.max(1, Math.floor(Number(config?.targets?.[key]) || 1))]),
       ),
+      // ⚠️ 抽籤池不能存成空陣列，否則雲端抽不出東西＝永遠開不出王。
+      //    normalizeEnabledTypes 全空時會退回全開。
+      enabledTypes:normalizeEnabledTypes(config?.enabledTypes),
     };
     normalized.deadlineHours = Math.max(normalized.restHours, normalized.deadlineHours);
     await setDoc(doc(db, "sysConfig", "worldBossSpawn"), {

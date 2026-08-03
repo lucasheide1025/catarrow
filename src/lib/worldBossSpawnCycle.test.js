@@ -2,7 +2,8 @@ import fs from "fs";
 import path from "path";
 import {
   SPAWN_PROGRESS_TYPES, WORLD_BOSS_SPAWN_DEFAULTS,
-  describeSpawnCycle, evaluateWorldBossSpawnCycle, spawnProgressRatio,
+  SPAWN_PROGRESS_LABEL, activeSpawnTypes, describeSpawnCycle, evaluateWorldBossSpawnCycle,
+  requiredSpawnType, spawnProgressRatio,
 } from "./worldBossSpawnCycle";
 
 const H = 3600000;
@@ -45,11 +46,35 @@ describe("週期狀態判讀（唯讀）", () => {
     expect(ev.remainingMs).toBe(5 * H);
   });
 
-  test("休息結束後進入蓄力，任一項達標就可生成", () => {
+  test("⚠️ 只認這一輪抽中的那一種——其他三種推滿也開不了門", () => {
+    // 抽中射箭數，卻把地下城推滿 → 不該開
+    const wrong = cycle({
+      requiredType: "arrows",
+      progress: { arrows: 0, dungeonClears: 99999, monsterKills: 99999, villageDice: 99999 },
+    });
+    expect(evaluateWorldBossSpawnCycle(wrong, 9 * H).ready).toBe(false);
+
+    // 推對的那一種才開
+    const right = cycle({ requiredType: "arrows", progress: { arrows: WORLD_BOSS_SPAWN_DEFAULTS.targets.arrows } });
+    expect(evaluateWorldBossSpawnCycle(right, 9 * H)).toMatchObject({ ready: true, reason: "arrows" });
+  });
+
+  test("四種都抽得中，抽中哪一種就認哪一種", () => {
     for (const type of SPAWN_PROGRESS_TYPES) {
-      const c = cycle({ progress: { [type]: WORLD_BOSS_SPAWN_DEFAULTS.targets[type] } });
+      const c = cycle({ requiredType: type, progress: { [type]: WORLD_BOSS_SPAWN_DEFAULTS.targets[type] } });
       expect(evaluateWorldBossSpawnCycle(c, 9 * H)).toMatchObject({ ready: true, reason: type });
     }
+  });
+
+  test("⚠️ 舊的週期文件沒有 requiredType，要退回「任一達標」不能卡死", () => {
+    expect(requiredSpawnType(cycle())).toBe(null);
+    expect(activeSpawnTypes(cycle())).toEqual([...SPAWN_PROGRESS_TYPES]);
+    const legacy = cycle({ progress: { villageDice: WORLD_BOSS_SPAWN_DEFAULTS.targets.villageDice } });
+    expect(evaluateWorldBossSpawnCycle(legacy, 9 * H).ready).toBe(true);
+  });
+
+  test("認不得的 requiredType 也當成舊文件處理", () => {
+    expect(requiredSpawnType(cycle({ requiredType: "亂填" }))).toBe(null);
   });
 
   test("⚠️ 沒人推進度也要能出王——到期限就生成", () => {
@@ -82,6 +107,9 @@ describe("大廳顯示", () => {
   test("每個階段都給得出一句人話", () => {
     expect(describeSpawnCycle(cycle(), 1 * H)).toContain("沉寂");
     expect(describeSpawnCycle(cycle(), 9 * H)).toContain("進度");
+    // 抽中的那一種要直接寫在標題上，玩家才知道要推什麼
+    expect(describeSpawnCycle(cycle({ requiredType: "dungeonClears" }), 9 * H))
+      .toContain(SPAWN_PROGRESS_LABEL.dungeonClears);
     expect(describeSpawnCycle(cycle(), 48 * H)).toContain("降臨");
     expect(describeSpawnCycle(null)).toContain("還沒有");
   });

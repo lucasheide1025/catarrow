@@ -34,6 +34,26 @@ export const SPAWN_PROGRESS_LABEL = Object.freeze({
 });
 
 /**
+ * 這一輪抽中的條件。
+ *
+ * ⚠️ 作者 2026-08-03 改成**四選一隨機**（原本是「任一達標」＝四條路同時開，
+ *    每一輪長得一樣）。抽籤在**雲端開週期時**做一次並存進文件，
+ *    這裡只是讀出來——**不要在客戶端抽**，不同人會看到不同答案。
+ * ⚠️ 舊的週期文件沒有 requiredType，回 null＝退回舊行為（任一達標），
+ *    不然那些週期會永遠卡住開不出王。
+ */
+export function requiredSpawnType(cycle) {
+  const type = cycle?.requiredType;
+  return SPAWN_PROGRESS_TYPES.includes(type) ? type : null;
+}
+
+/** 這一輪要看的進度種類（抽中的那一種；舊文件則是全部） */
+export function activeSpawnTypes(cycle) {
+  const required = requiredSpawnType(cycle);
+  return required ? [required] : [...SPAWN_PROGRESS_TYPES];
+}
+
+/**
  * 現在這個週期是什麼狀態。**唯讀**——不會、也不該觸發任何生成。
  *
  * 三個階段：休息中 resting → 蓄力中 charging → 可生成 ready
@@ -46,7 +66,8 @@ export function evaluateWorldBossSpawnCycle(cycle, nowMs = Date.now()) {
   if (nowMs < cycle.restEndsAtMs) {
     return { ready: false, reason: "resting", remainingMs: cycle.restEndsAtMs - nowMs };
   }
-  const reached = SPAWN_PROGRESS_TYPES.find(
+  // ⚠️ 只認抽中的那一種——其他三種推再多也不會開門
+  const reached = activeSpawnTypes(cycle).find(
     key => (cycle.progress?.[key] || 0) >= (cycle.targets?.[key] || Infinity));
   if (reached) return { ready: true, reason: reached };
   if (nowMs >= cycle.deadlineAtMs) return { ready: true, reason: "deadline" };
@@ -69,5 +90,7 @@ export function describeSpawnCycle(cycle, nowMs = Date.now()) {
   if (ev.ready) {
     return ev.reason === "deadline" ? "🌀 時間到了，世界王即將降臨" : "🌀 進度已達標，世界王即將降臨";
   }
+  const required = requiredSpawnType(cycle);
+  if (required) return `🌀 這一輪的門檻是【${SPAWN_PROGRESS_LABEL[required]}】——推滿它就會提早降臨`;
   return "🌀 世界王降臨進度——大家一起推進度就會提早出現";
 }
