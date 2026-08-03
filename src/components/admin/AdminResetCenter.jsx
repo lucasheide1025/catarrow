@@ -17,6 +17,7 @@ import { deleteAllDungeonRooms } from "../../lib/dungeonDb";
 import { deleteAllPartyRooms } from "../../lib/partyDb";
 import { fmtDT } from "../../lib/constants";
 import { Card, Btn, Modal, Spinner } from "../shared/UI";
+import AdminPracticeLogRepair from "./AdminPracticeLogRepair";
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
@@ -216,7 +217,7 @@ export default function AdminResetCenter() {
       </div>
 
       {/* 分頁 */}
-      <div className="grid grid-cols-3 sm:grid-cols-7 gap-2">
+      <div className="grid grid-cols-3 sm:grid-cols-8 gap-2">
         {[
           { id: "checkin",      label: "📍 報到取消" },
           { id: "dungeonGrant", label: "🏰 地下城給予" },
@@ -225,6 +226,7 @@ export default function AdminResetCenter() {
           { id: "worldboss",    label: "🌍 世界王" },
           { id: "council",      label: "🏛️ 議會廳" },
           { id: "rooms",        label: "🚪 房間" },
+          { id: "arrowRepair",  label: "🩹 箭數補正" },
         ].map(t => (
           <button
             key={t.id}
@@ -452,6 +454,9 @@ export default function AdminResetCenter() {
               ))}
             </div>
           )}
+
+          {/* ── 8. 舊箭數紀錄補正（2026-08-03） ──────────────── */}
+          {tab === "arrowRepair" && <AdminPracticeLogRepair members={members} />}
 
           {/* ── 6. 世界王重置 ───────────────────────────────── */}
           {tab === "worldboss" && (

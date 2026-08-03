@@ -19,13 +19,14 @@
 //   3. scores      —— 議會廳走的是平鋪的分數陣列，沒有 rounds
 // ─────────────────────────────────────────────────────────────
 
-/** 一筆 practiceLogs 文件射了幾箭。取不到就回 0，永遠不回 NaN。 */
-export function practiceLogArrowCount(data) {
+/**
+ * 只看**實際的箭矢資料**算出幾箭，完全不看 totalArrows。
+ *
+ * ⚠️ 補正工具要靠這支才驗得出「totalArrows 本身寫錯」——
+ *    practiceLogArrowCount 會優先相信 totalArrows，拿它去比對永遠相等。
+ */
+export function structuralArrowCount(data) {
   if (!data) return 0;
-
-  const total = Number(data.totalArrows);
-  if (Number.isFinite(total) && total > 0) return total;
-
   // addPracticeLog 會把 rounds 陣列序列化成 roundsString
   const rounds = data.roundsString ?? data.rounds;
   if (typeof rounds === "string") {
@@ -41,6 +42,14 @@ export function practiceLogArrowCount(data) {
 
   // ⚠️ 這裡**刻意不 fallback 到 data.arrowCount**——見檔頭。
   return 0;
+}
+
+/** 一筆 practiceLogs 文件射了幾箭。取不到就回 0，永遠不回 NaN。 */
+export function practiceLogArrowCount(data) {
+  if (!data) return 0;
+  const total = Number(data.totalArrows);
+  if (Number.isFinite(total) && total > 0) return total;
+  return structuralArrowCount(data);
 }
 
 /** 一批文件的總箭數 */

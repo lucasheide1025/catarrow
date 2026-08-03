@@ -23,6 +23,7 @@ import { addCatBond, addCatXP } from "./catDb";
 import { catBusyElsewhere, catBusyReason } from "./catAssignment";
 import { albumForCard, albumXpForCard, albumXpFromCards, villageAlbumMultiplier } from "./catVillageAlbums";
 import { sumPracticeLogArrows } from "./practiceLogArrows";
+import { planPracticeLogRepair } from "./practiceLogRepair";
 import { SHOOTING_SCHEMA_VERSION, buildMonsterShootingRecord, buildPracticeShootingRecord, buildShootingEnds, calculateSessionMetrics } from "./shootingPerformance";
 import { assertCostCapability, COST_CAPABILITIES, isCostCapabilityAllowed } from "./costControl";
 import {
@@ -880,6 +881,53 @@ export function subscribePracticeLogs(memberId, callback, maxCount = 300) {
 // ⚠️ 這裡刻意**不自己做 localStorage 鏡像**：`firebase.js` 已經開了 persistentLocalCache
 //    （IndexedDB），Firestore 自己就是那份本地快照。再疊一層只會多一份要維護的過期邏輯，
 //    而且 localStorage 只有 5MB。用 getDocsFromCache 直接命中那份既有快取，**計 0 次讀取**。
+// ── 🩹 舊 practiceLogs 補正（教練手動觸發） ─────────────────────
+//
+// ⚠️ **掃描不能用 orderBy("date")**：要修的正是「缺 date」那些文件，
+//    而 Firestore 會直接把缺排序欄位的文件排除在結果外——
+//    用平常那支查詢去掃，永遠掃不到要修的東西。
+//
+// ⚠️ 這是**全表掃一位成員**，一筆一讀。所以只給教練手動按，
+//    而且掛在 migrations 這個成本能力下（protect 以上就擋）。
+
+/** 掃出這位成員需要補正的紀錄（唯讀，先給教練看） */
+export async function scanPracticeLogsForRepair(memberId, maxCount = 500) {
+  if (!memberId) return { plan: null, scanned: 0 };
+  assertCostCapability(COST_CAPABILITIES.migrations);
+  const snap = await getDocs(query(
+    collection(db, C.practiceLogs),
+    where("memberId", "==", memberId),
+    limit(maxCount),
+  ));
+  const logs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return { plan: planPracticeLogRepair(logs), scanned: logs.length };
+}
+
+/**
+ * 套用補正。冪等：改好的下次掃就不會再出現在計畫裡。
+ * ⚠️ 只寫 date / totalArrows 兩個欄位，其他一概不碰。
+ */
+export async function applyPracticeLogRepair(memberId, plan) {
+  if (!memberId || !plan) return { updated: 0 };
+  assertCostCapability(COST_CAPABILITIES.migrations);
+  const items = [...(plan.fixDate || []), ...(plan.fixArrows || [])];
+  let updated = 0;
+  // 一批 400 筆（Firestore 上限 500，留餘裕）
+  for (let i = 0; i < items.length; i += 400) {
+    const batch = writeBatch(db);
+    for (const item of items.slice(i, i + 400)) {
+      batch.update(doc(db, C.practiceLogs, item.id), {
+        ...item.patch,
+        repairedAt: serverTimestamp(),
+        repairedReason: "2026-08-03 arrow-count fields",
+      });
+      updated += 1;
+    }
+    await batch.commit();
+  }
+  return { updated };
+}
+
 export async function getPracticeLogsPage(memberId, maxCount = 120) {
   const q = query(collection(db, C.practiceLogs), where("memberId", "==", memberId), orderBy("date", "desc"), limit(maxCount));
   try {
