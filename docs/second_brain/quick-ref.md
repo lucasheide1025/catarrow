@@ -597,6 +597,44 @@ readiness(arrows)         → { ready, need, scoreOnly }；MIN_ARROWS_FOR_GROUP=
 ⚠️ `byCondition` 的欄位是 `shootingConfig.distanceM` / `metricsSnapshot`，猜錯會整排「?m｜未記錄 0環」。
 ⚠️ 純函式不碰 Firestore；UI 走「自己點才載入最新」，比照排行榜。
 
+### practiceLogArrows.js（箭數加總的單一真本，2026-08-03）
+
+```
+practiceLogArrowCount(data)   → 一筆 practiceLogs 射了幾箭
+structuralArrowCount(data)    → 只看實際箭矢資料（補正工具驗 totalArrows 是否寫錯用）
+sumPracticeLogArrows(list)    → 一批加總
+優先序：totalArrows → roundsString/rounds → scores（議會廳）
+```
+⚠️ **`arrowCount` 是「每組幾箭」不是總箭數**（MemberPractice 的 form.arrowCount）。
+   3 箭 × 20 組會被算成 3 箭。這支**刻意不 fallback 到它**，不要接回去。
+⚠️ `initializeTodayArrows` 與 `checkAndGrantArrowMilestones` 必須走同一支，
+   以前各讀各的欄位，兩個數字永遠對不上。
+
+### worldBossRewards.js（世界王獎勵三層，2026-08-03）
+
+```
+calcWorldBossRewards(participants, category, { top3Ids, lastHitBy })
+  → { [id]: { participation, effort, honor, rank, isLastHit, total } }
+effortWeight(p)         → √傷害 × 出席天數加成（上限 ×2）
+suggestedBossHp(cat)    → TARGET_ATTACKS[cat] × EXPECTED_DAMAGE_PER_ATTACK(12000)
+describeSpread(cat)     → { min, max, ratio } 給後台/說明用
+WB_REWARD_TABLE / WB_RANK_HONOR / TARGET_ATTACKS
+```
+⚠️ **改貨幣只能改這裡**。`REWARD_TABLE` / `RANK_BONUS` 已停用，
+   `DROP_TABLE_BY_CATEGORY` 只剩物品掉落。規格見 game-systems.md。
+
+### worldBossSpawnCycle.js（重生週期，**唯讀**，2026-08-03）
+
+```
+evaluateWorldBossSpawnCycle(cycle, nowMs) → { ready, reason, remainingMs }
+requiredSpawnType(cycle)  → 這輪抽中哪一種（舊文件回 null＝任一達標）
+activeSpawnTypes(cycle)   → 這輪要看的種類
+spawnProgressRatio / describeSpawnCycle / SPAWN_PROGRESS_LABEL
+```
+⚠️ **權威在雲端** `functions/worldBossLifecycle.js`（ensureCycle / trySpawn / contribute）。
+   客戶端**不准**再寫生成邏輯——以前兩套並存，客戶端一直壓過雲端。
+⚠️ 預設值兩邊各一份，靠測試**直接讀 functions 原始碼比對**釘住。
+
 ### 使用模式速查
 
 **PartyBattleRoom / DungeonBattleRoom**（mini-round 動畫播放）：

@@ -5,6 +5,61 @@
 
 ---
 
+## 2026-08-03（箭數同步、世界王獎勵三層整合、重生機制併軌）
+
+**改了什麼**
+
+### ① 箭數「數據不同步」——三個各自壞掉的加總
+- 新增 `src/lib/practiceLogArrows.js`（10 測）：一筆 practiceLogs 射了幾箭，**單一真本**。
+- `initializeTodayArrows` 與 `checkAndGrantArrowMilestones` 改用同一支。
+- `attackWorldBoss` 內建的練習紀錄補上 `date` / `totalArrows`，並新增 `logPractice` 參數。
+- 新增教練工具「🩹 箭數補正」（重置中心分頁）＋ `practiceLogRepair.js`（12 測）。
+
+### ② 深度分析讀錯欄位
+- `byCondition` 實際要讀的是 `shootingConfig.targetFaceCode`（不是 targetFmt）。
+- `FACE_LABEL` 改成從 `TARGET_FACE_FORMATS` 生成，不再手抄。
+
+### ③ 世界王獎勵三層整合
+- 新增 `src/lib/worldBossRewards.js`（23 測）取代舊的三張表：
+  **出席保底**（不看傷害、不被稀釋）＋**努力分潤**（√傷害 × 出席天數）＋**名次榮譽**（不給大量金幣）。
+- 24 隻王血量改用「幾人次 × 12,000」推算，並加護欄測試鎖 ±60%。
+
+### ④ 世界王重生機制併軌 + 蓄力條件四選一
+- 刪掉客戶端的 `beginWorldBossSpawnCycle` / `trySpawnWorldBossFromCycle`，
+  權威只留雲端 `functions/worldBossLifecycle.js`。
+- `worldBossSpawnCycle.js` 改成**唯讀顯示層**。
+- 蓄力從「任一達標」改成**開週期時隨機抽一種**（`requiredType`），後台可設抽籤池。
+- **已部署**：`ensureWorldBossLifecycle` / `forceSpawnWorldBossFromCycle` /
+  `worldBossLifecycleSchedule` / `contributeWorldBossSpawnProgress`（asia-east1）。
+
+**為什麼**
+- 作者回報「歷史數據跟實際練習都不相同」。三個 bug 疊在一起，全都不報錯只是靜靜算錯。
+- 作者的獎勵理念：「上場幫忙打得都能有不錯的獎勵，努力打得又有更好的獎勵」。
+  舊系統下限是 `Math.max(1,…)` ＝ 1 金幣，而且人越多每人越少——**在懲罰上場幫忙**。
+- 作者回報「重生機制似乎是兩套卡在一起」——確實，而且其中一套一直壓過另一套。
+
+**踩坑提醒**
+- ⚠️ **`practiceLogs.arrowCount` 是「每組幾箭」不是總箭數**。3 箭×20 組被算成 3 箭。
+  一律用 `practiceLogArrowCount`，它**刻意不 fallback 到 arrowCount**。
+- ⚠️ **Firestore 會直接跳過缺少 orderBy 欄位的文件**。世界王紀錄少了 `date`，
+  在歷史與今日箭數都是隱形的——不報錯、沒跡象。補正工具的掃描也**不能用 orderBy("date")**。
+- ⚠️ **補 `date` 前一定要先判重**：舊版世界王同一次攻擊記兩筆，簡略那筆靠缺 date 被藏著，
+  無腦補回去會讓箭數翻倍。
+- ⚠️ **客戶端寫了就會壓過雲端**：`beginWorldBossSpawnCycle` 在擊倒當下用寫死的預設值搶先寫入，
+  雲端 `ensureCycle` 看到 `previousEventId` 對上就跳過 → **後台的重生設定從來沒生效過**。
+- ⚠️ **抽籤要在開週期時抽一次並存進文件**。評估時抽或客戶端抽的話，條件會一直跳、
+  推到一半換題目、不同人看到不同答案。
+- ⚠️ **抽籤池不能空**，空了世界王再也不會出現而且沒有錯誤訊息。兩層都要擋。
+- ⚠️ **`react-scripts build` 不會擋 `no-undef`**。這輪又中一次（import 沒插進去、build 照樣成功）。
+  改完務必另外跑：
+  `npx eslint --no-eslintrc --parser-options=ecmaVersion:2022,sourceType:module --env browser,es2022 --rule '{"no-undef":"error"}' <檔案>`
+- ⚠️ **heredoc 會吃掉反斜線**：`\s` 寫進 JS 字串會變成 `s`，regex 靜靜地永遠不匹配。
+  用 `[ ]*` / `[0-9]+` 這種不含反斜線的字元類。
+- ⚠️ 客戶端與雲端的預設值沒辦法共用模組，靠 `worldBossSpawnCycle.test.js`
+  **直接讀 functions 原始碼比對**釘住。
+
+---
+
 ## 2026-08-02（戰鬥重整：異常狀態實裝、加成管線統一、射箭深度分析改版）
 
 **改了什麼**
