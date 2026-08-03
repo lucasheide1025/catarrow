@@ -108,15 +108,21 @@ export function getGoalTier(villageLevel) {
 
 export function getGoalTarget(villageLevel, goalType) {
   const tier = getGoalTier(villageLevel);
+  // ⚠️ **階級 2/3 於 2026-08-03 下修**（作者：「2 跟 3 的總數需求有點高了」）。
+  //    舊值每階 ×2.7 一路翻上去，tier3 是 tier1 的 5.3 倍——
+  //    以一間道館的規模，一個月射 80,000 箭等於每天 2,667 箭，打不到。
+  //    現在收斂成每階約 ×1.6，tier3 約 tier1 的 2.5 倍。
+  //    ⚠️ tier0/tier1 **刻意不動**，作者只反映高階偏高。
+  //    ⚠️ 獎勵沒有跟著下修——高階村莊人多，門檻降低＝更容易拿到，這是有意的。
   const targets = {
-    total_arrows:  [5000, 15000, 40000, 80000],
-    total_damage:  [50000, 150000, 400000, 800000],
-    monster_kills: [20, 50, 100, 200],
-    gathering_progress: [1500, 4000, 9000, 18000],
-    gathering_participants: [20, 45, 90, 160],
-    gathering_material: [80, 180, 360, 720],
-    gathering_resource: [60, 140, 280, 560],
-    board_laps: [30, 70, 150, 300],
+    total_arrows:  [5000, 15000, 25000, 38000],
+    total_damage:  [50000, 150000, 250000, 380000],
+    monster_kills: [20, 50, 80, 120],
+    gathering_progress: [1500, 4000, 6500, 10000],
+    gathering_participants: [20, 45, 70, 100],
+    gathering_material: [80, 180, 280, 400],
+    gathering_resource: [60, 140, 220, 320],
+    board_laps: [30, 70, 105, 150],
   };
   const arr = targets[goalType];
   return arr ? arr[tier] : 5000;
