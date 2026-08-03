@@ -18,7 +18,7 @@ import { getSoundEnabled, setSoundEnabled, getAnimEnabled, setAnimEnabled } from
 import { sfxTap, sfxLevelUp, sfxSwitch } from "../../lib/sound";
 import * as SFX from "../../lib/sound";
 import { PlayerAvatar, PLAYER_AVATAR_OPTIONS } from "../shared/PlayerAvatar";
-import { calcArcherStats } from "../../lib/monsterData";
+import { calcArcherStats, describeStatSources } from "../../lib/monsterData";
 import { calcEquippedBonus, resolveEquippedCards, TIER_CARD_BONUS } from "../../lib/monsterCards";
 import CardArtImage from "./cards/CardArt";
 import EquipmentIcon from "../shared/EquipmentIcon";
@@ -219,6 +219,10 @@ export default function MemberProfile({
     monsterDex, craftStats, chestStats, potionDex, cardData, duelStats
   });
   const baseStats = calcArcherStats({ member: profile, certification, certRecords, dexStats: ds });
+  // 📊 三圍來源明細（純計算，不多讀任何一筆 Firestore）
+  const statSources = describeStatSources({
+    member: profile, certification, certRecords, dexStats: ds, archerLevel: archerLv,
+  });
   const totalHP  = baseStats.hp  + lvBonus.hp  + cardBonus.hp;
   const totalATK = baseStats.atk + lvBonus.atk + cardBonus.atk;
   const totalDEF = baseStats.def + lvBonus.def + cardBonus.def;
@@ -952,6 +956,39 @@ export default function MemberProfile({
     <div className="text-[10px] text-slate-500 mt-2.5 text-center">
       💡 等級加成規則：每一級 +5 HP，每 5 級增加 1 點 ATK 與 DEF！
     </div>
+
+    {/* ── 📊 三圍來源明細 ──
+        ⚠️ 章與證改成無上限之後，一個 3 金肥貓章的老手多了 +36 ATK，
+           但畫面上原本**沒有任何地方告訴他**——加成再大，看不到就等於沒有。
+           資料來自 describeStatSources（純函式，有測試驗證各段相加 = 實際三圍）。 */}
+    <details className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3">
+      <summary className="cursor-pointer text-[11px] font-black text-amber-200">
+        📊 我的三圍是怎麼來的？
+      </summary>
+      <div className="mt-2.5 space-y-1.5">
+        <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-2 text-[10px] font-black text-slate-500">
+          <span>來源</span><span className="w-10 text-right">HP</span>
+          <span className="w-10 text-right">ATK</span><span className="w-10 text-right">DEF</span>
+        </div>
+        {statSources.map(row => (
+          <div key={row.key} className="grid grid-cols-[1fr_auto_auto_auto] gap-x-2 items-baseline">
+            <span className="text-[11px] text-slate-300 leading-snug">
+              {row.label}
+              {row.note && <span className="block text-[9px] text-emerald-400/80">{row.note}</span>}
+            </span>
+            {["hp", "atk", "def"].map(k => (
+              <span key={k} className={`w-10 text-right text-[11px] font-black tabular-nums ${
+                row.key === "base" ? "text-slate-400" : "text-emerald-300"}`}>
+                {row.key === "base" ? row[k] : (row[k] > 0 ? `+${row[k]}` : row[k] || "–")}
+              </span>
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="mt-2.5 border-t border-white/10 pt-2 text-[10px] text-slate-400 leading-relaxed">
+        🏅 <b>榮譽章沒有上限</b>——肥貓章、積分章、成就章收越多加越多，而且是加在天花板<b>之外</b>。
+      </div>
+    </details>
   </Card>
 
   {/* ── 冒險者公會階級（讀新公會存檔 guildProfiles.rep，非舊的 adventurerXP）── */}

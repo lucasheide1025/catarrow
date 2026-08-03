@@ -2,6 +2,7 @@
 // 六族36隻怪物 + 射手數值公式 + 匹配系統
 import { calcEquipBonus } from "./constants";
 import { getAllEquipmentRuneBonus } from "./equipmentRuneData";
+import { archerLevelBonus } from "./archerLevel";
 
 // ── 階級定義 ─────────────────────────────────────────────
 export const TIER_LABEL = {
@@ -587,6 +588,56 @@ export function calcArcherStats({ member, certification, certRecords, dexStats }
 
   // ── 🎯 射手證：藍證固定量、金證再 ×1.05（同樣在夾制之外）────
   return applyCertBonus({ hp, atk, def }, certification);
+}
+
+/**
+ * 📊 三圍來源明細（給「我的」頁顯示用）。
+ *
+ * ⚠️ 為什麼需要：2026-08-03 把章與證改成無上限、且移到夾制之外之後，
+ *    一個 3 金肥貓章的老手多了 +36 ATK——**但畫面上沒有任何地方告訴他**。
+ *    加成再大，看不到就等於沒有；玩家不會因此想去拿章。
+ *
+ * ⚠️ 實作刻意**重用 calcArcherStats**（把章／證拔掉再算一次）而不是自己重算一份公式，
+ *    否則哪天有人改了公式，這裡就會靜靜地顯示錯的數字。
+ *
+ * @returns [{ key, label, hp, atk, def, note }] —— 依顯示順序
+ */
+export function describeStatSources({ member, certification, certRecords, dexStats, archerLevel = 1 }) {
+  const stripped = { ...(member || {}), fatCat: null, score: null, achievement: null };
+  const base = calcArcherStats({ member: stripped, certification: null, certRecords, dexStats });
+  const honor = calcHonorBonus(member);
+  // 證的效果 = 「有證」跟「沒證」的差（含它把章也一起放大的部分）
+  const beforeCert = { hp: base.hp + honor.hp, atk: base.atk + honor.atk, def: base.def + honor.def };
+  const afterCert = applyCertBonus(beforeCert, certification);
+  const level = archerLevelBonus(archerLevel);
+
+  const rows = [
+    { key: "base", label: "基礎（檢定・裝備・報到・射齡…）", ...base },
+  ];
+  if (honor.hp || honor.atk || honor.def) {
+    rows.push({ key: "honor", label: "🏅 榮譽章（肥貓・積分・成就）", ...honor, note: "無上限，收越多越多" });
+  }
+  const certLevel = certification?.level;
+  if (certLevel === "blue" || certLevel === "gold") {
+    rows.push({
+      key: "cert",
+      label: certLevel === "gold" ? "🎯 金證（固定量＋5%）" : "🎯 藍證",
+      hp: afterCert.hp - beforeCert.hp,
+      atk: afterCert.atk - beforeCert.atk,
+      def: afterCert.def - beforeCert.def,
+    });
+  }
+  if (level.hp || level.atk || level.def) {
+    rows.push({ key: "level", label: `📈 射手等級 ${archerLevel}`, ...level });
+  }
+  return rows;
+}
+
+/** 明細的合計（應該等於實際三圍，用來自我驗證） */
+export function sumStatSources(rows = []) {
+  return rows.reduce((acc, r) => ({
+    hp: acc.hp + (r.hp || 0), atk: acc.atk + (r.atk || 0), def: acc.def + (r.def || 0),
+  }), { hp: 0, atk: 0, def: 0 });
 }
 
 // ── 戰力評分（用於怪物匹配）─────────────────────────────
