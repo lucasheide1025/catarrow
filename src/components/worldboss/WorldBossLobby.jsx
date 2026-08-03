@@ -1,6 +1,7 @@
 // src/components/worldboss/WorldBossLobby.jsx — 世界大 Boss 主瀏覽頁
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
+import { describeSpawnCycle, spawnProgressRatio } from "../../lib/worldBossSpawnCycle";
 import { subscribeLatestWorldBoss, subscribeWorldBossSpawnCycle, ensureWorldBossLifecycle, getLatestWorldBossKill, getPendingWorldBossRewards, claimWorldBossKillReward, previewWorldBossKillReward, getWorldBossAttackDateKeys } from "../../lib/worldBossDb";
 import { normalizeWorldBossState } from "../../lib/worldBossState";
 import { WORLD_BOSSES, getBossPhase, PHASE_LABELS, getParticipantBonus } from "../../lib/worldBossData";
@@ -332,8 +333,10 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
           <div className="text-xl font-black text-slate-400">目前沒有活躍的大 Boss</div>
           {spawnCycle ? (
             <div className="w-full max-w-md rounded-2xl border border-violet-400/30 bg-violet-950/40 p-4 text-left">
+              {/* ⚠️ 狀態判讀走 worldBossSpawnCycle.js 的共用函式，不要在這裡自己寫
+                  `Date.now() < restEndsAtMs`——重生邏輯以前就是因為到處各寫一份才變成兩套。 */}
               <div className="font-black text-violet-200 mb-2">
-                {Date.now() < (spawnCycle.restEndsAtMs || 0) ? "🌌 異界正在沉寂" : "🌀 世界王降臨進度"}
+                {describeSpawnCycle(spawnCycle)}
               </div>
               {[
                 ["🏹 全體箭數","arrows"], ["🏰 六族地下城","dungeonClears"],
@@ -341,9 +344,10 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
               ].map(([label,key]) => {
                 const value = spawnCycle.progress?.[key] || 0;
                 const target = spawnCycle.targets?.[key] || 1;
+                const ratio = spawnProgressRatio(spawnCycle, key);
                 return <div key={key} className="mb-2">
                   <div className="flex justify-between text-xs text-slate-300"><span>{label}</span><span>{value.toLocaleString()} / {target.toLocaleString()}</span></div>
-                  <div className="h-1.5 rounded-full bg-black/40 overflow-hidden"><div className="h-full bg-violet-400" style={{width:`${Math.min(100,value/target*100)}%`}}/></div>
+                  <div className="h-1.5 rounded-full bg-black/40 overflow-hidden"><div className="h-full bg-violet-400" style={{width:`${ratio*100}%`}}/></div>
                 </div>;
               })}
               <div className="text-[11px] text-slate-400 mt-2">任一條件達成即可開啟異界之門，最晚 48 小時後降臨。</div>

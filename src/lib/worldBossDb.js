@@ -23,11 +23,6 @@ import {
   WB_TROPHY_MAP,
 } from "./worldBossData";
 import { findPendingWorldBossEvents, normalizeWorldBossState } from "./worldBossState";
-import {
-  applyWorldBossSpawnContribution,
-  buildWorldBossSpawnCycle,
-  evaluateWorldBossSpawnCycle,
-} from "./worldBossSpawnCycle";
 
 // 怪物階級順序，對照 T1~T6（index 0 = T1）
 const MONSTER_TIER_ORDER = ["common", "rare", "elite", "fierce", "boss", "mythic"];
@@ -50,16 +45,15 @@ export function subscribeWorldBossSpawnCycle(cb) {
   return onSnapshot(doc(db, WBSC, WBSC_CURRENT), snap => cb(snap.exists() ? { id:snap.id, ...snap.data() } : null), () => cb(null));
 }
 
-async function beginWorldBossSpawnCycle(eventId, bossKey) {
-  const ref = doc(db, WBSC, WBSC_CURRENT);
-  const defeatedAtMs = Date.now();
-  const cycle = buildWorldBossSpawnCycle({ previousEventId:eventId, previousBossKey:bossKey, defeatedAtMs });
-  await runTransaction(db, async tx => {
-    const snap = await tx.get(ref);
-    if (snap.exists() && snap.data()?.previousEventId === eventId) return;
-    tx.set(ref, { ...cycle, createdAt:serverTimestamp(), updatedAt:serverTimestamp() });
-  });
-}
+// ⚠️ 客戶端的 beginWorldBossSpawnCycle 已於 2026-08-03 刪除。
+//
+//    它在王被擊倒的當下就把 worldBossSpawnCycles/current 寫掉，用的是**寫死的
+//    預設值**（8 小時／48 小時／10000 箭），完全不讀 sysConfig/worldBossSpawn。
+//    雲端的 ensureCycle 之後來看到 previousEventId 已經對上就直接跳過——
+//    結果是**後台改重生設定永遠沒有效果**，客戶端每次都先寫且忽略設定。
+//    這就是作者回報的「重生機制似乎是兩套卡在一起」。
+//
+//    現在改成擊倒後直接請雲端建週期（它會讀教練的設定），權威只有一套。
 
 export async function contributeWorldBossSpawnProgress({ memberId, type, amount = 1, operationId }) {
   memberId = String(memberId || "");
@@ -88,31 +82,10 @@ export async function forceSpawnWorldBossFromCycle() {
   } catch (e) { return { ok:false, reason:e.message }; }
 }
 
-export async function trySpawnWorldBossFromCycle() {
-  const cycleRef = doc(db, WBSC, WBSC_CURRENT);
-  try {
-    const lock = await runTransaction(db, async tx => {
-      const snap = await tx.get(cycleRef);
-      if (!snap.exists()) return null;
-      const cycle = snap.data();
-      const evaluation = evaluateWorldBossSpawnCycle(cycle);
-      if (!evaluation.ready || ["spawning", "spawned"].includes(cycle.status)) return null;
-      tx.update(cycleRef, { status:"spawning", triggeredBy:evaluation.reason, spawnLockedAt:serverTimestamp() });
-      return cycle;
-    });
-    if (!lock) return { ok:false, reason:"not_ready" };
-    const pool = WORLD_BOSS_KEYS.filter(key => key !== lock.previousBossKey);
-    const bossKey = pool[Math.floor(Math.random() * pool.length)] || WORLD_BOSS_KEYS[0];
-    const durationDays = await getWorldBossSpawnConfig();
-    const created = await createWorldBossEvent({ adminId:"world_boss_spawn_cycle", bossKey, durationDays });
-    if (!created.ok) {
-      await updateDoc(cycleRef, { status:"charging", spawnError:created.reason || "create_failed" });
-      return created;
-    }
-    await updateDoc(cycleRef, { status:"spawned", spawnedEventId:created.eventId, spawnedBossKey:bossKey, spawnedAt:serverTimestamp() });
-    return { ok:true, eventId:created.eventId, bossKey };
-  } catch (e) { return { ok:false, reason:e.message }; }
-}
+// ⚠️ 客戶端的 trySpawnWorldBossFromCycle 已於 2026-08-03 刪除（本來就沒有人呼叫）。
+//    生成的權威在 functions/worldBossLifecycle.js::trySpawn，由三個地方觸發：
+//    大廳載入（ensureWorldBossLifecycle）、後台強制生成、以及排程。
+//    ⚠️ **不要再在客戶端寫生成邏輯**，兩套同時寫同一份文件會雙重生成。
 
 function taipeiDateKey(date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -459,7 +432,8 @@ export async function attackWorldBoss({ eventId, memberId, memberName, weapon, r
       }).catch(() => {});
     }
     if (defeated) {
-      await beginWorldBossSpawnCycle(eventId, ev.bossKey).catch(() => {});
+      // 讓**雲端**建立重生週期（它會讀 sysConfig 裡教練設定的休息時數／期限／目標）
+      await ensureWorldBossLifecycle().catch(() => {});
       await addDoc(collection(db, WBH), {
         eventId, bossKey: ev.bossKey, bossName: ev.bossData?.name,
         result: "defeated", ts: serverTimestamp(), defeatedAt: serverTimestamp(),
