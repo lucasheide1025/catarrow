@@ -6,13 +6,16 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { assertCostCapability, COST_CAPABILITIES } from "./costControl";
-import { addCoins, addArrowdew, addGachaCoins, createNotification } from "./db";
+import { addCoins, addArrowdew, addGachaCoins, addChests, createNotification } from "./db";
 import {
   getGoalTarget, getGoalReward, getGoalTier, CONSOLATION_REWARD,
   GOAL_TYPE_MAP, buildGoalTitle, buildGoalDesc,
   GOAL_TYPES,
 } from "./villageGoalData";
 import { canAutoSpawn, goalEndAtMs, normalizeGoalSchedule } from "./villageGoalSchedule";
+import {
+  calcVillageGoalRewards, villageGoalConsolation, villageGoalParticipation,
+} from "./villageGoalRewards";
 
 const COLLECTION = "villageGoals";
 
@@ -232,7 +235,10 @@ export async function autoSpawnVillageGoal(villageLevel = 1) {
     const goalType = typeMeta.id;
     const targetValue = getGoalTarget(villageLevel, goalType);
     const gatheringTarget = pickGatheringTarget(goalType);
-    const rewards = getGoalReward(villageLevel);
+    // ⚠️ 階級要**存進目標文件**。村莊在這一個月內會升級，
+    //    每次結算現算的話，同一個目標的獎勵會跟著村莊等級浮動。
+    const tier = getGoalTier(villageLevel);
+    const rewards = villageGoalParticipation(tier);
     // ⚠️ **不能寫死 24 小時**。目標值會隨村莊等級成長 16 倍
     //    （total_arrows 5,000 → 80,000），時間必須跟著階級一起長，
     //    否則高等村莊的目標永遠打不完。（作者 2026-08-03 回報「完成時間太短」）
@@ -243,6 +249,7 @@ export async function autoSpawnVillageGoal(villageLevel = 1) {
       targetValue,
       ...applyGatheringTargetFields(goalType, gatheringTarget),
       currentValue: 0,
+      tier,
       status: "active",
       startAt: serverTimestamp(),
       endAt,
@@ -327,7 +334,20 @@ export async function claimVillageGoalReward(goalId, memberId) {
       const mine = goal.participants?.[memberId];
       if (!mine || !(mine.contributed > 0)) throw new Error("沒有貢獻紀錄");
       if (mine.claimed) throw new Error("already_claimed");
-      reward = goal.status === "completed" ? (goal.rewards || {}) : CONSOLATION_REWARD;
+      // ⚠️ 三層（出席保底＋努力分潤＋達成慶功），跟世界王同一套理念與數學。
+      //    tier 用目標文件裡存的那個，不要現算——村莊會在期間內升級。
+      const tier = Number(goal.tier) || 0;
+      if (goal.status === "completed") {
+        const all = calcVillageGoalRewards(goal.participants || {}, {
+          tier,
+          // 教練手動建立的目標自己填了獎勵，那份就是保底層
+          participation: goal.rewards || null,
+        });
+        reward = all[memberId] ? { ...all[memberId].total, celebration: all[memberId].celebration } : null;
+      } else {
+        // 時間到沒完成 → 安慰獎（依階級，不再是固定的 30/20/1）
+        reward = villageGoalConsolation(tier);
+      }
       tx.update(ref, { [`participants.${memberId}.claimed`]: true });
     });
 
@@ -336,6 +356,15 @@ export async function claimVillageGoalReward(goalId, memberId) {
       if (reward.arrowdew > 0)   await addArrowdew(memberId, reward.arrowdew).catch(() => {});
       if (reward.coins > 0)      await addCoins(memberId, reward.coins).catch(() => {});
       if (reward.gachaToken > 0) await addGachaCoins(memberId, reward.gachaToken).catch(() => {});
+      const chests = [];
+      const cel = reward.celebration || {};
+      for (let i = 0; i < (cel.mimiBoxes || 0); i++) {
+        chests.push({ id: `vg_mimi_${memberId}_${Date.now()}_${i}`, type: "mimi_box", family: "village", tier: "boss", from: "村目標達成慶功", ts: Date.now() });
+      }
+      for (let i = 0; i < (cel.catBoxes || 0); i++) {
+        chests.push({ id: `vg_cat_${memberId}_${Date.now()}_${i}`, type: "cat_box", family: "village", tier: "boss", from: "村目標達成慶功", ts: Date.now() });
+      }
+      if (chests.length) await addChests(memberId, chests).catch(() => {});
     }
     return { ok: true, reward };
   } catch (e) {
@@ -484,6 +513,9 @@ export async function adminCreateCustomGoal({
   targetMaterialName = "",
   targetResourceKey = "",
   targetResourceName = "",
+  // ⚠️ 手動建立的目標也要存階級——努力分潤的「每人份」是照階級給的。
+  //    沒帶就當 0（最保守，不會發爆）。教練填的 rewards 仍然是保底層，不受影響。
+  tier = 0,
 }) {
   try {
     // 先關閉現有 active 目標（如果有）
@@ -516,6 +548,7 @@ export async function adminCreateCustomGoal({
       targetValue: Number(targetValue),
       ...gatheringFields,
       currentValue: 0,
+      tier: Math.max(0, Math.min(3, Math.floor(Number(tier) || 0))),
       status: "active",
       startAt: serverTimestamp(),
       endAt,

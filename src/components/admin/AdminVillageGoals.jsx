@@ -39,6 +39,7 @@ export default function AdminVillageGoals() {
     goalType: "total_arrows",
     targetValue: 5000,
     durationHours: 24,
+    tier: 1,
     rewardArrowdew: 200,
     rewardCoins: 100,
     rewardGachaToken: 3,
@@ -325,6 +326,17 @@ export default function AdminVillageGoals() {
             />
           </div>
           <div>
+            {/* ⚠️ 這個只影響**努力分潤**的每人份，上面自己填的獎勵是保底層不受影響 */}
+            <label className="text-xs text-slate-400 font-bold mb-1 block">3-b. 努力分潤規模</label>
+            <select value={goalForm.tier}
+              onChange={e => setGoalForm(p => ({ ...p, tier: Number(e.target.value) }))}
+              style={inputStyle}>
+              {["小（新村）", "中", "大", "最大（高等村）"].map((label, i) => (
+                <option key={i} value={i}>{label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
             <label className="text-xs text-slate-400 font-bold mb-1 block">3. 限時持續時間（小時）</label>
             <input
               type="number"
@@ -439,6 +451,7 @@ export default function AdminVillageGoals() {
                 goalType: goalForm.goalType,
                 targetValue: goalForm.targetValue,
                 durationHours: goalForm.durationHours,
+                tier: goalForm.tier,
                 rewards: {
                   arrowdew: goalForm.rewardArrowdew,
                   coins: goalForm.rewardCoins,
