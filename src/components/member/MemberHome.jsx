@@ -1,12 +1,15 @@
 // src/components/member/MemberHome.jsx
 import { useState, useEffect } from "react";
 import { cachedFetch } from "../../lib/localCache";
+import { suggestNextActions } from "../../lib/homeSuggestions";
 import { getMemberResults, subscribePendingBadgeLogs, submitMonthlyCardRequest, subscribeMyMonthlyRequests, checkExpireMonthlyCard, getCertRecords } from "../../lib/db";
 import { computeDexStats } from "../../lib/achievementDex";
 import { getCohort, cohortLabel } from "../../lib/cohort";
 import { useAuth } from "../../hooks/useAuth";
 import { calcAge, formatArcherNo, fmtDT, BOW_TYPES, getCertLevel, COMP_TYPE_COLOR, certLevelStyle, EQUIP_SLOT_DEFS } from "../../lib/constants";
-import { levelFromXP } from "../../lib/adventurerSystem";
+// ⚠️ rankFromLevel 原本漏了 import（HEAD 上就有），首頁那段公會等級一渲染就會炸。
+//    build 不會擋，是 2026-08-04 用 eslint no-undef 掃出來的。
+import { levelFromXP, rankFromLevel } from "../../lib/adventurerSystem";
 import { useGuildRank } from "../../guild/useGuildRank";
 import { archerLevelFromXP, archerXPProgress, archerLevelBonus, MAX_ARCHER_LEVEL, getLevelStyle } from "../../lib/archerLevel";
 import { catLevelFromXP, catXPProgress } from "../../lib/catLevel";
@@ -351,7 +354,42 @@ export default function MemberHome({
       {(() => {
         const wbActive = worldBoss && worldBoss.status === "active";
         const wbCharging = !wbActive && worldBossCycle && !["spawned"].includes(worldBossCycle.status);
-        if (!wbActive && !wbCharging && expSlots.length === 0 && !villageGoal) return null;
+        // ⚠️ 舊版在這裡直接 return null，整張卡消失——但**那正是最需要給方向的時候**。
+        //    首頁最怕打開來沒事做。改成顯示「今天可以做什麼」。
+        //    建議完全來自首頁已訂閱的資料，不多讀任何一筆 Firestore。
+        if (!wbActive && !wbCharging && expSlots.length === 0 && !villageGoal) {
+          const picks = suggestNextActions({
+            checkedIn: !!todayCheckin,
+            worldBossActive: wbActive,
+            worldBossCharging: wbCharging,
+            villageGoal,
+            expeditionCount: expSlots.length,
+          });
+          return (
+            <Card className="relative isolate overflow-hidden p-4"
+              style={{ background:"linear-gradient(145deg,#0f1b2e,#101827 68%)", border:"1px solid rgba(96,165,250,.25)" }}>
+              <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-sky-300 to-blue-600" />
+              <SectionHeader icon="🌤️" title="今天可以做什麼" />
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                {picks.map(a => (
+                  <button key={a.key} onClick={() => onPageChange(a.page)}
+                    style={{
+                      display:"flex", alignItems:"center", gap:10, width:"100%",
+                      background:"rgba(255,255,255,0.05)", border:"1px solid var(--glass-border)",
+                      borderRadius:"var(--r-md)", padding:"8px 12px", cursor:"pointer", textAlign:"left",
+                    }}>
+                    <span style={{ fontSize:20, flexShrink:0 }}>{a.icon}</span>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:12.5, fontWeight:900, color:"var(--text-primary)" }}>{a.title}</div>
+                      <div style={{ fontSize:10, color:"var(--text-secondary)" }}>{a.desc}</div>
+                    </div>
+                    <span style={{ fontSize:14, color:"var(--text-muted)", flexShrink:0 }}>›</span>
+                  </button>
+                ))}
+              </div>
+            </Card>
+          );
+        }
         const rowStyle = (bg, border) => ({
           display:"flex", alignItems:"center", gap:10, width:"100%",
           background:bg, border:`1px solid ${border}`, borderRadius:"var(--r-md)",
