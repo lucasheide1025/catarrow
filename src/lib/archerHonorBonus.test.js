@@ -3,14 +3,26 @@
 // ⚠️ 這些是道館裡**真的拿得到的實體榮譽**（檢定、徽章），不是遊戲內產出。
 //    設計原則：**越難拿的，加成越有感**。
 //
-// ⚠️ 最重要的隱形規則：**各項上限的總和必須剛好等於三圍天花板**。
+// ⚠️ 最重要的隱形規則：**各項上限的總和必須剛好等於 calcArcherStats 的
+//    「基礎三圍」上限**。
+//
+// ⚠️⚠️ 這裡的 160/120/800 是**基礎值上限，不是玩家最終三圍**。實際戰鬥還會再疊：
+//        等級加成 archerLevelBonus(lv) = { hp:(lv-1)*5, atk:⌊lv/5⌋, def:⌊lv/5⌋ }
+//        怪物卡片 calcEquippedBonus、貓貓羈絆、RPG 裝備與符文
+//      117 級光等級就 +580 HP，所以實際 HP 一千多是正常的。
+//      **推論：flat 的 HP 加成在高等會被等級加成稀釋到幾乎無感**
+//      （成就章 +50 對 1,000 HP 只有 5%），但 ATK/DEF 不會——
+//      等級到 117 也才 +23，基礎的 160/120 仍然是主體。
+//      要讓成就章真正有感，得改成 % 或換一條軸，而那要動所有
+//      「calcArcherStats + archerLevelBonus」的呼叫點（MonsterBattle 就有 3 處），
+//      不是改一個數字的事。留給後續評估。
 //    原作者是精算過的（ATK 15+25+40+30+20+30=160、DEF 10+25+30+25+15+15=120），
 //    但這件事沒有寫在任何地方。動任何一項就必須從別項讓出來，
 //    否則會出現「拿滿也永遠碰不到天花板」或「某幾項變成廢的」。
 import { calcArcherStats } from "./monsterData";
 
-const ATK_CEILING = 160;
-const DEF_CEILING = 120;
+const ATK_CEILING = 160;   // ⚠️ 基礎值上限，不是最終 ATK
+const DEF_CEILING = 120;   // ⚠️ 同上
 
 /** 造一個「該項拿到滿、其餘皆空」的成員 */
 const member = (over = {}) => ({ joinDate: new Date().toISOString(), ...over });
@@ -49,7 +61,7 @@ describe("四種榮譽都要真的有加成", () => {
 describe("⚠️ 各項上限總和必須剛好等於天花板", () => {
   // 這條是原設計的隱形規則。沒有它，下一個人調某一項就會靜靜地
   // 讓其他項變成永遠吃不到的廢數值。
-  test("ATK：滿的成員剛好打到 160，不多不少", () => {
+  test("ATK 基礎值：滿的成員剛好打到 160，不多不少", () => {
     const full = calcArcherStats({
       member: member({
         fatCat: { gold: 99 }, equipment: Array(9).fill("弓"),
@@ -61,7 +73,7 @@ describe("⚠️ 各項上限總和必須剛好等於天花板", () => {
     expect(full.atk).toBe(ATK_CEILING);
   });
 
-  test("DEF：滿的成員剛好打到 120，不多不少", () => {
+  test("DEF 基礎值：滿的成員剛好打到 120，不多不少", () => {
     const full = calcArcherStats({
       member: member({
         score: { gold: 99 }, joinDate: "2000-01-01",
