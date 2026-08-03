@@ -358,11 +358,10 @@ export async function claimVillageGoalReward(goalId, memberId) {
       if (reward.gachaToken > 0) await addGachaCoins(memberId, reward.gachaToken).catch(() => {});
       const chests = [];
       const cel = reward.celebration || {};
+      // ⚠️ 只發咪咪箱（mimi_box 😺 隨機一隻貓咪夥伴）。
+      //    不要發貓貓箱（cat_box 🎐 章碎片）——作者 2026-08-03 指定，兩者很容易搞混。
       for (let i = 0; i < (cel.mimiBoxes || 0); i++) {
         chests.push({ id: `vg_mimi_${memberId}_${Date.now()}_${i}`, type: "mimi_box", family: "village", tier: "boss", from: "村目標達成慶功", ts: Date.now() });
-      }
-      for (let i = 0; i < (cel.catBoxes || 0); i++) {
-        chests.push({ id: `vg_cat_${memberId}_${Date.now()}_${i}`, type: "cat_box", family: "village", tier: "boss", from: "村目標達成慶功", ts: Date.now() });
       }
       if (chests.length) await addChests(memberId, chests).catch(() => {});
     }

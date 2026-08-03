@@ -81,9 +81,16 @@ describe("份量要撐得起「一個月」", () => {
     }
   });
 
-  test("⚠️ 貓貓箱只在高階給，不然會通膨", () => {
-    expect(villageGoalCelebration(0).catBoxes).toBe(0);
-    expect(villageGoalCelebration(3).catBoxes).toBeGreaterThan(0);
+  test("⚠️ 慶功只給咪咪箱，不給貓貓箱（作者指定，兩者很容易搞混）", () => {
+    // 咪咪箱 mimi_box = 隨機一隻貓咪夥伴；貓貓箱 cat_box = 章碎片
+    for (let tier = 0; tier <= 3; tier += 1) {
+      expect(villageGoalCelebration(tier).catBoxes).toBeUndefined();
+      expect(villageGoalCelebration(tier).mimiBoxes).toBeGreaterThan(0);
+    }
+  });
+
+  test("階級越高咪咪箱越多", () => {
+    expect(villageGoalCelebration(3).mimiBoxes).toBeGreaterThan(villageGoalCelebration(0).mimiBoxes);
   });
 });
 

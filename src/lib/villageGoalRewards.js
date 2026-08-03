@@ -49,12 +49,20 @@ export const VILLAGE_GOAL_CONSOLATION = Object.freeze([
   { arrowdew: 450, coins: 230, gachaToken: 4 },
 ]);
 
-/** 達成慶功：完成才有，全員一樣。⚠️ 貓貓箱只在高階給，不然會通膨。 */
+/**
+ * 達成慶功：完成才有，全員一樣。
+ *
+ * ⚠️ **只給咪咪箱（mimi_box），不給貓貓箱（cat_box）**——作者 2026-08-03 指定。
+ *    兩個很容易搞混：
+ *      咪咪箱 mimi_box 😺 開了隨機得到一隻**貓咪夥伴**，全收集後轉羈絆經驗
+ *      貓貓箱 cat_box  🎐 90% 掉一個**章碎片**
+ *    村目標是全村一起養村莊，配咪咪箱（收夥伴）比配碎片合適。
+ */
 export const VILLAGE_GOAL_CELEBRATION = Object.freeze([
-  { mimiBoxes: 1, catBoxes: 0 },
-  { mimiBoxes: 1, catBoxes: 0 },
-  { mimiBoxes: 1, catBoxes: 1 },
-  { mimiBoxes: 2, catBoxes: 1 },
+  { mimiBoxes: 1 },
+  { mimiBoxes: 1 },
+  { mimiBoxes: 2 },
+  { mimiBoxes: 3 },
 ]);
 
 const CURRENCY_KEYS = Object.freeze(["arrowdew", "coins", "gachaToken"]);
