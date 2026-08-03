@@ -341,9 +341,10 @@ export default function AdminVillageGoals() {
         <div className="rounded-2xl border border-amber-400/25 bg-amber-500/5 p-3.5 space-y-3">
           <div className="font-black text-amber-200 text-sm">⏳ 自然刷出的完成時間</div>
           <div className="text-[11px] text-amber-200/80 leading-relaxed">
-            以前<b>寫死 24 小時</b>而且改不了。但目標值會隨村莊等級成長 16 倍
-            （全體箭數 5,000 → 80,000），所以時間要<b>跟著階級一起長</b>，
-            公式是「基礎時數 + 階級 × 每階增量」。
+以前<b>寫死 24 小時</b>而且改不了——但 tier3 的目標是射 80,000 箭。
+            現在預設<b>完成期限一個月、結束三天後才刷下一個</b>。
+            公式是「基礎時數 + 階級 × 每階增量」，每階增量預設 0
+            （＝所有階級都一個月），想讓高階村莊更寬鬆時再調。
           </div>
           <div className="grid grid-cols-3 gap-3">
             {[

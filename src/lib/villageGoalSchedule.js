@@ -9,26 +9,31 @@
 //      total_arrows：tier0 5,000 → tier3 80,000
 //      total_damage：tier0 50,000 → tier3 800,000
 //    80,000 箭要在一天內射完，對一間道館來說不可能。
-//    所以時間必須**跟著階級一起長**，不能只是把 24 改成一個更大的數字。
+//    所以時間必須夠長。作者定案為**一律一個月**，並保留「每階增量」旋鈕
+//    以備日後要讓高階村莊更寬鬆。
 //
 // 公式：`baseHours + tier × perTierHours`（tier 0~3）
-//   預設 72 / +24 → 3天 / 4天 / 5天 / 6天
+//   預設 720 / +0 → 所有階級都是 30 天（作者 2026-08-03 定案）
 //
 // ⚠️ 全部可由教練在後台調整（sysConfig/villageGoal）。
 //    這支是純函式，不碰 Firestore。
 // ─────────────────────────────────────────────────────────────
 
+// ⚠️ 作者 2026-08-03 定案：**完成期限一個月、結束三天後才刷下一個**。
+//    一個月的窗口讓「一週來兩三次」的射手也追得上，村目標才真的是全村的事，
+//    而不是那幾天剛好有來的人的事。
 export const VILLAGE_GOAL_SCHEDULE_DEFAULTS = Object.freeze({
-  baseHours: 72,        // tier 0 給幾小時
-  perTierHours: 24,     // 每高一階多給幾小時
-  cooldownHours: 12,    // 上一個結束後，隔多久才會刷新的下一個
+  baseHours: 720,       // 30 天
+  perTierHours: 0,      // ⚠️ 預設 0＝所有階級都給一個月。留著這個旋鈕是為了
+                        //    以後想讓高階村莊更寬鬆時不用改程式。
+  cooldownHours: 72,    // 上一個結束後隔 3 天才刷下一個（作者指定）
 });
 
 /** 可設定範圍。⚠️ 下限刻意不低於 12 小時——比一天還短就沒有「全村一起推」的意義。 */
 export const SCHEDULE_LIMITS = Object.freeze({
-  baseHours: { min: 12, max: 336 },      // 12 小時 ~ 14 天
+  baseHours: { min: 12, max: 1440 },     // 12 小時 ~ 60 天
   perTierHours: { min: 0, max: 120 },
-  cooldownHours: { min: 0, max: 168 },
+  cooldownHours: { min: 0, max: 336 },   // 0 ~ 14 天
 });
 
 const clamp = (value, { min, max }, fallback) => {
