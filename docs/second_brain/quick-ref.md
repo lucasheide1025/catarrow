@@ -537,15 +537,65 @@ setActiveTitle/clearActiveTitle    // 稱號＝已裝備王卡選一張的 title
 |------|------|
 | `src/lib/damage.js` | 統一傷害公式（箭矢/反擊/貓貓/世界王） |
 | `src/lib/score.js` | 統一計分邏輯（label↔value） |
+| `src/lib/combatModifiers.js` | **玩家側加成統一管線**（2026-08-02，28 測） |
+| `src/lib/monsterStatus.js` | **玩家→怪物 7 種異常**（2026-08-02，32 測） |
 | `src/battle/BattleEvents.js` | 22 種 EventType + builder |
 | `src/battle/BattleConfig.js` | 戰鬥參數集中管理 |
-| `src/battle/BattleEngine.js` | 單人戰鬥事件產生器（Phase 0=隨機事件，1=箭矢，2=貓貓，3=反擊） |
+| `src/battle/BattleEngine.js` | ⚠️ **已無人 import（2026-08-02 查證）**——舊的 inline 戰鬥 UI 刪掉後就孤兒了 |
 | `src/battle/BattleAnimation.js` | playXxx + EVENT_DISPATCH（含 playBattleWin） |
 | `src/battle/useFirestoreRound.js` | Firestore 回合 hook（支援 onSubmitSuccess 回呼） |
 | `src/battle/RoundController.js` | 通用事件播放控制器（RANDOM_EVENT await 等玩家確認） |
 | `src/battle/useBattleRound.js` | React hook 封裝 RoundController |
 | `src/battle/useMiniRoundReveal.js` | mini-round 動畫 hook（animPhase / initialDelay / entryEndExtra） |
 | `src/battle/useDuelReveal.js` | 決鬥逐箭揭露 hook |
+
+### combatModifiers.js API（玩家側加成）
+
+```
+buildCombatModifiers({ cardFx, equipSpec })   → mods（唯一的組裝入口）
+applyBattleStart({ playerMaxHp, monsterAtk, monsterDef, mods })
+effectiveDefense(monsterDef, mods)            → 破甲 × 穿甲【相乘不相加】
+applyOutgoing({ baseDamage, score, bossTagged, mods, rand, round, monsterHpRatio })
+applyIncoming({ damage, currentHp, maxHp, mods })
+applyStatusResist(status, mods)               → duration 最少留 1
+applyRoundEnd({ currentHp, maxHp, mods, alive })
+reflectDamage / applyCompanion / describeModifiers
+常數：MAX_DAMAGE_REDUCTION_PCT=80、TALENT_CRIT_MULT=1.3、HIGH_QUALITY_SCORE=8
+```
+⚠️ 套用順序固定：**進場 → 出手 → 受擊 → 中狀態 → 回合末**。
+
+### monsterStatus.js API（怪物身上的異常）
+
+```
+rollInflict({ score, inflict, rand })         → 單支箭施加了哪些（前端用）
+rollInflictForArrows({ arrows, inflict, rand })→ 整輪（權威端用）
+mergeMonsterStatus(list, incoming)            → 同種不疊加，刷新+取較強
+mergeAllStatuses(current, incomingLists)      → 合併全隊（權威端用）
+monsterStatMods(list)                         → { defDownPct, atkDownPct }（總和上限 60）
+monsterBlocked(list, rand)                    → 冰凍擋技能 / 麻痺擋反擊
+tickMonsterStatuses({ list, monsterHp, monsterMaxHp, playerAtk })
+describeMonsterStatuses(list)                 → UI 膠囊用
+常數：PROC_MIN_SCORE=9、PROC_CAP=35、CONTROL_PROC_CAP=12、FAMILY_STATUS
+```
+⚠️ `rand` 一定要傳下去。⚠️ `chancePct: 100` 會被 PROC_CAP 夾到 35%。
+規格見 `game-systems.md` 的「🧪 異常狀態系統」。
+
+### archeryAnalytics.js API（射手深度分析，2026-08-02，26 測）
+
+```
+withPosition(arrows)      → 有落點座標的箭（脫靶不算）
+groupAnalysis(arrows)     → { centerX, centerY, spread, groupSize, offset, tight }
+biasBreakdown(group)      → 左右／上下分開兩條建議（BIAS_THRESHOLD=0.08）
+groupVerdict(group)       → great / adjust / consistency / basics / none
+withinEndTrend(ends)      → 回合內衰退（掉 ≥0.8 環才算 fatigue）
+consistency(arrows)       → bestStreak / worst / missRate / xRate
+byCondition(sessions)     → 距離×靶紙分層
+readiness(arrows)         → { ready, need, scoreOnly }；MIN_ARROWS_FOR_GROUP=12
+```
+⚠️ `spread` 是**離自己的平均落點**不是離靶心。離靶心遠但集中＝調瞄具（好修）；
+四散＝動作不穩（難修）——混在一起看就給不了建議。
+⚠️ `byCondition` 的欄位是 `shootingConfig.distanceM` / `metricsSnapshot`，猜錯會整排「?m｜未記錄 0環」。
+⚠️ 純函式不碰 Firestore；UI 走「自己點才載入最新」，比照排行榜。
 
 ### 使用模式速查
 

@@ -393,8 +393,9 @@ cardColl 訂閱：subscribeCardCollection → { cards:{}, equipped:[] }
 ### 卡片天賦系統（`src/lib/cardTalents.js`）
 
 - **天賦「零手工」**：每張怪物卡的天賦由 `getSignatureEffect(sig_<monsterId>)` 的積木**自動映射**（`TALENT_RULES` 取第一個命中），tier 放大（T1-2×1 / T3-4×1.5 / T5-6×2）。世界王卡不參與。
-- **隱形上限 `TALENT_CAPS`**：傷害8/穿甲10/爆擊8/…。彙總後砍上限，防疊加失衡。
-- **共池陷阱**：名字不同的天賦其實共用同一 key＋同一上限——蓄勁/淬毒/蠻力→`damagePct`；連擊/挑戰者→`critRatePct`。
+- **隱形上限 `TALENT_CAPS`**（2026-08-02 現值）：`armorPiercePct/shieldPiercePct` 20、`critRatePct/damagePct` 15、`openingShieldPct/monsterAtkDownPct/monsterDefDownPct` 12、`damageReductionPct/reflectPct` 10、`endRoundHeal/firstStrikePct/finisherPct` 25、`hqDamagePct` 18、`venomPct` 30。彙總後砍上限，防疊加失衡。
+- ~~**共池陷阱**~~ **（2026-08-02 已拆）**：蓄勁→`firstStrikePct`、淬毒→`venomPct`、挑戰者→`finisherPct` 各自獨立 key 與上限。
+  「淬毒」也從**假的傷害加成**改成**真的施加中毒**——見下面的異常狀態系統。
 - **族系套裝 `FAMILY_SET_BONUSES`**：同族怪物卡裝 2/4 張觸發兩階加成。
 - **戰鬥端只吃 `calcCardCombatEffects` 的彙總結果**（各鍵有 cap＋套裝）。
 
@@ -406,7 +407,81 @@ cardColl 訂閱：subscribeCardCollection → { cards:{}, equipped:[] }
 - `TalentEffectPanel.jsx`（裝備頁 header）：實際生效值進度條（x/上限、封頂「已滿」變灰）、每條下方「來自：卡片名」、族系套裝、主動建議、可收合。**顯示＝戰鬥實際吃的**。
 - `CardMiniCell`：卡面直接顯示天賦（不用點進詳情）。`CardDetailSheet`：補「歸【分類】共享上限」說明。
 - ⚠️ 零平衡：`cardTalents.js` 唯一改動是把 `TALENT_CAPS` 加 `export`，數值一個沒動。
-- **第二段（未做）**：拆分共池 key、套裝 vs 天賦流派重設計＝會動平衡，另案。
+- ~~**第二段（未做）**~~ **拆分共池 key 已於 2026-08-02 完成**；套裝 vs 天賦流派重設計仍未做。
+
+## 🧪 異常狀態系統（2026-08-02 實裝）
+
+> 作者回報「裝了施毒卡片也沒有實際效果」。查下去發現卡片天賦幾乎都只換算成傷害％，
+> 異常根本沒有實體，玩家不知道自己裝了什麼、也感覺不到差別。
+
+### 兩支核心模組
+
+| 檔案 | 管什麼 |
+|------|--------|
+| `src/lib/combatModifiers.js` | **玩家側加成的統一管線**：進場 → 出手 → 受擊 → 中狀態 → 回合末 |
+| `src/lib/monsterStatus.js` | **玩家→怪物的 7 種異常**：施加、合併、結算、tick |
+
+### 7 種異常（`MONSTER_STATUSES`）
+
+| id | 名稱 | 類型 | 效果 | 上限回合 |
+|----|------|------|------|----------|
+| `poison` | ☠️ 中毒 | dot | 每回合失去**最大生命%**，`nonLethal`：**不會把怪打死** | 3 |
+| `burn` | 🔥 灼燒 | dot | 每回合依**玩家 ATK%**，**可以補最後一刀** | 2 |
+| `bleed` | 🩸 流血 | dot | 依 ATK%，`scalesWithHits`：**命中越多層數越高** | 3 |
+| `defBreak` | 🔨 破防 | statDown | 怪物 DEF 下降，**全隊算傷害都吃得到** | 2 |
+| `weaken` | 😱 虛弱 | statDown | 怪物 ATK 下降，反擊變不痛 | 2 |
+| `freeze` | ❄️ 冰凍 | control | 怪物這回合**放不出技能** | 1 |
+| `paralyze` | ⚡ 麻痺 | control | 怪物這回合**有機率無法反擊** | 1 |
+
+### 族群綁定（`FAMILY_STATUS`）
+
+`insect`→中毒｜`temple`→灼燒｜`ghost`→虛弱｜`workplace`→破防｜`exam`→麻痺｜`mountain`→流血｜`treasure`→冰凍
+
+⚠️ 這個對應**要跟怪物的族性一致**，玩家才記得住「打毒蟲要用什麼、毒蟲給我什麼」。
+
+### ⚠️ 三條平衡鐵則（改之前先看這裡）
+
+1. **要射得準才觸發**：`PROC_MIN_SCORE = 9`（9 環以上／X）。
+   這是射箭遊戲的身分認同——**射得好換成戰術優勢，不是抽獎**。
+2. **強度不隨卡片數成長，只有觸發率會**（`FAMILY_INFLICT_BASE` 固定、`STATUS_STRENGTH` 固定）。
+   否則滿編毒隊會變成純傷害流派。
+3. **觸發率有上限**：一般 `PROC_CAP = 35`、控場類 `CONTROL_PROC_CAP = 12`。
+   ⚠️ `chancePct: 100` **也會被夾**——測試想「一定觸發」必須注入 `rand`，不能靠機率碰運氣。
+
+其他規則：同種異常**不疊加**，`mergeMonsterStatus` 刷新回合數並取較強的那個；
+`monsterStatMods` 的減益總和上限 60%。
+
+### 五種模式怎麼接
+
+| 模式 | 算傷害的地方 | 接法 |
+|------|--------------|------|
+| 單人打怪 | 前端 | `BattleScreen.jsx` 直接 `rollInflict` |
+| 地下城單人 | 前端 | 同上 |
+| 組隊打怪 | **權威端** | `partyDb.js` |
+| 地下城組隊 | **權威端** | `dungeonDb.js` |
+| 世界王 | **權威端** | `raidFlow.js`（`state.bossStatuses`） |
+
+⚠️ 權威端三支的**順序必須一致**：
+`合併全隊施加 → 破防先削防禦 → 算傷害 → 回合末 tick → 存回房間文件`。
+組隊模式 `previewDamage: !partyMode`，前端那條施加路徑根本不會跑——
+所以權威端漏接就是**整個模式的卡片專精全部失效**，而且不會報錯。
+
+⚠️ `rollInflict` / `resolveRaidRound` 一定要把 `rand` 傳下去，漏傳就不可重現（測試偶發、線上重播不出同一場）。
+
+### 玩家感知（缺一不可）
+
+作者原話：「最正確讓玩家有感的就是有顯示出異常、加成等等的傷害顯示與告知」。
+
+- 左上**戰鬥紀錄**推施加／持續傷害訊息（`state.messages`，畫面取 `slice(-4)`）
+- 怪物血條下方的**異常膠囊**
+- 右上**加成 chip**：所有生效的修正值＋各異常的觸發率
+
+### 驗證方式
+
+後台**戰鬥模擬沙盒**（`cardFxOverride` prop）——不用開真房間、也不用找高血量怪，
+直接灌任意卡片效果跑一場。作者原話：「你還不如快速地搭建一個模擬系統」。
+
+---
 
 ## 箭露與里程碑
 
