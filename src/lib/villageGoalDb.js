@@ -14,7 +14,8 @@ import {
 } from "./villageGoalData";
 import { canAutoSpawn, goalEndAtMs, normalizeGoalSchedule } from "./villageGoalSchedule";
 import {
-  calcVillageGoalRewards, villageGoalConsolation, villageGoalParticipation,
+  buildCelebrationChests, calcVillageGoalRewards,
+  villageGoalConsolation, villageGoalParticipation,
 } from "./villageGoalRewards";
 
 const COLLECTION = "villageGoals";
@@ -343,7 +344,9 @@ export async function claimVillageGoalReward(goalId, memberId) {
           // 教練手動建立的目標自己填了獎勵，那份就是保底層
           participation: goal.rewards || null,
         });
-        reward = all[memberId] ? { ...all[memberId].total, celebration: all[memberId].celebration } : null;
+        reward = all[memberId]
+          ? { ...all[memberId].total, celebration: all[memberId].celebration, tier }
+          : null;
       } else {
         // 時間到沒完成 → 安慰獎（依階級，不再是固定的 30/20/1）
         reward = villageGoalConsolation(tier);
@@ -356,12 +359,25 @@ export async function claimVillageGoalReward(goalId, memberId) {
       if (reward.arrowdew > 0)   await addArrowdew(memberId, reward.arrowdew).catch(() => {});
       if (reward.coins > 0)      await addCoins(memberId, reward.coins).catch(() => {});
       if (reward.gachaToken > 0) await addGachaCoins(memberId, reward.gachaToken).catch(() => {});
+      // ⚠️ 慶功箱**只有完成才有**。安慰獎那條路徑沒有 celebration，
+      //    這裡如果不擋，reward.tier 會是 undefined → 退回 0 →
+      //    沒完成的人照樣拿到一整批材料箱。
       const chests = [];
-      const cel = reward.celebration || {};
+      const cel = reward.celebration || null;
+      if (cel) {
       // ⚠️ 只發咪咪箱（mimi_box 😺 隨機一隻貓咪夥伴）。
       //    不要發貓貓箱（cat_box 🎐 章碎片）——作者 2026-08-03 指定，兩者很容易搞混。
       for (let i = 0; i < (cel.mimiBoxes || 0); i++) {
         chests.push({ id: `vg_mimi_${memberId}_${Date.now()}_${i}`, type: "mimi_box", family: "village", tier: "boss", from: "村目標達成慶功", ts: Date.now() });
+      }
+      // ⚠️ 各族材料箱：**每一族都給**（村莊建築要指定族的材料，隨機族別
+      //    等於玩家永遠缺那一族）。清單由 buildCelebrationChests 產生，有測試守著。
+      const goalTierForChests = Number(reward.tier);
+      buildCelebrationChests(Number.isFinite(goalTierForChests) ? goalTierForChests : 0)
+        .forEach((c, i) => chests.push({
+          id: `vg_mat_${memberId}_${Date.now()}_${i}`, type: c.chestType,
+          family: c.family, tier: c.tier, from: "村目標達成慶功", ts: Date.now(),
+        }));
       }
       if (chests.length) await addChests(memberId, chests).catch(() => {});
     }

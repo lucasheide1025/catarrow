@@ -4,6 +4,7 @@
 import {
   VILLAGE_GOAL_CONSOLATION, VILLAGE_GOAL_PARTICIPATION,
   calcVillageGoalRewards, contributionWeight, describeGoalSpread, isContributor,
+  MATERIAL_FAMILIES, buildCelebrationChests, celebrationChestCount,
   villageGoalCelebration, villageGoalConsolation, villageGoalParticipation,
 } from "./villageGoalRewards";
 
@@ -91,6 +92,36 @@ describe("份量要撐得起「一個月」", () => {
 
   test("階級越高咪咪箱越多", () => {
     expect(villageGoalCelebration(3).mimiBoxes).toBeGreaterThan(villageGoalCelebration(0).mimiBoxes);
+  });
+});
+
+describe("各族材料箱（完成才有，全員一樣）", () => {
+  test("⚠️ **每一族都要給**，不能隨機挑一族", () => {
+    // 村莊建築需要指定族的材料，隨機的話玩家永遠缺那一族
+    const families = new Set(buildCelebrationChests(1).map(c => c.family));
+    expect([...families].sort()).toEqual([...MATERIAL_FAMILIES].sort());
+  });
+
+  test("數量夠「大量」，而且階級越高越多", () => {
+    const counts = [0, 1, 2, 3].map(celebrationChestCount);
+    expect(counts[0]).toBeGreaterThanOrEqual(12);   // 六族 × 2
+    expect(counts[3]).toBeGreaterThanOrEqual(30);   // 六族 × 5
+    for (let i = 1; i < counts.length; i += 1) expect(counts[i]).toBeGreaterThan(counts[i - 1]);
+    expect(buildCelebrationChests(3, () => 0)).toHaveLength(counts[3]);
+  });
+
+  test("⚠️ 箱子階級要落在該階級的範圍內，不能開出超規格的箱子", () => {
+    for (const t of [0, 1, 2, 3]) {
+      const [min, max] = villageGoalCelebration(t).chestTierRange;
+      const order = ["common", "rare", "elite", "fierce", "boss", "mythic"];
+      for (const c of buildCelebrationChests(t, () => 0)) expect(order.indexOf(c.tier) + 1).toBe(min);
+      for (const c of buildCelebrationChests(t, () => 0.999)) expect(order.indexOf(c.tier) + 1).toBe(max);
+    }
+  });
+
+  test("每個箱子都對得到實際存在的箱型", () => {
+    const valid = ["wood", "iron", "gold", "epic", "mythic"];
+    for (const c of buildCelebrationChests(3)) expect(valid).toContain(c.chestType);
   });
 });
 

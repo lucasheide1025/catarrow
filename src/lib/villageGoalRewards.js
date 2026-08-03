@@ -59,11 +59,57 @@ export const VILLAGE_GOAL_CONSOLATION = Object.freeze([
  *    村目標是全村一起養村莊，配咪咪箱（收夥伴）比配碎片合適。
  */
 export const VILLAGE_GOAL_CELEBRATION = Object.freeze([
-  { mimiBoxes: 1 },
-  { mimiBoxes: 1 },
-  { mimiBoxes: 2 },
-  { mimiBoxes: 3 },
+  { mimiBoxes: 1, materialChestsPerFamily: 2, chestTierRange: [1, 3] },
+  { mimiBoxes: 1, materialChestsPerFamily: 3, chestTierRange: [1, 4] },
+  { mimiBoxes: 2, materialChestsPerFamily: 4, chestTierRange: [2, 5] },
+  { mimiBoxes: 3, materialChestsPerFamily: 5, chestTierRange: [3, 6] },
 ]);
+
+/**
+ * 六族。⚠️ 要跟 monsterData 的族別 key 一致，否則開出來的材料對不上圖鑑。
+ * （跟 worldBossDb 的 ALL_DUNGEON_FAMILIES 是同一組）
+ */
+export const MATERIAL_FAMILIES = Object.freeze([
+  "ghost", "mountain", "insect", "workplace", "exam", "temple",
+]);
+
+/** T1~T6 → 材料箱型別。⚠️ CHEST_TYPES 只有 5 階，T5/T6 都對到 mythic。 */
+const MATERIAL_CHEST_TYPE_BY_TIER = Object.freeze(["wood", "iron", "gold", "epic", "mythic", "mythic"]);
+const MONSTER_TIER_ORDER = Object.freeze(["common", "rare", "elite", "fierce", "boss", "mythic"]);
+
+/**
+ * 完成村目標要發的材料箱清單（**每一族都給**，不是隨機挑一族）。
+ *
+ * ⚠️ 作者 2026-08-03：「增加大量的各族材料箱」。村目標本來就是在蓋村莊，
+ *    材料才是真正卡住進度的東西——給金幣不如給材料。
+ * ⚠️ **每族都給**而不是隨機族別，是因為村莊建築需要**指定族**的材料；
+ *    隨機的話玩家永遠缺那一族，等於沒解決問題。
+ *
+ * @returns [{ family, tier }]  tier 是 monsterData 的階級名（common…mythic）
+ */
+export function buildCelebrationChests(tier = 0, rand = Math.random) {
+  const cel = villageGoalCelebration(tier);
+  const perFamily = Math.max(0, Number(cel.materialChestsPerFamily) || 0);
+  const [min, max] = cel.chestTierRange || [1, 3];
+  const out = [];
+  for (const family of MATERIAL_FAMILIES) {
+    for (let i = 0; i < perFamily; i += 1) {
+      // tierRange 是 1-indexed（T1~T6）
+      const t = Math.min(max, Math.max(min, min + Math.floor(rand() * (max - min + 1))));
+      out.push({
+        family,
+        tier: MONSTER_TIER_ORDER[t - 1],
+        chestType: MATERIAL_CHEST_TYPE_BY_TIER[t - 1],
+      });
+    }
+  }
+  return out;
+}
+
+/** 這個階級總共會發幾個材料箱（後台/說明用） */
+export function celebrationChestCount(tier = 0) {
+  return MATERIAL_FAMILIES.length * (Number(villageGoalCelebration(tier).materialChestsPerFamily) || 0);
+}
 
 const CURRENCY_KEYS = Object.freeze(["arrowdew", "coins", "gachaToken"]);
 
