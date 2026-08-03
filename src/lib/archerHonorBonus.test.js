@@ -11,7 +11,9 @@
 //      🐱 肥貓章 = 最難拿  → ATK，單顆最重
 //      🏆 積分章 = 中間    → DEF
 //      🏅 成就章 = 最好拿  → HP（HP 單位大又會被等級稀釋，實際權重最輕）
-import { HONOR_BONUS_PER_BADGE, calcArcherStats, calcHonorBonus } from "./monsterData";
+import {
+  CERT_BONUS, HONOR_BONUS_PER_BADGE, applyCertBonus, calcArcherStats, calcHonorBonus,
+} from "./monsterData";
 
 const member = (over = {}) => ({ joinDate: new Date().toISOString(), ...over });
 const statsOf = (over = {}, extra = {}) =>
@@ -57,8 +59,10 @@ describe("⚠️ 不設上限，而且要在三圍夾制「之外」", () => {
       joinDate: "2000-01-01",
       armorSets: [{ a: "x", b: "y", c: "z", d: "w", e: "v", f: "u", g: "t", h: "s", i: "r", j: "q" }],
     };
+    // ⚠️ 這條要**隔離**章的效果，所以不帶射手證——
+    //    金證的 5% 會把章的加成也乘上去（36 → 38），那是另一條測試的事。
     const extra = {
-      certification: { level: "gold" },
+      certification: null,
       certRecords: Array.from({ length: 4 }, () => ({ level: "精英" })),
       dexStats: { cohortBonus: 99, totalUnlocked: 9999 },
     };
@@ -75,6 +79,49 @@ describe("⚠️ 不設上限，而且要在三圍夾制「之外」", () => {
   test("章的欄位是壞值也不會算出 NaN", () => {
     const b = calcHonorBonus({ fatCat: { gold: "亂填" }, achievement: { black: null } });
     for (const v of Object.values(b)) expect(Number.isFinite(v)).toBe(true);
+  });
+});
+
+describe("🎯 射手證（藍證／金證）", () => {
+  // ⚠️ 跟三弓檢定 certRecords 是兩回事：這是 certification.level
+  const st = { hp: 1000, atk: 100, def: 80 };
+
+  test("沒有證不加任何東西", () => {
+    expect(applyCertBonus(st, null)).toEqual(st);
+    expect(applyCertBonus(st, { level: "none" })).toEqual(st);
+  });
+
+  test("藍證：ATK+10 DEF+10 HP+100", () => {
+    expect(applyCertBonus(st, { level: "blue" })).toEqual({ hp: 1100, atk: 110, def: 90 });
+  });
+
+  test("⚠️ 金證＝藍證的量**再額外 ×1.05**，不是取代", () => {
+    const gold = applyCertBonus(st, { level: "gold" });
+    const blue = applyCertBonus(st, { level: "blue" });
+    expect(gold).toEqual({
+      hp: Math.round(1100 * 1.05), atk: Math.round(110 * 1.05), def: Math.round(90 * 1.05),
+    });
+    for (const k of ["hp", "atk", "def"]) expect(gold[k]).toBeGreaterThan(blue[k]);
+  });
+
+  test("⚠️ 要在夾制之外——已經滿檔的老手拿到證仍然有感", () => {
+    const maxed = {
+      equipment: Array(9).fill("弓"), eventPoints: 9999, dailyQuestCount: 9999,
+      joinDate: "2000-01-01", fatCat: { gold: 9 },
+      armorSets: [{ a: "x", b: "y", c: "z", d: "w", e: "v", f: "u", g: "t", h: "s" }],
+    };
+    const none = calcArcherStats({ member: member(maxed), certification: null, certRecords: [], dexStats: null });
+    const gold = calcArcherStats({ member: member(maxed), certification: { level: "gold" }, certRecords: [], dexStats: null });
+    expect(gold.atk).toBeGreaterThan(none.atk + CERT_BONUS.flat.atk - 1);
+    expect(gold.hp).toBeGreaterThan(none.hp + CERT_BONUS.flat.hp - 1);
+  });
+
+  test("金證的 5% 也吃得到三種章的加成", () => {
+    const withBadges = { fatCat: { gold: 5 } };
+    const gold = calcArcherStats({ member: member(withBadges), certification: { level: "gold" }, certRecords: [], dexStats: null });
+    const blue = calcArcherStats({ member: member(withBadges), certification: { level: "blue" }, certRecords: [], dexStats: null });
+    // 章加了 60 ATK，金證的 5% 應該乘在含章的總量上
+    expect(gold.atk - blue.atk).toBeGreaterThanOrEqual(Math.round(blue.atk * 0.05) - 1);
   });
 });
 

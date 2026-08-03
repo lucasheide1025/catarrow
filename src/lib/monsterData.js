@@ -489,18 +489,49 @@ export function calcHonorBonus(member) {
   };
 }
 
+/**
+ * 🎯 射手證（`certification.level`）。⚠️ 跟三弓檢定 `certRecords` 是**兩回事**。
+ *
+ * 作者定案（2026-08-03）：
+ *   藍證 → ATK +10、DEF +10、HP +100
+ *   金證 → 藍證的量 **再額外 ×1.05**
+ *
+ * ⚠️ 跟三種章一樣放在**三圍夾制之外**。放進去的話老手頂到天花板就完全沒感覺。
+ * ⚠️ 金證的 5% 是乘在 **calcArcherStats 的回傳值**上（含三種章），
+ *    但**不含等級加成**——那一層是在外面加的，這裡碰不到。
+ *    要讓 5% 也吃到等級加成，得改所有戰鬥呼叫點，目前刻意不做。
+ */
+export const CERT_BONUS = Object.freeze({
+  flat: { hp: 100, atk: 10, def: 10 },
+  goldMultiplier: 1.05,
+});
+
+/** 有沒有射手證（藍或金都算） */
+const hasCert = level => level === "blue" || level === "gold";
+
+/** 把射手證套到已經算完的三圍上。⚠️ 一定要在所有夾制之後呼叫。 */
+export function applyCertBonus(stats, certification) {
+  const level = certification?.level;
+  if (!hasCert(level)) return { ...stats };
+  const { flat, goldMultiplier } = CERT_BONUS;
+  const mult = level === "gold" ? goldMultiplier : 1;
+  return {
+    hp:  Math.round((stats.hp  + flat.hp)  * mult),
+    atk: Math.round((stats.atk + flat.atk) * mult),
+    def: Math.round((stats.def + flat.def) * mult),
+  };
+}
+
 export function calcArcherStats({ member, certification, certRecords, dexStats }) {
   const joinYear  = member?.joinDate ? new Date(member.joinDate).getFullYear() : new Date().getFullYear();
   const ageYears  = Math.max(0, new Date().getFullYear() - joinYear);
 
   // ── HP ──────────────────────────────────────────────────
-  // 基礎 100 + 圖鑑/8（上限+30）+ 藍/金證（+10/+20）
+  // 基礎 100 + 圖鑑/8（上限+30）
   // + 報到次數/4（上限+30）+ 成就章分/5（上限+25）
   // + 飾品欄位數×3（上限+20）+ 射齡×5（上限+30）
   let hp = 200;
   if (dexStats) hp += Math.min(30, Math.floor(dexStats.totalUnlocked / 8));
-  if (certification?.level === "blue") hp += 10;
-  if (certification?.level === "gold") hp += 20;
   const checkinCount = member?.dailyQuestCount || 0;
   hp += Math.min(30, Math.floor(checkinCount / 4));
   const accSlots = (member?.accessorySets || []).reduce((s,set) => s + Object.values(set).filter(Boolean).length, 0);
@@ -527,14 +558,13 @@ export function calcArcherStats({ member, certification, certRecords, dexStats }
 
   // ── DEF ─────────────────────────────────────────────────
   // 基礎 10 + 積分章分/4（上限+30）+ 防具欄位數×3（上限+30）
-  // + 射齡×4（上限+20）+ 期數生+（上限+15）+ 金證（+15）
+  // + 射齡×4（上限+20）+ 期數生+（上限+15）
   let def = 10;
   const armorSlots = (member?.armorSets || []).reduce((s,set) => s + Object.values(set).filter(v=>v&&typeof v==="string"&&v.trim()).length, 0);
   def += Math.min(30, armorSlots * 3);
   // 射齡 25 → 20，讓出 5 點給積分章（⚠️ DEF 各項上限總和必須剛好等於天花板 120）
   def += Math.min(20, ageYears * 4);
   if (dexStats?.cohortBonus) def += Math.min(15, dexStats.cohortBonus);
-  if (certification?.level === "gold") def += 15;
   def = Math.min(120, def);
 
   // ── RPG 裝備加成 ─────────────────────────────────────────
@@ -555,7 +585,8 @@ export function calcArcherStats({ member, certification, certRecords, dexStats }
   atk += honor.atk;
   def += honor.def;
 
-  return { hp, atk, def };
+  // ── 🎯 射手證：藍證固定量、金證再 ×1.05（同樣在夾制之外）────
+  return applyCertBonus({ hp, atk, def }, certification);
 }
 
 // ── 戰力評分（用於怪物匹配）─────────────────────────────
