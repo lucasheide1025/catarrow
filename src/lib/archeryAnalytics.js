@@ -15,13 +15,23 @@
 //    （這頁的讀取紀律：只有一筆同步摘要走網路，其餘讀快取）。
 // ─────────────────────────────────────────────────────────────
 
+import { TARGET_FACE_FORMATS } from "./targetFace";
+
 const num = (v, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
 
-/** 靶紙代號 → 看得懂的名字 */
-const FACE_LABEL = Object.freeze({
-  full_110: "全靶", half_17: "半靶", field_16: "原野靶", triple: "三連靶",
-  face_80: "80cm", face_40: "40cm",
-});
+/**
+ * 靶紙代號 → 看得懂的名字。
+ *
+ * ⚠️ **一定要從 targetFace.js 取，不要自己抄一份。**
+ *    第一版在這裡手寫了 { full_110, half_17, field_16, triple, face_80, face_40 }，
+ *    其中 face_80 / face_40 根本不存在，而真正會用到的 compound_510（複合弓）、
+ *    indoor_40 / half_610（室內）反而漏掉——複合弓與室內練習的分層會直接印出
+ *    「compound_510」這種代號給玩家看。跟 byCondition 的欄位名是同一類錯：
+ *    **憑印象抄常數表**。（2026-08-03 查練習模式設定時抓到）
+ */
+const FACE_LABEL = Object.freeze(Object.fromEntries(
+  TARGET_FACE_FORMATS.map(f => [f.id, f.shortLabel || f.label || f.id]),
+));
 const round1 = v => Math.round(v * 10) / 10;
 const round3 = v => Math.round(v * 1000) / 1000;
 
@@ -176,7 +186,11 @@ export function byCondition(sessions = []) {
     const cfg = s?.shootingConfig || {};
     const m = s?.metricsSnapshot || {};
     const distance = num(cfg.distanceM) || num(s?.distance);
-    const fmt = cfg.targetFmt || cfg.targetFormat || s?.targetFmt || "";
+    // ⚠️ 真正寫進去的欄位是 **targetFaceCode**（見 shootingPerformance.js
+    //    的 buildPracticeShootingRecord / buildMonsterShootingRecord）。
+    //    只讀 targetFmt/targetFormat 的話，靶紙那欄會**永遠**是「未記錄靶紙」——
+    //    而且不會報錯，只是靜靜地少一個維度。（2026-08-03 抓到）
+    const fmt = cfg.targetFaceCode || cfg.targetFmt || cfg.targetFormat || s?.targetFmt || "";
     const arrows = num(m.arrowCount) || num(s?.arrowCount);
     const total = num(m.totalScore) || num(m.averageArrow) * arrows;
     if (!arrows) continue;

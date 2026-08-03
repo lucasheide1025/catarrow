@@ -144,7 +144,7 @@ describe("距離／靶紙分層", () => {
     ]);
     expect(rows).toHaveLength(2);
     expect(rows.find(r => r.distance === 18).average).toBe(9);
-    expect(rows[0].key).toContain("全靶");
+    expect(rows[0].key).toContain("122cm 全靶");
     expect(rows.find(r => r.distance === 30).average).toBe(7);
   });
 
@@ -154,6 +154,28 @@ describe("距離／靶紙分層", () => {
       { shootingConfig: { distanceM: 30 }, metricsSnapshot: { arrowCount: 60, totalScore: 420 } },
     ]);
     expect(rows[0].distance).toBe(30);
+  });
+
+  test("⚠️ 練習/打怪實際寫入的欄位是 targetFaceCode，不是 targetFmt", () => {
+    // buildPracticeShootingRecord 寫的是 targetFaceCode。只認 targetFmt 的話
+    // 靶紙那欄會永遠「未記錄靶紙」，而且不會報錯——只是靜靜地少一個維度
+    const rows = byCondition([
+      { shootingConfig: { distanceM: 18, targetFaceCode: "indoor_40" }, metricsSnapshot: { arrowCount: 60, totalScore: 540 } },
+    ]);
+    expect(rows[0].key).not.toContain("未記錄靶紙");
+    expect(rows[0].key).toContain("40cm");
+  });
+
+  test("⚠️ 靶紙名稱要跟 targetFace.js 對得起來——不能自己抄一份常數", () => {
+    // 第一版手抄的表把 compound_510 / indoor_40 漏掉，複合弓與室內練習
+    // 會直接把代號印給玩家看
+    const rows = byCondition([
+      { shootingConfig: { distanceM: 50, targetFmt: "compound_510" }, metricsSnapshot: { arrowCount: 72, totalScore: 648 } },
+      { shootingConfig: { distanceM: 18, targetFmt: "indoor_40" }, metricsSnapshot: { arrowCount: 60, totalScore: 540 } },
+    ]);
+    for (const r of rows) expect(r.key).not.toMatch(/_/);
+    expect(rows.find(r => r.distance === 50).key).toContain("80cm");
+    expect(rows.find(r => r.distance === 18).key).toContain("40cm");
   });
 
   test("沒有箭數的場次不列", () => {
