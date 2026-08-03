@@ -652,6 +652,30 @@ MATERIAL_FAMILIES（**七族**含 treasure）／celebrationChestCount(tier)
    vs **七族**(`ALL_FAMILIES`/`FAMILIES`，素材與寶箱用)。抄錯不會報錯。
 ⚠️ 咪咪箱 `mimi_box` 😺(貓咪夥伴) ≠ 貓貓箱 `cat_box` 🎐(章碎片)。
 
+### 榮譽加成與三圍明細（monsterData.js，2026-08-04）
+
+```
+calcHonorBonus(member)            → { hp, atk, def }（三種章，無上限）
+applyCertBonus(stats, cert)       → 藍證固定量／金證再 ×1.05
+describeStatSources({ member, certification, certRecords, dexStats, archerLevel })
+  → [{ key, label, hp, atk, def, note }]  給「我的」頁顯示
+sumStatSources(rows)              → 合計（測試用來驗證 = 實際三圍）
+HONOR_BONUS_PER_BADGE / CERT_BONUS
+```
+⚠️ **加在所有 Math.min 之後**（夾制之外）。放進去＝老手完全沒感覺。
+⚠️ **不設上限是作者定案**，不要加回去。⚠️ 難度：肥貓章最難、成就章最好拿。
+⚠️ `describeStatSources` 刻意**重用 calcArcherStats**（拔掉章與證再算一次），
+   不要自己重算公式，否則公式改了這裡會靜靜顯示錯的數字。
+
+### homeSuggestions.js（首頁空狀態，2026-08-04）
+
+```
+suggestNextActions({ checkedIn, worldBossActive, worldBossCharging, villageGoal, expeditionCount })
+  → 最多 3 筆 [{ key, icon, title, desc, page }]
+```
+⚠️ **一定要有保底**（去打怪），不能回空陣列——否則又變回「打開來沒事做」。
+⚠️ 只吃首頁已訂閱的資料，不為推薦多讀 Firestore。
+
 ### 使用模式速查
 
 **PartyBattleRoom / DungeonBattleRoom**（mini-round 動畫播放）：
