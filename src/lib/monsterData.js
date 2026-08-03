@@ -462,7 +462,7 @@ export function calcArcherStats({ member, certification, certRecords, dexStats }
 
   // ── HP ──────────────────────────────────────────────────
   // 基礎 100 + 圖鑑/8（上限+30）+ 藍/金證（+10/+20）
-  // + 報到次數/4（上限+30）+ 成就章分/3（上限+50）
+  // + 報到次數/4（上限+30）+ 成就章分/5（上限+25）
   // + 飾品欄位數×3（上限+20）+ 射齡×5（上限+30）
   let hp = 200;
   if (dexStats) hp += Math.min(30, Math.floor(dexStats.totalUnlocked / 8));
@@ -470,37 +470,41 @@ export function calcArcherStats({ member, certification, certRecords, dexStats }
   if (certification?.level === "gold") hp += 20;
   const checkinCount = member?.dailyQuestCount || 0;
   hp += Math.min(30, Math.floor(checkinCount / 4));
-  // 🏅 成就章（2026-08-03 調整）：/8 上限20 → /3 上限50。
-  // ⚠️ 成就章是四種榮譽裡**最難拿**的（要 160 點才封頂，而肥貓章 2 個金章就滿），
-  //    回報卻最小。現在 21 點就有 +7、150 點封頂 +50。HP 天花板 800 還有很多空間。
+  // 🏅 成就章（2026-08-03 定案）：/8 上限 20 → **/5 上限 25**。
+  // ⚠️ 三種章裡**成就章最好拿**（作者確認），所以加成最小。
+  //    仍然略微上調並拉長曲線（125 分封頂），因為它是長期累積型的。
+  // ⚠️ HP 在高等會被等級加成稀釋（117 級光等級就 +580），
+  //    所以「最好拿的章配 HP」剛好——影響最小的軸配最容易的榮譽。
   const achPoints = ((member?.achievement?.black||0)*3 + (member?.achievement?.gold||0)*2 + (member?.achievement?.silver||0));
-  hp += Math.min(50, Math.floor(achPoints / 3));
+  hp += Math.min(25, Math.floor(achPoints / 5));
   const accSlots = (member?.accessorySets || []).reduce((s,set) => s + Object.values(set).filter(Boolean).length, 0);
   hp += Math.min(20, accSlots * 3);
   hp += Math.min(30, ageYears * 5);
   hp = Math.min(800, hp);
 
   // ── ATK ─────────────────────────────────────────────────
-  // 基礎 15 + 肥貓章分/6（上限+20）+ 三弓檢定總等×4（上限+45）
+  // 基礎 15 + 肥貓章分/4（上限+30）+ 三弓檢定總等×3（上限+40）
   // + 弓組欄位數×4（上限+30）+ 賽事積分/10（上限+20）
-  // + 報到任務/5（上限+30）
+  // + 報到任務/5（上限+25）
   let atk = 15;
-  // 🐱 肥貓章（2026-08-03 調整）：/4 上限25 → /6 上限20。
-  // ⚠️ 舊值 2 個金章就封頂，之後再拿完全沒感覺。拉長曲線讓中段有成長感，
-  //    讓出來的 5 點給更難拿的射手證。
+  // 🐱 肥貓章（2026-08-03 定案）：/4 上限 25 → **上限 30**。
+  // ⚠️ 三種章裡**肥貓章最難拿**（作者確認）。不要用「點數權重」推難度——
+  //    成就章要 160 點才封頂看起來最難，但那是計分方式，實際上它最好拿。
+  //    速率維持 /4、只把上限拉高，讓長期累積一直有回報（120 分才封頂）。
   const fatPoints = ((member?.fatCat?.gold||0)*50 + (member?.fatCat?.silver||0)*10 + (member?.fatCat?.bronze||0));
-  atk += Math.min(20, Math.floor(fatPoints / 6));
+  atk += Math.min(30, Math.floor(fatPoints / 4));
   const certLevelScore = (certRecords || []).reduce((s, r) => {
     const lv = { 入門:1, 初級:2, 中級:3, 進階:4, 精英:5, 菁英:5 };
     return s + (lv[r.level] || 0);
   }, 0);
-  // 🎯 射手證（2026-08-03 調整）：×3 上限40 → ×4 上限45。
-  // ⚠️ 這是**實體檢定**，四種榮譽裡最難的一項，理應最有感。
-  atk += Math.min(45, certLevelScore * 4);
+  // 🎯 射手證：×3 上限 40（維持原值——ATK 的額度要讓給更難的肥貓章）
+  atk += Math.min(40, certLevelScore * 3);
   const bowSlots = (member?.equipment || []).length;
   atk += Math.min(30, bowSlots * 4);
   atk += Math.min(20, Math.floor((member?.eventPoints||0) / 10));
-  atk += Math.min(30, Math.floor(checkinCount / 5));
+  // 報到 30 → 25：這是最容易的日常，讓 5 點給最難的肥貓章
+  // ⚠️ ATK 各項上限總和必須剛好等於天花板 160
+  atk += Math.min(25, Math.floor(checkinCount / 5));
   atk = Math.min(160, atk);
 
   // ── DEF ─────────────────────────────────────────────────

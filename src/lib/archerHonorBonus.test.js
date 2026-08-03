@@ -1,7 +1,17 @@
 // 🏅 四種「實體榮譽」的加成：射手證、肥貓章、積分章、成就章。
 //
 // ⚠️ 這些是道館裡**真的拿得到的實體榮譽**（檢定、徽章），不是遊戲內產出。
-//    設計原則：**越難拿的，加成越有感**。
+//    設計原則：**越難拿的，加成越有感**。三種章都是**長期慢慢累積**的，
+//    所以速率不要調快、只把上限拉高，讓累積一直有回報。
+//
+// ⚠️⚠️ **難度順序是作者定的，不要從點數權重去推**（2026-08-03 踩過）：
+//        🐱 肥貓章 = **最難拿** → ATK 上限 30（三種章裡最重）
+//        🏆 積分章 = 中間      → DEF 上限 30
+//        🏅 成就章 = **最好拿** → HP 上限 25（最輕）
+//      成就章的計分是 silver1/gold2/black3，要 160 點才封頂，
+//      **看起來**最難——那是計分方式，不是實際取得難度。
+//      配 HP 也是刻意的：HP 在高等會被等級加成稀釋（117 級光等級 +580），
+//      影響最小的軸配最容易拿的榮譽。
 //
 // ⚠️ 最重要的隱形規則：**各項上限的總和必須剛好等於 calcArcherStats 的
 //    「基礎三圍」上限**。
@@ -32,29 +42,34 @@ const statsOf = (over = {}, extra = {}) =>
 const BASE = statsOf();
 
 describe("四種榮譽都要真的有加成", () => {
-  test("🎯 射手證（實體檢定，最難）——四種裡加成最重", () => {
+  test("🎯 射手證 → ATK", () => {
     const full = calcArcherStats({
       member: member(), certification: null, dexStats: null,
       certRecords: Array.from({ length: 4 }, () => ({ level: "精英" })),   // 4 弓 × 5 等 = 20
     });
-    expect(full.atk - BASE.atk).toBe(45);
+    expect(full.atk - BASE.atk).toBe(40);
   });
 
-  test("🐱 肥貓章 → ATK", () => {
-    expect(statsOf({ fatCat: { gold: 3 } }).atk - BASE.atk).toBe(20);
-    // ⚠️ 不能太快封頂：2 個金章（100 分）不該就滿
-    expect(statsOf({ fatCat: { gold: 2 } }).atk - BASE.atk).toBeLessThan(20);
+  test("🐱 肥貓章（最難拿）→ ATK，三種章裡加成最重", () => {
+    expect(statsOf({ fatCat: { gold: 3 } }).atk - BASE.atk).toBe(30);
+    // ⚠️ 長期累積型：2 個金章（100 分）還不該封頂
+    expect(statsOf({ fatCat: { gold: 2 } }).atk - BASE.atk).toBeLessThan(30);
   });
 
-  test("🏆 積分章 → DEF", () => {
+  test("🏆 積分章（中間）→ DEF", () => {
     expect(statsOf({ score: { gold: 3 } }).def - BASE.def).toBe(30);
   });
 
-  test("🏅 成就章 → HP：最難拿的，回報不能最小", () => {
-    // 舊值是 /8 上限 20——要 160 點才封頂，而肥貓章 2 個金章就滿
-    expect(statsOf({ achievement: { black: 50 } }).hp - BASE.hp).toBe(50);
-    // 中段就要看得到成長
-    expect(statsOf({ achievement: { silver: 21 } }).hp - BASE.hp).toBe(7);
+  test("🏅 成就章（最好拿）→ HP，三種章裡加成最輕", () => {
+    expect(statsOf({ achievement: { black: 50 } }).hp - BASE.hp).toBe(25);
+  });
+
+  test("⚠️ 難度排序要反映在加成上：肥貓章 > 積分章 ≥ 成就章", () => {
+    const fat = statsOf({ fatCat: { gold: 9 } }).atk - BASE.atk;
+    const score = statsOf({ score: { gold: 9 } }).def - BASE.def;
+    const ach = statsOf({ achievement: { black: 99 } }).hp - BASE.hp;
+    expect(fat).toBeGreaterThanOrEqual(score);
+    expect(score).toBeGreaterThan(ach);
   });
 });
 
