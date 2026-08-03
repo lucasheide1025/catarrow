@@ -635,6 +635,23 @@ spawnProgressRatio / describeSpawnCycle / SPAWN_PROGRESS_LABEL
    客戶端**不准**再寫生成邏輯——以前兩套並存，客戶端一直壓過雲端。
 ⚠️ 預設值兩邊各一份，靠測試**直接讀 functions 原始碼比對**釘住。
 
+### villageGoalSchedule.js / villageGoalRewards.js（村目標，2026-08-03）
+
+```
+goalDurationHours(tier, cfg) / goalEndAtMs / canAutoSpawn / describeSchedule
+  預設 720h(30天) + 0/階，冷卻 72h(3天)；設定在 sysConfig/villageGoal
+
+calcVillageGoalRewards(participants, { tier, participation })
+  → { [id]: { participation, effort, celebration, total } }
+buildCelebrationChests(tier, rand) → [{ family, tierIndex, chestType }]
+MATERIAL_FAMILIES（**七族**含 treasure）／celebrationChestCount(tier)
+```
+⚠️ 材料箱型別**必須是 `family_mat`**。wood/iron/gold/epic/mythic 是通用材料寶箱，
+   **忽略 chest.family**、固定開六族且排除寶箱族——當「每族一箱」用等於白做。
+⚠️ 族別兩組清單：六族(`FAMILY_KEYS`/`ALL_DUNGEON_FAMILIES`，地下城用)
+   vs **七族**(`ALL_FAMILIES`/`FAMILIES`，素材與寶箱用)。抄錯不會報錯。
+⚠️ 咪咪箱 `mimi_box` 😺(貓咪夥伴) ≠ 貓貓箱 `cat_box` 🎐(章碎片)。
+
 ### 使用模式速查
 
 **PartyBattleRoom / DungeonBattleRoom**（mini-round 動畫播放）：
