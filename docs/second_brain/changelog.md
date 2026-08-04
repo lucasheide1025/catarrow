@@ -5,6 +5,35 @@
 
 ---
 
+## 2026-08-05（訪客登入權限、兩個組隊卡死、年度檢定開工）
+
+**改了什麼**
+- 🔑 **訪客登入 Missing or insufficient permissions**：`firestore.rules` 的 members update
+  兩支分支都寫死「uid 不可變」、白名單也沒有 `uid`，但 `guestAuth.js` 登入成功後一定會把
+  這次的 Firebase uid 寫回文件 → 每次登入都被拒。規則放寬成「保持不變**或**換成登入者
+  本人的 uid」，白名單補 `uid`／`hasPassword`／`socialUid`／`socialProvider`。
+  程式端把寫回動作抽成 `touchLoginUid()` 並包 try/catch。
+- 🕳️ **地下城組隊休息區第二次選不了**：`finishFunctionRoom` 漏清 `restResults`
+  （`handleForceAdvance` 有清），殘留值讓 `DungeonRest` 判成已完成 → 全隊卡在等待房主。
+- 🎴 **貓貓探索地圖命運/機會卡卡住無法解**：`stuckLong` 的條件不含卡片狀態 → 房主的
+  強制推進按鈕不出現；加上卡片是 z-215 全螢幕遮罩，按鈕出現也點不到 → 在遮罩內補一顆。
+- 🎖️ **年度檢定**開工（步驟 1-3）：`certStatus.js` 純函式 + 17 測試、`CertRuleFields.jsx`
+  規則表單抽共用。規劃在 `.trellis/tasks/08-04-annual-cert-revive/`。
+
+**為什麼**
+- 前兩個是同一種病：**同一件事有多條路徑，其中一條的清理清單漏了欄位**。
+  找 bug 時先比對「另一條路徑清了什麼」，通常答案就在那裡。
+- 年度檢定「沒人考」不是功能缺——整條流程都在，是上半年那場結束後沒開新的，
+  且會員端沒有任何「現在可以考／差幾分升級」的露出。
+
+**踩坑提醒**
+- ⚠️ `firestore.rules` 改完**一定要手動貼上 Firebase Console**（CLI 403），
+  沒貼＝沒生效；訪客登入雖然不再中斷，但 uid 寫不回去，之後進遊戲會找不到人。
+- 全螢幕 overlay（`fixed inset-0 z-[...]`）裡的死結，**解卡按鈕必須放在 overlay 內**，
+  放在底層工具列等於沒有。
+
+---
+
 ## 2026-08-04（線上預約價目表修正：2/3 小時每筆少收 50）
 
 **改了什麼**
