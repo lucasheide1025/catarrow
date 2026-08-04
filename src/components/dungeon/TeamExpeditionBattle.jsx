@@ -1007,6 +1007,13 @@ export default function TeamExpeditionBattle({
       chestChoices: null,
       chestEggType: null,
       chestClaims: null,
+      // ⚠️ restResults / merchantRoomPurchases 一定要跟著清：
+      // DungeonRest.jsx:25 用 `room.restResults[memberId]` 判斷「我這間休息室選過了沒」，
+      // 殘留下來的話第二次進休息區會被判成已完成 → 選項不給按，房主端 roomConfirms 又是空的、
+      // 自動推進條件永遠不成立 → 全隊一起卡在「等待房主選擇中」。
+      // handleForceAdvance（本檔 :628）本來就有清這兩個欄位，是這條正常推進的路徑漏掉了。
+      restResults: {},
+      merchantRoomPurchases: {},
       expeditionMapState: stripMapStateGrid(nextMapState),
     });
   }, [isHost, mapState, floorIndex, teamRoomId]);

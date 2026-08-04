@@ -1398,6 +1398,9 @@ export async function resolveNonCombatRoom(roomId, room, hostId, clearedRoomId) 
       roomConfirms:  {},
       roomChoices:   {},
       currentEvent:  null,
+      // restResults 是「這一間休息室的抽值結果」，離開房間就該歸零。
+      // 留著會讓下一間休息室被 DungeonRest 判成已完成，整隊卡住（同 TeamExpeditionBattle 的修正）。
+      restResults:   {},
       mapClearedIds: newCleared,
       // 不清空 shopPurchases，讓購買記錄跨房間持久
     });

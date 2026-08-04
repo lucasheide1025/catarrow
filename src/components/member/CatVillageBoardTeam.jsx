@@ -296,13 +296,17 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
   }, [room?.members, myId, room?.status]); // eslint-disable-line
 
   // 卡在同一步超過 15 秒 → 房主才看得到「移除隊員／強制推進」，避免網路慢就被踢
+  // ⚠️ 卡片（命運/機會）翻開時也要算「卡住」：hasPending 是比對 pendingEvent.seq === curSeq，
+  // 一旦 seq 對不上（例如 room.seq 已經往前、事件卡卻還開著），hasPending 會是 false →
+  // stuckLong 永遠不成立 → 房主的「強制推進」按鈕根本不出現，全隊只能重開。
+  // 所以本機卡片還開著且尚未全員通過時，一律當成卡住。
   useEffect(() => {
-    const blocked = (!!room?.pendingShoot) || (hasPending && !allPassed);
+    const blocked = (!!room?.pendingShoot) || ((hasPending || !!card) && !allPassed);
     if (!blocked) { setStuckLong(false); return; }
     setStuckLong(false);
     const t = setTimeout(() => setStuckLong(true), 15000);
     return () => clearTimeout(t);
-  }, [room?.pendingShoot, hasPending, allPassed, curSeq]);
+  }, [room?.pendingShoot, hasPending, allPassed, curSeq, card]);
 
   // 動畫閘門的保險絲：claim/翻牌都要等 animatedSeq 追上 room.seq，
   // 但手機切到背景時 setInterval/setTimeout 會被瀏覽器節流甚至凍結 → 動畫走不完 →
@@ -993,7 +997,8 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
       {card && (
         <div className="fixed inset-0 z-[215] bg-black/85 flex items-center justify-center p-4" onClick={card.waiting ? undefined : confirmCard}>
           {card.waiting ? (
-            <div className="rounded-3xl bg-slate-900/90 border-2 border-amber-400/50 p-8 w-full max-w-xs text-center">
+            <div className="rounded-3xl bg-slate-900/90 border-2 border-amber-400/50 p-8 w-full max-w-xs text-center"
+              onClick={e => e.stopPropagation()}>
               <div className="text-amber-300 text-lg font-black mb-2">⏳ 等待全員確認</div>
               <div className="text-amber-100/80 text-sm mb-3">其他隊員正在查看卡片…</div>
               <div className="flex items-center justify-center gap-2">
@@ -1002,6 +1007,20 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
                 <div className="w-3 h-3 rounded-full bg-amber-400 animate-bounce" style={{ animationDelay:'0.3s' }} />
               </div>
               <div className="text-amber-200/60 text-xs mt-4">{claimedN}/{memberCount} 已確認</div>
+              {waitingNames.length > 0 && (
+                <div className="text-amber-200/45 text-[10px] mt-1">還在等：{waitingNames.join("、")}</div>
+              )}
+              {/* 解卡出口：卡片是全螢幕遮罩（z-215），底下那塊房主工具列會被整個蓋住、點不到，
+                  所以「強制推進」必須在遮罩裡自己長一顆，否則卡在這裡只能全隊重開。 */}
+              {stuckLong && (isHost ? (
+                <button
+                  onClick={() => forceAdvanceRoom(roomId, myId).then(r => showToast(r.ok ? "已強制推進（沒完成的人這步就沒領到）" : r.reason || "推進失敗"))}
+                  className="mt-4 w-full py-2.5 rounded-2xl bg-amber-400 text-slate-900 font-black text-sm active:scale-95 transition-all">
+                  ⏭ 強制推進
+                </button>
+              ) : (
+                <div className="text-amber-200/45 text-[10px] mt-4">卡住超過 15 秒了，可以請房主按「強制推進」。</div>
+              ))}
             </div>
           ) : (
             <div className="[perspective:1000px] board-card-fly-in">
