@@ -43,6 +43,19 @@ export function isEnrolledMemberDoc(data) {
 
 // 用 email 或 contactHash 找出這個人是否已有學籍/正式帳號（找不到回 null）。
 // email 欄位可能為空（教練建立的舊學員只有 contactHash），所以兩條都查。
+// 登入成功後把這次的 Firebase uid 寫回會員文件（useAuth 用 where("uid","==",…) 找人，
+// 不寫回去下次就對不上）。但這是**次要**寫入：密碼已經驗證通過，身分早就成立了，
+// 所以就算 Firestore 規則擋下這一筆（例如 Console 上的規則還沒更新到最新版），
+// 也絕對不能讓整個登入失敗——舊版沒包 try/catch，訪客登入才會整片跳
+// 「Missing or insufficient permissions」。回傳值本來就用 cred.user.uid，不受影響。
+async function touchLoginUid(ref, uid) {
+  try {
+    await updateDoc(ref, { uid, lastLoginAt: serverTimestamp() });
+  } catch (e) {
+    console.warn("[guestAuth] 寫回登入 uid 失敗（不影響登入）：", e?.code || e?.message);
+  }
+}
+
 async function findEnrolledMemberDoc(trimmedEmail, contactHash, workingDb = db) {
   try {
     if (trimmedEmail) {
@@ -332,7 +345,7 @@ export async function loginGuestWithPassword(email, password, { usePrimaryAuth =
     const enrolledDoc = await findEnrolledMemberDoc(trimmedEmail, contactHash, workingDb);
     if (enrolledDoc) {
       const mData = enrolledDoc.data();
-      await updateDoc(enrolledDoc.ref, { uid: cred.user.uid, lastLoginAt: serverTimestamp() });
+      await touchLoginUid(enrolledDoc.ref, cred.user.uid);
       return { ok: true, id: enrolledDoc.id, name: mData.name || "", email: mData.email || trimmedEmail, phone: mData.phone || "", uid: cred.user.uid, bookingStats: mData.bookingStats || null, accountType: mData.accountType, isNew: false };
     }
 
@@ -345,7 +358,7 @@ export async function loginGuestWithPassword(email, password, { usePrimaryAuth =
     ));
     if (!snap.empty) {
       const existing = snap.docs[0];
-      await updateDoc(existing.ref, { uid: cred.user.uid, lastLoginAt: serverTimestamp() });
+      await touchLoginUid(existing.ref, cred.user.uid);
       return { ok: true, id: existing.id, ...existing.data(), uid: cred.user.uid, isNew: false };
     }
 

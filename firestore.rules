@@ -90,9 +90,16 @@ service cloud.firestore {
       // Guest/kid accounts use anonymous auth whose uid changes each session,
       // so the uid/email-based ownsProfile check would reject legitimate updates.
       // The field-level whitelist still applies for write safety.
+      // ⚠️ uid 只能「保持不變」或「換成登入者本人的 uid」：
+      // 訪客／官網註冊帳號每次登入拿到的 Firebase uid 都可能不同（匿名接續、跨裝置、
+      // Google 與密碼兩種登入方式），guestAuth.js 的 loginGuestWithPassword 在密碼驗證
+      // 通過後一定會把新 uid 寫回文件，否則 useAuth 的 where("uid","==",...) 查不到人。
+      // 舊版規則寫死「uid 不可變」，導致每次訪客登入都跳 Missing or insufficient permissions。
+      // 放行的只有「寫成自己的 uid」，仍然不能把文件的 uid 竄改成別人的。
       allow update: if isAdmin() || (
         ownsProfile() && activeProfile()
-        && request.resource.data.get("uid", null) == resource.data.get("uid", null)
+        && (request.resource.data.get("uid", null) == resource.data.get("uid", null)
+          || request.resource.data.get("uid", null) == request.auth.uid)
         && request.resource.data.get("accountType", "official") == resource.data.get("accountType", "official")
         && request.resource.data.get("expiresAt", null) == resource.data.get("expiresAt", null)
         && request.resource.data.get("createdAt", null) == resource.data.get("createdAt", null)
@@ -111,10 +118,17 @@ service cloud.firestore {
           "teamSavedProgress", "villageBoard",
           "villageTotalLaps", "dungeonClears", "worldBossDmgTotal", "partyDmgTotal", "maxCatXP",
           "dexTotalUnlocked", "dexTotalAll",
-          "name", "phone"
+          "name", "phone", "uid",
+          // 登入/註冊當下會一起寫的身分欄位：密碼註冊補 hasPassword，Google 登入補
+          // socialUid/socialProvider。少了它們，訪客「註冊時接上舊記錄」與「用 Google 登入」
+          // 一樣會被規則擋成 Missing or insufficient permissions。
+          "hasPassword", "socialUid", "socialProvider"
         ])
       ) || (
         isLoggedIn() && resource.data.accountType in ["guest", "kid"] && activeProfile()
+        // 同上：訪客/兒童帳號的 uid 每次登入都會變，允許寫回，但只能寫成自己的 uid。
+        && (request.resource.data.get("uid", null) == resource.data.get("uid", null)
+          || request.resource.data.get("uid", null) == request.auth.uid)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "lastLoginAt", "updatedAt", "equipment", "armorSets", "accessorySets",
           "dailyQuestCount", "eventPoints", "coins", "lastDungeonDate", "equippedCat", "avatarId",
@@ -128,7 +142,11 @@ service cloud.firestore {
           "teamSavedProgress", "villageBoard",
           "villageTotalLaps", "dungeonClears", "worldBossDmgTotal", "partyDmgTotal", "maxCatXP",
           "dexTotalUnlocked", "dexTotalAll",
-          "name", "phone"
+          "name", "phone", "uid",
+          // 登入/註冊當下會一起寫的身分欄位：密碼註冊補 hasPassword，Google 登入補
+          // socialUid/socialProvider。少了它們，訪客「註冊時接上舊記錄」與「用 Google 登入」
+          // 一樣會被規則擋成 Missing or insufficient permissions。
+          "hasPassword", "socialUid", "socialProvider"
         ])
       );
     }
@@ -509,6 +527,16 @@ service cloud.firestore {
         && request.resource.data.publishedJson.size() <= 500000;
       allow delete: if isAdmin();
     }
+
+    // Guest reviews are mutated only by privileged Cloud Functions. The public
+    // projection is deliberately de-identified and is the sole anonymous read path.
+    match /publicGuestReviews/{reviewId} {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /guestReviewSubjects/{memberId} { allow read: if isAdmin(); allow write: if false; }
+    match /guestReviews/{memberId} { allow read: if isAdmin(); allow write: if false; }
+    match /guestReviewConfig/{documentId} { allow read: if isAdmin(); allow write: if false; }
     match /equipItems/{id} {
       allow read:  if isLoggedIn();
       allow write: if isAdmin();
