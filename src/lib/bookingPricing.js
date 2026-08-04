@@ -15,10 +15,13 @@ export const BOOKING_DURATIONS = [
   { value: 3, label: "3小時" },
 ];
 
+// 價格以官網公告（website/index.html 價格卡與 FAQ）為準：一般成人 350／700／700，
+// 優惠與自備器材 250／500／500。2 小時與 3 小時同價是刻意的（不想佔滿三小時的人也有選項）。
+// 這裡是全站唯一的價格來源，前台、後台結帳代碼、報到開帳單都從這裡推導，改價只改這一張表。
 export const BOOKING_PRICES = {
-  general: { 1: 350, 2: 650, 3: 650 },
-  discount: { 1: 250, 2: 450, 3: 450 },
-  own_equipment: { 1: 250, 2: 450, 3: 450 },
+  general: { 1: 350, 2: 700, 3: 700 },
+  discount: { 1: 250, 2: 500, 3: 500 },
+  own_equipment: { 1: 250, 2: 500, 3: 500 },
 };
 
 export const EMPTY_PARTICIPANT_BREAKDOWN = Object.freeze({

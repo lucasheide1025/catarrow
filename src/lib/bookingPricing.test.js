@@ -27,8 +27,8 @@ test("混合同行依三類人數正確計算價格", () => {
   const party = { general: 2, discount: 1, own_equipment: 1 };
   expect(participantTotal(party)).toBe(4);
   expect(bookingTotalPrice(party, 1)).toBe(1200);
-  expect(bookingTotalPrice(party, 2)).toBe(2200);
-  expect(bookingTotalPrice(party, 3)).toBe(2200);
+  expect(bookingTotalPrice(party, 2)).toBe(2400);
+  expect(bookingTotalPrice(party, 3)).toBe(2400);
 });
 
 test("2小時與3小時同價，且1小時的兩倍不等於折扣", () => {
@@ -41,9 +41,9 @@ test("2小時與3小時同價，且1小時的兩倍不等於折扣", () => {
 
 test("已確認的公開價目表", () => {
   expect(BOOKING_PRICES).toEqual({
-    general:       { 1: 350, 2: 650, 3: 650 },
-    discount:      { 1: 250, 2: 450, 3: 450 },
-    own_equipment: { 1: 250, 2: 450, 3: 450 },
+    general:       { 1: 350, 2: 700, 3: 700 },
+    discount:      { 1: 250, 2: 500, 3: 500 },
+    own_equipment: { 1: 250, 2: 500, 3: 500 },
   });
 });
 
@@ -96,14 +96,14 @@ test("後台結帳每個方案代號的價格都等於預約價目表", () => {
   }
   expect(BILLING_PLANS).toEqual([
     { id: "自一", price: 250 },
-    { id: "自二", price: 450 },
-    { id: "自三", price: 450 },
+    { id: "自二", price: 500 },
+    { id: "自三", price: 500 },
     { id: "單一", price: 350 },
-    { id: "單二", price: 650 },
-    { id: "單三", price: 650 },
+    { id: "單二", price: 700 },
+    { id: "單三", price: 700 },
     { id: "學一", price: 250 },
-    { id: "學二", price: 450 },
-    { id: "學三", price: 450 },
+    { id: "學二", price: 500 },
+    { id: "學三", price: 500 },
   ]);
 });
 
@@ -115,14 +115,14 @@ test("未知的方案代號回 0，不會回 undefined 汙染金額", () => {
 test("報到開帳單的方案價格同樣等於預約價目表", () => {
   expect(CHECKIN_PLANS_EQUIP).toEqual([
     { id: "自訂一小時", price: 250 },
-    { id: "自訂二小時", price: 450 },
-    { id: "自訂三小時", price: 450 },
+    { id: "自訂二小時", price: 500 },
+    { id: "自訂三小時", price: 500 },
     { id: "月卡",       price: 0 },
   ]);
   expect(CHECKIN_PLANS_NO_EQUIP).toEqual([
     { id: "單一", price: 350 },
-    { id: "單二", price: 650 },
-    { id: "單三", price: 650 },
+    { id: "單二", price: 700 },
+    { id: "單三", price: 700 },
   ]);
 });
 
