@@ -1,4 +1,6 @@
-import { CERT_DEFAULT_SCORES, CERT_LEVELS, CERT_HALF, thisYear, getCertLevelByScores } from "../../lib/constants";
+import { CERT_HALF, thisYear, getCertLevelByScores } from "../../lib/constants";
+import { certCompTitle } from "../../lib/certStatus";
+import CertRuleFields, { defaultCertScores } from "./CertRuleFields";
 import { useState, useEffect, useRef } from "react";
 import {
   getCompetitions, createCompetition, updateCompetition,
@@ -440,31 +442,15 @@ export function AddCertModal({ onClose, onDone, operatorId, toast }) {
   const [form, setForm] = useState({
     year: currentYear, half: "first", distance: 18,
     arrowCount: 6, roundCount: 5, maxScore: 10, hasMiss: true,
-    scores: {
-      recurve_full: { ...CERT_DEFAULT_SCORES.recurve_full },
-      recurve_bare: { ...CERT_DEFAULT_SCORES.recurve_bare },
-      compound:     { ...CERT_DEFAULT_SCORES.compound     },
-      traditional:  { ...CERT_DEFAULT_SCORES.traditional  },
-    },
+    scores: defaultCertScores(),
   });
   const [saving, setSaving] = useState(false);
-  const halfLabel = CERT_HALF.find(h => h.value === form.half)?.label || "";
-
-  function setScore(bowType, level, val) {
-    setForm(p => ({ ...p, scores: { ...p.scores, [bowType]: { ...p.scores[bowType], [level]: Number(val) } } }));
-  }
-  function resetDefaults() {
-    setForm(p => ({ ...p, scores: {
-      recurve_full: { ...CERT_DEFAULT_SCORES.recurve_full },
-      recurve_bare: { ...CERT_DEFAULT_SCORES.recurve_bare },
-      compound:     { ...CERT_DEFAULT_SCORES.compound     },
-      traditional:  { ...CERT_DEFAULT_SCORES.traditional  },
-    }}));
-  }
+  // 標題一律用 certCompTitle() 組，跟「建立後改規則」共用同一條規則，
+  // 否則改了距離會出現「18米」的標題配 30 米的規則。
+  const title = certCompTitle({ year: form.year, half: form.half, distance: form.distance });
 
   async function save() {
     setSaving(true);
-    const title = `${form.year}年${halfLabel} 年度檢定（${form.distance}米）`;
     await createCompetition({
       type: "年度檢定", title,
       date: form.half === "first" ? `${form.year}-01-01` : `${form.year}-07-01`,
@@ -480,61 +466,22 @@ export function AddCertModal({ onClose, onDone, operatorId, toast }) {
     setSaving(false);
   }
 
-  const bowLabels = {
-    recurve_full: "競技反曲弓（全配）", recurve_bare: "競技反曲弓（裸弓）",
-    compound: "美式獵弓", traditional: "傳統弓",
-  };
-
   return (
     <Modal open wide onClose={onClose} title="新增年度檢定賽">
       <div className="flex flex-col gap-5">
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <Inp label="年份" type="number" min="2020" max="2099" value={form.year}
             onChange={e => setForm(p => ({ ...p, year: Number(e.target.value) }))} />
           <Sel label="週期" value={form.half}
             onChange={e => setForm(p => ({ ...p, half: e.target.value }))} options={CERT_HALF} />
-          <Inp label="射程距離（米）" type="number" min="1" value={form.distance}
-            onChange={e => setForm(p => ({ ...p, distance: Number(e.target.value) }))} />
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
-          <Inp label="箭數/回" type="number" min="1" value={form.arrowCount}
-            onChange={e => setForm(p => ({ ...p, arrowCount: Number(e.target.value) }))} />
-          <Inp label="回合數" type="number" min="1" value={form.roundCount}
-            onChange={e => setForm(p => ({ ...p, roundCount: Number(e.target.value) }))} />
-          <Inp label="最高環數" type="number" min="1" value={form.maxScore}
-            onChange={e => setForm(p => ({ ...p, maxScore: Number(e.target.value) }))} />
-        </div>
+        {/* 規則欄位與「建立後改規則」共用 CertRuleFields，兩邊不會長歪 */}
+        <CertRuleFields value={form} onChange={patch => setForm(p => ({ ...p, ...patch }))} />
 
         <div className="bg-teal-50 border border-teal-200 rounded-xl p-3">
           <div className="text-teal-600 text-xs font-bold mb-0.5">比賽標題預覽</div>
-          <div className="text-teal-800 font-bold text-sm">{form.year}年{halfLabel} 年度檢定（{form.distance}米）</div>
-        </div>
-
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-gray-600 text-xs font-bold">各弓種達標分數設定</div>
-            <button onClick={resetDefaults} className="text-xs text-blue-600 font-bold hover:text-blue-800">↺ 還原預設值</button>
-          </div>
-          <div className="flex flex-col gap-4">
-            {Object.entries(bowLabels).map(([bk, blabel]) => (
-              <div key={bk} className="border border-gray-200 rounded-xl overflow-hidden">
-                <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-200">
-                  <div className="text-gray-700 text-sm font-bold">{blabel}</div>
-                </div>
-                <div className="p-3 grid grid-cols-3 gap-2">
-                  {(CERT_LEVELS[bk] || []).map(lv => (
-                    <div key={lv} className="flex flex-col gap-1">
-                      <label className="text-xs text-gray-400 font-semibold">{lv}</label>
-                      <input type="number" min="0" value={form.scores[bk][lv] || ""}
-                        onChange={e => setScore(bk, lv, e.target.value)}
-                        className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-700 text-sm text-center font-bold focus:outline-none focus:border-blue-400" />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
+          <div className="text-teal-800 font-bold text-sm">{title}</div>
         </div>
 
         <div className="flex gap-2">
