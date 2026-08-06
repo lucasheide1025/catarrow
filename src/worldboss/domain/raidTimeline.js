@@ -65,6 +65,7 @@ export function groupRaidVolleys(log = [], size = VOLLEY_SIZE) {
         damage: items.reduce((a, e) => a + (e.damage || 0), 0),
         hits: items.filter(e => e.hit).length,
         bullseyes: items.filter(e => e.bullseye).length,
+        crits: items.filter(e => e.crit).length,
         combo: last.combo,
         bossHp: last.bossHp, bossHpRatio: last.bossHpRatio,
       });
@@ -141,6 +142,7 @@ export function describeEvent(event) {
     case "arrow": {
       if (event.overCap) return "這張靶已經滿了——這箭沒有效果";
       if (event.missed) return "脫靶";
+      if (event.crit) return `💥 爆擊！${event.label === "X" ? "X 滿靶" : "正中十環"} −${event.damage}`;
       if (event.hit) return `${event.bullseye ? "🎯正中 " : ""}${event.spot?.icon || ""}${event.spot?.name || "弱點"}（算滿分）−${event.damage}`;
       return `上靶但沒中弱點 −${event.damage}`;
     }
@@ -148,7 +150,9 @@ export function describeEvent(event) {
       return `🐾 ${event.cat?.name || "貓貓"} 協戰 −${event.damage}${event.skill ? "　✨特技！" : ""}`;
     case "volley": {
       const who = event.shooterName ? `${event.shooterName}　` : "";
-      if (!event.hits) return `${who}${event.arrows.length} 箭上靶 −${event.damage}`;
+      const critTag = event.crits ? `　💥爆擊×${event.crits}` : "";
+      if (!event.hits && !event.crits) return `${who}${event.arrows.length} 箭上靶 −${event.damage}`;
+      if (event.crits) return `${who}${event.hits}/${event.arrows.length} 命中弱點，${event.crits} 箭爆擊 −${event.damage}${critTag}`;
       return `${who}${event.hits}/${event.arrows.length} 命中弱點 −${event.damage}${event.bullseyes ? "　🎯正中" : ""}`;
     }
     case "catVolley":

@@ -167,6 +167,8 @@ export default function MemberApp() {
   const [wbKillReplay, setWbKillReplay] = useState(null);       // 全服擊倒演出重播
 
   const shownWbKillRef  = useRef(null);
+  const pageRef         = useRef(page);
+  pageRef.current = page;   // 訂閱回呼要用最新頁面：世界王頁面時大廳自己播新版演出，不要消耗 seen
   const [dungeonKillAlert, setDungeonKillAlert] = useState(null);
   const lastBroadcastIdRef = useRef(null);
 
@@ -394,8 +396,10 @@ export default function MemberApp() {
   }, []);
 
   // 世界王登場 + 擊殺公告
+  // ⚠️ 不掛 liveExtras 節流（2026-08-06）：訂閱的是極小的 worldBossStatus/current
+  //    （一場活動只寫個位數次），而且「登入自動播擊倒演出」是核心體驗——
+  //    被成本節流擋掉，玩家就永遠看不到自己打下的那場演出了。
   useEffect(() => {
-    if (!liveExtras) return;
     return subscribeWorldBossStatus(ev => {   // 小狀態文件：不再因為別人打王而被推 HP 更新
       setActiveWorldBoss(ev && ev.status === "active" ? ev : null);
       if (!ev) return;
@@ -408,6 +412,10 @@ export default function MemberApp() {
       // 擊殺公告（每個 eventId 只播一次）
       if (ev.status === "defeated" && ev.id !== shownWbKillRef.current) {
         shownWbKillRef.current = ev.id;
+        // ⚠️ 世界王頁面時**不要**在這裡消耗 seen／播全服重播：
+        //    大廳自己會播新版 RaidKillCutscene（含領取面板），
+        //    這裡的 overlay z-index 在大廳底下，播了玩家也看不到，只會吃掉 seen。
+        if (pageRef.current === "worldboss") return;
         setWbKillAlert(ev);
         // ⚠️ 作者 2026-07-31：其他玩家原本只看得到這一行文字。
         //    王被打倒時，**那段終結演出要在全服重播一次**。
@@ -424,7 +432,7 @@ export default function MemberApp() {
         return () => clearTimeout(t);
       }
     });
-  }, [liveExtras]);
+  }, []); // eslint-disable-line
 
   useEffect(() => {
     if (!profile?.id) return;

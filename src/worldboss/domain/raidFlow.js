@@ -27,13 +27,24 @@ import { supportLabel, teamSupport } from "./raidSupport";
 
 export const RAID_TOTAL_ROUNDS = 5;
 
-// 世界王的「一般傷害」（ATK 公式）佔一半，另一半來自弱點固定傷害。
-// 這個配重決定了「射得準」與「練得久」各佔多少——世界王要的是前者多一點。
-export const RAID_NORMAL_DAMAGE_SCALE = 0.5;
+// ⚠️ 2026-08-06 修 bug：一般傷害**不再砍半**。
+//    原本 `RAID_NORMAL_DAMAGE_SCALE = 0.5` 把所有非弱點傷害對半砍，
+//    結果玩家打到 9~X 環（不是弱點圈）傷害還是很低——
+//    使用者回報：「打到中間的 9~X 分傷害依然很低」。
+//    現在非弱點 1~10 分**照原本傷害公式**（calcWorldBossArrowDmg）；
+//    弱點圈一樣強制滿分＋固定加成。配重改由爆擊與破防點數來分。
 export const RAID_ARROWS_PER_ROUND = 6;
 
 // 打中弱點時，一般傷害用這個分數去算（＝滿分）
 export const MAX_ARROW_SCORE = 10;
+
+// 💥 紙面高分（2026-08-06 新增，使用者指定規則）：
+//   命中 10 分 → 必爆擊（×1.5）
+//   命中 X   → 爆擊（×2.0）＋破防點數
+//   值沿用既有 codebase 慣例（getCouncilPartMult：10→1.5、X→2.0）
+export const RAID_TEN_CRIT_MULT = 1.5;
+export const RAID_X_CRIT_MULT = 2.0;
+export const RAID_X_BREAK_POINTS = 2;
 
 // 貓貓陪練：每回合出手一次，有機率發動特技
 export const CAT_SKILL_CHANCE = 0.22;
@@ -230,16 +241,28 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
     // ⚠️ 打中弱點圈 → 一般傷害**一律以最高分計算**（作者 2026-07-31）。
     //    圈可能長在 6 環甚至更外圈的位置；如果還照落點的環數算，
     //    玩家就沒有動力去拚邊緣的圈了。打中就是打中，給滿。
+    const label = arrow?.label ?? (Number(arrow?.score) > 0 ? String(arrow.score) : "M");
     const effectiveScore = hit.hit
       ? MAX_ARROW_SCORE
-      : (arrow?.label === "X" ? MAX_ARROW_SCORE : Number(arrow?.score) || 0);
+      : (label === "X" ? MAX_ARROW_SCORE : Number(arrow?.score) || 0);
+    // 💥 紙面爆擊（2026-08-06 新增，使用者指定規則）：
+    //   **非弱點**命中紙面 10 分 → 必爆擊 ×1.5
+    //   **非弱點**命中 X     → 爆擊 ×2.0 ＋破防點數
+    //   弱點圈那箭已經有「強制滿分＋固定加成」，不再疊爆擊（避免雙重計算）。
+    const isPaperCrit = !hit.hit && !hit.missed
+      && (label === "X" || Number(arrow?.score) >= 10);
+    const critMult = isPaperCrit
+      ? (label === "X" ? RAID_X_CRIT_MULT : RAID_TEN_CRIT_MULT)
+      : 1;
+    const xBreak = (!hit.hit && !hit.missed && label === "X") ? RAID_X_BREAK_POINTS : 0;
     const shooter = shooterEarly;
     // 🔨 破防：王身上的異常先削一層防禦（全隊都吃得到）
     const bossDef = Math.max(0, s.boss.def * (1 - bossStatMods.defDownPct / 100));
+    // ⚠️ 一般傷害照原本公式（calcWorldBossArrowDmg），不再砍半（2026-08-06 修 bug）
     const normal = calcWorldBossArrowDmg(
       effectiveScore,
       Math.round(shooter.stats.atk * support.atkMult), bossDef, s.participantBonus, s.dmgBonusPct,
-    ) * hit.normalMult * RAID_NORMAL_DAMAGE_SCALE;
+    ) * hit.normalMult;
 
     // 這張靶滿了嗎（只有三連靶會有上限）
     const faceIdx = arrow?.faceIndex || 0;
@@ -249,13 +272,13 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
     const overCap = faceCap != null && arrowsOnFace[faceKey] > faceCap;
 
     const flat = overCap ? 0 : hit.flatDamage;
-    const breakGain = overCap ? 0 : hit.breakPoints;
+    const breakGain = overCap ? 0 : hit.breakPoints + xBreak;
 
     const burst = burstMultiplier(s.gauge, round);
     // 射程倍率乘在整箭上：距離是這一場的設定，對新手老手一視同仁，不影響貢獻比
     // 新手扶助是**射手自己的**——組隊時各算各的，不會因為隊友是老手就被拉低
     const damage = overCap ? 0 : Math.max(0, Math.round(
-      (normal + flat) * burst * (shooter.rangeMult || s.rangeMult || 1) * (shooter.rookieMult || 1),
+      (normal * critMult + flat) * burst * (shooter.rangeMult || s.rangeMult || 1) * (shooter.rookieMult || 1),
     ));
 
     s.bossHp = Math.max(0, s.bossHp - damage);
@@ -295,13 +318,14 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
 
     log.push({
       type: "arrow", round, index,
-      label: arrow?.label ?? String(arrow?.score ?? ""),
+      label: label,
       spot: hit.spot, hit: hit.hit && !overCap, missed: hit.missed, bullseye: hit.bullseye && !overCap,
       maxScored: hit.hit && !overCap, overCap, faceIndex: faceIdx,
       memberId: shooter.memberId, shooterName: shooter.name,
       grazed: !hit.hit && !hit.missed,
       nx: arrow?.nx, ny: arrow?.ny,
       bonuses: hit.bonuses, burst: burst > 1,
+      crit: isPaperCrit && !overCap, xBreak: xBreak,
       damage, flatDamage: flat, combo,
       bossHp: s.bossHp, bossHpRatio: raidHpRatio(s),
     });

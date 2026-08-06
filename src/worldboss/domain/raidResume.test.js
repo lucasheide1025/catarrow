@@ -20,9 +20,21 @@ const mkState = (over = {}) => ({
 });
 
 describe("續戰存檔的三個必擋情況", () => {
-  test("⚠️ 打完的場次不能復活——不然重整就能再結算一次", () => {
-    expect(buildResumeRecord(mkState({ finished: true }), { bossKey: "cat_baobao" })).toBeNull();
-    expect(isResumeUsable({ v: 1, state: { finished: true }, savedAt: NOW }, { now: NOW })).toBe(false);
+  test("⚠️ 已結算的完場不能復活——不然重整就能再結算一次", () => {
+    expect(buildResumeRecord(mkState({ finished: true }), { bossKey: "cat_baobao", settled: true })).toBeNull();
+    expect(isResumeUsable({ v: 1, finished: true, settled: true, state: {}, savedAt: NOW }, { now: NOW })).toBe(false);
+  });
+
+  test("⚠️ 打完但**還沒送出獎勵**的場次要留著——重整才能補送（2026-08-06 修 bug）", () => {
+    const rec = buildResumeRecord(mkState({ finished: true }), {
+      bossKey: "cat_baobao", settled: false, now: NOW,
+      settlement: { reward: { coins: 100 }, killInfo: null, killPayload: null },
+    });
+    expect(rec).toBeTruthy();
+    expect(rec.finished).toBe(true);
+    expect(rec.settled).toBe(false);
+    expect(rec.settlement.reward.coins).toBe(100);
+    expect(isResumeUsable(rec, { bossKey: "cat_baobao", now: NOW })).toBe(true);
   });
 
   test("⚠️ 換了王不能沿用", () => {
@@ -79,10 +91,10 @@ describe("存檔內容", () => {
     clearRaidProgress();
   });
 
-  test("打完之後存檔會被清掉", () => {
+  test("已結算的完場寫進去會被當成不存在", () => {
     saveRaidProgress(mkState(), { bossKey: "cat_baobao" });
     expect(loadRaidProgress({ bossKey: "cat_baobao" })).toBeTruthy();
-    saveRaidProgress(mkState({ finished: true }), { bossKey: "cat_baobao" });
+    saveRaidProgress(mkState({ finished: true }), { bossKey: "cat_baobao", settled: true });
     expect(loadRaidProgress({ bossKey: "cat_baobao" })).toBeNull();
   });
 

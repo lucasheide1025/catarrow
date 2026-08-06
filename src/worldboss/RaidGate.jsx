@@ -73,6 +73,9 @@ export default function RaidGate({ event, onBack, sharedData, onComplete }) {
   const [state, setState] = useState(null);
   const [runId, setRunId] = useState(0);
   const [resume, setResume] = useState(() => loadRaidProgress({ bossKey: event?.bossKey || null }));
+  // ⚠️ 重整後恢復「已結束未結算」的場次：把存下來的結算快照餵給 RaidScreen
+  //    重建 killInfo／reward（2026-08-06 修 bug）
+  const [resumeSettlement, setResumeSettlement] = useState(null);
   const [{ targetFmt, distanceM }, setLoadout] = useState(loadLoadout);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -189,12 +192,17 @@ export default function RaidGate({ event, onBack, sharedData, onComplete }) {
   }, [myId]);
 
   // ── 結束：一次送出 ────────────────────────────────────────
+  // ⚠️ 2026-08-06 修 bug：`clearRaidProgress()` 原本放在**送出之前**——
+  //    `attackWorldBoss` 是異步的，存檔在獎勵入帳前就被清掉，
+  //    玩家剛好在最後一局重整，就會跳過結算畫面、永遠拿不到獎勵。
+  //    改成**送出成功之後**才清：失敗時存檔還在，重整回來可以補送。
   const handleFinish = useCallback(async (final) => {
     if (submittedRef.current) return;      // 防重複：重整回來也不會再送一次
     submittedRef.current = true;
-    clearRaidProgress();
     setSubmitting(true);
 
+    // ⚠️ resume 回來時 roundsRef 是空的（重整後新陣列）——
+    //    raidRoundResults 對空陣列會 fallback 到 totals.damage，總傷害不丟
     const rounds = raidRoundResults(roundsRef.current, final, myId);
     const killed = (final?.bossHp ?? 1) <= 0;
 
@@ -219,8 +227,17 @@ export default function RaidGate({ event, onBack, sharedData, onComplete }) {
 
     setSubmitting(false);
     setSubmitResult(res);
-    if (!res?.ok) { setError(res?.reason || "傷害沒有送出，請截圖回報"); return; }
+    if (!res?.ok) {
+      // ⚠️ 每日守衛 rejection ＝**獎勵其實已經入帳**（第一次送出成功過）——
+      //    重整回來的重送才會被擋。此時要把 resume 清掉，
+      //    不然「待領獎勵」卡片會像殭屍一樣留 6 小時、每次重整都再試一次。
+      if (res?.reason === "今天已經攻擊過了") clearRaidProgress();
+      setError(res?.reason || "傷害沒有送出，請截圖回報");
+      return;
+    }
     if (res.defeated) distributeWorldBossRewards(event.id).catch(() => {});
+    // 送出成功（攻擊次數已扣、傷害已入帳）才清檔——失敗的話留著給重整補送
+    clearRaidProgress();
     // ⚠️ 這裡**不呼叫 onComplete**——那會讓大廳把戰鬥畫面收掉，玩家看不到結算。
   }, [event, myId, myName, profile, stats]);
 
@@ -368,6 +385,8 @@ export default function RaidGate({ event, onBack, sharedData, onComplete }) {
           onKill={payload => { killPayloadRef.current = payload; }}
           onFinish={final => handleFinish({ ...final, killPayload: killPayloadRef.current })}
           onExit={leaveBattle}
+          // ⚠️ 重整恢復「已結束未結算」：用存下來的快照重建結算畫面（2026-08-06）
+          resumeSettlement={resumeSettlement}
         />
         {submitting && (
           <div style={{
@@ -453,7 +472,20 @@ export default function RaidGate({ event, onBack, sharedData, onComplete }) {
         onDistance={d => setLoadout(l => ({ ...l, distanceM: d }))}
         depart={depart}
         resume={resume ? { label: resumeLabel(resume.record) } : null}
-        onResume={() => { setState(resume.state); setRunId(n => n + 1); setResume(null); setScreen("battle"); }}
+        onResume={() => {
+          setState(resume.state);
+          setRunId(n => n + 1);
+          setResume(null);
+          setScreen("battle");
+          // ⚠️ 2026-08-06 修 bug：resume 回來的若是「已結束未結算」的場次，
+          //    直接把結算快照餵給 RaidScreen，並自動補送獎勵
+          //    （roundsRef 重整後是空的，raidRoundResults 會 fallback 總傷害）
+          if (resume.record?.finished) {
+            setResumeSettlement(resume.record?.settlement || null);
+            submittedRef.current = false;
+            handleFinish({ ...resume.state, killPayload: resume.record?.settlement?.killPayload || null });
+          }
+        }}
         onDiscardResume={() => { clearRaidProgress(); setResume(null); }}
         onDepart={startSolo}
         onCreateRoom={handleCreateRoom}

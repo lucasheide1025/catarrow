@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { activeSpawnTypes, describeSpawnCycle, requiredSpawnType, spawnProgressRatio } from "../../lib/worldBossSpawnCycle";
-import { subscribeLatestWorldBoss, subscribeWorldBossSpawnCycle, ensureWorldBossLifecycle, getLatestWorldBossKill, getPendingWorldBossRewards, claimWorldBossKillReward, previewWorldBossKillReward, getWorldBossAttackDateKeys } from "../../lib/worldBossDb";
+import { subscribeLatestWorldBoss, subscribeWorldBossSpawnCycle, subscribeWorldBossStatus, ensureWorldBossLifecycle, getLatestWorldBossKill, getPendingWorldBossRewards, claimWorldBossKillReward, previewWorldBossKillReward, getWorldBossAttackDateKeys } from "../../lib/worldBossDb";
 import { normalizeWorldBossState } from "../../lib/worldBossState";
 import { WORLD_BOSSES, getBossPhase, PHASE_LABELS, getParticipantBonus } from "../../lib/worldBossData";
 import WorldBossSVG from "./WorldBossSVG";
@@ -10,6 +10,7 @@ import WorldBossAttack from "./WorldBossAttack";
 import RaidGate from "../../worldboss/RaidGate";
 import MatchGate from "../../worldboss/MatchGate";
 import WorldBossIntro from "./WorldBossIntro";
+import RaidKillCutscene from "../../worldboss/ui/RaidKillCutscene";
 import { sfxTap } from "../../lib/sound";
 
 function HPBar({ current, max }) {
@@ -66,12 +67,32 @@ function CountdownTimer({ endAt }) {
   return <span className="font-mono text-amber-300 font-bold">{left || "–"}</span>;
 }
 
-function KillScreen({ event, myReward, rewardPreview, onClose, onClaim, canClaim }) {
+function KillScreen({ event, myReward, rewardPreview, onClose, onClaim, canClaim, replay }) {
   const boss  = event.bossData || {};
   const killer = event.lastHitBy;
+  const [replayDone, setReplayDone] = useState(!replay);   // 有新版擊倒演出先播，播完才進領取面板
+  // ⚠️ killReplay 寫進 status 文件比 event 文件晚一步——KillScreen 掛載時可能還沒到，
+  //    到了就接上播放（否則會跳過新演出直接看舊面板）。
+  useEffect(() => {
+    if (replay && replayDone) setReplayDone(false);
+  }, [replay]); // eslint-disable-line
   const parts  = Object.entries(event.participants || {})
     .map(([id, p]) => ({ id, name: p.name, dmg: p.totalDmg || 0, isGuest: p.isGuest }))
     .sort((a, b) => b.dmg - a.dmg);
+  if (replay && !replayDone) {
+    // ⚠️ 大廳播過新版演出也算「看過」：同步消耗 wb_kill_seen_at，
+    //    不然隔天登入首頁還會被 MemberApp 全服重播再跳一次（2026-08-06）。
+    try {
+      if (replay?.at && Number(localStorage.getItem("wb_kill_seen_at") || 0) < replay.at) {
+        localStorage.setItem("wb_kill_seen_at", String(replay.at));
+      }
+    } catch { /* storage 失敗不影響播放 */ }
+    return (
+      <div style={{ position:"fixed", inset:0, zIndex:999, background:"#05040a", overflow:"hidden" }}>
+        <RaidKillCutscene payload={replay} replay onDone={() => setReplayDone(true)} />
+      </div>
+    );
+  }
   return (
     <div onClick={onClose} style={{
       position:"fixed", inset:0, zIndex:999, background:"rgba(0,0,0,0.97)",
@@ -80,7 +101,7 @@ function KillScreen({ event, myReward, rewardPreview, onClose, onClaim, canClaim
     }}>
       <div style={{ position:"absolute", inset:0, background:"#fbbf24", opacity:0, animation:"wb-screen-flash 0.8s ease forwards", pointerEvents:"none" }}/>
       <div style={{ fontSize:"2.5rem", fontWeight:900, color:"#fbbf24", textShadow:"0 0 40px #f59e0b, 0 0 80px #f59e0b55", letterSpacing:"0.1em", marginBottom:8, animation:"wb-death-text 0.7s ease 0.15s both" }}>
-        ☠️ BOSS 擊倒！
+        {replay ? "🎉 討伐成功！" : "☠️ BOSS 擊倒！"}
       </div>
       <div style={{ fontSize:"0.95rem", color:"#94a3b8", marginBottom:24, animation:"wb-death-killer 0.5s ease 0.7s both" }}>
         {boss.name}「{boss.title}」 已被全員討伐
@@ -186,6 +207,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
   const [inMatch,       setInMatch]       = useState(false);
   const [showKillScreen, setShowKillScreen] = useState(false);
   const [killEvent,     setKillEvent]     = useState(null); // 儲存被擊倒的那隻 boss
+  const [killReplay,    setKillReplay]    = useState(null); // 新版擊倒演出 payload（status 小文件帶）
   const [replayIntro,   setReplayIntro]   = useState(false);
 
   const myId   = activeProfile?.id;
@@ -204,6 +226,12 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
   //    掛載時叫一次就夠；週期性的部分本來就有排程 worldBossLifecycleSchedule 在跑。
   useEffect(() => subscribeWorldBossSpawnCycle(setSpawnCycle), []);
   useEffect(() => { ensureWorldBossLifecycle().catch(() => {}); }, []);
+
+  // 新版擊倒演出：status 小文件才有 killReplay（event 文件沒有），
+  // 訂閱它才能在大廳擊倒後播放新版 RaidKillCutscene（2026-08-06）。
+  useEffect(() => subscribeWorldBossStatus(ev => {
+    setKillReplay(ev?.status === "defeated" && ev.killReplay ? ev.killReplay : null);
+  }), []);
 
   useEffect(() => {
     const unsub = subscribeLatestWorldBoss(ev => {
@@ -260,9 +288,15 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
     return () => { cancelled = true; };
   }, [myId, isGuestMode, event?.id, event?.status]);
 
+  // ⚠️ pendingEvent 可能來自 getPendingWorldBossRewards（WB 文件，只有 id）或
+  //    getLatestWorldBossKill（WBH 歷史文件，id 是「歷史紀錄 id」、eventId 才是活動 id）。
+  //    所以要先取 eventId、沒有才退回 id，兩條路都對——
+  //    順序反了的話 fallback 路徑會拿歷史紀錄 id 去領獎 → 「活動不存在」（2026-08-06）。
+  const pendingEventId = pendingEvent?.eventId || pendingEvent?.id;
+
   async function claimPendingReward(eventId) {
     if (!myId || !eventId || isGuestMode) return;
-    const pending = pendingEvent?.eventId === eventId ? pendingEvent : null;
+    const pending = pendingEventId === eventId ? pendingEvent : null;
     if (pending && !showKillScreen) {
       setKillEvent({ ...pending, bossData: pending.bossData || WORLD_BOSSES[pending.bossKey] || {} });
       setShowKillScreen(true);
@@ -281,11 +315,11 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
     if (result.ok) {
       setMyReward(result);
       setRewardPreview(null);
-      setPendingEvent(current => current?.eventId === eventId ? null : current);
+      setPendingEvent(current => (current?.id === eventId || current?.eventId === eventId) ? null : current);
     } else if (result.reason === "already_claimed") {
       // 別台裝置已領過：收掉入口,避免一直顯示可領
       setRewardPreview({ eventId, error: "此獎勵已在其他裝置領取過" });
-      setPendingEvent(current => current?.eventId === eventId ? null : current);
+      setPendingEvent(current => (current?.id === eventId || current?.eventId === eventId) ? null : current);
     } else {
       setRewardPreview({ eventId, error: result.reason || "領取失敗，請稍後再試" });
     }
@@ -416,7 +450,10 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
       }}>
 
       {showKillScreen && killEvent && (
-        <KillScreen event={killEvent} myReward={myReward} rewardPreview={rewardPreview} canClaim={!isGuestMode && pendingEvent?.eventId === killEvent.id} onClaim={() => claimPendingReward(killEvent.id)} onClose={() => setShowKillScreen(false)}/>
+        <KillScreen event={killEvent} myReward={myReward} rewardPreview={rewardPreview}
+          replay={killReplay?.eventId === killEvent.id ? killReplay : null}
+          canClaim={!isGuestMode && pendingEventId === killEvent.id}
+          onClaim={() => claimPendingReward(killEvent.id)} onClose={() => setShowKillScreen(false)}/>
       )}
       {replayIntro && event && (
         <WorldBossIntro event={event} onClose={() => setReplayIntro(false)}/>
@@ -682,7 +719,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
         style={{ paddingBottom: "max(16px, env(safe-area-inset-bottom))", background: "linear-gradient(0deg, #070b16 95%, rgba(7,11,22,0.8) 100%)" }}>
         {isDefeated ? (
           <div className="space-y-2">
-            {pendingEvent?.eventId === event.id && !myReward && (
+            {pendingEventId === event.id && !myReward && (
               <button onClick={() => claimPendingReward(event.id)}
                 className="w-full py-4 rounded-2xl font-black text-base text-slate-900 shadow-xl transition-all active:scale-95"
                 style={{ background: "linear-gradient(135deg,#fbbf24,#f59e0b)" }}>
@@ -702,7 +739,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
             style={{ background: attackedToday ? "#334155" : `linear-gradient(135deg, ${boss.accent || "#f59e0b"}, #ef4444)` }}>
             <span>⚔️</span> {attackedToday ? "✓ 今日已出戰" : "進入討伐戰鬥"}
           </button>
-          {pendingEvent && !myReward && event?.id !== pendingEvent.eventId && <button onClick={() => claimPendingReward(pendingEvent.eventId)} style={{flex:"0 0 42%",padding:"10px 6px",border:0,borderRadius:12,background:"#fbbf24",color:"#422006",fontWeight:900,fontSize:11,whiteSpace:"nowrap"}}>🎁 上次獎勵</button>}
+          {pendingEvent && !myReward && event?.id !== pendingEventId && <button onClick={() => claimPendingReward(pendingEventId)} style={{flex:"0 0 42%",padding:"10px 6px",border:0,borderRadius:12,background:"#fbbf24",color:"#422006",fontWeight:900,fontSize:11,whiteSpace:"nowrap"}}>🎁 上次獎勵</button>}
           </div>
         )}
 

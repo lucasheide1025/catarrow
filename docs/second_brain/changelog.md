@@ -5,6 +5,95 @@
 
 ---
 
+## 2026-08-06（🐛 世界王擊倒後三 bug：舊版動畫、沒有領取按鈕、登入不會自動播）
+
+作者：「世界王擊倒了 但撥放的是舊版的擊倒動畫以及沒有世界王擊倒領取獎勵的按鈕
+還有目前世界王被擊倒依然第一次撥放需要自己去按世界王介面 而不是登入就會顯示」。
+
+**① 擊倒播舊版動畫**（`WorldBossLobby.jsx`）
+- 根因：大廳擊倒後彈出的是舊版 `KillScreen`（`☠️ BOSS 擊倒！`），新版 `RaidKillCutscene`
+  只在戰鬥內播；全服重播 overlay（z-1200）被大廳（z-9999）蓋住，玩家根本看不到。
+- 修法：大廳訂閱 status 小文件拿 `killReplay`，`KillScreen` 有 payload 就先播新版
+  `RaidKillCutscene`（replay 模式）再進領取面板；無 payload（舊系統擊倒）才退回舊動畫。
+  `killReplay` 比 `killEvent` 晚一步到 → `useEffect` 在 payload 到達時接上播放。
+
+**② 沒有領取獎勵按鈕**（`WorldBossLobby.jsx`）
+- 根因：`canClaim` 檢查 `pendingEvent?.eventId`，但 `getPendingWorldBossRewards` 回傳的
+  WB 文件只有 `id`、沒有 `eventId` → 永遠不成立 → 按鈕不出現。
+- 修法：統一 `pendingEventId = pendingEvent?.eventId || pendingEvent?.id`（**先 eventId 後 id**：
+  `getLatestWorldBossKill` fallback 回傳的是 WBH 歷史文件，`id` 是歷史紀錄 id、`eventId`
+  才是活動 id；順序反了 fallback 路徑會拿歷史 id 去領 → 「活動不存在」）。
+  所有比對（KillScreen canClaim、claimPendingReward、底部兩個按鈕）都改用 pendingEventId。
+
+**③ 登入不會自動播擊倒演出**（`MemberApp.jsx` / `raidKill.js`）
+- 根因 a：世界王訂閱被 `liveExtras` 成本節流擋住（restricted 以上整個訂閱停掉）；
+  根因 b：`KILL_REPLAY_FRESH_MS` 只有 10 分鐘，隔幾小時登入就「不新鮮」不播；
+  根因 c：擊倒當下若玩家在世界王頁面，全服 overlay 被大廳蓋住看不到，卻把
+  `wb_kill_seen_at` 吃掉 → 登入後永遠不再播。
+- 修法：訂閱移出 liveExtras 節流（status 文件極小、本就是設計成常駐訂閱）；
+  freshness 放寬到 **24 小時**；`pageRef` 判斷——世界王頁面時不消耗 seen（大廳自己播），
+  大廳播完也同步寫 seen，避免跨 session 重複。
+
+**驗證**：世界王 488 測全過、全專案 1833 測全過、ESLint 0 error、build 成功。
+（build 第一次誤報 `react-hooks/exhaustive-deps` 找不到——是 `.eslintcache` 殘留，清掉就好。）
+
+**踩坑提醒**
+- ⚠️ **同一份資料的兩種來源欄位名不同（id vs eventId）是隱形雷**：比對前先確認
+  物件來自哪個 collection——WB 事件文件用 doc id、WBH 歷史文件用 `eventId` 欄位。
+- ⚠️ **z-index 疊層：MemberApp 的全服 overlay（1200）在大廳（9999）底下**——
+  在世界王頁面播全服重播＝播給自己看但看不到，還白白消耗 seen。
+  哪層播、哪層消耗 seen 要對齊，否則「登入不播」比「播兩次」更難查。
+- ⚠️ **「看過」標記要跟真正播出同步**：overlay 播了、大廳播了、都得寫 seen，
+  漏一處不是重播就是永不播。
+
+---
+
+## 2026-08-06（🐛 世界王三 bug：最後一局重整拿不到獎勵、半靶環值 1~X、傷害被砍半）
+
+作者：「世界王 BUG：①最後一局重整會被跳過收工結算、拿不到上次獎勵；②半靶 SVG 顯示 1~X
+（紙上其實是 6~X）；③打到 9~X 傷害依然很低——落點要強制 10＋加成、非弱點照原本公式、
+10 分必爆擊、X 是爆擊＋破防點數」。
+
+**① 最後一局重整跳過結算**（`raidResume.js` / `RaidScreen.jsx` / `RaidGate.jsx`）
+- 根因：最後一局 `playResolved` 就 `clearRaidProgress()`，而 `handleFinish` 也在送出前清——
+  `attackWorldBoss` 是非同步的，存檔在獎勵入帳前就消失，重整回來 resume 是 null。
+- 修法：**完場但不結算**的狀態現在可以存（`settled:false`）＋帶結算快照
+  （killInfo/reward/killPayload，重整後不會重 roll 獎勵）；`handleFinish` 改成
+  **送出成功後才清檔**；resume 恢復完場時自動補送（`raidRoundResults` 對空 roundsRef
+  fallback 到 totals.damage，總傷害不丟）。
+- ⚠️ 邊際案例：第一次送出其實成功、只是重整時來不及清檔 → 重送會撞每日守衛
+  （「今天已經攻擊過了」）。該 rejection **＝獎勵已入帳**，此時也要清檔，
+  不然「待領獎勵」卡片會像殭屍留 6 小時。
+
+**② 半靶顯示 1~X**（`RaidTarget.jsx`）
+- 根因：放大鏡用 `standardScoreFromRatio`（1~10 跨靶紙標準分），半靶紙上實際印 6~X。
+- 修法：抽 `paperRingOf(format, ratio)` 共用 helper，放大鏡與 `commit` 顯示同一套
+  靶紙實際環值（半靶 6~10、X 滿靶）。
+
+**③ 傷害公式**（`raidFlow.js` / `raidTimeline.js` / `RaidScreen.jsx`）
+- 根因：`RAID_NORMAL_DAMAGE_SCALE = 0.5` 把所有一般傷害砍半——非弱點 9~X 命中
+  照原本公式算出來再 ×0.5，自然「打中間傷害還是很低」。
+- 修法：**移除砍半**，非弱點 1~10 分照原本公式（`calcWorldBossArrowDmg`）；
+  新增紙面爆擊：非弱點 10 分 → ×1.5 必爆、X → ×2.0 ＋破防點數（`RAID_X_BREAK_POINTS=2`）；
+  arrow log 帶 `crit`/`xBreak`，volley 聚合帶 `crits`，演出用弱點等級特效顯示。
+  弱點圈那箭維持「強制滿分＋固定加成」，不疊爆擊。
+
+**驗證**：世界王 488 測全過、全專案 1833 測全過、ESLint 0 error、build 成功。
+新增 4 測（resume 完場未結算可恢復、10 分爆擊、X 爆擊＋破防、非弱點不再砍半）。
+
+**踩坑提醒**
+- ⚠️ **任何「打完就清存檔」的流程都要先確認送出是否為同步**。非同步送出
+  （寫 Firestore／發 API）期間清檔，玩家一重整就是「白打一場」——
+  存檔要留到送出**成功**為止，失敗更要留著給重整補送。
+- ⚠️ **resume 恢復完場時 roundsRef 是空的**（重整後新陣列）——結算送出要能
+  從 final state fallback（totals.damage），不然補送會送出 0 傷害。
+- ⚠️ **跨靶紙的標準分（1~10）只能用在比較與紀錄，不能顯示在靶面**——
+  玩家看的是「紙上印的那圈」，半靶的 6~X 印在紙上，顯示 1 環會讓記分對不上。
+- ⚠️ **驗證舊系統 WorldBossAttack 時注意**：本次只改了新版 raid（`src/worldboss/`），
+  舊版 `src/components/worldboss/` 一行未動（訪客/兒童走舊版，若也要新公式需另案）。
+
+---
+
 ## 2026-08-06（線上與本機不一致：265 個未提交變更沒進部署）
 
 作者：「佈署了 但為什麼跟我本機看到的不一樣？」

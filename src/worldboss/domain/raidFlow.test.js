@@ -160,6 +160,42 @@ describe("一個回合的結算", () => {
     expect(near.state.totals.damage).toBeGreaterThan(far.state.totals.damage);
   });
 
+  test("💥 非弱點命中 10 分必爆擊——傷害比 9 分高一截（2026-08-06 修 bug）", () => {
+    const none = { ...newState(), spots: [] };
+    const ten = resolveRaidRound({ state: none, arrows: [{ nx: 0.02, ny: 0, score: 10, label: "10" }] });
+    const nine = resolveRaidRound({ state: none, arrows: [{ nx: 0.14, ny: 0, score: 9, label: "9" }] });
+    const arrowTen = ten.log.find(e => e.type === "arrow");
+    const arrowNine = nine.log.find(e => e.type === "arrow");
+    expect(arrowTen.crit).toBe(true);
+    expect(arrowNine.crit).toBe(false);
+    // 10 分有 ×1.5 爆擊，10 分基傷也比 9 分高
+    expect(ten.state.totals.damage).toBeGreaterThan(nine.state.totals.damage * 1.4);
+  });
+
+  test("💥 非弱點命中 X＝爆擊＋破防點數（2026-08-06 新增）", () => {
+    const none = { ...newState(), spots: [] };
+    const before = { ...emptyGaugeState(), gauge: 0 };
+    const x = resolveRaidRound({ state: { ...none, gauge: before }, arrows: [{ nx: 0, ny: 0, score: 10, label: "X" }] });
+    const arrow = x.log.find(e => e.type === "arrow");
+    expect(arrow.crit).toBe(true);
+    expect(arrow.xBreak).toBeGreaterThan(0);
+    // X 爆擊 ×2.0，比 10 分（×1.5）更痛
+    const ten = resolveRaidRound({ state: { ...none, gauge: before }, arrows: [{ nx: 0.02, ny: 0, score: 10, label: "10" }] });
+    expect(x.state.totals.damage).toBeGreaterThan(ten.state.totals.damage);
+    // 破防槽真的累積了（不只標記在 log 上）
+    expect(x.state.gauge.gauge).toBeGreaterThan(0);
+  });
+
+  test("非弱點 1~10 分照原本傷害公式——不再被砍半（2026-08-06 修 bug）", () => {
+    const none = { ...newState(), spots: [] };
+    // 8 分、非弱點：用原本公式直接算，不該只有原本的一半
+    const r = resolveRaidRound({ state: none, arrows: [{ nx: 0.2, ny: 0, score: 8, label: "8" }] });
+    const arrow = r.log.find(e => e.type === "arrow");
+    expect(arrow.crit).toBe(false);
+    // 8 分 → scoreDamageMultiplier 0.8，ATK 150 的基傷要大於 50（被砍半的話會 ~25）
+    expect(arrow.damage).toBeGreaterThan(50);
+  });
+
   test("打斷成功 → 下回合硬直，且硬直回合傷害更高", () => {
     const base = withSpot(newState());
     base.round = 2;

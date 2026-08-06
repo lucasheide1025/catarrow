@@ -163,7 +163,10 @@ export function buildKillPayload({
 }
 
 /** 這個重播還新不新鮮——太舊的不要跳出來嚇人（例如三天前打倒的） */
-export const KILL_REPLAY_FRESH_MS = 10 * 60 * 1000;
+// ⚠️ 2026-08-06：10 分鐘太短——玩家隔幾小時再登入就看不到擊倒演出了。
+//    放寬到 24 小時：當天登入都能看到第一次重播。看過的重播由
+//    MemberApp（localStorage）／大廳（sessionStorage）各自的 seen 標記擋掉。
+export const KILL_REPLAY_FRESH_MS = 24 * 60 * 60 * 1000;
 
 export function isKillReplayFresh(payload, now = Date.now()) {
   if (!payload || payload.v !== 1) return false;

@@ -15,6 +15,18 @@ import { getTargetFaceFormat, getTargetRings } from "../../lib/targetFace";
 import { faceCountOf, maxArrowsPerFace } from "../domain/raidFaces";
 import { standardScoreFromRatio } from "../domain/weakPoints";
 
+// ⚠️ 2026-08-06 修 bug：放大鏡顯示的環數**必須是靶紙實際印的那個值**。
+//    半靶（half_17）紙上只有 6~10＋X，但之前放大鏡用 `standardScoreFromRatio`
+//    （1~10 的跨靶紙標準分）顯示「幾環」——玩家看到「3 環」以為射到 3，
+//    其實紙上那圈是 8，跟記分完全對不上。抽成共用 helper，commit 與放大鏡一致。
+function paperRingOf(format, ratio) {
+  if (ratio > 1) return "M";
+  const raw = Math.max(format.minScore,
+    format.maxScore - Math.ceil(ratio * (format.maxScore - format.minScore + 1)) + 1);
+  if (format.innerTenRatio != null && ratio <= format.innerTenRatio) return "X";
+  return String(raw);
+}
+
 // 靶外可點的比例：1.0 = 靶紙邊緣，1.3 = 再往外 30%
 const OUTSIDE_PAD = 1.3;
 const FACE_LABELS = ["左", "中", "右"];
@@ -67,22 +79,20 @@ export default function RaidTarget({
     const nx = (px - centreX(faceIndex)) / R;
     const ny = (py - CY) / R;
     const ratio = Math.sqrt(nx * nx + ny * ny);
-    const rawScore = ratio > 1 ? 0
-      : Math.max(format.minScore,
-        format.maxScore - Math.ceil(ratio * (format.maxScore - format.minScore + 1)) + 1);
-    const label = ratio > 1 ? "M"
-      : (format.innerTenRatio != null && ratio <= format.innerTenRatio ? "X" : String(rawScore));
+    const label = paperRingOf(format, ratio);
     onArrow?.({
       nx, ny, faceIndex, ratio, label,
-      score: rawScore, standardScore: standardScoreFromRatio(ratio),
+      score: label === "M" ? 0 : label === "X" ? format.maxScore : Number(label),
+      standardScore: standardScoreFromRatio(ratio),
     });
   }
 
   // 放大鏡：把同一組圖形用縮小的 viewBox 再畫一次＝放大
   const ZOOM_SPAN = 46;        // 放大鏡看得到的 SVG 範圍（越小倍率越高）
   const dragFace = drag ? faceOf(drag.px, drag.py) : 0;
-  const dragScore = drag
-    ? standardScoreFromRatio(Math.hypot((drag.px - centreX(dragFace)) / R, (drag.py - CY) / R))
+  // ⚠️ 顯示靶紙實際環值（半靶 6~X），不是跨靶紙標準分（2026-08-06 修 bug）
+  const dragLabel = drag
+    ? paperRingOf(format, Math.hypot((drag.px - centreX(dragFace)) / R, (drag.py - CY) / R))
     : null;
 
   // 靶面本體（放大鏡要用同一組圖形再畫一次，所以抽成函式）
@@ -221,7 +231,7 @@ export default function RaidTarget({
           marginTop: 6, fontSize: 20, fontWeight: 900, color: "#fde68a",
           textShadow: "0 2px 10px rgba(0,0,0,.9)",
         }}>
-          {dragScore || "M"} 環
+          {dragLabel === "X" ? "X 滿分" : `${dragLabel || "M"} 環`}
         </div>
         <div style={{ fontSize: 10, color: "rgba(255,255,255,.6)" }}>拖曳微調，放開就記錄</div>
       </div>

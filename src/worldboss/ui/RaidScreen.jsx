@@ -17,7 +17,7 @@ import { RaidBossBar, RaidGauge, RaidIntent, RaidSpotLegend, RaidTeamBar } from 
 import { teamGaugeMax, teamSizeOf } from "../domain/raidTeam";
 import { botRoundArrows } from "../domain/raidBot";
 import { allSubmitted, pendingMembers } from "../domain/raidTeam";
-import { clearRaidProgress, saveRaidProgress } from "../domain/raidResume";
+import { saveRaidProgress } from "../domain/raidResume";
 import { RAID_MEDALS } from "../raidAssets";
 import { rewardRows, rollSortieRewards } from "../domain/raidRewards";
 import { buildKillPayload, findKillingBlow, killAnnouncement, lastHitReward } from "../domain/raidKill";
@@ -66,6 +66,9 @@ export default function RaidScreen({
   targetFmt = "half_17",
   onFinish,
   onExit,
+  // ⚠️ 重整後恢復「已結束但還沒送出獎勵」的場次：用存下來的結算快照
+  //    重建 killInfo／reward，不會重 roll 獎勵（2026-08-06 修 bug）
+  resumeSettlement = null,
 }) {
   const [pending, setPending] = useState([]);       // 本回合已輸入的箭
   const [playing, setPlaying] = useState(false);
@@ -82,8 +85,8 @@ export default function RaidScreen({
   // 組隊：全員送出才推進。存每個人交上來的箭，收齊了才結算。
   const [submissions, setSubmissions] = useState({});
   // 結算獎勵：一場出擊結束就結算，**沒擊倒也給**（作者 2026-07-31）
-  const [reward, setReward] = useState(null);
-  const [killInfo, setKillInfo] = useState(null);   // 尾刀：誰打倒的、怎麼打倒的
+  const [reward, setReward] = useState(resumeSettlement?.reward || null);
+  const [killInfo, setKillInfo] = useState(resumeSettlement?.killInfo || null);   // 尾刀：誰打倒的、怎麼打倒的
   const [cutscene, setCutscene] = useState(null);   // 擊倒演出
   // ⚠️ 短螢幕（iPhone SE 可用高度只有 ~553px）本來會把按鈕擠到摺線下方。
   //    王的尺寸跟著畫面高度縮，整頁才不用捲動。
@@ -175,6 +178,10 @@ export default function RaidScreen({
               pushFloat("脫靶", "graze");          // 脫靶＝真的沒傷害
             } else if (event.overCap) {
               pushFloat("無效", "graze");          // 這張靶已經吃滿了
+            } else if (event.crit) {
+              // 💥 紙面爆擊（2026-08-06）：10 分／X 命中的重擊，用弱點等級特效
+              pushFloat(`💥-${event.damage}`, "weak");
+              vibrate(24);
             } else {
               // ⚠️ 上靶但沒中弱點：**照樣要顯示扣了多少血**（作者 2026-07-31）。
               //    原本這裡只印「擦過」兩個字，把傷害數字吃掉了——玩家會以為這箭沒用。
@@ -201,6 +208,7 @@ export default function RaidScreen({
               setTimeout(() => {
                 if (a.missed) pushFloat("脫靶", "graze");
                 else if (a.overCap) pushFloat("無效", "graze");
+                else if (a.crit) pushFloat(`💥-${a.damage}`, "weak");
                 else pushFloat(`-${a.damage}`, a.hit ? "weak" : "normal");
               }, i * 130);
             });
@@ -340,35 +348,49 @@ export default function RaidScreen({
       setPending([]);
       setSubmissions({});
       setShown(null);
-      // 防重整：每回合存一次；打完就清掉（不然重整可以再結算一次）
+      // ⚠️ 防重整：每回合存一次。
+      //    2026-08-06 修 bug：**打完不要立刻清**——`attackWorldBoss` 是非同步的，
+      //    存檔在獎勵送出前就清掉，玩家剛好在最後一局重整就會跳過結算、拿不到獎勵。
+      //    改成存「已結束未結算」＋結算快照，送出成功後才由 RaidGate 清檔。
       if (next.finished) {
-        clearRaidProgress();
         // ⚠️ 王的血是全伺服器共享的——擊倒才有尾刀獎勵，而且要記下「誰、怎麼打倒的」
         const down = log.find(e => e.type === "bossDown");
+        let killPayload = null;
+        let killInfoData = null;
+        let rewardData = null;
         if (down) {
           // 全服重播用：演出要能從「存下來的資料」重現，別人的裝置沒有戰鬥 state
-          onKill?.(buildKillPayload({
+          killPayload = buildKillPayload({
             bossKey: next.boss?.key, bossName: next.boss?.name,
             killerId: down.killerId, killerName: down.killerName,
             byCat: down.byCat, catName: down.catName,
             style: down.style, members: next.members, eventId,
-          }));
-          setKillInfo({
+          });
+          onKill?.(killPayload);
+          killInfoData = {
             ...down,
             reward: lastHitReward(down.style),
             announcement: killAnnouncement({
               killerName: down.killerName, bossName: next.boss.name, style: down.style,
               teamNames: (next.members || []).map(m => m.name),
             }),
-          });
+          };
+          setKillInfo(killInfoData);
         }
-        setReward(rollSortieRewards({
+        rewardData = rollSortieRewards({
           boss: bossMeta || { family: null },
           totals: next.totals,
           bossMaxHp: next.boss.maxHp,
           defeated: next.bossHp <= 0,
           hasCat: ((next.members || []).find(m => m.memberId === meId) || next.members?.[0])?.cats?.length > 0,
-        }));
+        });
+        setReward(rewardData);
+        // 存「已結束未結算」：重整後 resume 回來直接接上結算畫面，獎勵不會消失
+        saveRaidProgress(next, {
+          bossKey: next.boss?.key || bossKey, eventId,
+          settled: false,
+          settlement: { killInfo: killInfoData, reward: rewardData, killPayload },
+        });
       }
       else saveRaidProgress(next, { bossKey: next.boss?.key || bossKey, eventId });
       onState?.(next, log);
