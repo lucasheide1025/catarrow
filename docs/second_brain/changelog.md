@@ -5,6 +5,28 @@
 
 ---
 
+## 2026-08-06（線上與本機不一致：265 個未提交變更沒進部署）
+
+作者：「佈署了 但為什麼跟我本機看到的不一樣？」
+
+**根因**：先前佈署只 commit 了地下城的 25 個檔案（`1b7c8b0`），但工作區還有 **265 個
+未提交的變更**（訪客評價工作流、世界王改版與音效重寫、首頁改版、guestReviews functions、
+firestore 測試、第二大腦等）——這些全部沒進 origin/main，線上自然跟本機不同。
+
+**處置**：`git add -A` 全量 commit（`7101492`，247 個檔案）＋ push，Vercel 自動部署到
+`catarrow-hzurfe0tu`（READY）。驗證新 bundle（`main.3d4a0a1e.js`）含 `GuestReviewPage` /
+`GuestReviewByToken` / `GuestReviewComplaintReply` / 「評價」UI 字串，且地下城新功能
+（陷阱房主決定、inlineToast、瞭望點）未回歸。
+
+**踩坑提醒**
+- ⚠️ **commit --only 會造成線上與本機不一致**：只提交部分檔案很危險——線上會缺你
+  本機已寫好但沒 commit 的功能，而且不會有任何錯誤提示，只能靠人眼對比。
+  要部署「本機現況」就 `git add -A` 全量提交。
+- ⚠️ 驗證線上 bundle 有沒有某段程式，**先還原 `\uXXXX` 逸出**（minify 把中文轉逸出，
+  直接 grep 中文會誤判「沒部署」）——本次線上其實有全部功能，第一輪搜尋誤判了。
+
+---
+
 ## 2026-08-06（🐛 輕量房可重複踩刷錢刷能力——踩過沒擋 cleared）
 
 作者：「小房間沒有防止重複踩 我這樣來回可以瘋狂刷錢跟能力」。
