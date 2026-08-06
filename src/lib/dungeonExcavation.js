@@ -12,6 +12,11 @@ import { catBusyElsewhere, catBusyReason } from "./catAssignment";
 // 地下城儲存槽上限（2026-07-23 作者：3 → 6）
 export const MAX_SAVED_DUNGEONS = 6;
 
+// 可挖出的族系。⚠️ 這份清單在 claimAutoDig / revealExcavation / useDungeonScroll
+// 三處各自宣告了一份區域 FAMILIES（同樣內容），這裡是模組層版本供新程式碼使用。
+// 不含 treasure：寶箱族只從隱藏地下城出（見 revealExcavation 的 isHidden 分支）。
+export const EXCAVATION_FAMILIES = ["ghost", "mountain", "insect", "workplace", "exam", "temple"];
+
 // ── 王房抽王統一入口（2026-07-19）──────────────────────────────
 // 舊 drawExpeditionBoss 是「找該族該階第一隻怪再套 boss 倍率」，完全沒過濾
 // isKing/encounter，王房的王其實是一隻被放大的雜怪（實測 ghost_3 林投姐、
@@ -42,7 +47,10 @@ function rollExcavationBoss(difficulty, family, excavation, { runId } = {}) {
       miniStreak: encounter.nextConsecutiveNonBoss,
     };
   } catch {
-    // 該族該階湊不齊「2 小王 + 1 大王」時引擎會 throw（例如寶箱族）→ 退回舊路徑
+    // 該族該階湊不齊「2 小王 + 1 大王」時引擎會 throw → 退回舊表。
+    // ⚠️ 註解原本寫「例如寶箱族」，但那已經過期：2026-08-06 實測 7 族 × 6 階共 42 組
+    //    全部都是 2 小王 + 1 大王（含 treasure），這條 catch 目前是保險絲、不是常態路徑。
+    //    若之後又看到舊表王（MONSTERS.find 取第一隻、非隨機），代表清冊被改壞了，先查這裡。
     return { boss: drawExpeditionBoss(difficulty, family), bossEncounter: null, miniStreak: null };
   }
 }
@@ -880,6 +888,79 @@ export async function useDungeonScroll(memberId) {
   } catch (e) {
     console.warn("useDungeonScroll:", e?.message);
     return { ok: false, reason: "系統忙碌" };
+  }
+}
+
+/**
+ * 教練後台：直接把一座指定的地下城塞進玩家的儲存槽（不消耗卷軸）。
+ *
+ * ⚠️ **為什麼要有這支**：後台「地下城給予」原本自己 updateDoc 寫
+ *    `dungeonScrollCount` / `dungeonProgress.{region}.maxFloor` 兩個欄位，
+ *    但前台**從來沒有讀過它們**（全專案零讀取點）—— 那是更早期地下城設計的殘留欄位。
+ *    後台按了說成功、玩家那邊什麼都沒有（作者 2026-08-06 回報「跟前台不一樣，無法正常給予」）。
+ *
+ *    真正的模型是 `members.{id}.dungeonExcavation.savedDungeons`。
+ *    這支刻意跟 useDungeonScroll() 共用同一套 rollExcavationBoss + savedDungeons 寫法，
+ *    後台與前台從此只有一條路徑，不會再各寫各的欄位而分岔。
+ *
+ * @param {string} memberId
+ * @param {{family?:string, difficulty?:number}} options 不給就隨機（比照卷軸開出來的）
+ */
+export async function grantDungeonToMember(memberId, { family, difficulty } = {}) {
+  if (!memberId) return { ok: false, reason: "參數錯誤" };
+  try {
+    const snap = await getDoc(doc(db, "members", memberId));
+    if (!snap.exists()) return { ok: false, reason: "找不到會員" };
+    const data = snap.data();
+    const excavation = data.dungeonExcavation || {};
+    if ((excavation.savedDungeons || []).length >= MAX_SAVED_DUNGEONS) {
+      return { ok: false, reason: `儲存槽已滿（上限 ${MAX_SAVED_DUNGEONS} 座），請玩家先用掉或移除` };
+    }
+
+    const pickedFamily = EXCAVATION_FAMILIES.includes(family)
+      ? family
+      : EXCAVATION_FAMILIES[Math.floor(Math.random() * EXCAVATION_FAMILIES.length)];
+    const pickedDifficulty = Math.min(6, Math.max(1, Math.floor(Number(difficulty) || 0)))
+      || (1 + Math.floor(Math.random() * 6));
+
+    const bossRunId = makeBossRunId(pickedFamily);
+    const rolled = rollExcavationBoss(pickedDifficulty, pickedFamily, excavation, { runId: bossRunId });
+    const newDungeon = {
+      id: `admin_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      family: pickedFamily,
+      difficulty: pickedDifficulty,
+      isHidden: false,
+      boss: rolled.boss,
+      bossEncounter: rolled.bossEncounter,
+      bossRunId,
+      grantedByAdmin: true,
+      lootMult: 2 + Math.floor(Math.random() * 4),
+      revealedAt: new Date().toISOString(),
+    };
+    const updatedSaved = [...(excavation.savedDungeons || []), newDungeon];
+
+    if (!data.dungeonExcavation) {
+      await setDoc(doc(db, "members", memberId), {
+        dungeonExcavation: {
+          progress: 0, dailyArrowsUsed: 0,
+          lastActiveDate: new Date().toISOString().slice(0, 10),
+          pendingReveal: null, revealedAt: null, completed: false,
+          savedDungeons: updatedSaved,
+          scrolls: excavation.scrolls || 0,
+          ...(rolled.miniStreak === null ? {} : { miniBossStreak: rolled.miniStreak }),
+        },
+      }, { merge: true });
+    } else {
+      await updateDoc(doc(db, "members", memberId), {
+        "dungeonExcavation.savedDungeons": updatedSaved,
+        ...(rolled.miniStreak === null ? {} : { "dungeonExcavation.miniBossStreak": rolled.miniStreak }),
+      });
+    }
+    _excavCache.delete(memberId);
+    return { ok: true, dungeon: newDungeon, savedDungeons: updatedSaved };
+  } catch (e) {
+    console.warn("grantDungeonToMember:", e?.message);
+    return { ok: false, reason: e?.message || "系統忙碌" };
   }
 }
 

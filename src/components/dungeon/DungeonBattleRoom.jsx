@@ -12,7 +12,7 @@ import {
   clearDungeonProcessing, claimDungeonReward, returnToMapAfterBattle, confirmDungeonResolution,
   trySetDungeonWorldFirstClear, claimDungeonPersonalFirstClear, addDungeonBroadcast, setDungeonMemberRole,
 } from "../../lib/dungeonDb";
-import { resolveHitPart, MONSTERS, TIER_LABEL } from "../../lib/monsterData";
+import { resolveHitPart, MONSTERS, TIER_LABEL, monsterTierNumber } from "../../lib/monsterData";
 import { VARIANT_LABEL } from "../../lib/monsterRegistry";
 import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_MAPS } from "../../lib/dungeonData";
 import { normalizeDungeonDifficultyTier } from "../../lib/dungeonFirstClear";
@@ -127,9 +127,72 @@ function getMonsterVariantStyle(variant) {
   return MONSTER_VARIANT_STYLE[variant] || MONSTER_VARIANT_STYLE.normal;
 }
 
-function MonsterVariantBadge({ variant }) {
+// 階級徽章：一律用 T1~T6 數字。
+// ⚠️ 這裡原本顯示 TIER_LABEL 的中文（fierce→「強悍」），而右邊的變體徽章 strong 也叫「強悍」，
+//    連色碼都同樣是 #f97316 —— 兩顆徽章並排都寫「強悍」，玩家分不出哪個是階級。
+//    作者因此把 T4 的晶尾小蠍誤認成 T3（2026-08-06）。中文只留給變體，階級走數字。
+function MonsterTierBadge({ monster }) {
+  const tierNo = monsterTierNumber(monster);
+  if (!tierNo) return null;
+  const color = TIER_LABEL[monster?.tier]?.color || "#6b7280";
+  return (
+    <span style={{
+      fontSize:10, fontWeight:900, color:"white", background:color,
+      borderRadius:4, padding:"1px 6px", flexShrink:0, letterSpacing:0.3,
+    }}>
+      T{tierNo}
+    </span>
+  );
+}
+
+// 變體實際倍率 → 「HP +32%　ATK +21%」。抓不到倍率就退回只顯示名稱。
+function formatVariantDelta(mult) {
+  if (!mult) return null;
+  const parts = [];
+  const push = (label, value) => {
+    const pct = Math.round(((Number(value) || 1) - 1) * 100);
+    if (pct !== 0) parts.push(`${label} ${pct > 0 ? "+" : ""}${pct}%`);
+  };
+  push("HP", mult.hp);
+  push("ATK", mult.atk);
+  return parts.length ? parts.join("　") : null;
+}
+
+// 進場的「強度揭示」：大字 + 實際數值差。
+// 原本進場只有一顆 10px 小藥丸寫「強悍」，玩家既看不到、也不知道到底強多少 ——
+// 而弱化 0.78 與強悍 1.4 之間差了將近兩倍，這個資訊值得一個獨立的演出。
+function MonsterStrengthReveal({ monster }) {
+  const key = MONSTER_VARIANT_STYLE[monster?.variant] ? monster.variant : "normal";
+  const style = getMonsterVariantStyle(key);
+  const delta = formatVariantDelta(monster?.variantMult);
+  if (key === "normal" && !delta) {
+    return <MonsterVariantBadge variant={key} mult={monster?.variantMult} />;
+  }
+  return (
+    <div style={{
+      display:"flex", flexDirection:"column", alignItems:"center", gap:2,
+      animation:"db-strength-reveal 0.55s 0.45s cubic-bezier(0.34,1.56,0.64,1) both",
+    }}>
+      <span style={{
+        display:"inline-flex", alignItems:"center", gap:4,
+        fontSize:17, fontWeight:900, letterSpacing:1,
+        color:style.color, textShadow:`0 0 12px ${style.border}`,
+        ...(key === "strong" ? { animation:"db-strength-pulse 1.1s ease-in-out infinite" } : {}),
+      }}>
+        <span aria-hidden="true">{style.icon}</span>
+        {VARIANT_LABEL[key]?.label || "普通"}
+      </span>
+      {delta && (
+        <span style={{ fontSize:10, fontWeight:800, color:style.color, opacity:0.9 }}>{delta}</span>
+      )}
+    </div>
+  );
+}
+
+function MonsterVariantBadge({ variant, mult }) {
   const key = MONSTER_VARIANT_STYLE[variant] ? variant : "normal";
   const style = getMonsterVariantStyle(key);
+  const delta = key === "normal" ? null : formatVariantDelta(mult);
   return (
     <span style={{
       display:"inline-flex", alignItems:"center", gap:3,
@@ -140,6 +203,9 @@ function MonsterVariantBadge({ variant }) {
     }}>
       <span aria-hidden="true">{style.icon}</span>
       {VARIANT_LABEL[key]?.label || "普通"}
+      {delta && (
+        <span style={{ fontWeight:700, opacity:0.85, fontSize:9 }}>{delta}</span>
+      )}
     </span>
   );
 }
@@ -1706,6 +1772,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
 @keyframes db-intro-monster{0%{opacity:0;transform:translateX(90px) scale(0.6)}100%{opacity:1;transform:translateX(0) scale(1)}}
 @keyframes db-intro-vs{0%{opacity:0;transform:scale(0.2) rotate(-18deg)}55%{transform:scale(1.3) rotate(4deg)}100%{opacity:1;transform:scale(1) rotate(0)}}
 @keyframes db-intro-start{0%{opacity:0;transform:translateY(18px) scale(0.85)}100%{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes db-strength-reveal{0%{opacity:0;transform:scale(2.4)}55%{opacity:1;transform:scale(0.9)}100%{opacity:1;transform:scale(1)}}
+@keyframes db-strength-pulse{0%,100%{filter:brightness(1)}50%{filter:brightness(1.35)}}
 @keyframes db-die-monster{0%{filter:brightness(1)}20%{filter:brightness(3.5) drop-shadow(0 0 40px #ef4444)}100%{filter:brightness(0.1) grayscale(0.8) drop-shadow(0 0 6px #555)}}
 @keyframes db-die-badge{0%{opacity:0;transform:scale(2.2) rotate(-20deg)}55%{opacity:1;transform:scale(0.92) rotate(6deg)}100%{opacity:1;transform:scale(1) rotate(-8deg)}}
 @keyframes db-die-victory{0%{opacity:0;transform:scale(0.3) rotate(-12deg)}55%{transform:scale(1.2) rotate(3deg)}100%{opacity:1;transform:scale(1) rotate(0)}}
@@ -1731,15 +1799,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
           <div style={{ display:"flex", alignItems:"center", gap:5 }}>
             <span style={{ fontSize:15, fontWeight:900, color:monster.accent||"#f59e0b", textShadow:"0 2px 8px #000" }}>{monster.name||"怪物"}</span>
-            {monster.tier && (() => {
-              const tl = TIER_LABEL[monster.tier] || {};
-              return (
-                <span style={{ fontSize:10, fontWeight:700, color:"white", background:tl.color||"#6b7280", borderRadius:4, padding:"1px 5px" }}>
-                  {tl.label||monster.tier}
-                </span>
-              );
-            })()}
-            <MonsterVariantBadge variant={monster.variant} />
+            <MonsterTierBadge monster={monster} />
+            <MonsterVariantBadge variant={monster.variant} mult={monster.variantMult} />
           </div>
           <div style={{ display:"flex", gap:4 }}>
             <button onClick={() => setShowBattleLog(v => !v)}
@@ -1759,7 +1820,17 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
             )}
           </div>
         </div>
-        <BattleHPBar current={displayHP} max={room.monsterMaxHP || 0} />            {/* 樓層強度 & 獎勵指示器 */}
+        {/* 血條外框吃強度色（藍=弱化 / 灰=普通 / 紅=強悍）——
+            強度不能只在進場演出出現一次，戰鬥中要一直看得見 */}
+        <div style={{
+          borderRadius:8, padding:2,
+          border:`1.5px solid ${getMonsterVariantStyle(monster.variant).border}`,
+          boxShadow:monster.variant && monster.variant !== "normal"
+            ? getMonsterVariantStyle(monster.variant).glow : "none",
+        }}>
+          <BattleHPBar current={displayHP} max={room.monsterMaxHP || 0} />
+        </div>
+            {/* 樓層強度 & 獎勵指示器 */}
             {(() => {
               const rewardMult = room?.rewardMult || 1;
               const floor = room?.currentFloor || 1;
@@ -2228,10 +2299,11 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
               <div>
                 <DungeonMonsterImg id={monster.id} icon={monster.icon} charge={false} variant={monster.variant}/>
               </div>
-              <span style={{ fontSize:13, fontWeight:700, color:"#fca5a5", textShadow:"0 0 8px #ef4444" }}>
+              <span style={{ display:"flex", alignItems:"center", gap:5, fontSize:13, fontWeight:700, color:"#fca5a5", textShadow:"0 0 8px #ef4444" }}>
+                <MonsterTierBadge monster={monster} />
                 {monster.name || "怪物"}
               </span>
-              <MonsterVariantBadge variant={monster.variant} />
+              <MonsterStrengthReveal monster={monster} />
             </div>
           </div>
           {/* 戰鬥開始 */}

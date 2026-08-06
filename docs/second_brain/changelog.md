@@ -5,6 +5,70 @@
 
 ---
 
+## 2026-08-06（🐛 輕量房可重複踩刷錢刷能力——踩過沒擋 cleared）
+
+作者：「小房間沒有防止重複踩 我這樣來回可以瘋狂刷錢跟能力」。
+
+**根因**：輕量房分流（`handleCellClick` → `resolveInlineStep` / `resolveTeamInlineRoom`）
+**只檢查房型、沒檢查 `room.cleared`**。結算後房間雖然標記清除，但踩回去還是會再結算
+一次 → 同一間 `coin_pouch` / `mini_chest` / `quick_event` 來回走動無限領取。
+
+**修法（三層防護）**：
+1. 踩踏分流加 `!room.cleared`（單人 `handleCellClick`、組隊 `handleCellClick` / `enterExplorationRoom`）
+2. 結算函式內部再加 `if (!room || room.cleared) return`（`resolveInlineStep` / `resolveTeamInlineRoom`）
+3. 組隊端加 `inlineResolvingRef` 在途鎖：Firestore 寫入是 async，連點同一格會在
+   cleared 同步回來前觸發第二次 resolve → 重複發獎；ref 鎖到寫入完成才解
+
+已清除的輕量房踩上去仍可通行（純移動），只是不再結算。重量房原本就走「進入」按鈕
+（`canEnter` 需 `!cleared`），沒有此漏洞。
+
+**踩坑提醒**：
+- ⚠️ 只要新增「踩到即結算」的互動，**第一件事就是加 cleared 守衛**——
+  這類互動不像全螢幕房有「進入」按鈕當天然防重。
+- ⚠️ 組隊端任何「本地算完寫 Firestore」的流程都要配在途鎖：
+  async 寫入期間同一個操作被觸發兩次，第一次的結果還沒同步回來，第二次照樣執行。
+
+---
+
+## 2026-08-06（地下城地圖重製完工：輕量房原地結算、事件全員投票、陷阱房主決定）
+
+作者：「新型的小房間應該直接在大地圖畫面就顯示訊息，不用再另外跳到一個畫面點選繼續探索」
+→ 配合 `.trellis/tasks/08-06-dungeon-map-rework/`，把 CLAUDE 遺留的 UI 分流補完。
+
+**改了什麼**
+- 🔹 **輕量房（小房間）踩到即結算**：`quick_event` / `empty` / `coin_pouch` / `mini_chest` /
+  `scout` 五種房型踩上去**直接在地圖格子原地結算**——套效果、彈浮動訊息（icon＋標題＋
+  效果徽章，上浮 1.6s 淡出）、播音效，**不跳出全螢幕、不顯示「進入」按鈕**。
+  - 單人：`DungeonExpedition.handleCellClick` 移到輕量房直接 `resolveInlineStep`。
+  - 組隊：房主本地算效果 → 寫 `roomResolution:{kind:"inline_room"}` ＋ members updates，
+    全員訂閱到就播同一個浮動反饋。
+  - `scout` 額外揭開半徑 2 迷霧；迷你寶箱給降一階素材（T1 不降）／藥水／箭露。
+- 🔹 **地圖規則層**（CLAUDE 已完成，本次驗證）：GRID_SIZE 5→7、配額制（第1層 13／第2層 14
+  間重量房，其餘輕量房填滿）、樓梯不再必在角落、`general_event` 房型廢除（併入 quick_event）。
+- 🗳️ **特殊事件改全員投票**：選項解除房主限制，每人一票、即時顯示票數；票多者套用到全隊，
+  **平票時房主那票權重 ×2**（`dungeonEventVotes.js` 純函式，13 測）。全員投完房主自動結算，
+  結算後清 `roomConfirms` 讓大家看完結果再按「繼續探索」二次確認（結果不會一閃即逝）。
+- 👑 **陷阱房押大小收回房主**：隊員只看到陷阱資訊＋「房主正在判斷…」，不再全員亂押。
+- 🐛 順手修：`EXCAVATION_FLOOR_CONFIG.roomTypes` 移除 `general_events`（死設定，本無產生路徑）；
+  `dungeonInlineRooms` 對 `random` 效果池預先擲定，浮動訊息顯示的數值＝實際套用的數值。
+
+**為什麼**
+- 所有房間互動重量一致是疲乏根源：連「+5% ATK 的一般事件」都要開全螢幕舞台、點兩次按鈕。
+  拆兩級之後「要認真應付的房間」反而更少（重量房維持原數量），探索感卻變濃。
+
+**踩坑提醒**
+- ⚠️ **輕量房分流要放在 `handleCellClick`（踩到即結算），不是只放 `enterRoom`**：
+  只放 enterRoom 的話玩家還是要先看到「進入」按鈕再點一下，體驗跟原來的疲乏只差一點。
+  而且 `GridMapStage.canEnter` 必須排除輕量房型，否則按鈕還是會出現。
+- ⚠️ **全員投票結算的在途鎖**：全員投完的瞬間會連續收到多個 Firestore 快照，若每個快照都觸發
+  `resolveTeamEvent`，`random` 效果會被 roll 兩次、金幣道具可能重複入帳。用 ref 在途鎖擋掉。
+- ⚠️ **結算成功後要清 `roomConfirms`**：投票時 confirm 跟「看完結果再確認」是兩件事，
+  不清的話結果面板一出現就會被自動推進蓋掉，隊員根本看不到自己投票投出了什麼。
+- ⚠️ 單人與組隊的音效要同規格：組隊端 `buildTeamEventResolution` 不播音效，
+  浮動反饋的房型音效要另外在訂閱 `inline_room` 的地方播（quick_event 依效果正負選 buff/debuff）。
+
+---
+
 ## 2026-08-05（訪客登入權限、兩個組隊卡死、年度檢定開工）
 
 **改了什麼**

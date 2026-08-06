@@ -24,6 +24,7 @@ import {
   isAdjacent,
   GRID_SIZE,
 } from "../../lib/expeditionGrid";
+import { isInlineRoom, resolveInlineRoom } from "../../lib/dungeonInlineRooms";
 import {
   createExpeditionBattleRoom,
   cleanupExpeditionRoom,
@@ -71,6 +72,7 @@ import {
 import {
   sfxTap, sfxDoorOpen, sfxPathSelect, sfxBuff, sfxDebuff,
   sfxCoinDrop, sfxPotionDrink, sfxShopBuy, sfxDungeonClearResult, sfxCounter, sfxError,
+  sfxOpen, sfxOpenChest,
 } from "../../lib/sound";
 import DungeonBattleRoom from "./DungeonBattleRoom";
 import DungeonKillResult from "./DungeonKillResult";
@@ -415,6 +417,13 @@ export default function DungeonExpedition({
   const [playerState, setPlayerState] = useState(null);
   // 整趟遠征已買過的「一次性商店效果」（atk_mult/def_mult/revival）→ 商店據此鎖定，防跨商店堆疊
   const [boughtOneTime, setBoughtOneTime] = useState({});
+  // 輕量房浮動反饋（顯示在地圖格子上方，1.6s 動畫跑完後自動清掉）
+  const [inlineToast, setInlineToast] = useState(null);
+  useEffect(() => {
+    if (!inlineToast) return;
+    const t = setTimeout(() => setInlineToast(null), 2000);
+    return () => clearTimeout(t);
+  }, [inlineToast]);
 
   // 進度持久化：斷線/關閉瀏覽器後可在 DungeonLobby 偵測，選擇「回到房間續玩」或「結算」。
   // 完整保存目前地圖結構 (gridFloor, playerPos, visitedIds) 確保地圖絕不重置！
@@ -645,6 +654,20 @@ export default function DungeonExpedition({
         addPotions(myId, [{ id:finalEff.item, count:1 }])
       ).catch(() => {});
     }
+    // ★ 怪物倍率：原本完全沒實裝 —— enterRoom 讀的 floorModsRef 從沒有任何地方寫入，
+    //   所以 s_twopaths / s_napnow / s_kittentax / s_luckycoin / s_button / s_twoboxes
+    //   這 6 個特殊事件的風險那一半全是假的，選了等於沒選。
+    //   ⚠️ 寫 floorModsRef（本層立即生效）而不是 nextFloorModsRef：
+    //      事件文案寫的是「本層怪 HP −10%」，而 nextFloorModsRef 要到 startFloor 才搬進來＝下一層才生效。
+    //      組隊端（TeamExpeditionBattle 讀 nextFloorModifiers 的時機）實際也是本層生效，這裡要對齊。
+    if (finalEff.monsterHp) {
+      (finalEff.monsterHp < 0 ? sfxBuff : sfxDebuff)();
+      floorModsRef.current.monsterHpMult = r2((floorModsRef.current.monsterHpMult || 1) * (1 + finalEff.monsterHp));
+    }
+    if (finalEff.monsterAtk) {
+      (finalEff.monsterAtk < 0 ? sfxBuff : sfxDebuff)();
+      floorModsRef.current.monsterAtkMult = r2((floorModsRef.current.monsterAtkMult || 1) * (1 + finalEff.monsterAtk));
+    }
 
     // 舊相容 (Legacy type-based events)
     switch (eff.type) {
@@ -761,9 +784,56 @@ export default function DungeonExpedition({
     });
   }, [myId, boughtOneTime]);
 
+  // ── 輕量房：踩到即結算（不離開地圖，格子上浮動反饋）─────────────────
+  const resolveInlineStep = useCallback((room) => {
+    // ⚠️ 已清除的輕量房不能再結算：踩回去只會移動，不重複發錢/能力
+    if (!room || room.cleared) return;
+    const res = resolveInlineRoom(room, { family, difficultyTier });
+    // 1. 效果套用（與一般事件同構：hp/atk/def/dmg/gold/item，音效由 applyEventEffect 播）
+    if (res.effect && Object.keys(res.effect).length > 0) {
+      applyEventEffect({ effect: res.effect });
+    }
+    // 2. 迷你寶箱的箭露／素材（超出 GENERAL_EVENTS 形狀的兩個鍵，要另外接）
+    if (res.effect?.arrowDew) addArrowdew(myId, res.effect.arrowDew).catch(() => {});
+    if (res.effect?.material) {
+      const mat = res.effect.material;
+      // addMaterials 每個元素只加 1 → 要給 quantity 份就把同一個物件放進陣列 quantity 次
+      addMaterials(myId, Array.from({ length: mat.quantity || 1 }, () => mat)).catch(() => {});
+    }
+    // 3. 瞭望點：揭開半徑 2 內迷霧（加進 visitedIds，那些房會顯示為「已探索」但未清除）
+    if (res.revealRadius > 0) {
+      setVisitedIds(prev => {
+        const next = new Set(prev);
+        (gridFloor?.rooms || []).forEach(r => {
+          const d = Math.abs(r.pos.x - room.pos.x) + Math.abs(r.pos.y - room.pos.y);
+          if (d <= res.revealRadius) next.add(r.id);
+        });
+        return next;
+      });
+    }
+    // 4. 標記清除 + 浮動反饋（房型專屬音效）
+    markRoomCleared(room.id);
+    if (res.roomType === "mini_chest") sfxOpenChest();
+    else if (res.roomType === "scout") sfxOpen();
+    else if (res.roomType === "empty") sfxTap();
+    setInlineToast({
+      key: `${room.id}-${Date.now()}`,
+      roomType: res.roomType,
+      icon: res.toast.icon,
+      title: res.toast.title,
+      badges: res.toast.badges || [],
+    });
+  }, [family, difficultyTier, myId, gridFloor, markRoomCleared, applyEventEffect]);
+
   // ── 進入房間 ────────────────────────────────────────────
   const enterRoom = useCallback((room) => {
     const r = { ...room };
+    // 輕量房：不進全螢幕，原地結算（正常流程由 handleCellClick 踩到即處理；
+    // 這裡是回退路徑——舊存檔的「進入」按鈕也會走到這，不可掉進 default 空白畫面）
+    if (isInlineRoom(r.type)) {
+      if (!r.cleared) resolveInlineStep(r);
+      return;
+    }
     if (["battle", "elite_battle", "boss_battle"].includes(r.type)) {
       const mods = floorModsRef.current;
       const fallbackVariant = floorIndex === 0
@@ -771,7 +841,9 @@ export default function DungeonExpedition({
         : floorIndex === 2
           ? "strong"
           : "normal";
-      let mon = r.type === "elite_battle" ? monsterPool.elite
+      // ★ 精英房每間各自抽（原本全層共用 monsterPool.elite 同一隻，整趟只看得到一種精英怪）
+      let mon = r.type === "elite_battle"
+          ? (drawDungeonFallbackMonster("strong", Math.max(1, difficultyTier), { family }) || monsterPool.elite)
         : r.type === "boss_battle" ? (fixedBoss || monsterPool.boss)   // 王房用預覽同源的正確王，避免打到雜兵
         : (monsterQueueRef.current.shift()
           || drawDungeonFallbackMonster(fallbackVariant, Math.max(1, difficultyTier), { family }));
@@ -801,12 +873,9 @@ export default function DungeonExpedition({
     if (r.type === "event") {
       r.event = drawDungeonEvent("special");
     }
-    if (r.type === "general_event") {
-      r.event = drawDungeonEvent("general");
-    }
     setPendingRoom(r);
     setPhase("func_room");
-  }, [monsterPool, fixedBoss, difficultyTier, floorIndex, markRoomCleared]);
+  }, [monsterPool, fixedBoss, difficultyTier, floorIndex, markRoomCleared, resolveInlineStep]);
 
   // ── 格子點擊移動 ────────────────────────────────────────
   const handleCellClick = useCallback((room) => {
@@ -819,7 +888,10 @@ export default function DungeonExpedition({
       return next;
     });
     // 兩段式：點格子只移動 + 揭露房間；進入事件改由底部「進入」按鈕觸發（enterRoom）
-  }, [playerPos]);
+    // ⚠️ 輕量房例外：踩到即結算（原地套效果 + 浮動訊息），不顯示「進入」按鈕。
+    //    只有「未清除」的輕量房才結算 —— 踩過的房標記 cleared 後，來回走動不重複發獎
+    if (isInlineRoom(room.type) && !room.cleared) resolveInlineStep(room);
+  }, [playerPos, resolveInlineStep]);
 
   const handleDescend = useCallback(() => {
     sfxDoorOpen();
@@ -1182,6 +1254,7 @@ export default function DungeonExpedition({
           onRetreat={handleAbandon}
           difficulty={difficultyTier}
           family={family}
+          inlineToast={inlineToast}
         />
       </>
     );

@@ -3,6 +3,7 @@
 // 見 .trellis/tasks/07-10-guest-kid-dungeon-parity/design.md §3（難度封頂第一層）
 import { useState } from "react";
 import { drawExpeditionBoss } from "../../lib/monsterData";
+import { createLockedDungeonBossEncounter } from "../../lib/dungeonBossEncounter";
 import { getExcavationDifficulty } from "../../lib/dungeonData";
 
 // 比照 dungeonExcavation.js::claimAutoDig 既有的族系清單/隨機挑選寫法
@@ -23,13 +24,36 @@ export default function GuestDungeonEntry({ tierCap = 2, onSelect }) {
     setPicking(true);
     const tier = pickTier(requestedTier, tierCap);
     const family = GUEST_FAMILIES[Math.floor(Math.random() * GUEST_FAMILIES.length)];
-    const boss = drawExpeditionBoss(tier, family);
+    // ★ 訪客的王也要走擴充清冊。
+    //   原本這裡直接 drawExpeditionBoss（舊 MONSTERS 表、MONSTERS.find 取第一隻、非隨機），
+    //   而且回傳的 dungeon 物件 id/savedId 都是 null → resolveDungeonBossRunId() 推不出 runId
+    //   → DungeonExpedition 的 resolveDungeonBossEncounter 必回 null → 整條訪客路線永遠打舊表王。
+    //   給一個穩定的 bossRunId，下游（預覽 + 第 3 層實戰）就能推到同一隻擴充王。
+    const bossRunId = `guest:${family}:t${tier}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+    let boss = null;
+    let bossEncounter = null;
+    try {
+      bossEncounter = createLockedDungeonBossEncounter({
+        runId: bossRunId,
+        roomId: "floor-3-boss",
+        family,
+        difficultyTier: tier,
+      });
+      boss = bossEncounter.monsterSnapshot;
+    } catch {
+      // 該族該階湊不齊「2 小王 + 1 大王」才會走到這（目前 42 組全滿，屬保險絲）
+      boss = drawExpeditionBoss(tier, family);
+    }
     onSelect({
+      // id 維持 null —— 訪客地下城刻意不寫 savedDungeons/pendingReveal，塞了 id 可能觸發下游寫入。
+      // resolveDungeonBossRunId 的優先序是 expansionRunId → bossRunId → id，靠 bossRunId 就夠了。
       id: null,
       savedId: null,
+      bossRunId,
       family,
       difficulty: tier,
       boss,
+      ...(bossEncounter ? { bossEncounter } : {}),
       isHidden: false,
     });
   }

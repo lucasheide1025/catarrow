@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { confirmNonCombatRoom } from "../../lib/dungeonDb";
 import { drawDungeonEvent } from "../../lib/dungeonData";
+import { tallyEventVotes, allActiveMembersVoted } from "../../lib/dungeonEventVotes";
 import { sfxBuff, sfxDebuff, sfxSuccess } from "../../lib/sound";
 import DungeonEventStage from "./DungeonEventStage";
 
@@ -71,67 +72,68 @@ export default function DungeonEvent({
   const isSpecial = Array.isArray(ev.choices) && ev.choices.length > 0;
   const style = TYPE_STYLE[ev.type] || TYPE_STYLE.neutral;
 
-  async function handlePickChoice(choice, idx) {
+  // ── 全員投票（組隊）：每人的票寫進 roomChoices[memberId]，confirmNonCombatRoom 順便
+  //    寫 roomConfirms → 全員投完後由 TeamExpeditionBattle 的房主端 effect 自動以最高票結算。
+  //    單人（localMode）維持「直接選擇」：選了立刻套效果。
+  const roomChoices = room?.roomChoices || {};
+  const myVote = roomChoices[memberId];
+  const voteTally = tallyEventVotes({
+    members: room?.members,
+    choices: roomChoices,
+    hostId: room?.hostId,
+  });
+  const allVoted = !localMode && allActiveMembersVoted({ members: room?.members, choices: roomChoices });
+
+  async function handleVote(choice, idx) {
     if (resolved || loading) return;
-    setSelectedChoiceIdx(idx);
-    setLoading(true);
+    if (!localMode && myVote !== undefined) return; // 已投過
     sfxSuccess();
 
-    const badges = formatEffectBadges(choice.effect, choice.cost);
-    setActiveBadges(badges);
-
-    try {
-      if (localMode) {
-        onLocalEffect?.({
-          type: "event",
-          event: {
-            ...ev,
-            cost: choice.cost,
-            effect: choice.effect,
-          },
-        });
-        setResolved(true);
-        return;
-      }
-
-      if (!isHost || !onResolveEvent) return;
-      const shared = await onResolveEvent(choice, idx);
-      if (shared?.badges) {
-        setActiveBadges(shared.badges.map(label => ({
-          type: "gain",
-          label,
-          color: "text-emerald-300 bg-emerald-950/80 border-emerald-500/50",
-        })));
-      }
+    if (localMode) {
+      setSelectedChoiceIdx(idx);
+      setLoading(true);
+      const badges = formatEffectBadges(choice.effect, choice.cost);
+      setActiveBadges(badges);
+      onLocalEffect?.({
+        type: "event",
+        event: {
+          ...ev,
+          cost: choice.cost,
+          effect: choice.effect,
+        },
+      });
       setResolved(true);
+      setLoading(false);
+      return;
+    }
+
+    setSelectedChoiceIdx(idx);
+    setLoading(true);
+    try {
+      await confirmNonCombatRoom(roomId, memberId, idx);
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleGeneralConfirm() {
+  async function handleGeneralVote() {
     if (resolved || loading) return;
-    setLoading(true);
+    if (!localMode && myVote !== undefined) return; // 已投過
     sfxSuccess();
 
-    const badges = formatEffectBadges(ev.effect, ev.cost);
-    setActiveBadges(badges);
-
-    try {
-      if (localMode) {
-        onLocalEffect?.({ type: "event", event: ev });
-      } else {
-        if (!isHost || !onResolveEvent) return;
-        const shared = await onResolveEvent(null, null);
-        if (shared?.badges) {
-          setActiveBadges(shared.badges.map(label => ({
-            type: "gain",
-            label,
-            color: "text-emerald-300 bg-emerald-950/80 border-emerald-500/50",
-          })));
-        }
-      }
+    if (localMode) {
+      setLoading(true);
+      const badges = formatEffectBadges(ev.effect, ev.cost);
+      setActiveBadges(badges);
+      onLocalEffect?.({ type: "event", event: ev });
       setResolved(true);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await confirmNonCombatRoom(roomId, memberId, "ack");
     } finally {
       setLoading(false);
     }
@@ -162,56 +164,63 @@ export default function DungeonEvent({
           <div className="text-xl font-black mb-2 text-white">{ev.title}</div>
           <div className="text-xs opacity-90 leading-relaxed mb-4 text-slate-200">{ev.desc}</div>
 
-          {/* 若為特殊事件且尚未選擇，顯示選擇二選一 */}
-          {isSpecial && !resolved && isHost && (
+          {/* 特殊事件：單人直接選擇；組隊改全員投票（票多者勝，平票房主那票 ×2） */}
+          {isSpecial && !resolved && (
             <div className="space-y-2.5 text-left pt-3 border-t border-white/15">
-              <div className="text-xs font-black text-amber-300 mb-2">請選擇您的冒險決策：</div>
-              {ev.choices.map((c, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => handlePickChoice(c, idx)}
-                  disabled={loading}
-                  className={`w-full p-3.5 rounded-2xl border text-xs font-bold transition flex items-center justify-between shadow-md active:scale-95 ${
-                    selectedChoiceIdx === idx
-                      ? "bg-amber-600 border-amber-400 text-white shadow-amber-500/20"
-                      : "bg-slate-900/90 border-slate-700 text-slate-200 hover:border-amber-400/50 hover:bg-slate-800"
-                  }`}
-                >
-                  <div>
-                    <div className="font-black text-sm text-amber-200">{c.label}</div>
-                    {c.hint && <div className="text-[10px] text-amber-300/80 mt-0.5">{c.hint}</div>}
-                  </div>
-                  <span className="text-xs font-black bg-amber-500/20 border border-amber-400/40 text-amber-300 px-2.5 py-1 rounded-xl">
-                    👉 選擇
-                  </span>
-                </button>
-              ))}
+              <div className="text-xs font-black text-amber-300 mb-2">
+                {localMode
+                  ? "請選擇您的冒險決策："
+                  : myVote !== undefined
+                    ? "✅ 你已投票，等待其他隊友…"
+                    : "🗳️ 全員投票，票多的選項套用到全隊："}
+              </div>
+              {ev.choices.map((c, idx) => {
+                const count = voteTally.tally?.[idx] || 0;
+                const isMyPick = !localMode && myVote === idx;
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleVote(c, idx)}
+                    disabled={loading || (!localMode && myVote !== undefined)}
+                    className={`w-full p-3.5 rounded-2xl border text-xs font-bold transition flex items-center justify-between shadow-md active:scale-95 ${
+                      isMyPick || (!localMode && selectedChoiceIdx === idx && myVote === undefined)
+                        ? "bg-amber-600 border-amber-400 text-white shadow-amber-500/20"
+                        : "bg-slate-900/90 border-slate-700 text-slate-200 hover:border-amber-400/50 hover:bg-slate-800"
+                    }`}
+                  >
+                    <div>
+                      <div className="font-black text-sm text-amber-200">{c.label}</div>
+                      {c.hint && <div className="text-[10px] text-amber-300/80 mt-0.5">{c.hint}</div>}
+                    </div>
+                    <span className="text-xs font-black bg-amber-500/20 border border-amber-400/40 text-amber-300 px-2.5 py-1 rounded-xl">
+                      {localMode ? "👉 選擇" : `${myVote === idx ? "✓ " : "🗳️ "}${count} 票`}
+                    </span>
+                  </button>
+                );
+              })}
+              {!localMode && allVoted && (
+                <div className="rounded-2xl border border-emerald-400/30 bg-emerald-950/30 p-3 text-xs font-bold text-emerald-200 text-center">
+                  ⏳ 全員已投票，等待結算…
+                </div>
+              )}
             </div>
           )}
 
-          {isSpecial && !resolved && !isHost && (
-            <div className="rounded-2xl border border-amber-400/30 bg-amber-950/30 p-4 text-sm font-bold text-amber-200">
-              等待房主選擇事件結果…
-            </div>
-          )}
-
-          {/* 一般事件確認按鈕 */}
-          {!isSpecial && !resolved && isHost && (
+          {/* 一般事件（舊存檔相容）：接受效果按鈕解除房主限制，全員可確認 */}
+          {!isSpecial && !resolved && (
             <button
               type="button"
-              onClick={handleGeneralConfirm}
-              disabled={loading}
+              onClick={handleGeneralVote}
+              disabled={loading || (!localMode && myVote !== undefined)}
               className="w-full py-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black rounded-2xl text-sm shadow-xl active:scale-95 transition-all mt-2 border border-emerald-400/30"
             >
-              {loading ? "套用效果中…" : "✨ 接受效果並查看狀態"}
+              {localMode
+                ? (loading ? "套用效果中…" : "✨ 接受效果並查看狀態")
+                : myVote !== undefined
+                  ? "✅ 已確認，等待其他隊友…"
+                  : (loading ? "確認中…" : "✨ 接受效果並查看狀態")}
             </button>
-          )}
-
-          {!isSpecial && !resolved && !isHost && (
-            <div className="rounded-2xl border border-emerald-400/30 bg-emerald-950/30 p-4 text-sm font-bold text-emerald-200">
-              等待房主揭示事件結果…
-            </div>
           )}
 
           {/* 狀態變化回饋面板 (已完成時顯示) */}

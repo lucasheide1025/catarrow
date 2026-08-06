@@ -99,9 +99,12 @@ export function applySoloVariant(monster, variant, roll) {
   const multipliers = range
     ? range.map(([low, high]) => low + (high - low) * roll)
     : [1, 1, 1];
+  const round2 = value => Math.round(value * 100) / 100;
   return {
     ...monster,
     variant,
+    // 留下實際倍率供 UI 顯示（強悍 1.15~1.4 是隨機落點，只寫「強悍」玩家無從得知強多少）
+    variantMult: { hp: round2(multipliers[0]), atk: round2(multipliers[1]), def: round2(multipliers[2]) },
     hp: Math.round(monster.hp * (TIER_HP_MULTIPLIER[monster.tier] || 1) * multipliers[0]),
     atk: Math.round(monster.atk * multipliers[1]),
     def: Math.round(monster.def * multipliers[2]),

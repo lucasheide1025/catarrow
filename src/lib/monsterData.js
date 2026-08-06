@@ -691,6 +691,8 @@ function pickVariant(archerPower) {
   return "normal";
 }
 
+const r2 = value => Math.round(value * 100) / 100;
+
 // ── 對怪物套用變體（回傳新物件，不修改原資料）───────────
 export function applyVariant(monster, variant) {
   const range = VARIANT_RANGE[variant];
@@ -707,6 +709,9 @@ export function applyVariant(monster, variant) {
   return {
     ...monster,
     variant,
+    // 變體的實際倍率要留下來給 UI 顯示：弱化 0.78~0.92、強悍 1.15~1.4 是**隨機落點**，
+    // 只寫「強悍」兩個字玩家無從得知這隻到底強多少（同樣寫強悍的兩隻可能差 25%）。
+    variantMult: { hp: r2(mult.hp), atk: r2(mult.atk), def: r2(mult.def) },
     hp:  Math.round(monster.hp * combatHpMult * mult.hp),
     atk: Math.round(monster.atk * mult.atk),
     def: Math.round(monster.def * mult.def),
@@ -747,6 +752,20 @@ export function drawMatchedMonsters(archerPower) {
 
 // tier 排序（用於 fallback 及地下城篩選）
 export const TIER_ORDER = ["common","rare","elite","fierce","boss","mythic"];
+
+// 怪物階級 → T 數字（T1~T6）。抽不出來回 null，呼叫端就不顯示徽章。
+//
+// ⚠️ **為什麼階級要用數字顯示，不用中文**：
+//    TIER_LABEL.fierce 是「強悍」，而 VARIANT_LABEL.strong 也是「強悍」，連顏色都同樣是 #f97316。
+//    TIER_LABEL.common「普通」跟 VARIANT_LABEL.normal「普通」同樣撞名。
+//    畫面上出現「強悍」時玩家分不出那是 T4 階級還是強化變體 —— 作者實際因此把 T4 的
+//    晶尾小蠍誤認成 T3（2026-08-06 回報）。階級一律走 T1~T6 數字，中文只留給變體。
+export function monsterTierNumber(monster) {
+  const index = Number(monster?.tierIndex);
+  if (Number.isFinite(index) && index >= 1 && index <= TIER_ORDER.length) return index;
+  const found = TIER_ORDER.indexOf(monster?.tier);
+  return found >= 0 ? found + 1 : null;
+}
 
 // ── 混種抽怪（終戰模式用）────────────────────────────────
 // 從六族中隨機抽不同種的怪物，確保每場不重複

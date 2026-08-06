@@ -287,8 +287,27 @@ export function getExcavationTierLabel(tier) {
   return d ? `${d.icon} ${d.label}` : `Lv.${tier}`;
 }
 
+// ── 重量房配額（2026-08-06 地圖重製）────────────────────────
+//
+// ⚠️ **為什麼是配額不是權重**：地圖從 5×5（20~23 格）擴大到 7×7（40~46 格）之後，
+//    原本的 roomTypes 權重表會讓戰鬥房、陷阱房**等比暴增** —— 一趟要打 6 場，
+//    那不是「探索感變濃」而是「變長變累」。
+//
+//    改成：先擺固定數量的重量房（要開全螢幕舞台的），剩下的格子全部用輕量房
+//    （dungeonInlineRooms.js，踩到就結算、不離開地圖）填滿。
+//    結果是「要認真應付的房間數量跟改版前差不多甚至更少，但地圖大一倍」。
+//
+// 調節這趟遠征的節奏只要動這張表和 expeditionGrid.js 的 roomCount，不必改程式。
+export const STAGE_ROOM_QUOTA = [
+  // 第 1 層 · 探索層（共 13 間重量房）
+  { battle:2, elite_battle:0, trap:3, event:2, chest:3, shop:1, rest:2 },
+  // 第 2 層 · 戰鬥層（共 14 間重量房，精英保底 1）
+  { battle:3, elite_battle:1, trap:2, event:2, chest:3, shop:1, rest:2 },
+];
+
 // ── 終戰模式三層結構定義 ──────────────────────────────────
-// 每層的房間類型權重與怪物配置
+// 每層的怪物配置。roomTypes 權重表已由 STAGE_ROOM_QUOTA 取代（2026-08-06），
+// 保留欄位是為了讓舊存檔/舊呼叫端不炸，新程式碼不要再讀它。
 export const EXCAVATION_FLOOR_CONFIG = [
   {
     // 第1層：探索層
@@ -303,7 +322,6 @@ export const EXCAVATION_FLOOR_CONFIG = [
       traps:          { weight:20, label:"陷阱！" },
       events:         { weight:10, label:"特殊事件" },
       chests:         { weight:20, label:"發現寶箱" },
-      general_events: { weight:20, label:"一般事件" },
     },
   },
   {
@@ -320,7 +338,6 @@ export const EXCAVATION_FLOOR_CONFIG = [
       traps:          { weight:10, label:"陷阱！" },
       events:         { weight:10, label:"特殊事件" },
       chests:         { weight:20, label:"發現寶箱" },
-      general_events: { weight:20, label:"一般事件" },
     },
   },
   {
@@ -331,7 +348,6 @@ export const EXCAVATION_FLOOR_CONFIG = [
       monsters:       { weight:30, label:"菁英怪" },
       traps:          { weight:30, label:"險惡陷阱" },
       events:         { weight:30, label:"特殊事件" },
-      general_events: { weight:10, label:"一般事件" },
     },
   },
 ];

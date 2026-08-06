@@ -1,9 +1,13 @@
 # scripts/gen-dungeon-tiles.py
 # 地下城房間立繪全自動管線：ComfyUI 生成 → rembg 去背 → 512 WebP → public/assets/dungeon/
 #   用法：<embedded_python> scripts/gen-dungeon-tiles.py <family|all> [type]
-#   例：  python scripts/gen-dungeon-tiles.py ghost         # 生幽冥系全部 11 房
+#   例：  python scripts/gen-dungeon-tiles.py ghost         # 生幽冥系全部 15 房
 #         python scripts/gen-dungeon-tiles.py ghost battle  # 只生幽冥戰鬥房
-#         python scripts/gen-dungeon-tiles.py all           # 七族全生（77 張）
+#         python scripts/gen-dungeon-tiles.py common scout  # 只生通用版瞭望點
+#         python scripts/gen-dungeon-tiles.py all           # 七族全生（105 張）
+#
+# RoomTile 的 fallback 鏈是 room_{family}_{type} → room_{type} → EMPTY_SRC，
+# 所以新房型**先生 common 通用版就能上線**，族系專屬版之後想做再補、不做也不會壞。
 import sys, json, time, uuid, urllib.request, urllib.parse, io, os
 from rembg import remove
 from PIL import Image
@@ -36,6 +40,40 @@ NEG = ("realistic, photorealistic, scary, horror, creepy, gore, blood, grim, ugl
        "big building covering everything, blurry, lowres, deformed")
 # 功能物件房額外禁止出現生物/角色（戰鬥類房間不套用，因為要放小怪）
 NEG_OBJECT = ", monster, creature, animal, character, mascot, ghost, person"
+
+# 主體吃重版：物件必須壓過石台。
+# ⚠️ 2026-08-06 踩坑：輕量房四張第一次全滅，失敗模式**完全一致** ——
+#    模型把 STYLE_OBJECT 的「round stone platform」當成主角畫得又大又華麗
+#    （多層蛋糕狀石台、正中央插一支火把），而 SUBJECTS 描述的錢袋／驚嘆號／
+#    望遠鏡整個消失。這跟 memory 記的「主體太搶焦時石台會被省略」是反向的同一個病：
+#    石台與主體在搶版面，誰贏由 seed 決定。
+#    解法＝把主體加權 (…:1.5) 並明講佔畫面高度，同時把模型愛自己加的東西
+#    （火把／火焰／多層石台）寫進負面詞。
+#    ⚠️ 第二次又全滅，方向相反：加權 1.5 把主體拉出來了，但**連風格字串一起壓過去** ——
+#       四張全變成白底寫實商品攝影（真皮錢袋、黃銅望遠鏡），石台完全消失。
+#       結論：加權要輕（1.2），而且風格與石台必須在主體**之後**再宣告一次，
+#       讓最後的 token 把畫風拉回來。
+STYLE_OBJECT_HERO = (_COMMON +
+    "ALWAYS a round thick floating stone disc platform as the base — the FULL circular stone platform is "
+    "clearly visible and complete at the bottom, SINGLE FLAT LEVEL, consistent size every tile. Resting in "
+    "the CENTER on top of the platform is ({subject}:1.2), rendered large enough to fill most of the platform "
+    "and be instantly recognizable at a glance. A few small {theme} accents on the platform edge (props only, "
+    "NOT a building). Painterly stylized cute mobile game art, hand-painted textures, high 3/4 top-down angle, "
+    "dark simple background, no text, no ui, no people.")
+
+# 各房型的額外負面詞（對付模型的固定偏好，比一直重抽有效）
+TYPE_NEG = {
+    "quick_event": ", torch, brazier, fire, flame, bonfire, candle, campfire, rune circle, question mark",
+    "coin_pouch":  ", torch, brazier, fire, flame, treasure chest, empty platform",
+    "mini_chest":  ", torch, brazier, fire, flame, stone chest, stone box, huge chest, ornate golden chest",
+    "scout":       ", torch, brazier, fire, flame, beacon, watchtower, tower, building, castle, stairs",
+}
+# 用主體吃重版的房型（輕量房：主體要一眼可辨，不能被石台搶走）
+HERO_TYPES = {"quick_event", "coin_pouch", "mini_chest", "scout"}
+# 模型很愛自己把石台畫成多層婚禮蛋糕，共通擋掉
+NEG_HERO = (", tiered platform, multi-level platform, ziggurat, wedding cake shape, staircase platform, "
+            "empty platform, nothing on top, square base, wooden base, rectangular base, "
+            "product photo, studio photo, white background, plain background, letters, words, writing, signature")
 
 # 各族「可愛小怪」（代表戰鬥房 = 有怪要打）
 CREATURES = {
@@ -75,6 +113,22 @@ SUBJECTS = {
     "rest":         "a cozy campfire with a small tent, a rest camp",
     "stairs":       "a stone staircase descending into a dark hole, stairs going down",
     "treasure":     "a pile of gold coins gems and a small golden idol, a treasure hoard",
+    # ── 輕量房（2026-08-06 地圖重製）──────────────────────────────
+    # 踩到就結算、不開全螢幕舞台，所以立繪要「一眼看懂、不引起期待」。
+    # 刻意與對應的重量房拉開距離：
+    #   quick_event 綠色驚嘆號 vs event 發光符文圈＋問號
+    #   mini_chest  樸素闔上的小木箱 vs chest 敞開的華麗寶箱
+    # empty 房型**不生圖**：room_empty.webp 已是一張完整的空平台立繪（同時當 EMPTY_SRC）。
+    # 抽象符號（驚嘆號、問號）模型畫不穩，改用「實體物件」當主角比較好抽
+    # ⚠️ 這四條**不准出現 small / tiny / little / mini** 等縮小詞 ——
+    #    memory 早就記過「寫『小』會讓模型把物件畫沒」，我還是踩了：
+    #    mini_chest 寫了 "a small ... crate" + "a tiny wooden barrel"，結果整張只剩苔蘚甜甜圈。
+    #    對照組：會成功的 chest 是 "an open wooden treasure chest with gold coins"，零尺寸詞。
+    #    「迷你」的感覺靠**造型樸素**（木板、無裝飾、闔上）表達，不靠形容詞。
+    "quick_event":  "a wooden signpost pole with a wooden arrow board nailed on it, a glowing green exclamation mark shining above the board, green sparkles",
+    "coin_pouch":   "a burst open brown cloth money sack lying on its side with a big pile of gold coins pouring out of it",
+    "mini_chest":   "a closed wooden crate chest made of rustic brown planks with iron corner bands and a latch, plain and undecorated",
+    "scout":        "a wooden lookout post, a ladder leaning against a raised viewing platform with a flag on a pole",
 }
 
 
@@ -177,9 +231,12 @@ def run(family, only_type=None):
         is_creature = t in CREATURE_TYPES
         if "{creature}" in subj:
             subj = subj.format(creature=CREATURES[family])
-        style = STYLE_CREATURE if is_creature else STYLE_OBJECT
+        is_hero = t in HERO_TYPES
+        style = STYLE_CREATURE if is_creature else (STYLE_OBJECT_HERO if is_hero else STYLE_OBJECT)
         pos = style.format(theme=theme, subject=subj)
         neg = NEG if is_creature else NEG + NEG_OBJECT
+        if is_hero:
+            neg = neg + NEG_HERO + TYPE_NEG.get(t, "")
         if is_creature and family == "ghost":
             neg = neg + ", legs, feet, paws, arms, hands, standing, four legs, animal body, pikachu, pokemon"
         png = generate(pos, neg)

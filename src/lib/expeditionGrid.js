@@ -3,31 +3,26 @@
 // 第 1、2 層：generateGridFloor — 隨機連通格子（最大 25 格，戰鬥不連續）
 // 第 3 層：generateBranchFloor — 入口 → A/B/C 三選一 → 3 抽 + 固定商人 + 休息 → 王 → 寶箱
 
-import { EXCAVATION_FLOOR_CONFIG } from "./dungeonData";
+import { STAGE_ROOM_QUOTA } from "./dungeonData";
+import { INLINE_ROOM_META, pickInlineRoomType } from "./dungeonInlineRooms";
 
-export const GRID_SIZE = 5;
+// 地圖擴大為兩倍（2026-08-06）：5×5／20~23 格 → 7×7／40~46 格。
+// 地圖是等角 2.5D + 鏡頭跟隨（DungeonStages::MapViewport），放大不需要改 UI。
+export const GRID_SIZE = 7;
 
-// 權重表 key（EXCAVATION_FLOOR_CONFIG.roomTypes）→ 房間類型
-const WEIGHT_ROOM_MAP = {
-  monsters:       { type: "battle",        label: "戰鬥遭遇" },
-  events:         { type: "event",         label: "特殊事件" },
-  general_events: { type: "general_event", label: "一般事件" },
-  traps:          { type: "trap",          label: "陷阱！" },
-  merchants:      { type: "shop",          label: "行腳商人" },
-  chests:         { type: "chest",         label: "發現寶箱" },
-  rest:           { type: "rest",          label: "休息區" },
+// 每層房間總數（含入口與樓梯）。與 STAGE_ROOM_QUOTA 一起構成節奏的兩顆旋鈕。
+const ROOM_COUNT_RANGE = { min: 40, max: 46 };
+
+// 重量房（要開全螢幕舞台的）的顯示標籤
+const STAGE_ROOM_LABELS = {
+  battle:       "戰鬥遭遇",
+  elite_battle: "精英怪",
+  event:        "特殊事件",
+  trap:         "陷阱！",
+  shop:         "行腳商人",
+  chest:        "發現寶箱",
+  rest:         "休息區",
 };
-
-function pickWeightedKey(weights) {
-  const entries = Object.entries(weights);
-  const total = entries.reduce((s, [, v]) => s + v.weight, 0);
-  let r = Math.random() * total;
-  for (const [key, val] of entries) {
-    r -= val.weight;
-    if (r <= 0) return key;
-  }
-  return entries[0][0];
-}
 
 function shuffle(arr) {
   const a = [...arr];
@@ -78,17 +73,26 @@ function growRegion(targetCount) {
   return { start, cells: [...region.values()] };
 }
 
-// BFS 找離起點最遠的格子（放樓梯）
-function bfsFarthest(cells, start) {
+// 樓梯位置：BFS 算出每格離入口的距離，從「夠遠」的格子中隨機挑一格。
+//
+// ⚠️ 原本用的是「取最遠點」(bfsFarthest)。在幾乎滿版的方形地圖上（20~23/25、40~46/49），
+//    最遠點在幾何上**必然是角落** —— 那不是隨機性不足，是數學必然，所以作者才會覺得
+//    「樓梯太固定在周圍」。放大到 7×7 只會讓這個性質更明顯（角落更遠）。
+//    改成從距離 ≥ maxDist×STAIRS_MIN_DIST_RATIO 的候選中隨機挑，仍保證要走一段路，
+//    但落點在中段～外圈之間浮動，每趟都不一樣。
+const STAIRS_MIN_DIST_RATIO = 0.75;
+
+function pickStairs(cells, start, random = Math.random) {
   const inRegion = new Set(cells.map(c => posKey(c.x, c.y)));
   const dist = new Map([[posKey(start.x, start.y), 0]]);
   const queue = [start];
-  let farthest = start;
+  const reached = [];
   let maxDist = 0;
   while (queue.length > 0) {
     const cur = queue.shift();
     const d = dist.get(posKey(cur.x, cur.y));
-    if (d > maxDist) { maxDist = d; farthest = cur; }
+    if (d > maxDist) maxDist = d;
+    if (d > 0) reached.push({ cell: cur, d });
     for (const n of getAdjacentPositions(cur)) {
       const k = posKey(n.x, n.y);
       if (inRegion.has(k) && !dist.has(k)) {
@@ -97,16 +101,20 @@ function bfsFarthest(cells, start) {
       }
     }
   }
-  return farthest;
+  if (reached.length === 0) return start;
+  const threshold = Math.ceil(maxDist * STAIRS_MIN_DIST_RATIO);
+  const candidates = reached.filter(r => r.d >= threshold);
+  const pool = candidates.length > 0 ? candidates : reached;
+  return pool[Math.floor(random() * pool.length)].cell;
 }
 
 // ── 第 1、2 層：5×5 迷霧格子（最大 25 格，戰鬥不連續） ─────────
 export function generateGridFloor(floorIndex, difficultyTier) {
-  const config = EXCAVATION_FLOOR_CONFIG[Math.min(floorIndex, 1)] || EXCAVATION_FLOOR_CONFIG[0];
-  // 地圖擴大：20 ~ 23 格 (接近 25 格滿版)
-  const roomCount = 20 + Math.floor(Math.random() * 4);
+  const quota = STAGE_ROOM_QUOTA[Math.min(floorIndex, STAGE_ROOM_QUOTA.length - 1)] || STAGE_ROOM_QUOTA[0];
+  const roomCount = ROOM_COUNT_RANGE.min
+    + Math.floor(Math.random() * (ROOM_COUNT_RANGE.max - ROOM_COUNT_RANGE.min + 1));
   const { start, cells } = growRegion(roomCount);
-  const stairs = bfsFarthest(cells, start);
+  const stairs = pickStairs(cells, start);
 
   const startKey = posKey(start.x, start.y);
   const stairsKey = posKey(stairs.x, stairs.y);
@@ -115,16 +123,19 @@ export function generateGridFloor(floorIndex, difficultyTier) {
     return k !== startKey && k !== stairsKey;
   });
 
-  // 根據權重隨機挑選房型
+  // ① 先照配額擺重量房（數量固定，不隨地圖大小浮動）
   const types = [];
-  // 第 2 層保底 1 精英
-  if (floorIndex === 1) {
-    types.push({ type: "elite_battle", label: "精英怪" });
+  for (const [type, count] of Object.entries(quota)) {
+    for (let i = 0; i < count && types.length < otherCells.length; i += 1) {
+      types.push({ type, label: STAGE_ROOM_LABELS[type] || type });
+    }
   }
+
+  // ② 剩下的格子全部給輕量房（踩到就結算、不離開地圖）
+  //    地圖擴大多出來的空間都在這裡消化，重量房的絕對數量因此不變。
   while (types.length < otherCells.length) {
-    const key = pickWeightedKey(config.roomTypes);
-    const meta = WEIGHT_ROOM_MAP[key] || WEIGHT_ROOM_MAP.general_events;
-    types.push({ ...meta });
+    const type = pickInlineRoomType();
+    types.push({ type, label: INLINE_ROOM_META[type]?.label || type });
   }
 
   let assigned = shuffle(types).slice(0, otherCells.length);

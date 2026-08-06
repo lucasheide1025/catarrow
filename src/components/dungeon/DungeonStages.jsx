@@ -8,11 +8,14 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { GRID_SIZE, getBranchMapLayout, isAdjacent } from "../../lib/expeditionGrid";
 import { calculateDungeonDisplayedStats } from "../../lib/dungeonDisplayedStats";
+import { isInlineRoom } from "../../lib/dungeonInlineRooms";
 
 const TYPE_ICONS = {
   entrance:"🚪", battle:"⚔️", elite_battle:"💀", boss_battle:"👑",
   shop:"🛒", event:"✨", trap:"🪤", chest:"📦", rest:"💤",
   stairs:"🪜", treasure:"🏆",
+  // 輕量房（2026-08-06）：踩到即結算、不離開地圖
+  quick_event:"💬", empty:"🚪", coin_pouch:"🪙", mini_chest:"🎁", scout:"🔭",
 };
 
 const TYPE_HINTS = {
@@ -23,6 +26,11 @@ const TYPE_HINTS = {
   shop:"行腳商人在此擺攤。",
   event:"神秘的力量在流動。",
   general_event:"遇到幸運奇遇事件！",
+  quick_event:"踩到即結算的奇遇。",
+  empty:"空蕩蕩的房間。",
+  coin_pouch:"腳邊似乎有錢袋…",
+  mini_chest:"小寶箱！",
+  scout:"瞭望點，視野展開。",
   trap:"腳下傳來喀嚓聲…",
   chest:"閃閃發亮的寶箱！",
   rest:"安全的休息點。",
@@ -42,7 +50,12 @@ const TYPE_LABELS = {
   chest: "寶箱",
   rest: "休息",
   stairs: "階梯",
-  treasure: "寶藏"
+  treasure: "寶藏",
+  quick_event: "奇遇",
+  empty: "空房間",
+  coin_pouch: "錢袋",
+  mini_chest: "迷你寶箱",
+  scout: "瞭望點",
 };
 
 const FAMILY_STYLES = {
@@ -406,7 +419,7 @@ function PlayerStatusBar({ playerState, coins, lootMult = 1, partyMembers = [], 
 }
 
 // ── 立繪版格子地圖（等角 2.5D + 鏡頭跟隨）─────────────────
-function DungeonMapView({ rooms, playerPos, visitedIds, onCellClick, canControl, locked, family, isVisitedPos }) {
+function DungeonMapView({ rooms, playerPos, visitedIds, onCellClick, canControl, locked, family, isVisitedPos, inlineToast }) {
   const theme = FAMILY_STYLES[family] || FAMILY_STYLES.ghost;
   const ISO_OX = (GRID_SIZE - 1) * HALF_W;                 // 位移使負 x 進正
   const worldW = (GRID_SIZE - 1) * 2 * HALF_W + TILE_W;
@@ -452,6 +465,41 @@ function DungeonMapView({ rooms, playerPos, visitedIds, onCellClick, canControl,
         })}
       </svg>
 
+      {/* 輕量房浮動反饋（站上去即結算，格子上方彈訊息） */}
+      {inlineToast && playerPos && (() => {
+        const c = cellCenter(playerPos.x, playerPos.y);
+        return (
+          <div key={inlineToast.key || "toast"} style={{
+            position:"absolute", left:c.cx, top:c.cy,
+            transform:"translate(-50%, -130%)",
+            zIndex:200, pointerEvents:"none",
+            display:"flex", flexDirection:"column", alignItems:"center", gap:3,
+            whiteSpace:"nowrap",
+            animation:"inline-toast-pop 1.6s ease forwards",
+          }}>
+            <div style={{ fontSize:30, filter:"drop-shadow(0 2px 6px rgba(0,0,0,0.85))" }}>
+              {inlineToast.icon || "✨"}
+            </div>
+            <div style={{
+              padding:"4px 12px", borderRadius:999, fontSize:12, fontWeight:900,
+              background:"rgba(6,8,16,0.88)", border:"1px solid rgba(251,191,36,0.55)",
+              color:"#fde68a", boxShadow:"0 4px 14px rgba(0,0,0,0.5)",
+            }}>
+              {inlineToast.title}
+            </div>
+            {inlineToast.badges?.length > 0 && (
+              <div style={{
+                padding:"2px 9px", borderRadius:8, fontSize:10, fontWeight:800,
+                background:"rgba(6,8,16,0.88)", border:"1px solid rgba(148,163,184,0.35)",
+                color:"#cbd5e1",
+              }}>
+                {inlineToast.badges.join(" · ")}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {/* 房間立繪 */}
       {rooms.map(room => {
         const visited = visitedIds.has(room.id);
@@ -480,6 +528,7 @@ export function GridMapStage({
   canControl = true,
   difficulty = 1,
   family = "ghost", partyMembers = [], currentMemberId = "",
+  inlineToast = null,
 }) {
   const [confirmExit, setConfirmExit] = useState(false);
   const theme = FAMILY_STYLES[family] || FAMILY_STYLES.ghost;
@@ -506,7 +555,9 @@ export function GridMapStage({
   const standingRoom = playerPos ? roomByPos[`${playerPos.x},${playerPos.y}`] : null;
   const showStairs = standingRoom?.type === "stairs" && !standingRoom.cleared;
   // 兩段式：站上未清除房間（非入口/樓梯）→ 顯示「進入」按鈕，再按才觸發事件
+  // ⚠️ 輕量房排除在外：踩到即結算（handleCellClick 直接處理），不顯示「進入」按鈕
   const canEnter = !!standingRoom && !standingRoom.cleared
+    && !isInlineRoom(standingRoom?.type)
     && standingRoom.type !== "stairs" && standingRoom.type !== "entrance";
   const enterLabel =
     ["battle", "elite_battle", "boss_battle"].includes(standingRoom?.type) ? "⚔️ 進入戰鬥"
@@ -529,6 +580,7 @@ export function GridMapStage({
 @keyframes gm-fade{0%{opacity:0;transform:translateY(12px)}100%{opacity:1;transform:translateY(0)}}
 @keyframes pin-float{0%,100%{transform:translateY(0);}50%{transform:translateY(-5px);}}
 @keyframes fog-breath{0%,100%{opacity:0.65;}50%{opacity:0.45;}}
+@keyframes inline-toast-pop{0%{opacity:0;transform:translate(-50%,-115%) scale(.85)}14%{opacity:1;transform:translate(-50%,-130%) scale(1)}70%{opacity:1;transform:translate(-50%,-155%) scale(1)}100%{opacity:0;transform:translate(-50%,-175%) scale(.92)}}
       `}</style>
 
       {/* Header */}
@@ -581,6 +633,7 @@ export function GridMapStage({
             locked={canEnter && !!onEnterRoom}
             family={family}
             isVisitedPos={isVisitedPos}
+            inlineToast={inlineToast}
           />
         </div>
 

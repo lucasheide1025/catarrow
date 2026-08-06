@@ -1,6 +1,8 @@
 // src/components/dungeon/DungeonTrap.jsx — 地下城陷阱房間（重設計：25 種貓味陷阱池 + 賭大小閃避）
 import { useState, useEffect, useMemo, useRef } from "react";
 import { confirmNonCombatRoom, resolveNonCombatRoom } from "../../lib/dungeonDb";
+import { buildTeamEventResolution } from "../../lib/dungeonEventResolution";
+import { addCoins } from "../../lib/db";
 import { TRAP_EVENTS } from "../../lib/dungeonTrapPool";
 import { sfxCast, sfxSuccess, sfxCounter, sfxTap, sfxDebuff } from "../../lib/sound";
 import DungeonEventStage from "./DungeonEventStage";
@@ -24,10 +26,11 @@ export default function DungeonTrap({
   const trapPersistedRef = useRef(false);
 
   const members = room?.members || {};
-  const aliveIds = Object.keys(members).filter(id => members[id]?.alive);
   const roomConfirms = localMode ? localConfirms : (room?.roomConfirms || {});
   const roomChoices  = localMode ? localChoices : (room?.roomChoices || {});
-  const allConfirmed = aliveIds.length > 0 && aliveIds.every(id => roomConfirms[id] === true);
+  // ⚠️ R5：陷阱的決策權在房主 —— 「已確認」＝房主已下注，不是全員（原本全員都能押大小）
+  const hostId = localMode ? memberId : (room?.hostId || memberId);
+  const allConfirmed = localMode ? !!myBet : roomConfirms[hostId] === true;
 
   // 讀取/初始化陷阱
   useEffect(() => {
@@ -130,10 +133,21 @@ export default function DungeonTrap({
     }
 
     // 線上模式儲存結算
+    // ⚠️ 這裡原本**只寫 roomResolution**，效果套用整段寫在上面的 `if (localMode)` 裡 ——
+    //    也就是組隊地下城的陷阱從來沒有實際傷害，畫面顯示「受到陷阱影響」但誰都沒掉血。
+    //    效果沿用 buildTeamEventResolution（與事件房同一套 members.* patch 產生器），
+    //    金幣類它不處理，比照 TeamExpeditionBattle::resolveTeamEvent 用 addCoins 迴圈補。
     try {
       const { updateDoc, doc } = await import("firebase/firestore");
       const { db } = await import("../../lib/firebase");
+      const resolution = !success
+        ? buildTeamEventResolution({
+            event: { id: trapType.id, title: trapType.title, effect: trapType.effect },
+            members,
+          })
+        : null;
       await updateDoc(doc(db, "dungeonRooms", roomId), {
+        ...(resolution?.updates || {}),
         roomResolution: {
           kind: "trap",
           trapTypeId: trapType.id,
@@ -143,6 +157,14 @@ export default function DungeonTrap({
           timestamp: Date.now(),
         },
       });
+      const goldLoss = Number(trapType.effect?.gold) || 0;
+      if (!success && goldLoss !== 0) {
+        await Promise.all(
+          Object.entries(members)
+            .filter(([, m]) => m && m.alive !== false && !["guest", "kid"].includes(m.accountType))
+            .map(([id]) => addCoins(id, goldLoss).catch(() => {}))
+        );
+      }
     } catch (e) {
       console.warn(e);
     }
@@ -175,40 +197,46 @@ export default function DungeonTrap({
             </div>
             <div className="text-xs text-slate-400">大 (4~6) ｜ 小 (1~3)</div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => handleChooseBet("big")}
-                className={`py-3 rounded-xl font-black text-sm border transition ${
-                  myBet === "big"
-                    ? "bg-rose-600 border-rose-500 text-white shadow-lg"
-                    : "bg-slate-800 border-slate-700 text-slate-300 hover:text-white"
-                }`}
-              >
-                🔥 押「大」
-              </button>
-              <button
-                type="button"
-                onClick={() => handleChooseBet("small")}
-                className={`py-3 rounded-xl font-black text-sm border transition ${
-                  myBet === "small"
-                    ? "bg-blue-600 border-blue-500 text-white shadow-lg"
-                    : "bg-slate-800 border-slate-700 text-slate-300 hover:text-white"
-                }`}
-              >
-                💧 押「小」
-              </button>
-            </div>
+            {isHost ? (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleChooseBet("big")}
+                    className={`py-3 rounded-xl font-black text-sm border transition ${
+                      myBet === "big"
+                        ? "bg-rose-600 border-rose-500 text-white shadow-lg"
+                        : "bg-slate-800 border-slate-700 text-slate-300 hover:text-white"
+                    }`}
+                  >
+                    🔥 押「大」
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleChooseBet("small")}
+                    className={`py-3 rounded-xl font-black text-sm border transition ${
+                      myBet === "small"
+                        ? "bg-blue-600 border-blue-500 text-white shadow-lg"
+                        : "bg-slate-800 border-slate-700 text-slate-300 hover:text-white"
+                    }`}
+                  >
+                    💧 押「小」
+                  </button>
+                </div>
 
-            {isHost && (
-              <button
-                type="button"
-                onClick={handleRollAndResolve}
-                disabled={!allConfirmed}
-                className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-sm shadow-md mt-2"
-              >
-                {allConfirmed ? "🎲 擲骰結算" : `等待隊員選擇（${Object.keys(roomConfirms).length}/${aliveIds.length}）`}
-              </button>
+                <button
+                  type="button"
+                  onClick={handleRollAndResolve}
+                  disabled={!allConfirmed}
+                  className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-sm shadow-md mt-2"
+                >
+                  {allConfirmed ? "🎲 擲骰結算" : "👆 先押大小"}
+                </button>
+              </>
+            ) : (
+              <div className="rounded-2xl border border-rose-400/30 bg-rose-950/30 p-4 text-sm font-bold text-rose-200 text-center">
+                👑 房主正在判斷如何閃避陷阱…
+              </div>
             )}
           </div>
         )}

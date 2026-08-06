@@ -4,7 +4,7 @@
 import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { onSnapshot, doc } from "firebase/firestore";
 import { db } from "../../lib/firebase";
-import { addCoins, addPotions, addDungeonClear } from "../../lib/db";
+import { addCoins, addPotions, addMaterials, addArrowdew, addDungeonClear } from "../../lib/db";
 import { useAuth } from "../../hooks/useAuth";
 import { MATERIAL_BY_ID as EXPANSION_MATERIAL_BY_ID } from "../../lib/monsterEconomyCatalog";
 import { drawDungeonFloorMonsters, drawDungeonFallbackMonster } from "../../lib/dungeonExpansionMonsters";
@@ -33,7 +33,10 @@ import { trySetDungeonWorldFirstClear, claimDungeonPersonalFirstClear, addDungeo
 import { drawDungeonMerchantType } from "../../lib/dungeonMerchant";
 import { createOrdinaryChestChoices } from "../../lib/dungeonChestLoot";
 import { buildTeamEventResolution } from "../../lib/dungeonEventResolution";
-import { shouldAutoAdvanceTeamFunctionRoom } from "../../lib/dungeonTeamRoomFlow";
+import { shouldAutoAdvanceTeamFunctionRoom, isTeamRoomReadyToAdvance } from "../../lib/dungeonTeamRoomFlow";
+import { isInlineRoom, resolveInlineRoom } from "../../lib/dungeonInlineRooms";
+import { tallyEventVotes } from "../../lib/dungeonEventVotes";
+import { sfxOpen, sfxOpenChest, sfxTap, sfxCoinDrop, sfxBuff, sfxDebuff } from "../../lib/sound";
 import { preloadDungeonUiAssets } from "../../lib/dungeonAssetCache";
 import {
   cleanupExpeditionRoom,
@@ -149,7 +152,10 @@ function attachGridMonsters(gridFloor, floorIndex, difficulty, plan, family) {
     ...gridFloor,
     rooms: gridFloor.rooms.map(room => {
       if (room.type === "elite_battle") {
-        return { ...room, monster: plan.elite || drawDungeonFallbackMonster("strong", difficulty, { family }) };
+        // ★ 每間精英房各自抽一隻。原本全層共用同一個 plan.elite 物件 ——
+        //   第 3 層三條支線各最多 3 間精英房，結果整趟只會看到同一隻怪，
+        //   擴充清冊每族每階明明有 3 隻可抽（作者回報「碰不到其他新增的怪物」）。
+        return { ...room, monster: drawDungeonFallbackMonster("strong", difficulty, { family }) || plan.elite };
       }
       if (room.type !== "battle") return room;
       return {
@@ -197,8 +203,9 @@ function buildTeamFloorState(floorIndex, difficulty, family, fixedBoss) {
       key,
       {
         ...branch,
+        // 同上：三條支線每間精英房都各自抽，不共用 plan.elite
         rooms: branch.rooms.map(room => room.type === "elite_battle"
-          ? { ...room, monster: plan.elite || drawDungeonFallbackMonster("strong", difficulty, { family }) }
+          ? { ...room, monster: drawDungeonFallbackMonster("strong", difficulty, { family }) || plan.elite }
           : room),
       },
     ])),
@@ -494,8 +501,49 @@ export default function TeamExpeditionBattle({
   const [bossRewardLoading, setBossRewardLoading] = useState(false);
   const [bossRewardError, setBossRewardError] = useState("");
   const [bossChoiceComplete, setBossChoiceComplete] = useState(false);
+  const [inlineToast, setInlineToast] = useState(null);
+  // 事件投票結算的在途鎖：全員投完的瞬間可能連續收到多個快照，
+  // 防止 resolveTeamEvent 被重複觸發（隨機事件 roll 兩次、金幣/道具重複入帳）
+  const eventResolvingRef = useRef(false);
+  // 輕量房在途鎖（記錄正在結算的 room.id）：Firestore 寫入是 async，
+  // 連點同一格會在 cleared 同步回來之前觸發第二次 resolve → 重複發錢/能力
+  const inlineResolvingRef = useRef(null);
   const prevRoomIdRef = useRef(null);
   const floorStartingRef = useRef(false);
+
+  useEffect(() => {
+    if (teamRoom?.roomResolution?.kind === "team_event") eventResolvingRef.current = false;
+  }, [teamRoom?.roomResolution]);
+
+  // ── 組隊輕量房浮動反饋：訂閱 roomResolution.kind === "inline_room"（房主與隊員同路）──
+  useEffect(() => {
+    const res = teamRoom?.roomResolution;
+    if (!res || res.kind !== "inline_room" || !res.toast) return;
+    // 音效依房型分流（與單人端 resolveInlineStep 同規格）
+    if (res.roomType === "mini_chest") sfxOpenChest();
+    else if (res.roomType === "scout") sfxOpen();
+    else if (res.roomType === "empty") sfxTap();
+    else if (res.roomType === "coin_pouch") sfxCoinDrop();
+    else if (res.roomType === "quick_event") {
+      const eff = res.effect || {};
+      const isBuff = [eff.hp, eff.atk, eff.def, eff.dmg, eff.gold].some(v => Number(v) > 0)
+        || Number(eff.monsterHp) < 0 || Number(eff.monsterAtk) < 0;
+      if (isBuff) sfxBuff(); else sfxDebuff();
+    }
+    setInlineToast({
+      key: res.timestamp ?? Date.now(),
+      roomType: res.roomType,
+      icon: res.toast.icon,
+      title: res.toast.title,
+      badges: res.toast.badges || [],
+    });
+  }, [teamRoom?.roomResolution]);
+
+  useEffect(() => {
+    if (!inlineToast) return;
+    const t = setTimeout(() => setInlineToast(null), 2000);
+    return () => clearTimeout(t);
+  }, [inlineToast]);
 
   // ── 全員：偵測戰鬥房與最終結果 ──────────────────────────
   useEffect(() => {
@@ -834,12 +882,89 @@ export default function TeamExpeditionBattle({
     return true;
   }, [isHost, myName, dungeonDifficulty, dungeonFamily, dungeonBoss, floorIndex, teamRoomId, teamRoom, startFloor, publishResult]);
 
+  // ── 組隊輕量房：房主本地結算 → 寫 roomResolution + members updates ──
+  // 與事件房同一條線：hp/atk/def/dmg/monsterHp/monsterAtk 走 buildTeamEventResolution；
+  // gold / item / arrowDew / material 比照 resolveTeamEvent 用 addCoins/addPotions 迴圈
+  // （排除 guest/kid）。地圖保持 phase:"grid"，不清 pendingRoom，不進 func_room。
+  const resolveTeamInlineRoom = useCallback(async (room, positionedState) => {
+    // ⚠️ 已清除的輕量房不能再結算：踩回去只會移動，不重複發錢/能力
+    if (!isHost || !room || room.cleared) return;
+    const res = resolveInlineRoom(room, { family: dungeonFamily, difficultyTier: dungeonDifficulty });
+    const resolution = buildTeamEventResolution({
+      event: { id: `inline_${res.roomType}`, title: res.toast.title, effect: res.effect },
+      members: teamRoom?.members || {},
+    });
+
+    // 瞭望點：半徑 2 內房間加進 visitedIds（顯示為「已探索」但未清除，不會跳格移動）
+    let visitedIds = positionedState.visitedIds || [];
+    if (res.revealRadius > 0 && positionedState.gridFloor) {
+      const extra = positionedState.gridFloor.rooms
+        .filter(r => Math.abs(r.pos.x - room.pos.x) + Math.abs(r.pos.y - room.pos.y) <= res.revealRadius)
+        .map(r => r.id);
+      visitedIds = [...new Set([...visitedIds, ...extra])];
+    }
+
+    const nextMapState = {
+      ...positionedState,
+      visitedIds,
+      phase: "grid",
+      pendingRoom: null,
+      gridFloor: positionedState.gridFloor ? {
+        ...positionedState.gridFloor,
+        rooms: positionedState.gridFloor.rooms.map(r =>
+          r.id === room.id ? { ...r, cleared: true } : r
+        ),
+      } : positionedState.gridFloor,
+    };
+    const saved = await updateTeamExpeditionRoom(teamRoomId, {
+      ...resolution.updates,
+      roomResolution: {
+        kind: "inline_room",
+        roomType: res.roomType,
+        toast: res.toast,
+        effect: res.effect,
+        timestamp: Date.now(),
+      },
+      expeditionMapState: stripMapStateGrid(nextMapState),
+    });
+    if (!saved.ok) {
+      setFlowError(`輕量房效果無法套用：${saved.reason}`);
+      return;
+    }
+
+    // gold / item / arrowDew / material 是 buildTeamEventResolution 不處理的鍵
+    const memberEntries = Object.entries(teamRoom?.members || {})
+      .filter(([, member]) => member && member.alive !== false && !["guest", "kid"].includes(member.accountType))
+      .map(([id]) => id);
+    if (res.effect?.gold) {
+      await Promise.all(memberEntries.map(id => addCoins(id, res.effect.gold).catch(() => {})));
+    }
+    if (res.effect?.item) {
+      await Promise.all(memberEntries.map(id => addPotions(id, [{ id: res.effect.item, count: 1 }]).catch(() => {})));
+    }
+    if (res.effect?.arrowDew) {
+      await Promise.all(memberEntries.map(id => addArrowdew(id, res.effect.arrowDew).catch(() => {})));
+    }
+    if (res.effect?.material) {
+      const mat = res.effect.material;
+      await Promise.all(memberEntries.map(id =>
+        addMaterials(id, Array.from({ length: mat.quantity || 1 }, () => mat)).catch(() => {})
+      ));
+    }
+  }, [isHost, dungeonFamily, dungeonDifficulty, teamRoom?.members, teamRoomId]);
+
   const enterExplorationRoom = useCallback(async (room, positionedState) => {
     if (!isHost || !room) return;
     // ⚠️ cleared/樓梯/入口 的判斷必須在「戰鬥房」判斷之前：已清除的怪物/菁英/BOSS 房再踩，
     // 只移動位置、不可重新觸發戰鬥（原本順序相反，導致已清房回頭踩會再打一次）。
     if (room.cleared || room.type === "stairs" || room.type === "entrance") {
       await updateTeamExpeditionRoom(teamRoomId, { expeditionMapState: stripMapStateGrid(positionedState) });
+      return;
+    }
+    // 輕量房（含舊存檔的 general_event）：不進全螢幕，原地結算（已清除的不重複結算）
+    if (isInlineRoom(room.type)) {
+      if (!room.cleared) await resolveTeamInlineRoom(room, positionedState);
+      else await updateTeamExpeditionRoom(teamRoomId, { expeditionMapState: stripMapStateGrid(positionedState) });
       return;
     }
     if (["battle", "elite_battle", "boss_battle"].includes(room.type)) {
@@ -867,10 +992,6 @@ export default function TeamExpeditionBattle({
       preparedRoom.event = drawDungeonEvent("special");
       sharedRoomFields.currentEvent = preparedRoom.event;
     }
-    if (room.type === "general_event") {
-      preparedRoom.event = drawDungeonEvent("general");
-      sharedRoomFields.currentEvent = preparedRoom.event;
-    }
     if (room.type === "chest") {
       preparedRoom.chestEggType = "normal";
       preparedRoom.chestChoices = createOrdinaryChestChoices({
@@ -893,14 +1014,36 @@ export default function TeamExpeditionBattle({
   }, [isHost, startRoomBattle, teamRoomId, dungeonFamily, dungeonDifficulty, dungeonIsHidden]);
 
   // 兩段式：點格子只移動+揭露（同步位置），不立刻進場；進入事件改由「進入」按鈕
+  // ⚠️ 輕量房例外：踩到即結算（房主本地算效果 → 寫 roomResolution + members updates），
+  //    隊員端訂閱到 roomResolution.kind === "inline_room" 就播同一個浮動反饋。
   const handleCellClick = useCallback(async room => {
     if (!isHost || !mapState?.playerPos || !isAdjacent(room.pos, mapState.playerPos)) return;
     const visitedIds = mapState.visitedIds?.includes(room.id)
       ? mapState.visitedIds
       : [...(mapState.visitedIds || []), room.id];
     const positionedState = { ...mapState, playerPos: room.pos, visitedIds };
-    await updateTeamExpeditionRoom(teamRoomId, { expeditionMapState: stripMapStateGrid(positionedState) });
-  }, [isHost, mapState, teamRoomId]);
+    // ⚠️ 只有「未清除」的輕量房才結算；連點同一格靠 inlineResolvingRef 擋重複
+    if (isInlineRoom(room.type)) {
+      if (!room.cleared && inlineResolvingRef.current !== room.id) {
+        inlineResolvingRef.current = room.id;
+        try {
+          await resolveTeamInlineRoom(room, positionedState);
+        } finally {
+          inlineResolvingRef.current = null;
+        }
+      } else {
+        await updateTeamExpeditionRoom(teamRoomId, {
+          roomResolution: null,
+          expeditionMapState: stripMapStateGrid(positionedState),
+        });
+      }
+      return;
+    }
+    await updateTeamExpeditionRoom(teamRoomId, {
+      roomResolution: null,
+      expeditionMapState: stripMapStateGrid(positionedState),
+    });
+  }, [isHost, mapState, teamRoomId, resolveTeamInlineRoom]);
 
   // 站在未清除事件房，房主按「進入」才觸發（enterExplorationRoom 用當前 mapState 當定位）
   const handleEnterRoom = useCallback(async room => {
@@ -942,6 +1085,9 @@ export default function TeamExpeditionBattle({
     });
     const saved = await updateTeamExpeditionRoom(teamRoomId, {
       ...resolution.updates,
+      // 投票制：全員投完（roomConfirms 全 true）觸發房主結算，結算完就把確認清空，
+      // 讓大家看完結果後再按「繼續探索」二次確認 → 結果面板不會一閃即逝。
+      roomConfirms: {},
       roomResolution: {
         kind:"team_event",
         eventId:resolution.eventId,
@@ -1018,17 +1164,74 @@ export default function TeamExpeditionBattle({
     });
   }, [isHost, mapState, floorIndex, teamRoomId]);
 
+  // ── 房主：事件房強制定案（先以最高票結算，再推進） ────────────────
+  const forceAdvanceFunctionRoom = useCallback(async () => {
+    if (!isHost) return;
+    const roomType = mapState?.pendingRoom?.type;
+    const isEventRoom = roomType === "event" || roomType === "general_event";
+    const isResolved = teamRoom?.roomResolution?.kind === "team_event";
+    if (isEventRoom && !isResolved && mapState?.pendingRoom?.event) {
+      const ev = mapState.pendingRoom.event;
+      const isSpecial = Array.isArray(ev.choices) && ev.choices.length > 0;
+      const { winner } = tallyEventVotes({
+        members: teamRoom?.members,
+        choices: teamRoom?.roomChoices,
+        hostId: teamRoom?.hostId,
+      });
+      const winIdx = winner !== null && winner !== undefined ? Number(winner) : null;
+      const winChoice = isSpecial && Number.isFinite(winIdx) ? ev.choices[winIdx] || null : null;
+      await resolveTeamEvent(winChoice, Number.isFinite(winIdx) ? winIdx : null);
+    }
+    await finishFunctionRoom();
+  }, [isHost, mapState, teamRoom, resolveTeamEvent, finishFunctionRoom]);
+
   // ── 全員投票完成自動推進（房主端監聽） ───────────────────────────
   useEffect(() => {
     if (!isHost || mapState?.phase !== "func_room" || !mapState?.pendingRoom) return;
+    const roomType = mapState.pendingRoom.type;
+
+    // 事件房：全員「投票」（confirmNonCombatRoom 同時寫 roomConfirms + roomChoices）。
+    // 全員投完 → 房主先以最高票結算（平票時房主那票 ×2，見 dungeonEventVotes），
+    // 結算完成（roomResolution team_event）後再走既有推進。
+    if (roomType === "event" || roomType === "general_event") {
+      if (!isTeamRoomReadyToAdvance({ members: teamRoom?.members, confirms: teamRoom?.roomConfirms })) return;
+      const isResolved = teamRoom?.roomResolution?.kind === "team_event";
+      if (!isResolved) {
+        if (eventResolvingRef.current) return;
+        eventResolvingRef.current = true;
+        const ev = mapState.pendingRoom.event;
+        const isSpecial = Array.isArray(ev?.choices) && ev.choices.length > 0;
+        let winChoice = null;
+        let winIdx = null;
+        if (isSpecial) {
+          const { winner } = tallyEventVotes({
+            members: teamRoom?.members,
+            choices: teamRoom?.roomChoices,
+            hostId: teamRoom?.hostId,
+          });
+          winIdx = winner !== null && winner !== undefined ? Number(winner) : null;
+          winChoice = Number.isFinite(winIdx) ? (ev.choices[winIdx] || null) : null;
+        }
+        resolveTeamEvent(winChoice, Number.isFinite(winIdx) ? winIdx : null)
+          .catch(() => {})
+          .finally(() => {
+            // 寫入失敗（無 team_event resolution）時，1.5s 後解鎖重試
+            setTimeout(() => { eventResolvingRef.current = false; }, 1500);
+          });
+        return;
+      }
+      finishFunctionRoom();
+      return;
+    }
+
     if (shouldAutoAdvanceTeamFunctionRoom({
-      roomType: mapState.pendingRoom.type,
+      roomType,
       members:teamRoom?.members,
       confirms:teamRoom?.roomConfirms,
     })) {
       finishFunctionRoom();
     }
-  }, [isHost, mapState?.phase, mapState?.pendingRoom, teamRoom?.members, teamRoom?.roomConfirms, finishFunctionRoom]);
+  }, [isHost, mapState?.phase, mapState?.pendingRoom, teamRoom?.members, teamRoom?.roomConfirms, teamRoom?.roomChoices, teamRoom?.roomResolution, teamRoom?.hostId, resolveTeamEvent, finishFunctionRoom]);
 
   // ── 領取獎勵 + 儲存紀錄 ──────────────────────────────────
   const handleFinish = useCallback(async () => {
@@ -1250,6 +1453,7 @@ export default function TeamExpeditionBattle({
           canControl={isHost}
           difficulty={dungeonDifficulty}
           family={dungeonFamily}
+          inlineToast={inlineToast}
         />
         <FlowErrorBanner message={flowError} onDismiss={() => setFlowError("")} />
       </>
@@ -1302,7 +1506,7 @@ export default function TeamExpeditionBattle({
           teamRoom={teamRoom}
           myId={myId}
           isHost={isHost}
-          onForceAdvance={finishFunctionRoom}
+          onForceAdvance={forceAdvanceFunctionRoom}
         />
         <div className="flex-1">
           {(() => {
