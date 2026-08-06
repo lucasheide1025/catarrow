@@ -133,7 +133,7 @@ export default function MemberHome({
   })();
 
   // 倒數計時器：只在有遠征/村目標時每 30 秒 tick 一次
-  const needTick = expSlots.length > 0 || !!villageGoal;
+  const needTick = expSlots.length > 0 || !!villageGoal || worldBossCycle?.status === "resting";
   useEffect(() => {
     if (!needTick) return;
     const t = setInterval(() => setNowMs(Date.now()), 30000);
@@ -413,29 +413,55 @@ export default function MemberHome({
                   <span style={{ fontSize:11, color:"var(--danger-fg)", fontWeight:700, flexShrink:0 }}>參戰 →</span>
                 </button>
               )}
-              {wbCharging && (
-                <button onClick={() => onPageChange("worldboss")}
-                  style={{ ...rowStyle("rgba(124,58,237,0.13)", "rgba(167,139,250,0.32)"), flexDirection:"column", alignItems:"stretch", gap:7 }}>
-                  <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                    <span style={{ fontSize:20 }}>🌌</span>
-                    <div style={{ flex:1 }}>
-                      <div style={{ fontSize:13, fontWeight:900, color:"#c4b5fd" }}>世界王誕生徵兆</div>
-                      <div style={{ fontSize:10, color:"var(--text-secondary)" }}>
-                        全體射箭、通關、擊倒怪物與探索骰子都會累積
+              {wbCharging && (() => {
+                const WB_LABELS = { arrows:"射箭", dungeonClears:"通關地下城", monsterKills:"擊倒怪物", villageDice:"探索骰子" };
+                const restLeftMs = Math.max(0, Number(worldBossCycle.restEndsAtMs || 0) - nowMs);
+                const inRest = worldBossCycle.status === "resting" && restLeftMs > 0;
+                const required = WB_LABELS[worldBossCycle.requiredType] ? worldBossCycle.requiredType : null;
+                const restH = Math.floor(restLeftMs / 3600000);
+                const restM = Math.floor((restLeftMs % 3600000) / 60000);
+                return (
+                  <button onClick={() => onPageChange("worldboss")}
+                    style={{ ...rowStyle("rgba(124,58,237,0.13)", "rgba(167,139,250,0.32)"), flexDirection:"column", alignItems:"stretch", gap:7 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                      <span style={{ fontSize:20 }}>{inRest ? "🌙" : "🌌"}</span>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontSize:13, fontWeight:900, color:"#c4b5fd" }}>
+                          {inRest ? "世界王冷卻中" : "世界王誕生徵兆"}
+                        </div>
+                        <div style={{ fontSize:10, color:"var(--text-secondary)" }}>
+                          {inRest
+                            ? "王剛被擊倒，冷卻結束後行動才會累積進度"
+                            : required
+                              ? `本輪條件：${WB_LABELS[required]}（其他行動不計）`
+                              : "全體射箭、通關、擊倒怪物與探索骰子都會累積"}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:4 }}>
-                    {[
-                      ["arrows","🏹"], ["dungeonClears","🏰"], ["monsterKills","👹"], ["villageDice","🎲"],
-                    ].map(([key,icon]) => {
-                      const value = Number(worldBossCycle.progress?.[key] || 0);
-                      const target = Number(worldBossCycle.targets?.[key] || 1);
-                      return <div key={key} style={{ fontSize:9, color:"#ddd6fe" }}>{icon} {value.toLocaleString()} / {target.toLocaleString()}</div>;
-                    })}
-                  </div>
-                </button>
-              )}
+                    {inRest ? (
+                      <div style={{ display:"flex", alignItems:"baseline", gap:6 }}>
+                        <span style={{ fontSize:11, color:"#c4b5fd" }}>冷卻剩餘</span>
+                        <span style={{ fontSize:15, fontWeight:800, color:"#fcd34d" }}>
+                          {restH} 小時 {restM} 分
+                        </span>
+                      </div>
+                    ) : (
+                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:4 }}>
+                        {[
+                          ["arrows","🏹"], ["dungeonClears","🏰"], ["monsterKills","👹"], ["villageDice","🎲"],
+                        ].map(([key,icon]) => {
+                          const value = Number(worldBossCycle.progress?.[key] || 0);
+                          const target = Number(worldBossCycle.targets?.[key] || 1);
+                          const isReq = required === key;
+                          return <div key={key} style={{ fontSize:9, color: isReq ? "#fcd34d" : "rgba(221,214,254,0.45)", fontWeight: isReq ? 800 : 400 }}>
+                            {icon} {value.toLocaleString()} / {target.toLocaleString()}{isReq ? " ★" : ""}
+                          </div>;
+                        })}
+                      </div>
+                    )}
+                  </button>
+                );
+              })()}
               {expSlots.map(e => {
                 const mission = EXPEDITION_MISSIONS.find(m => m.tier === e.missionTier);
                 const left = tsToMs(e.endsAt) - nowMs;
@@ -492,7 +518,7 @@ export default function MemberHome({
         ))}
       </div>
 
-      {/* ── 我的排行榜（入圍前五名的榜）───────────────────────── */}
+      {/* ── 我的排行榜（排名最好的前三榜）─────────────────────── */}
       <HomeLeaderboardBlock myId={profile?.id} onPageChange={onPageChange} />
 
       {/* 廣播訊息（分類篩選）*/}

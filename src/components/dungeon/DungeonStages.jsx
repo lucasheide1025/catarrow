@@ -184,26 +184,48 @@ const HALF_H = 45;
 const ASSET_BASE = "/assets/dungeon";
 const EMPTY_SRC = `${ASSET_BASE}/room_empty.webp`;
 
+// 輕量房是「踩到即結算、不離開地圖」的房型，**永遠沒有 family 變體圖**（只有通用圖）。
+// 這是之前每次進出地圖都重複 404 探測、偶發破圖的兇手——直接靜態跳過 family 變體。
+const LIGHTWEIGHT_ROOM_TYPES = new Set(["quick_event", "coin_pouch", "mini_chest", "scout", "empty", "general_event"]);
+// 房間立繪 session 快取：同一個 session 先探過一次就記住，之後直接跳到已知可用的圖。
+// 只黑名單「family 變體」（確定性 404）；通用圖失敗只可能是暫態網路問題，下次進場會重試。
+const roomArtCache = new Map(); // `${family}|${type}` → 確認可用的 src
+const roomArtBad   = new Set(); // 已確認 404 的 family 變體 src（以後不再嘗試）
+
 // 單一房間立繪：iso 座標定位(x,y,z)。只顯示立繪；迷霧=黑掉+問號；當前房=玩家釘。
 // 已拿掉：綠色可移動框、金色邊框、家族 tint 底色、✓ 標記。
 function RoomTile({ room, x, y, z, isCurrent, clickable, fog, onClick, muted = false, family }) {
-  const chain = useMemo(() => (
-    fog
+  const artKey = `${family || "base"}|${room.type}`;
+  const cachedGood = roomArtCache.get(artKey);
+  const chain = useMemo(() => {
+    if (cachedGood) return [cachedGood, EMPTY_SRC];
+    const raw = fog
       ? [EMPTY_SRC]
       : [
-          family && `${ASSET_BASE}/room_${family}_${room.type}.webp`,
+          family && !LIGHTWEIGHT_ROOM_TYPES.has(room.type) && `${ASSET_BASE}/room_${family}_${room.type}.webp`,
           `${ASSET_BASE}/room_${room.type}.webp`,
           EMPTY_SRC,
-        ].filter(Boolean)
-  ), [fog, family, room.type]);
+        ].filter(Boolean);
+    // 跳過這個 session 已知 404 的圖，直接試下一張
+    return raw.filter(src => !roomArtBad.has(src));
+  }, [cachedGood, fog, family, room.type]);
   const [idx, setIdx] = useState(0);
   const [imgFailed, setImgFailed] = useState(false);
   useEffect(() => { setIdx(0); setImgFailed(false); }, [chain]);
   const imgSrc = chain[Math.min(idx, chain.length - 1)];
 
   const handleError = () => {
+    const cur = imgSrc;
+    // 只有 family 變體失敗才進黑名單（確定性 404）；通用圖失敗多半是暫態網路，不永久封鎖
+    if (cur && cur !== EMPTY_SRC && family && cur.startsWith(`${ASSET_BASE}/room_${family}_`)) {
+      roomArtBad.add(cur);
+    }
+    if (cur && roomArtCache.get(artKey) === cur) roomArtCache.delete(artKey);
     if (idx < chain.length - 1) setIdx(idx + 1);
     else setImgFailed(true);
+  };
+  const handleLoad = () => {
+    if (!fog && imgSrc && imgSrc !== EMPTY_SRC) roomArtCache.set(artKey, imgSrc);
   };
 
   return (
@@ -218,7 +240,7 @@ function RoomTile({ room, x, y, z, isCurrent, clickable, fog, onClick, muted = f
       }}
     >
       {!imgFailed ? (
-        <img src={imgSrc} alt={room.label || room.type} draggable={false} onError={handleError}
+        <img src={imgSrc} alt={room.label || room.type} draggable={false} onError={handleError} onLoad={handleLoad}
           style={{
             width:"100%", height:"100%", objectFit:"contain",
             filter: fog ? "brightness(0.2)" : "none",   // 迷霧：黑掉

@@ -4,7 +4,10 @@
 // ⚠️ 零平衡守則：本檔不做任何戰鬥計算，也不定義任何 cap 數字——
 //    cap 一律引用 cardTalents 的 TALENT_CAPS，避免第二段改上限時顯示對不上。
 // ─────────────────────────────────────────────────────────────
-import { getCardTalent, TALENT_CAPS, calcFamilySetStatus } from "./cardTalents";
+import { getCardTalent, TALENT_CAPS, calcFamilySetStatus, STATUS_STRENGTH } from "./cardTalents";
+import {
+  CONTROL_PROC_CAP, MONSTER_STATUSES, MONSTER_STATUS_LIST, PROC_CAP, PROC_MIN_SCORE,
+} from "./monsterStatus";
 
 // key → 顯示資訊（icon / 友善名稱 / 共池來源 / 類別）。cap 不放這裡（見 effectCap）。
 export const EFFECT_DISPLAY = Object.freeze({
@@ -20,6 +23,9 @@ export const EFFECT_DISPLAY = Object.freeze({
   monsterDefDownPct:  { icon: "🔨", name: "破防（怪DEF↓）", kind: "talent" },
   endRoundHeal:       { icon: "🌿", name: "回合回復",     kind: "mixed" },  // 天賦(汲取)＋套裝(山息)都會加
   hqDamagePct:        { icon: "🎯", name: "高品質傷害",   kind: "mixed" },  // 天賦(精研)＋套裝(全神貫注)
+  firstStrikePct:     { icon: "⏳", name: "蓄勁",         kind: "talent" },
+  finisherPct:        { icon: "🏆", name: "終結",         kind: "talent" },
+  venomPct:           { icon: "☠️", name: "淬毒",         kind: "talent" },
   // 套裝專屬（不吃天賦 cap）
   coinBonusPct:               { icon: "🪙", name: "金幣加成", kind: "set" },
   bossDamagePct:              { icon: "🐲", name: "屠龍（對王傷害）", kind: "set" },
@@ -116,3 +122,50 @@ export function buildSuggestion(totals = {}, sets = [], views = [], contribution
   if (tips.length === 0) tips.push("搭配均衡，讚 👍");
   return tips.slice(0, 2);
 }
+
+// ── ☠️ 異常狀態的真實公式（數字從 STATUS_STRENGTH / MONSTER_STATUSES 讀,不抄）────
+// 給卡片系統顯示「怪物中毒到底扣多少」;顯示與 tickMonsterStatuses 永遠同源,
+// 改強度只動 cardTalents.STATUS_STRENGTH 一處,這裡自動跟上。
+export function describeStatusFormula(statusId) {
+  const def = MONSTER_STATUSES[statusId];
+  if (!def) return "";
+  const s = STATUS_STRENGTH[statusId];
+  switch (statusId) {
+    case "poison":   return `每回合 -${s}% 最大HP（不致死）`;
+    case "burn":     return `每回合 -${s}% 你的ATK`;
+    case "bleed":    return `每回合 -${s}% 你的ATK ×層數（最多5層）`;
+    case "defBreak": return `怪物DEF -${s}%`;
+    case "weaken":   return `怪物ATK -${s}%`;
+    case "freeze":   return `怪物本回合無法放技能`;
+    case "paralyze": return `${s}% 機率擋下反擊`;
+    default:         return def.desc || "";
+  }
+}
+
+// 這副牌能施加的異常（calcCardCombatEffects 的 inflict）→ 顯示用清單
+export function describeInflict(inflict = {}) {
+  return Object.entries(inflict || {}).map(([id, cfg]) => {
+    const def = MONSTER_STATUSES[id];
+    if (!def || !cfg) return null;
+    return {
+      id, icon: def.icon, name: def.name, color: def.color,
+      chancePct: Math.round(Number(cfg.chancePct) * 10) / 10,
+      duration: cfg.duration,
+      formula: describeStatusFormula(id),
+    };
+  }).filter(Boolean);
+}
+
+// 全部異常狀態一覽（狀態說明面板用）
+export function describeAllStatuses() {
+  return MONSTER_STATUS_LIST.map(s => ({
+    id: s.id, icon: s.icon, name: s.name, color: s.color,
+    desc: s.desc, formula: describeStatusFormula(s.id),
+  }));
+}
+
+// 觸發規則一行字
+export function describeStatusProcRule() {
+  return `${PROC_MIN_SCORE} 環以上（含 X）才判定觸發；一般狀態上限 ${PROC_CAP}%，冰凍/麻痺（控場）上限 ${CONTROL_PROC_CAP}%`;
+}
+

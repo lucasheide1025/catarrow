@@ -7,6 +7,7 @@ import { calcCardCombatEffects, calcFamilySetStatus } from "../../../lib/cardTal
 import {
   EFFECT_DISPLAY, effectCap, formatEffectValue,
   buildEquippedViews, buildContribution, buildSuggestion,
+  describeInflict, describeAllStatuses, describeStatusProcRule,
 } from "../../../lib/cardTalentDisplay";
 import { CARD_CATALOG_BY_ID } from "./cardCatalog";
 
@@ -43,17 +44,26 @@ function EffectRow({ keyName, value, contribution }) {
 
 export default function TalentEffectPanel({ collection }) {
   const [open, setOpen] = useState(true);
+  const [showStatus, setShowStatus] = useState(false);
 
-  const { totals, sets, contribution, tips, hasAny } = useMemo(() => {
+  const { totals, sets, contribution, tips, inflictList, statusList, hasAny } = useMemo(() => {
     const views = buildEquippedViews(collection || {});
     const totals = calcCardCombatEffects(views);
     const sets = calcFamilySetStatus(views);
     const contribution = buildContribution(views);
     const tips = buildSuggestion(totals, sets, views, contribution);
-    return { totals, sets, contribution, tips, hasAny: Object.keys(totals).length > 0 || views.length > 0 };
+    const inflictList = describeInflict(totals.inflict);
+    // ⚠️ inflict 是物件不是百分比——不能跟其他效果混在同一排,要排除後才算「有沒有任何效果」
+    const realKeys = Object.keys(totals).filter(k => k !== "inflict");
+    return {
+      totals, sets, contribution, tips, inflictList,
+      statusList: describeAllStatuses(),
+      hasAny: realKeys.length > 0 || views.length > 0,
+    };
   }, [collection]);
 
-  const keys = Object.keys(totals);
+  // inflict（可施加異常）不是百分比效果,排除出效果列,另有專區顯示
+  const keys = Object.keys(totals).filter(k => k !== "inflict");
   // 有上限的（畫進度條）在前，純套裝效果（無 cap）在後
   const capped = keys.filter(k => effectCap(k) != null);
   const uncapped = keys.filter(k => effectCap(k) == null);
@@ -85,6 +95,45 @@ export default function TalentEffectPanel({ collection }) {
               })}
             </div>
           )}
+
+          {/* ☠️ 這副牌能施加的異常（含真實公式） */}
+          {inflictList.length > 0 && (
+            <div style={{ marginTop: 6, padding: "8px 10px", borderRadius: 10, background: "rgba(132,204,22,.07)", border: "1px solid rgba(132,204,22,.28)" }}>
+              <div style={{ fontSize: 11, fontWeight: 900, color: "#bef264" }}>☠️ 可施加異常（9 環以上判定，完整規則見下方說明）</div>
+              {inflictList.map(st => (
+                <div key={st.id} style={{ marginTop: 4, fontSize: 11, color: "#e2e8f0", lineHeight: 1.5 }}>
+                  <span style={{ fontWeight: 800 }}>{st.icon} {st.name}</span>
+                  <span style={{ color: "#a3e635", fontWeight: 800 }}> {st.chancePct}%</span>
+                  <span style={{ color: "#7c8aa5" }}>（持續 {st.duration} 回合）｜{st.formula}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ❓ 異常狀態說明（中毒/灼燒/流血/虛弱…具體扣多少） */}
+          <div style={{ marginTop: 8, borderTop: "1px solid rgba(255,255,255,.06)", paddingTop: 6 }}>
+            <button
+              type="button"
+              onClick={() => setShowStatus(s => !s)}
+              style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", background: "none", border: "none", padding: 0, cursor: "pointer", color: "#94a3b8", fontWeight: 700, fontSize: 11 }}
+            >
+              <span>❓ 異常狀態說明（實際效果與公式）</span>
+              <span style={{ fontSize: 10 }}>{showStatus ? "收合 ▲" : "展開 ▼"}</span>
+            </button>
+            {showStatus && (
+              <div style={{ marginTop: 6 }}>
+                {statusList.map(st => (
+                  <div key={st.id} style={{ fontSize: 11, color: "#cbd5e1", lineHeight: 1.55 }}>
+                    <span style={{ fontWeight: 800 }}>{st.icon} {st.name}</span>
+                    <span style={{ color: "#7c8aa5" }}>：{st.formula}</span>
+                  </div>
+                ))}
+                <div style={{ marginTop: 5, fontSize: 10, color: "#64748b", lineHeight: 1.55 }}>
+                  {describeStatusProcRule()}。同一種狀態不疊加：重複命中只刷新回合數、取較強強度（流血例外，重複命中會疊層）。
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* 族系套裝 */}
           {sets.length > 0 && (

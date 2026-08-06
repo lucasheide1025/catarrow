@@ -9,14 +9,15 @@ import { calcCardBonus, getCardStat, canUpgradeStar, getUpgradeCost } from "../.
 import { EXPANSION_MONSTER_BY_ID } from "../../../lib/monsterExpansionCatalog";
 import { MONSTERS } from "../../../lib/monsterData";
 import { getCardTalent } from "../../../lib/cardTalents";
-import { EFFECT_DISPLAY, effectCap } from "../../../lib/cardTalentDisplay";
+import { FAMILY_STATUS } from "../../../lib/monsterStatus";
+import { EFFECT_DISPLAY, effectCap, describeStatusFormula } from "../../../lib/cardTalentDisplay";
 import { getBreakRuleText } from "../../../lib/combatSkillEngine";
 
 const STAT_LABEL = { hp: "❤️ HP", atk: "⚔️ ATK", def: "🛡️ DEF" };
 
 const TIER_LABEL = { common: "T1", rare: "T2", elite: "T3", fierce: "T4", boss: "T5", mythic: "T6", worldboss: "世界王" };
 const ENC_LABEL = { normal: "一般怪", miniBoss: "小王", boss: "大王", worldboss: "世界王" };
-const FAMILY_LABEL = { ghost: "鬼怪", mountain: "山林", insect: "毒蟲", workplace: "職場", exam: "考試", temple: "西方", treasure: "寶箱" };
+const FAMILY_LABEL = { ghost: "鬼怪", mountain: "山林", insect: "毒蟲", workplace: "職場", exam: "考試", temple: "西方", treasure: "寶箱", worldboss: "世界王" };
 
 export default function CardDetailSheet({ view, onClose, onSeen, onEquip, onUpgrade, onPickStat, onSetTitle }) {
   // 開啟一張已取得的卡 → 清紅點（effect,不在 render 寫）
@@ -80,6 +81,14 @@ export default function CardDetailSheet({ view, onClose, onSeen, onEquip, onUpgr
                     天賦：{talent.text}
                     {note && <span style={{ color: "#94a3b8", fontWeight: 600, fontSize: 11 }}>（{note}）</span>}
                   </div>;
+                })()}
+                {(() => {
+                  // ☠️ 淬毒卡：把「族系異常」的實際公式直接寫出來（數字與戰鬥同源）
+                  const talent = getCardTalent(view);
+                  if (!talent || talent.key !== "venomPct") return null;
+                  const famStatus = FAMILY_STATUS[view.family];
+                  if (!famStatus) return null;
+                  return <div style={{ marginTop: 3, fontSize: 11, color: "#a3e635", fontWeight: 700 }}>☠️ 族系異常：{describeStatusFormula(famStatus)}</div>;
                 })()}
               </div>
             ) : (

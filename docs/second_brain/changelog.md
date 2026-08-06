@@ -5,6 +5,228 @@
 
 ---
 
+## 2026-08-06（🚀 佈署：排行榜＋卡片系統＋誕生徵兆＋地下城房圖＋世界王 全量上線）
+
+作者：「完成後請幫我佈署上去」
+
+**改了什麼**
+- `npx vercel --prod` 一次帶上本輪全部 9 個未提交改動：`HomeLeaderboardBlock.jsx`
+  （排行榜一般玩家名次）、`MemberHome.jsx`（誕生徵兆）、`WorldBossLobby.jsx`（大廳
+  誕生徵兆卡片）、`DungeonStages.jsx`（地下城房圖快取）、卡片系統三檔
+  （`cardTalentDisplay.js`＋`cardTalentDisplay.test.js`＋`TalentEffectPanel.jsx`＋
+  `CardDetailSheet.jsx`）、`docs/second_brain/changelog.md`。
+- Vercel 部署 `catarrow-9o5hcl309`（READY，Production）→ **Aliased
+  https://student.catgroup.com.tw**。
+- 線上驗證（browser-use 開正式網址）：「貓小隊射箭場-學籍系統」登入頁正常載入
+  （email/password＋Google 登入都顯示），確認部署成功。
+
+**踩坑提醒**
+- ⚠️ **`*.vercel.app` 部署網址會被 Vercel 部署保護導到登入頁**（`vercel.com/login`）——
+  那是正常的，正式入口是自訂網域 `student.catgroup.com.tw`；驗證要開自訂網域。
+- ⚠️ **本 bash 環境對 `student.catgroup.com.tw` 的 curl 會 SSL error（exit 35）**，
+  但 DNS 解析正常（→ vercel-dns）、HTTP 308 轉 HTTPS 正常——是環境 TLS 限制，
+  不代表網址有問題；要驗證頁面用 browser-use（Chrome）最可靠。
+- ⚠️ 未登入首頁只有登入頁，看不到排行榜等內容——「線上跟本機看到的不一樣」
+  常常是沒登入；登入後才有會員首頁。
+
+---
+
+## 2026-08-06（🏆 首頁排行榜：一般玩家也看得到名次，沒名次顯示「暫無名次」）
+
+作者：「一般玩家首頁沒有顯示排行榜 就算沒有名次也該要顯示暫無名次之類的 不一定要
+顯示前幾名 XX名也可以啊 只要顯示最高排行的前三名就好 然後維持需要手動更新」
+
+**改什麼**（`HomeLeaderboardBlock.jsx`）
+- 原本 `computeMine` 只收「我入圍前五名」的榜（`idx < 5`）→ 一般玩家沒進任何榜的前五
+  就只剩「還沒擠進任何榜的前五名」一句空話，等於沒看到排行榜。
+- 改成 **任何名次都算數**：每個榜只要我有數值就有名次，取**名次最好的前三個榜**顯示
+  （排序不變：名次越前越優先、同名次比參與人數）。
+- 完全沒名次（15 個候選榜都無數值）→ 顯示「🏅 暫無名次——完成第一個挑戰，排行榜就會
+  顯示你的名次！」（不再是「沒進前五」的空話）。
+- **手動更新機制原封不動**：結果存 localStorage 無 TTL、只有按「🔄 更新排名」才重讀
+  （第一次本機無快取會自動抓一次）、「查看全部 →」進排行榜頁維持每次重算。
+
+**為什麼**
+- 排行榜是首頁的成本大戶（算榜要讀整個 members 集合），所以之前刻意只給「有面子的人」
+  看。但「看不到名次」對一般玩家等於沒有排行榜——玩家要的是「我到底排第幾」，
+  幾名都行；成本設計（手動更新）維持不變就沒有讀取量問題。
+
+**踩坑提醒**
+- ⚠️ 排行區塊的成本控制是「**顯示層省讀取**」：算一次榜很貴（全集合），但算完存
+  localStorage 無 TTL、不按鈕不重算——**以後若想加「自動更新」或「每秒刷新」
+  就是在挑戰這個設計**，別為了即時性把首頁讀取量打回去。
+- ⚠️ `rankBoard` 只回傳 value>0 的人（有參與才算數）——「沒名次」＝15 個候選榜
+  全無數值，不是「最後一名」；「最後一名」是「第 N 名／N 人」，照樣顯示。
+- ⚠️ 排序平手規則（同名次比參與人數）是既有的：極端情況「第 3 名／3人」（小榜末位）
+  可能排在「第 5 名／300人」前面——reviewer 標記過，作者以名次為主要訊號，維持現況。
+
+---
+
+## 2026-08-06（🎴 卡片系統：英文名漏譯修掉＋異常效果寫出真實公式）
+
+作者：「卡片系統裡面有一些沒有成功翻譯 它顯示的是英文名稱 以及各種效果是不是可以
+寫一下具體真實效果跟計算公式? 就跟現在怪物會中毒但到底傷害怎麼算? 流血? 虛弱?」
+
+**① 英文名稱的三個來源（全修）**
+- `cardTalentDisplay.js` 的 `EFFECT_DISPLAY` 對照表**缺 3 個天賦鍵**：`firstStrikePct`
+  （蓄勁）／`finisherPct`（終結）／`venomPct`（淬毒）→ `TalentEffectPanel` 直接印英文 key。
+- `calcCardCombatEffects` **永遠**塞 `total.inflict`（即使空物件）→ 面板對每個玩家都印
+  「• inflict [object Object]%」，且「尚未裝備卡片」空狀態永遠不出現（hasAny 誤判）。
+- `CardDetailSheet` 的 `FAMILY_LABEL` 缺 `worldboss` → 世界王卡顯示英文「worldboss」。
+- 修法：補 3 個對照、`inflict` 從效果列排除＋專區顯示、`worldboss:世界王`；
+  **新增防回歸測試**（每個 TALENT_CAPS 鍵都必須有中文顯示名，以後再漏直接紅）。
+
+**② 異常狀態寫出真實公式（數字與戰鬥同源）**
+- 新增 `cardTalentDisplay.js` 顯示 helper（**零抄數字**，全部從 `STATUS_STRENGTH` /
+  `MONSTER_STATUSES` 讀，改強度只動 `cardTalents.STATUS_STRENGTH` 一處）：
+  - `describeStatusFormula(id)`：中毒=每回合 -3% 最大HP（不致死）／灼燒=每回合 -12% 你的ATK／
+    流血=每回合 -8% 你的ATK ×層數（最多5層）／破防=怪物DEF -12%／虛弱=怪物ATK -12%／
+    冰凍=本回合無法放技能／麻痺=50% 機率擋反擊。
+  - `describeInflict`（deck 的 inflict → 顯示清單）、`describeAllStatuses`、
+    `describeStatusProcRule`（9 環以上判定；一般上限 35%、控場 12%）。
+- `TalentEffectPanel` 新增兩塊：**☠️ 可施加異常**（每種狀態的機率％＋持續回合＋公式）＋
+  **❓ 異常狀態說明**（可收合，七種狀態全列出公式＋「同種不疊加、重複命中刷新回合數
+  取較強強度、流血例外會疊層」規則）。
+- `CardDetailSheet`：淬毒天賦卡在「天賦」下方多一行「☠️ 族系異常：{公式}」
+  （族系→狀態對應走 `FAMILY_STATUS`）。
+
+**驗證**：新增 `cardTalentDisplay.test.js` 5 測（含防英文 key 回歸）；全專案 **1838 測全過**、
+ESLint 0 error、build 成功（bundle 用 `\uXXXX` 還原法驗證新字串全在線）。
+
+**踩坑提醒**
+- ⚠️ **顯示層的 key→中文對照表只要漏鍵，UI 就直接印英文 key 給玩家看**（不報錯）。
+  以後新增天賦/效果鍵，**第一時間補 `EFFECT_DISPLAY`**，測試會盯（TALENT_CAPS 全鍵檢查）。
+- ⚠️ **`calcCardCombatEffects` 的 `inflict` 是物件不是百分比**——任何「把所有 key 攤開」
+  的顯示都要先把它排除，否則 `formatEffectValue` 印出 `[object Object]%`。
+- ⚠️ **顯示公式不要在顯示層抄數字**：`STATUS_STRENGTH`（中毒3%/灼燒12%/流血8%/破防12%/
+  虛弱12%/麻痺50%）是唯一真本，顯示從它讀，改強度才不會兩邊漂移。
+
+---
+
+## 2026-08-06（🐛 MemberApp 435 行 eslint 錯誤真因：.eslintcache 重播陳年錯誤）
+
+作者：「然後我在後台都會看到這個錯誤 幫我修正 ERROR [eslint] src\pages\MemberApp.jsx
+  Line 435:11: Definition for rule 'react-hooks/exhaustive-deps' was not found」
+
+**完整真相（用「清快取→build 成功、留快取→build 失敗」重現後挖到根）**
+- CRA 5 的 build/dev 的 eslint（`eslint-webpack-plugin` 3.2.0）帶 `cache:true`，
+  快取在 `node_modules/.cache/.eslintcache`（`eslint/lib/cli-engine/lint-result-cache.js`
+  的 `file-entry-cache`，**metadata 策略＝size+mtime+configHash 都相同才命中**）。
+- `MemberApp.jsx` 在陳年 build 裡（435 行還寫著 `// eslint-disable-line
+  react-hooks/exhaustive-deps` 的時代）被快取成「errorCount:1」的結果——而 dev server 的
+  base config（`eslint-config-react-app/base.js`，只載 `plugins:['react']`）**沒有
+  react-hooks rule**，所以那顆錯誤就是「Definition for rule ... was not found」。
+- 後來移除 directive 的編輯**恰好沒改變檔案的 size（72906）**，快取的
+  size+mtime 比對判定「檔案沒變」→ **每次 lint 都直接重播那顆舊錯誤，根本不重新檢查**。
+  （鐵證：快取訊息 `endColumn:61`＝舊檔的完整註解長度；現在 435 行只有 32 字元。
+  用 plugin 同樣選項＋cache 跑 `lintFiles` 精準重現 errorCount:1。）
+- **修法：`rm -rf node_modules/.cache` 一次就夠**——重播源頭清掉後全新 lint 乾淨
+  （MemberApp 新快取 errorCount:0、build Compiled successfully）。src 已零
+  react-hooks directive，**不會再產生新的錯誤進快取**，所以這是永久解，
+  不是治標。
+- ⚠️ 舊 dev server（`npm start`）若還開著，**要重啟**：它記憶體裡的 webpack 狀態
+  還握著舊錯誤，且可能把舊錯誤寫回快取。重啟＋清快取＝徹底乾淨。
+- `ESLINT_NO_DEV_ERRORS=true` 只降級「不擋編譯」（`failOnError` 僅 dev 生效）、錯誤文字
+  仍會顯示（`emitError` 未設）；`DISABLE_ESLINT_PLUGIN=true` 連 production eslint 都關——
+  都不是乾淨解法，不採用。
+
+**踩坑提醒（本次修正了三輪 session 都誤判「清快取只是治標」的講法）**
+- ⚠️ **永遠不要寫 `// eslint-disable-line react-hooks/...`**——dev server 的 base config
+  不載 react-hooks plugin，寫了必報「Definition for rule not found」。要壓掉用裸
+  `// eslint-disable-line`。
+- ⚠️ **看到「Definition for rule X was not found」且 grep 不到 X 的 directive**：
+  先 `rm -rf node_modules/.cache` 再 build——這是 `.eslintcache` 在重播陳年錯誤，
+  **不是 node_modules 壞掉、不是 eslintrc 問題、也不是程式碼問題**。
+  判斷方法：快取裡該檔條目 `errorCount>0` 但訊息的行號/欄位對不上現在內容
+  （`endColumn` 比實際行長）＝舊內容被重播。
+- ⚠️ **metadata 策略的快取不會偵測「同 size 的內容替換」**：只要檔案字節數不變，
+  size+mtime 判定就以為沒變。這是這類重播能存活的根本原因。
+- ⚠️ CRA 5 的 eslint 設定藏在 `eslint-config-react-app/base.js`（不是
+  `react-scripts/config/eslint.config.js`，那個檔不存在）；build/dev 的 eslint
+  由 `eslint-webpack-plugin` 跑，帶 ESLint 內建快取。
+- ⚠️ 驗證「是否真的重播」的標準動作：用 `new ESLint({cache:true, cacheLocation:同一路徑,
+  baseConfig:同一份})` 對該檔跑 `lintFiles`——有錯誤＝重播；不帶 cache 再跑一次
+  （乾淨）＝確認檔案本身沒問題。
+
+---
+
+## 2026-08-06（世界王誕生徵兆卡片同步到大廳：冷卻倒數＋本輪條件）
+
+作者：「世界王誕生徵兆卡片在世界王大廳也顯示冷卻倒數與本輪條件（目前只有首頁有）」
+
+**改了什麼**（`WorldBossLobby.jsx` 的無活躍 Boss 卡片）
+- 大廳原本就有進度條＋🎯 標記（`activeSpawnTypes` 淡化沒抽中的），但**缺冷卻倒數**——
+  resting 期間畫四條全 0 進度條，正是「進度沒推進、以為壞了」的元兇重現。
+- 現在跟首頁卡片同一套邏輯：
+  1. 新增 `nowMs` state + 30 秒 ticker（只在 `spawnCycle?.status === "resting"` 時跑，
+     跟首頁 `needTick` 同法）；
+  2. 卡片本體改 IIFE 兩態：
+     - `evaluateWorldBossSpawnCycle(...).reason === "resting"` → 只顯示
+       「冷卻剩餘 X 小時 Y 分」（琥珀色大字，floor 不會出現「X 小時 60 分」）
+       ＋「本輪條件：{label}（其他行動不計）」小字；
+     - 否則維持原四條進度條（🎯 標亮抽中的那一條）。
+  3. `describeSpawnCycle(spawnCycle, nowMs)` 帶 nowMs 進去（共用函式本來就有此參數）。
+
+**踩坑提醒**
+- ⚠️ **「顯示冷卻倒數」必須附 ticker**：`restEndsAtMs - Date.now()` 算一次是不會動的數字，
+  沒 setInterval 的話玩家看到的倒數永遠停在進場那一刻。ticker 只掛在 resting 期，
+  冷卻結束狀態切回 charging 自動清掉（`cycleResting` 變 false）。
+- ⚠️ **ticker 的開關條件與卡片判讀要一致**（ticker 用 status、卡片用 `ev.reason`）：
+  兩者理論上會短暫不一致（文件說 resting 但 restEndsAtMs 已過），無害、下次訂閱快照自會對齊，
+  別為此把 ticker 依賴 nowMs 重跑。
+- ⚠️ 首頁與大廳的誕生徵兆顯示邏輯現在**兩處各寫一份**（MemberHome 的 rowStyle 卡片 vs 大廳的
+  tailwind 卡片）——都只讀 `worldBossSpawnCycle.js` 的共用判讀函式，改規則只動那支就兩邊同步；
+  若日後要統一視覺再抽共用元件。
+
+---
+
+## 2026-08-06（🐛 誕生徵兆進度不動不是 bug 是休息期；地下城房圖重複 404 讀取修掉）
+
+作者：「檢查世界王誕生徵兆那裏為什麼進度沒有推進 還是首頁讀取錯誤? 以及地下城是不是
+房間圖片每次進去都會讀取? 因為有玩家出去在進來後有機率房間是破圖的」
+
+**① 世界王誕生徵兆「進度沒推進」——查了線上 Firestore，不是首頁讀取錯誤**
+- 線上真相：`worldBossSpawnCycles/current` 存在，status=`resting`（王約 2.7 小時前被擊倒，
+  8 小時冷卻中），progress 全 0；`worldBossSpawnOps` 其實一堆操作紀錄，但雲端
+  `contribute()` 對冷卻期**刻意忽略**（`Date.now() < restEndsAtMs → ignored:"resting"`）。
+- 另一個隱形雷：這輪 `requiredType` 只抽中 `monsterKills`，evaluate 只認那一種——
+  但卡片畫出四條進度條，玩家射箭／擲骰永遠看不到數字動。
+- 修法（`MemberHome.jsx`）：卡片改成兩態——**冷卻中**顯示 🌙＋`restEndsAtMs - nowMs` 倒數
+  （needTick 納入 resting，30 秒 tick；倒數用 `Math.floor`，ceil 會顯示「5 小時 60 分」）；
+  冷卻結束後顯示「本輪條件：擊倒怪物（其他行動不計）」＋只標亮 requiredType 那條（★），
+  其餘變暗。舊週期文件沒 `requiredType` → 退回舊顯示（全體行動都會累積）。
+- 作者定案：**維持休息期凍結**（冷卻的設計意義保留），只把狀態講清楚。
+
+**② 地下城房間圖片每次進去都重複讀取＋偶發破圖**（`DungeonStages.jsx`）
+- 根因：輕量房（quick_event/coin_pouch/mini_chest/scout/empty）**永遠沒有 family 變體圖**
+  （檔案清單實證：ghost/insect/mountain/exam/temple/workplace 六族全缺），但 `RoomTile`
+  的圖片鏈每次都先試 `room_${family}_${type}.webp` → 404 → 才退到通用圖。
+  每次進出地圖（remount）重複 404 探測＝頻繁讀取的兇手；網路一抖就破圖。
+- 修法（雙層）：
+  1. 靜態跳過——`LIGHTWEIGHT_ROOM_TYPES` 集合內的房型**根本不進 family 變體**（確定性，零 404）；
+  2. session 快取——模組級 `roomArtCache`（family|type → 已知可用 src）＋ `roomArtBad`（已知 404）。
+     `onLoad` 記好圖、`onError` 只黑名單 **family 變體**（確定性 404）；通用圖失敗多半是暫態
+     網路，**不永久封鎖**，下次進場會重試（reviewer 抓的關鍵點）。
+
+**驗證**：ESLint 0 error、地下城/首頁 313 測＋全專案 1833 測全過、build 成功。
+bundle 驗證用 `\uXXXX` 還原法（見下方踩坑），新字串全部在線。
+
+**踩坑提醒**
+- ⚠️ **「進度沒推進」先查線上文件再改程式**：用 `serviceAccountKey.json`（backup 腳本同款）
+  直讀 Firestore 一次定案——是「貢獻沒到」（ops 空）還是「到了但被忽略」（ops 有、progress 不動
+  ＋ status=resting）。這次是後者，根本不是 bug，亂改伺服器邏輯反而會破壞冷卻設計。
+- ⚠️ **restEndsAtMs 是毫秒數值不是 Timestamp**（`buildCycle` 用 `Number()` 存）——
+  倒數 `Number(worldBossCycle.restEndsAtMs) - nowMs` 才對，別拿去餵 `tsToMs`。
+- ⚠️ **倒數分鐘用 `Math.floor` 不是 `ceil`**：ceil 在整點前一刻會顯示「X 小時 60 分」。
+- ⚠️ **「圖片鏈嘗試不存在檔案」要分兩類**：確定性缺圖（輕量房 family 變體）用靜態跳過；
+  暫態失敗（通用圖偶發 404）不能永久黑名單——`onError` 只封鎖確定缺的那張，
+  其餘留給下次 mount 重試，否則一次網路抖動＝整場卡空圖。
+- ⚠️ **minify 會把中文轉 `\uXXXX` 逸出、變數名改名**：驗證 bundle 有沒有某段程式，
+  要把中文轉成逸出序列再 grep（寫支小 script 用 `charCodeAt(16)` 轉），
+  直接 grep 中文會誤判「沒部署」（本次先誤判一輪）。
+
+---
+
 ## 2026-08-06（🐛 世界王擊倒後三 bug：舊版動畫、沒有領取按鈕、登入不會自動播）
 
 作者：「世界王擊倒了 但撥放的是舊版的擊倒動畫以及沒有世界王擊倒領取獎勵的按鈕

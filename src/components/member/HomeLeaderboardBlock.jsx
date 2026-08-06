@@ -1,5 +1,5 @@
 // src/components/member/HomeLeaderboardBlock.jsx
-// 首頁區塊：顯示「我入圍前五名」的最多 3 個排行榜——**只顯示自己的名次**，不列其他人。
+// 首頁區塊：顯示「我排名最好的前三個榜」——**只顯示自己的名次**（幾名都行），不列其他人。
 //
 // ⚠️ 讀寫量（2026-07-26 作者拍板）：這個區塊要算榜就得讀**整個 members 集合**，
 //    而它掛在首頁 ⇒ 每個學生每次開 App 都付一次全集合讀取。所以：
@@ -38,7 +38,8 @@ function computeMine(members, myId) {
   CANDIDATES.forEach((boardId) => {
     const rows = rankBoard(boardId, members, data, { useSeason: false });
     const idx = rows.findIndex((r) => r.id === myId);
-    if (idx >= 0 && idx < 5) {
+    if (idx >= 0) {
+      // 任何名次都算數（不只前五）——玩家要知道自己排第幾，就算很後面也一樣
       hits.push({ boardId, rank: idx + 1, value: rows[idx]?.value ?? 0, total: rows.length });
     }
   });
@@ -106,7 +107,7 @@ export default function HomeLeaderboardBlock({ myId, onPageChange }) {
         <MemberFeatureArt name="history" size={125} style={{ position:"absolute", right:-24, bottom:-35, opacity:.13, zIndex:-1 }} />
         <SectionHeader icon="🏆" title="排行榜" action={action} />
         <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", textAlign: "center", padding: "10px 0" }}>
-          還沒擠進任何榜的前五名，衝一波吧！
+          🏅 暫無名次——完成第一個挑戰，排行榜就會顯示你的名次！
         </div>
       </Card>
     );
