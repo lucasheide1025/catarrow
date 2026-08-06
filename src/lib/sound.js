@@ -908,30 +908,39 @@ export function sfxWorldBossAppear(bossOrFamily) {
   sample(file, 0.9, sfxWorldBossAppearSynth, [0, 80, 60, 120]);
 }
 
+// 世界王登場（2026-08-06 重寫）。
+//
+// ⚠️ 舊版用的是**舊引擎**（noiseBurst／distTone／tone 直接接 destination）——
+//    正是 changelog 2026-07-26 寫「聽起來像電子琴 beep」的那套：沒有分層、沒有濾波器包絡、
+//    沒有總線壓縮與殘響，而且第三波還自己 connect(c.destination) 繞過了整條總線。
+//    作者回報「音效單薄」有具體技術原因，不是錯覺。
+//
+// 新版用新引擎的分層原語，照手遊登場的四拍鋪陳：
+//   0.00s 抽真空   swell(down) — 先把空間吸走，製造「有東西要來了」
+//   0.35s 地鳴     sub + impact 低掃 — 重量
+//   0.55s 破土     impact + punch 音高瞬降 — 衝擊
+//   1.10s 警戒     兩聲下行雙音 — 手遊警報的語彙，不用連續上行尖叫（那是舊版最吵的部分）
+//   1.60s 咆哮     長 sub + 帶通 swell — 尾韻，讓標題進場時底下還有東西撐著
 function sfxWorldBossAppearSynth() {
-  const c = ctx(); if (!c) return;
-  const t = c.currentTime;
-  // 第一波：低頻震爆
-  noiseBurst(0, 0.45, 80, 0.9);
-  distTone(55, 110, 0.55, 0.5, 0.05);
-  tone(55, 0.6, "sawtooth", 0.35, 0);
-  // 第二波：警報尖叫上升
-  [200, 280, 380, 500, 660, 880, 1100, 1400].forEach((freq, i) => {
-    const st = t + 0.4 + i * 0.12;
-    tone(freq, 0.18, "sawtooth", 0.22, 0.4 + i * 0.12);
-    tone(freq * 1.5, 0.12, "square", 0.12, 0.4 + i * 0.12 + 0.04);
+  // ① 抽真空：先安靜再爆，對比才有震撼
+  swell({ up: false, dur: 0.42, gain: 0.20, send: 0.3 });
+  // ② 地鳴（低頻重量）
+  sub({ freq: 44, dur: 0.9, gain: 0.62, delay: 0.35 });
+  impact({ dur: 0.55, cut0: 2600, cut1: 90, gain: 0.42, q: 1.1, send: 0.32, delay: 0.35 });
+  // ③ 破土衝擊
+  impact({ dur: 0.38, cut0: 9000, cut1: 200, gain: 0.40, q: 0.8, send: 0.26, delay: 0.55 });
+  punch({ freq: 220, drop: 0.28, dur: 0.34, gain: 0.42, type: "sawtooth", send: 0.22, delay: 0.55 });
+  air({ dur: 0.30, gain: 0.16, hp: 4200, send: 0.34, delay: 0.58 });
+  // ④ 警戒雙音（下行，左右分開）
+  [0, 0.26].forEach((d, i) => {
+    punch({ freq: 700, drop: 0.55, dur: 0.30, gain: 0.24, type: "square", pan: i ? 0.35 : -0.35, send: 0.3, delay: 1.10 + d });
+    pluck({ freq: 350, dur: 0.26, gain: 0.13, cut0: 4200, cut1: 600, pan: i ? 0.35 : -0.35, send: 0.3, delay: 1.10 + d });
   });
-  // 第三波：持續電流低鳴
-  const osc = c.createOscillator();
-  const g2  = c.createGain();
-  osc.type = "sawtooth"; osc.frequency.value = 80;
-  g2.gain.setValueAtTime(0.25, t + 1.5);
-  g2.gain.linearRampToValueAtTime(0.15, t + 3.5);
-  g2.gain.linearRampToValueAtTime(0, t + 4.2);
-  osc.connect(g2); g2.connect(c.destination);
-  osc.start(t + 1.5); osc.stop(t + 4.2);
-  // 震動
-  vibrate([0, 100, 80, 120, 80, 200, 100, 300]);
+  // ⑤ 咆哮尾韻：標題進場時底下還有東西撐著
+  sub({ freq: 38, dur: 1.9, gain: 0.34, delay: 1.60 });
+  swell({ up: true, dur: 1.1, gain: 0.13, send: 0.4, delay: 1.65 });
+  impact({ dur: 0.9, cut0: 1400, cut1: 70, gain: 0.22, q: 1.4, send: 0.38, delay: 1.70 });
+  vibrate([0, 90, 40, 140, 260, 70, 70, 70, 200, 320]);
 }
 
 // ── 扭蛋音效 ─────────────────────────────────────────────────

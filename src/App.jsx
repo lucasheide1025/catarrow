@@ -9,6 +9,7 @@ import AdminApp    from "./pages/AdminApp";
 import MemberApp   from "./pages/MemberApp";
 import GuestApp    from "./pages/GuestApp";
 import PublicBookingApp from "./pages/PublicBookingApp";
+import GuestReviewPage from "./pages/GuestReviewPage";
 import ZombieGame   from "./zombie/ZombieGame";
 import CatalogPreviewPage from "./features/catalog/CatalogPreviewPage";
 import GuildTestApp from "./guild/GuildTestApp";
@@ -30,6 +31,8 @@ function AppRoutes() {
   const [searchParams] = useSearchParams();
 
   const guestEntry = resolveGuestEntry(searchParams);
+  const reviewToken = searchParams.get("review");
+  if (reviewToken) return <GuestReviewPage token={reviewToken} />;
   if (guestEntry) return <GuestApp accountType={guestEntry.accountType} sessionSourceId={guestEntry.sessionSourceId} />;
   if (searchParams.get("bk") === PUBLIC_BOOKING_TOKEN) return <PublicBookingApp />;
   if (searchParams.has("zombie")) return <ZombieGame />;

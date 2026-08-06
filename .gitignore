@@ -42,3 +42,5 @@ nul
 
 # Local image-generation review outputs (never deploy or commit)
 .staging/image-generation/
+
+.env*

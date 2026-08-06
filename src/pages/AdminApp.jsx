@@ -3,7 +3,7 @@ import { useAuth } from "../hooks/useAuth";
 import { useCostControl } from "../hooks/useCostControl";
 import { subscribeResults, getRegistrations, subscribePendingCertResults, subscribeAllMessages, subscribePendingCertTasks, subscribePendingCheckins, subscribeNotifications, subscribePendingMonthlyRequests, subscribeCertification, subscribeDexGrants, getDexConfig, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection, submitGuildQuestCompletion, subscribeActiveGuildQuests, subscribeGuildSubmissions, subscribeMyCheckin, submitCheckin, approveCheckin, subscribeAppVersion, isMemberRegistered, flushPendingShootingSessions, flushPendingArrowProgress, subscribeLocalTodayArrows, initializeTodayArrows } from "../lib/db";
 import { getDuelStats } from "../lib/duelDb";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
+import { collection, limit, onSnapshot, query, where } from "firebase/firestore";
 import { sfxNotify, sfxCheckinAlert } from "../lib/sound";
 import { CatBuddyProvider } from "../components/cat/CatBuddyContext";
 import { db } from "../lib/firebase";
@@ -41,6 +41,7 @@ const AdminDungeon       = lazy(() => import("../components/admin/AdminDungeon")
 const AdminBattleTest   = lazy(() => import("../components/admin/AdminBattleTest"));
 const AdminKidMode       = lazy(() => import("../components/admin/AdminKidMode"));
 const AdminGuestAccounts = lazy(() => import("../components/admin/AdminGuestAccounts"));
+const AdminGuestReviews = lazy(() => import("../components/admin/AdminGuestReviews"));
 const AdminTierPermissions = lazy(() => import("../components/admin/AdminTierPermissions"));
 const AdminWebsiteCms    = lazy(() => import("../components/admin/AdminWebsiteCms"));
 const EquipmentPage      = lazy(() => import("../components/member/EquipmentPage"));
@@ -162,6 +163,14 @@ export default function AdminApp() {
 
   // 選單次級分頁狀態 (Option A)
   const [dailySub,  setDailySub]  = useState("booking"); // "booking" | "review" | "monthlycard"
+  const [guestReviewPendingN, setGuestReviewPendingN] = useState(0);
+
+  useEffect(() => {
+    const counts={reviews:0,invites:0}, update=()=>setGuestReviewPendingN(counts.reviews+counts.invites);
+    const unsubReviews=onSnapshot(query(collection(db,"guestReviews"),where("state","in",["pending","private_unread","complaint_open","complaint_send_failed"]),limit(100)),snap=>{counts.reviews=snap.size;update();},()=>{});
+    const unsubInvites=onSnapshot(query(collection(db,"guestReviewSubjects"),where("state","in",["scheduled","invite_failed"]),limit(100)),snap=>{counts.invites=snap.size;update();},()=>{});
+    return()=>{unsubReviews();unsubInvites();};
+  }, []);
   const [mfSub,     setMfSub]     = useState("members"); // "members" | "guests" | "kidmode" | "learn" | "messages"
   const [eventsSub, setEventsSub] = useState("villagegoal"); // "villagegoal" | "worldboss" | "items" | "village" | "story"
   const [sysSub,    setSysSub]    = useState("givetool");// "givetool" | "tierperms" | "archery" | "reset" | "website" | "testing"
@@ -791,6 +800,10 @@ const adminNav = [
                 <span className="bg-blue-400 text-slate-950 font-black text-[10px] rounded-full px-1.5 py-0.2">{pendingMonthlyN}</span>
               )}
             </button>
+            <button onClick={() => setDailySub("guestreviews")}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${dailySub === "guestreviews" ? "bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950" : "bg-slate-800/80 text-slate-400 border border-slate-700/50"}`}>
+              ⭐ 訪客評價 {guestReviewPendingN > 0 && <span className="ml-1 rounded-full bg-red-500 px-1.5 text-white">{guestReviewPendingN}</span>}
+            </button>
           </>
         )}
 
@@ -883,6 +896,7 @@ const adminNav = [
         {page === "daily" && dailySub === "booking"     && <AdminBooking />}
         {page === "daily" && dailySub === "review"      && <AdminUnifiedReview pendingCert={pendingCertList} messages={allMessages} pendingExtItems={pendingExtList} certTasks={certTasksList} />}
         {page === "daily" && dailySub === "monthlycard" && <AdminFinance adminProfile={profile} />}
+        {page === "daily" && dailySub === "guestreviews" && <AdminGuestReviews />}
 
         {/* 2. 學員與財務 */}
         {page === "members-finance" && mfSub === "members"   && <AdminMembers />}

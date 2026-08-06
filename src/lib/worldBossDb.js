@@ -153,6 +153,8 @@ export function subscribeWorldBossStatus(cb) {
       cb(d.status === "active" || d.status === "defeated"
         ? {
           id: d.eventId, status: d.status,
+          // bossKey 供 WorldBossIntro 取王的外觀／配色／pixelKey／族群音效
+          bossKey: d.bossKey || null,
           bossData: { name: d.bossName || "" },
           announcement: d.announcement || null,
           killReplay: d.killReplay || null,     // 全服擊倒重播（見 raidKill.buildKillPayload）
@@ -216,7 +218,10 @@ export async function createWorldBossEvent({ adminId, bossKey, durationDays, rew
       createdAt:     serverTimestamp(),
       autoSpawned:   !reward, // 標記是否為系統自動刷新
     });
-    await writeWorldBossStatus({ eventId: ref.id, status: "active", bossName: boss.name, announcement: null });
+    // ⚠️ bossKey 一定要寫進小狀態文件：登場動畫 WorldBossIntro 是靠 WORLD_BOSSES[event.bossKey]
+    //    取王的外觀／配色／pixelKey／族群音效。漏了它 → 名字顯示「???」、配色退回預設橘、
+    //    畫錯的王、連登場音都挑錯族群（作者 2026-08-06 回報悠悠變成 ???）。
+    await writeWorldBossStatus({ eventId: ref.id, status: "active", bossKey, bossName: boss.name, announcement: null });
     return { ok: true, eventId: ref.id };
   } catch (e) { return { ok: false, reason: e.message }; }
 }
@@ -433,7 +438,7 @@ export async function attackWorldBoss({ eventId, memberId, memberName, weapon, r
       //    全服玩家原本就訂閱這一份，多帶一個欄位是零額外讀取。
       //    放在王文件上就要所有人訂閱整份王 → 那正是 changelog.md:310 的 4000 次讀取。
       writeWorldBossStatus({
-        eventId, status:"defeated", bossName:ev.bossData?.name || "", announcement:upd.announcement,
+        eventId, status:"defeated", bossKey:ev.bossKey || null, bossName:ev.bossData?.name || "", announcement:upd.announcement,
         killReplay: killPayload || null,
       });
       createNotification({

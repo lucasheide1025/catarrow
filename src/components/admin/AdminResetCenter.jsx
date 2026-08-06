@@ -1,7 +1,5 @@
 // src/components/admin/AdminResetCenter.jsx — 重置中心（含地下城解鎖給予 + 報到取消排序）
 import { useState, useEffect, useMemo } from "react";
-import { doc, getDoc, updateDoc, increment } from "firebase/firestore";
-import { db } from "../../lib/firebase";
 import {
   getMembers,
   resetDungeonUsed, resetAllDungeonUsed,
@@ -14,10 +12,16 @@ import {
   resetWorldBossAttack, resetAllWorldBossAttacks,
 } from "../../lib/worldBossDb";
 import { deleteAllDungeonRooms } from "../../lib/dungeonDb";
+import { grantDungeonScroll, grantDungeonToMember, EXCAVATION_FAMILIES, MAX_SAVED_DUNGEONS } from "../../lib/dungeonExcavation";
 import { deleteAllPartyRooms } from "../../lib/partyDb";
 import { fmtDT } from "../../lib/constants";
 import { Card, Btn, Modal, Spinner } from "../shared/UI";
 import AdminPracticeLogRepair from "./AdminPracticeLogRepair";
+
+const FAMILY_LABELS = {
+  ghost:"幽冥系", mountain:"山嶺系", insect:"昆蟲系",
+  workplace:"職場系", exam:"考試系", temple:"神廟系",
+};
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
@@ -27,13 +31,9 @@ function getLoginTime(m) {
   return ts?.toMillis ? ts.toMillis() : new Date(ts).getTime();
 }
 
-const DUNGEON_REGIONS = [
-  { id: "oasis",    name: "🏝️ 綠洲遺跡", difficulties: ["normal", "advanced", "hard", "hell"] },
-  { id: "forest",   name: "🌲 密林深處", difficulties: ["normal", "advanced", "hard", "hell"] },
-  { id: "tomb",     name: "🗿 古墓迷宮", difficulties: ["normal", "advanced", "hard", "hell"] },
-  { id: "volcano",  name: "🌋 火山地窟", difficulties: ["normal", "advanced", "hard", "hell"] },
-  { id: "tundra",   name: "❄️ 冰原雪嶺", difficulties: ["normal", "advanced", "hard", "hell"] },
-];
+// DUNGEON_REGIONS（綠洲遺跡／密林深處／古墓迷宮／火山地窟／冰原雪嶺）已於 2026-08-06 移除：
+// 現行地下城用的是**族系**（幽冥／山嶺／昆蟲／職場／考試／神廟／寶箱），這五個地區在遊戲裡
+// 從來不存在，是跟 dungeonProgress.{region}.maxFloor 一起留下來的舊設計殘骸。
 
 export default function AdminResetCenter() {
   const [members,  setMembers]  = useState([]);
@@ -51,8 +51,8 @@ export default function AdminResetCenter() {
   // 地下城指定給予 State
   const [selDungeonMember, setSelDungeonMember] = useState(null);
   const [scrollGrantQty, setScrollGrantQty]     = useState("");
-  const [grantRegion, setGrantRegion]           = useState("oasis");
-  const [grantFloor, setGrantFloor]             = useState(5);
+  const [grantFamily, setGrantFamily]           = useState("random");
+  const [grantDifficulty, setGrantDifficulty]   = useState("random");
   const [grantingDungeon, setGrantingDungeon]   = useState(false);
 
   const today = todayStr();
@@ -91,6 +91,11 @@ export default function AdminResetCenter() {
   }
 
   // ── 地下城給予/解鎖進度 ─────────────────────────────────
+  // ⚠️ 2026-08-06 修正：這一整區原本寫 `dungeonScrollCount` 與 `dungeonProgress.{region}.maxFloor`
+  //    兩個**前台從來沒讀過**的欄位（全專案零讀取點，是更早期地下城設計的殘留），
+  //    所以後台顯示「給予成功」但玩家那邊完全沒東西。
+  //    真正的模型是 `members.{id}.dungeonExcavation.scrolls` 與 `.savedDungeons`，
+  //    現在一律呼叫 dungeonExcavation.js 的函式（與前台同一條路徑），不再自己 updateDoc。
   async function handleGrantDungeonScrolls() {
     const qty = Number(scrollGrantQty);
     if (!selDungeonMember || !scrollGrantQty || isNaN(qty) || qty <= 0) {
@@ -99,11 +104,17 @@ export default function AdminResetCenter() {
     }
     setGrantingDungeon(true);
     try {
-      await updateDoc(doc(db, "members", selDungeonMember.id), {
-        dungeonScrollCount: increment(qty),
-      });
-      setMembers(prev => prev.map(m => m.id === selDungeonMember.id ? { ...m, dungeonScrollCount: (m.dungeonScrollCount || 0) + qty } : m));
-      setMsg(`✅ 已成功為 ${selDungeonMember.name || selDungeonMember.nickname} 給予 地下城卷軸 × ${qty}`);
+      // grantDungeonScroll 一次給一張（與前台世界王獎勵同一支），要 N 張就叫 N 次
+      let last = { ok: true };
+      for (let i = 0; i < qty; i += 1) {
+        last = await grantDungeonScroll(selDungeonMember.id);
+        if (!last.ok) break;
+      }
+      if (!last.ok) throw new Error(last.reason || "寫入失敗");
+      setMembers(prev => prev.map(m => m.id === selDungeonMember.id
+        ? { ...m, dungeonExcavation: { ...(m.dungeonExcavation || {}), scrolls: last.scrolls } }
+        : m));
+      setMsg(`✅ 已為 ${selDungeonMember.name || selDungeonMember.nickname} 給予卷軸 ×${qty}（目前共 ${last.scrolls} 張）`);
       setScrollGrantQty("");
     } catch (e) {
       setMsg("❌ 給予失敗：" + e.message);
@@ -111,17 +122,22 @@ export default function AdminResetCenter() {
     setGrantingDungeon(false);
   }
 
-  async function handleGrantDungeonFloorUnlock() {
+  // 直接把一座地下城塞進玩家的儲存槽（取代原本寫死在死欄位上的「解鎖層數」）
+  async function handleGrantDungeon() {
     if (!selDungeonMember) { setMsg("❌ 請先選擇射手"); return; }
     setGrantingDungeon(true);
     try {
-      const fieldKey = `dungeonProgress.${grantRegion}.maxFloor`;
-      await updateDoc(doc(db, "members", selDungeonMember.id), {
-        [fieldKey]: Number(grantFloor),
+      const res = await grantDungeonToMember(selDungeonMember.id, {
+        family: grantFamily === "random" ? undefined : grantFamily,
+        difficulty: grantDifficulty === "random" ? undefined : Number(grantDifficulty),
       });
-      setMsg(`✅ 已將 ${selDungeonMember.name || selDungeonMember.nickname} 之 ${grantRegion} 解鎖層數調至 ${grantFloor} 層`);
+      if (!res.ok) throw new Error(res.reason || "寫入失敗");
+      setMembers(prev => prev.map(m => m.id === selDungeonMember.id
+        ? { ...m, dungeonExcavation: { ...(m.dungeonExcavation || {}), savedDungeons: res.savedDungeons } }
+        : m));
+      setMsg(`✅ 已給 ${selDungeonMember.name || selDungeonMember.nickname} 一座「${FAMILY_LABELS[res.dungeon.family] || res.dungeon.family} T${res.dungeon.difficulty}」（儲存槽 ${res.savedDungeons.length}/${MAX_SAVED_DUNGEONS}）`);
     } catch (e) {
-      setMsg("❌ 解鎖失敗：" + e.message);
+      setMsg("❌ 給予失敗：" + e.message);
     }
     setGrantingDungeon(false);
   }
@@ -332,7 +348,7 @@ export default function AdminResetCenter() {
                     >
                       <div className="truncate text-white">{m.nickname || m.name}</div>
                       <div className="text-[10px] text-slate-500 font-normal">
-                        卷軸：{m.dungeonScrollCount || 0} 張
+                        卷軸 {m.dungeonExcavation?.scrolls || 0} · 地城 {(m.dungeonExcavation?.savedDungeons || []).length}/{MAX_SAVED_DUNGEONS}
                       </div>
                     </button>
                   ))}
@@ -358,37 +374,45 @@ export default function AdminResetCenter() {
                 </div>
               </div>
 
-              {/* 解鎖指定地區樓層 */}
+              {/* 直接給一座地下城 */}
               <div className="p-3.5 bg-slate-900/80 rounded-xl border border-slate-700/70 space-y-3">
-                <div className="text-xs font-bold text-slate-300">指定地區層數直接解鎖</div>
+                <div className="text-xs font-bold text-slate-300">直接給一座地下城（不消耗卷軸）</div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <span className="text-[11px] text-slate-400 block mb-1">地區選擇</span>
+                    <span className="text-[11px] text-slate-400 block mb-1">族系</span>
                     <select
-                      value={grantRegion}
-                      onChange={e => setGrantRegion(e.target.value)}
+                      value={grantFamily}
+                      onChange={e => setGrantFamily(e.target.value)}
                       className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs"
                     >
-                      {DUNGEON_REGIONS.map(r => (
-                        <option key={r.id} value={r.id}>{r.name}</option>
+                      <option value="random">🎲 隨機</option>
+                      {EXCAVATION_FAMILIES.map(f => (
+                        <option key={f} value={f}>{FAMILY_LABELS[f] || f}</option>
                       ))}
                     </select>
                   </div>
                   <div>
-                    <span className="text-[11px] text-slate-400 block mb-1">最高解鎖層數 (1~10)</span>
-                    <input
-                      type="number"
-                      min="1"
-                      max="10"
-                      value={grantFloor}
-                      onChange={e => setGrantFloor(e.target.value)}
+                    <span className="text-[11px] text-slate-400 block mb-1">難度</span>
+                    <select
+                      value={grantDifficulty}
+                      onChange={e => setGrantDifficulty(e.target.value)}
                       className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs"
-                    />
+                    >
+                      <option value="random">🎲 隨機</option>
+                      {[1, 2, 3, 4, 5, 6].map(t => (
+                        <option key={t} value={t}>T{t}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
-                <Btn v="primary" size="sm" onClick={handleGrantDungeonFloorUnlock} disabled={!selDungeonMember || grantingDungeon} className="w-full">
-                  🔓 強制解鎖指定地下城層數
+                <Btn v="primary" size="sm" onClick={handleGrantDungeon} disabled={!selDungeonMember || grantingDungeon} className="w-full">
+                  {grantingDungeon ? "給予中…" : "🏰 給予地下城"}
                 </Btn>
+                <div className="text-[10px] text-slate-500 leading-relaxed">
+                  寫入 <code className="text-slate-400">dungeonExcavation.savedDungeons</code>，
+                  與玩家用卷軸開出來的走同一條路徑，前台「地下城儲存槽」立刻看得到。
+                  儲存槽上限 {MAX_SAVED_DUNGEONS} 座，滿了要先用掉。
+                </div>
               </div>
             </Card>
           )}

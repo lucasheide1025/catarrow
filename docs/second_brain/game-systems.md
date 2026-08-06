@@ -46,6 +46,26 @@ calcEquippedBonus(cards[])：cards = equipped.map(id=>cardColl.cards[id]).filter
 
 **注意**：MemberPractice 有 `classEndedRef`，下課後不觸發里程碑（防重複結算）
 
+## 地下城房間分級與輕量房（2026-08-06 地圖重製）
+
+作者：「現在的房間每次踩到都要進去選擇，久了會疲乏」——所有房間互動重量一致是疲乏根源。
+
+**兩級制**：
+- **重量房 Stage Room**（進全螢幕舞台，有演出／決策）：`battle` / `elite_battle` / `trap` / `event`(特殊) / `chest` / `shop` / `rest`
+- **輕量房 Inline Room**（踩到即結算，格子上浮動訊息＋音效，**永不離開地圖**）：`quick_event`（一般事件併入） / `empty` / `coin_pouch` / `mini_chest` / `scout`
+
+**地圖與生成**（`expeditionGrid.js` + `dungeonData.js::STAGE_ROOM_QUOTA`）：
+- GRID_SIZE 5→7（40~46 格）；重量房配額制（第1層 13／第2層 14 間，不隨地圖放大增加），剩餘格子用輕量房權重填滿
+- 樓梯從「最遠點（數學上必然角落）」改為「BFS 距離 ≥ maxDist×75% 的候選格隨機挑」
+- `general_event` 房型已廢除、全部併入 `quick_event`（舊存檔視同 quick_event，不可掉進 UI default 空白畫面）
+
+**輕量房規則**（`dungeonInlineRooms.js`，純函式、單人／組隊共用同一份）：
+- 迷你寶箱：素材 50%（**降一階、最低 T1**，不搶寶箱房「同階素材唯一來源」定位）／藥水 25%／箭露 25%；寶箱族（treasure）無素材鏈→退回藥水／箭露
+- 瞭望點 scout：揭開半徑 2 迷霧（僅顯示為「已探索」，不影響相鄰移動規則）
+- ⚠️ **已清除的輕量房踩上去只移動、不重複結算**（2026-08-06 修：沒擋 cleared 可以來回刷錢刷能力）
+
+**組隊事件投票**（`dungeonEventVotes.js`，純函式）：特殊事件每人一票、即時顯示票數；票多者套用到全隊；**平票時房主票 ×2**；全員投完房主自動以最高票結算（結算後清確認，讓大家看完結果再按繼續）。陷阱房押大小決策權在房主，隊員只顯示「房主正在判斷…」。
+
 ## 前後衛系統（地下城 + 組隊，2026-06-27 統一規格）
 
 ```

@@ -310,18 +310,38 @@ for (const catId of CAT_IDS_FOR_PIXEL) {
 }
 
 // ── 主元件 ────────────────────────────────────────────────────
+// 圖片候選鏈。原本只試 `/worldboss/{bossKey}.webp` 一條，失敗就直接掉像素 SVG ——
+// 而 24 個 bossKey 只有 12 張圖，**九隻貓王一張都沒有**（現有的 cat_black/cat_orange/cat_white
+// 檔名對不上任何 bossKey），六個小王也沒有。於是貓王與小王全部走像素 SVG，
+// 那正是作者說的「視覺單薄」（2026-08-06 悠悠登場）。
+//
+// 好消息是素材其實躺在別的資料夾：`/cats/portraits/{catId}.webp` 九隻都有。
+// 小王則沿用同族大王的圖（比像素 SVG 好，等專屬圖生出來再換）。
+function bossImageChain(bossKey) {
+  if (!bossKey) return [];
+  const chain = [`/worldboss/${bossKey}.webp`];
+  if (bossKey.startsWith("cat_")) {
+    chain.push(`/cats/portraits/${bossKey.slice(4)}.webp`);
+  }
+  if (bossKey.endsWith("_small")) {
+    chain.push(`/worldboss/${bossKey.slice(0, -6)}.webp`);
+  }
+  return chain;
+}
+
 export default function WorldBossSVG({ bossKey, currentHP, maxHP, size = 120 }) {
-  const [imgErr, setImgErr] = useState(false);
+  const [imgIdx, setImgIdx] = useState(0);
   const phase   = getBossPhase(currentHP ?? maxHP, maxHP || 1);
   const PixelFn = PIXEL_MAP[bossKey] || HeadCoachPixel;
+  const chain   = bossImageChain(bossKey);
 
-  // 優先顯示真實圖片
-  if (bossKey && !imgErr) {
+  // 優先顯示真實圖片（逐一往下試，全部失敗才退像素 SVG）
+  if (imgIdx < chain.length) {
     return (
       <img
-        src={`/worldboss/${bossKey}.webp`}
+        src={chain[imgIdx]}
         alt={bossKey}
-        onError={() => setImgErr(true)}
+        onError={() => setImgIdx(i => i + 1)}
         style={{
           width: size, height: size, objectFit:"contain", display:"block",
           filter: phase === 1 ? "brightness(0.6) saturate(0.4)" : undefined,

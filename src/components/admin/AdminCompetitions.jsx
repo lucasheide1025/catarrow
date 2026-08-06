@@ -259,6 +259,16 @@ function CompDetailModal({ comp, onClose, operatorId, toast, onDone }) {
   const [announcement, setAnnouncement] = useState(comp.announcement || "");
   const [savingAnn, setSavingAnn] = useState(false);
   const isCert = comp.type === "年度檢定";
+  // 建立後才調整的檢定規則。舊資料可能缺欄位，一律給預設值，不讓表單出現 undefined。
+  const [ruleForm, setRuleForm] = useState(() => ({
+    distance:   comp.distance   ?? 18,
+    arrowCount: comp.arrowCount ?? 6,
+    roundCount: comp.roundCount ?? 5,
+    maxScore:   comp.maxScore   ?? 10,
+    hasMiss:    comp.hasMiss !== false,
+    scores:     comp.certScores || defaultCertScores(),
+  }));
+  const [savingRules, setSavingRules] = useState(false);
 
   useEffect(() => {
     const unsub = subscribeCompResults(comp.id, (r) => { setResults(r); setLoading(false); });
@@ -275,6 +285,29 @@ function CompDetailModal({ comp, onClose, operatorId, toast, onDone }) {
     toast("成績已更新 ✓");
   }
 
+  // 建立後修改檢定規則。年份與週期**不開放改**：那兩個決定成績會寫進哪一期的
+  // certRecords，改掉等於換一場比賽，已審核的成績會錯位。
+  // 已審核的成績一律不重新計算級別（作者定案），只影響之後審核的成績。
+  async function saveRules() {
+    setSavingRules(true);
+    const patch = {
+      distance:   ruleForm.distance,
+      arrowCount: ruleForm.arrowCount,
+      roundCount: ruleForm.roundCount,
+      maxScore:   ruleForm.maxScore,
+      hasMiss:    ruleForm.hasMiss,
+      certScores: ruleForm.scores,
+      targetName: `${ruleForm.distance}米靶`,
+    };
+    // 標題含距離，改距離要一起重組，否則「18米」的標題會配上 30 米的規則。
+    // 舊資料若缺 year/half 就別亂組，保留原標題。
+    if (comp.year) patch.title = certCompTitle({ year: comp.year, half: comp.half, distance: ruleForm.distance });
+    await updateCompetition(comp.id, patch, operatorId);
+    toast("檢定規則已更新 ✓");
+    setSavingRules(false);
+    onDone();
+  }
+
   async function saveAnnouncement() {
     setSavingAnn(true);
     await updateCompetition(comp.id, { announcement }, operatorId);
@@ -287,7 +320,7 @@ function CompDetailModal({ comp, onClose, operatorId, toast, onDone }) {
     <Modal open wide onClose={onClose} title={comp.title}>
       <div className="flex flex-col gap-4">
         <div className="flex gap-2">
-          {[["results", isCert ? `🏅 成績/審核${pendingCount?`（${pendingCount}）`:""}` : "🏅 成績"], ["regs", "📋 報名"], ["announce", "📢 公告"]].map(([id, lbl]) => (
+          {[["results", isCert ? `🏅 成績/審核${pendingCount?`（${pendingCount}）`:""}` : "🏅 成績"], ["regs", "📋 報名"], ["announce", "📢 公告"], ...(isCert ? [["rules", "⚙️ 規則"]] : [])].map(([id, lbl]) => (
             <button key={id} onClick={() => setTab(id)}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${tab === id ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-200"}`}>
               {lbl}

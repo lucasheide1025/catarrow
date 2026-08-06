@@ -5,7 +5,7 @@ import { useCatCompanion } from "../../hooks/useCatCompanion";
 import { attackWorldBoss, hireWorldBossBot, distributeWorldBossRewards } from "../../lib/worldBossDb";
 import { shouldShowWorldBossVictory } from "../../lib/worldBossState";
 import { worldBossWeaponLabel } from "../../lib/worldBossPresentation";
-import { addPracticeLog, getCertRecords, subscribeCertification, subscribeCardCollection, addArcherXP, addAdventurerXP, addArrowdew, addGachaCoins, addRoundArrows, addCoins, recordGuestBattleStats, subscribePotions, usePotions, recordPotionUsed, finalizeGameShootingSession, subscribeLocalTodayArrows, initializeTodayArrows } from "../../lib/db";
+import { addPracticeLog, getCertRecords, subscribeCertification, subscribeCardCollection, addArcherXP, addAdventurerXP, addArrowdew, addGachaCoins, addRoundArrows, addCoins, recordGuestBattleStats, subscribePotions, usePotions, recordPotionUsed, finalizeGameShootingSession, subscribeLocalTodayArrows, initializeTodayArrows, getLocalTodayArrows } from "../../lib/db";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_BOSS_XP } from "../../lib/catLevel";
 import { WORLD_BOSS_XP_CAP, WORLD_BOSS_XP_MULT, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
@@ -461,6 +461,10 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const [showExitConfirm,   setShowExitConfirm]   = useState(false);
   const [showPrepExit,      setShowPrepExit]      = useState(false);
   const [todayArrows,       setTodayArrows]       = useState(0);
+  // 本場「已即時寫入今日箭數」的箭。世界王原本只在 submitAttack 結算成功時記一次，
+  // 中途退出 / attackWorldBoss 回 ok:false（今天已攻擊過、活動已結束、斷網）都會讓整場箭數蒸發。
+  // 改成比照打怪/組隊/地下城：每回合射完就記，這個 ref 只用來回推里程碑的起算基線。
+  const wbRecordedArrowsRef = useRef(0);
   useEffect(() => {
     if (sharedData?.todayArrows !== undefined) setTodayArrows(sharedData.todayArrows);
   }, [sharedData?.todayArrows]);
@@ -797,6 +801,12 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     const roundData  = { arrows: fullArrows, dmg: totalDmg, crits };
     const nextRounds = [...allRounds, roundData];
     setAllRounds(nextRounds);
+    // ★ 今日/終身箭數：每回合送出當下就記，不要等結算。
+    //   結算前任何中斷（退出戰鬥、王已被別人打死、活動過期、斷網）都不會再吃掉已射出的箭。
+    if (!isGuest && myId && fullArrows.length > 0) {
+      addRoundArrows(myId, fullArrows.length, { accountType: profile?.accountType || "official" }).catch(() => {});
+      wbRecordedArrowsRef.current += fullArrows.length;
+    }
     setRoundSummary(roundData);
     sfxRoundEnd();
     // 這裡只更新本機演出；全域 HP 會在 submitAttack 以交易一次扣除，
@@ -1041,8 +1051,12 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
         const shootingProfile = shootingProfileRef.current || loadBattleShootingProfile(myId);
         const totalArrowsSent = practiceRounds.flat().length;
         if (totalArrowsSent > 0) {
-          addRoundArrows(myId, totalArrowsSent).catch(() => {});
-          const wbMilestones = getMilestonesReached(todayArrows, todayArrows + totalArrowsSent);
+          // 箭數已在 finishRound 每回合寫入，這裡不可再寫一次（會翻倍）。
+          // 里程碑基線＝現在的今日箭數扣掉本場已記的箭，回推到「進場前」的數字。
+          // 直接讀 localStorage 而不用 todayArrows state，避免 submitAttack 閉包拿到過期值。
+          const liveTodayArrows = Math.max(todayArrows, getLocalTodayArrows(myId));
+          const baseArrows = Math.max(0, liveTodayArrows - wbRecordedArrowsRef.current);
+          const wbMilestones = getMilestonesReached(baseArrows, baseArrows + totalArrowsSent);
           if (wbMilestones.length > 0) {
             const { grantArrowMilestoneRewards } = await import("../../lib/db");
             grantArrowMilestoneRewards(myId, wbMilestones).catch(() => {});

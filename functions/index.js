@@ -23,12 +23,134 @@ const {
   taipeiDateOffset, isDayBeforeCandidate, dayBeforeRecipientDecision,
   dayBeforeMailId, dayBeforeVariables, boundedDayBeforeCandidates,
 } = require("./bookingDayBefore");
+const guestReviews = require("./guestReviews");
 
 initializeApp();
+
+async function requireAdmin(request) {
+  if (!request.auth?.uid || !(await getFirestore().doc(`admins/${request.auth.uid}`).get()).exists) {
+    throw new HttpsError("permission-denied", "admin_required");
+  }
+  return request.auth.uid;
+}
+
+async function memberForAuth(db, auth) {
+  if (!auth?.uid) throw new HttpsError("unauthenticated", "login_required");
+  const byUid = await db.collection("members").where("uid", "==", auth.uid).limit(2).get();
+  const matches = byUid.docs.filter(doc => doc.data().accountType === "guest");
+  if (matches.length !== 1) throw new HttpsError("permission-denied", "guest_identity_not_found");
+  return matches[0];
+}
+
+function reviewError(error) {
+  if (error instanceof HttpsError) return error;
+  return new HttpsError("failed-precondition", error?.message || "guest_review_failed");
+}
+
+async function subjectForToken(db, token) {
+  if (!/^[A-Za-z0-9_-]{40,120}$/.test(String(token || ""))) throw new HttpsError("invalid-argument", "invalid_review_link");
+  const found = await db.collection("guestReviewSubjects").where("tokenHash", "==", guestReviews.tokenHash(token)).limit(2).get();
+  if (found.size !== 1) throw new HttpsError("not-found", "review_link_not_found");
+  const subject = found.docs[0];
+  if (subject.data().tokenExpiresAt?.toMillis?.() <= Date.now()) throw new HttpsError("deadline-exceeded", "review_link_expired");
+  return subject;
+}
+
+async function submitReview(db, subjectSnap, input) {
+  let normalized;
+  try { normalized = guestReviews.normalizeReviewInput(input); } catch (error) { throw reviewError(error); }
+  const memberId = subjectSnap.id, subjectRef = subjectSnap.ref, reviewRef = db.doc(`guestReviews/${memberId}`);
+  await db.runTransaction(async tx => {
+    const [subject, review, member, booking] = await tx.getAll(subjectRef, reviewRef, db.doc(`members/${memberId}`), db.doc(`bookings/${subjectSnap.data().bookingId}`));
+    if (!subject.exists || subject.data().state === "submitted" || review.exists) throw new HttpsError("already-exists", "review_already_submitted");
+    if (!member.exists || member.data().accountType !== "guest" || !booking.exists || booking.data().status !== "completed" || booking.data().memberId !== memberId) throw new HttpsError("failed-precondition", "visit_not_eligible");
+    tx.create(reviewRef, { memberId, bookingId:booking.id, ...normalized, state:normalized.consentToPublish ? "pending" : "private_unread", submittedAt:FieldValue.serverTimestamp(), reviewedAt:null, reviewedBy:null, rejectionReason:null, publicReviewId:null, complaint:null });
+    tx.update(subjectRef, { state:"submitted", tokenHash:FieldValue.delete(), tokenExpiresAt:FieldValue.delete(), updatedAt:FieldValue.serverTimestamp() });
+  });
+  const config = guestReviews.defaultConfig((await db.doc("guestReviewConfig/main").get()).data());
+  return { ok:true, googleReviewUrl:normalized.rating === 5 && config.googlePromptEnabled ? config.googleReviewUrl || null : null };
+}
 
 exports.contributeWorldBossSpawnProgress = onCall({ region:"asia-east1" }, async request => {
   return worldBossLifecycle.contribute(getFirestore(), request);
 });
+
+// Guest review workflow. All internal collections are server-owned; clients use these callables.
+exports.createGuestReviewSubject = onDocumentWritten({ region:"asia-east1", document:"bookings/{bookingId}" }, async event => {
+  const before = event.data?.before.data(), after = event.data?.after.data();
+  if (!after || after.status !== "completed" || before?.status === "completed" || !after.memberId) return;
+  const db = getFirestore(), config = guestReviews.defaultConfig((await db.doc("guestReviewConfig/main").get()).data());
+  if (!config.enabled) return;
+  const memberRef = db.doc(`members/${after.memberId}`), subjectRef = db.doc(`guestReviewSubjects/${after.memberId}`), reviewRef = db.doc(`guestReviews/${after.memberId}`);
+  await db.runTransaction(async tx => {
+    const [member, subject, review] = await tx.getAll(memberRef, subjectRef, reviewRef);
+    if (!member.exists || member.data().accountType !== "guest" || !guestReviews.normalizeEmail(member.data().email) || subject.exists || review.exists) return;
+    tx.create(subjectRef, { memberId:after.memberId, bookingId:event.params.bookingId, state:"scheduled", dueAt:Timestamp.fromDate(guestReviews.nextTaipeiTen()), tokenHash:null, tokenExpiresAt:null, inviteMailId:null, inviteQueuedAt:null, inviteDeliveredAt:null, lastInviteError:null, inviteAttemptCount:0, manualInviteCount:0, createdAt:FieldValue.serverTimestamp(), updatedAt:FieldValue.serverTimestamp() });
+  });
+});
+
+async function queueGuestReviewInvite(db, subjectRef, { operatorId = null, requestId = null } = {}) {
+  const rawToken = guestReviews.makeToken(), now = new Date();
+  return db.runTransaction(async tx => {
+    const subject = await tx.get(subjectRef); if (!subject.exists) throw new HttpsError("not-found", "review_invite_not_found");
+    const current = subject.data(), memberRef = db.doc(`members/${subject.id}`), bookingRef = db.doc(`bookings/${current.bookingId}`), reviewRef=db.doc(`guestReviews/${subject.id}`);
+    const [member, booking, review] = await tx.getAll(memberRef, bookingRef, reviewRef);
+    if (review.exists || current.state === "submitted") throw new HttpsError("failed-precondition", "review_already_submitted");
+    if (!member.exists || member.data().accountType !== "guest" || !booking.exists || booking.data().status !== "completed" || booking.data().memberId !== subject.id) throw new HttpsError("failed-precondition", "visit_not_eligible");
+    const email = guestReviews.normalizeEmail(member.data().email); if (!email) throw new HttpsError("failed-precondition", "guest_email_invalid");
+    const sequence = operatorId ? (Number(current.manualInviteCount) || 0) + 1 : (Number(current.inviteAttemptCount) || 0) + 1;
+    if (!operatorId && !["scheduled", "invite_failed"].includes(current.state)) return { queued:false };
+    if (operatorId && !["scheduled","invited","invite_failed"].includes(current.state)) throw new HttpsError("failed-precondition","invite_not_resendable");
+    if (operatorId && requestId && current.lastManualRequestId === requestId) return { queued:false };
+    const config = guestReviews.defaultConfig((await tx.get(db.doc("guestReviewConfig/main"))).data()); if (!config.enabled) throw new HttpsError("failed-precondition", "guest_reviews_disabled");
+    const mailId = guestReviews.inviteMailId(subject.id, sequence, operatorId ? "manual" : "auto"), appUrl=String(process.env.GUEST_REVIEW_APP_URL||"https://catarrow.vercel.app").replace(/\/$/,""), reviewUrl = `${appUrl}/?review=${encodeURIComponent(rawToken)}`;
+    const mailRef = db.doc(`mail/${mailId}`), mail = await tx.get(mailRef); if (mail.exists) return { queued:false };
+    tx.create(mailRef, { to:email, message:{ subject:config.inviteSubject, text:`${config.inviteText}\n\n${reviewUrl}\n\n此連結於 30 天後失效。` }, guestReviewInvite:{ memberId:subject.id, bookingId:current.bookingId, sequence }, createdAt:FieldValue.serverTimestamp() });
+    tx.update(subjectRef, { state:"invited", tokenHash:guestReviews.tokenHash(rawToken), tokenExpiresAt:Timestamp.fromDate(guestReviews.tokenExpiresAt(now)), inviteMailId:mailId, inviteQueuedAt:FieldValue.serverTimestamp(), inviteDeliveredAt:null, lastInviteError:null, ...(!operatorId?{inviteAttemptCount:sequence}:{}), ...(operatorId ? { manualInviteCount:sequence, lastManualInviteAt:FieldValue.serverTimestamp(), lastManualInviteBy:operatorId, lastManualRequestId:requestId } : {}), updatedAt:FieldValue.serverTimestamp() });
+    return { queued:true };
+  });
+}
+
+exports.processGuestReviewInvites = onSchedule({ region:"asia-east1", schedule:"0 10 * * *", timeZone:"Asia/Taipei", retryCount:1 }, async () => {
+  const db = getFirestore(), config = guestReviews.defaultConfig((await db.doc("guestReviewConfig/main").get()).data()); if (!config.enabled) return;
+  const due = await db.collection("guestReviewSubjects").where("state", "in", ["scheduled", "invite_failed"]).where("dueAt", "<=", Timestamp.now()).limit(50).get();
+  for (const subject of due.docs) await queueGuestReviewInvite(db, subject.ref).catch(error => logger.error("Guest review invite failed", { subjectId:subject.id, error:error.message }));
+});
+
+exports.previewGuestReview = onCall({ region:"asia-east1" }, async request => {
+  const subject = await subjectForToken(getFirestore(), request.data?.token);
+  return { eligible:subject.data().state !== "submitted", expiresAt:subject.data().tokenExpiresAt.toDate().toISOString() };
+});
+exports.submitGuestReviewByToken = onCall({ region:"asia-east1" }, async request => submitReview(getFirestore(), await subjectForToken(getFirestore(), request.data?.token), request.data));
+exports.getMyGuestReview = onCall({ region:"asia-east1" }, async request => {
+  const db=getFirestore(), member=await memberForAuth(db,request.auth), subject=await db.doc(`guestReviewSubjects/${member.id}`).get(), review=await db.doc(`guestReviews/${member.id}`).get();
+  return { eligible:subject.exists && subject.data().state!=="submitted", review:review.exists ? {rating:review.data().rating,message:review.data().message,publicAlias:review.data().publicAlias,consentToPublish:review.data().consentToPublish,state:review.data().state} : null };
+});
+exports.submitMyGuestReview = onCall({ region:"asia-east1" }, async request => { const db=getFirestore(),member=await memberForAuth(db,request.auth),subject=await db.doc(`guestReviewSubjects/${member.id}`).get();if(!subject.exists)throw new HttpsError("failed-precondition","no_review_eligibility");return submitReview(db,subject,request.data); });
+exports.withdrawGuestReviewPublication = onCall({ region:"asia-east1" }, async request => {
+  const db=getFirestore(),member=await memberForAuth(db,request.auth),reviewRef=db.doc(`guestReviews/${member.id}`);await db.runTransaction(async tx=>{const review=await tx.get(reviewRef);if(!review.exists||!guestReviews.canTransition(review.data().state,"publication_withdrawn"))throw new HttpsError("failed-precondition","review_not_withdrawable");if(review.data().publicReviewId)tx.delete(db.doc(`publicGuestReviews/${review.data().publicReviewId}`));tx.update(reviewRef,{state:"publication_withdrawn",consentToPublish:false,publicConsentWithdrawnAt:FieldValue.serverTimestamp(),publicConsentWithdrawnBy:member.id});});return{ok:true};
+});
+
+exports.adminGuestReviewAction = onCall({ region:"asia-east1" }, async request => {
+  const adminId=await requireAdmin(request),db=getFirestore(),memberId=String(request.data?.memberId||""),action=String(request.data?.action||"");if(!memberId||memberId.includes("/"))throw new HttpsError("invalid-argument","invalid_member");
+  if(action==="resend")return queueGuestReviewInvite(db,db.doc(`guestReviewSubjects/${memberId}`),{operatorId:adminId,requestId:String(request.data?.requestId||"")});
+  const reviewRef=db.doc(`guestReviews/${memberId}`);await db.runTransaction(async tx=>{const review=await tx.get(reviewRef);if(!review.exists)throw new HttpsError("not-found","review_not_found");const data=review.data();let target;if(action==="approve")target="approved";else if(action==="reject"||action==="complaint")target="complaint_open";else if(action==="read")target="private_read";else if(action==="revoke")target="approval_revoked";else throw new HttpsError("invalid-argument","invalid_action");if(!guestReviews.canTransition(data.state,target))throw new HttpsError("failed-precondition","invalid_review_transition");
+    if(target==="approved"){if(!data.consentToPublish)throw new HttpsError("failed-precondition","publication_not_authorized");const publicId=data.publicReviewId||db.collection("publicGuestReviews").doc().id;tx.create(db.doc(`publicGuestReviews/${publicId}`),{rating:data.rating,message:data.message,publicAlias:data.publicAlias,approvedAt:FieldValue.serverTimestamp(),displayOrderAt:FieldValue.serverTimestamp()});tx.update(reviewRef,{state:target,publicReviewId:publicId,reviewedAt:FieldValue.serverTimestamp(),reviewedBy:adminId});}
+    else {if(target==="complaint_open"&&action==="reject"){let reason;try{reason=guestReviews.cleanText(request.data?.reason,{min:2,max:1000});}catch(e){throw reviewError(e);}tx.update(reviewRef,{state:target,rejectionReason:reason,reviewedAt:FieldValue.serverTimestamp(),reviewedBy:adminId});}else{if(target==="approval_revoked"&&data.publicReviewId)tx.delete(db.doc(`publicGuestReviews/${data.publicReviewId}`));tx.update(reviewRef,{state:target,reviewedAt:FieldValue.serverTimestamp(),reviewedBy:adminId});}}
+  });return{ok:true};
+});
+
+exports.sendGuestReviewComplaintReply = onCall({ region:"asia-east1" }, async request => {
+  const adminId=await requireAdmin(request),db=getFirestore(),memberId=String(request.data?.memberId||""),requestId=String(request.data?.requestId||"");let replyText;try{replyText=guestReviews.cleanText(request.data?.replyText,{min:2,max:5000});}catch(e){throw reviewError(e);}if(!memberId||memberId.includes("/")||!requestId||requestId.length>200)throw new HttpsError("invalid-argument","invalid_complaint_reply");
+  const reviewRef=db.doc(`guestReviews/${memberId}`),memberRef=db.doc(`members/${memberId}`),mailId=guestReviews.complaintMailId(memberId,requestId),mailRef=db.doc(`mail/${mailId}`);await db.runTransaction(async tx=>{const[review,member,mail,configSnap]=await tx.getAll(reviewRef,memberRef,mailRef,db.doc("guestReviewConfig/main"));if(mail.exists)return;if(!review.exists||!["complaint_open","complaint_send_failed"].includes(review.data().state)||!member.exists)throw new HttpsError("failed-precondition","complaint_not_sendable");const email=guestReviews.normalizeEmail(member.data().email);if(!email)throw new HttpsError("failed-precondition","guest_email_invalid");const config=guestReviews.defaultConfig(configSnap.data()),queuedAt=Timestamp.now(),attempt={requestId,replyText,mailId,queuedAt,deliveredAt:null,deliveryError:null,operatorId:adminId};tx.create(mailRef,{to:email,message:{subject:config.complaintSubject,text:replyText},guestReviewComplaint:{memberId,requestId},createdAt:FieldValue.serverTimestamp()});tx.update(reviewRef,{state:"complaint_sending",complaint:{attempts:[...(review.data().complaint?.attempts||[]),attempt],activeMailId:mailId,closedAt:null}});});return{ok:true,maskedEmail:"由系統寄送至訪客帳號 Email"};
+});
+
+exports.handleGuestReviewMailDelivery = onDocumentWritten({ region:"asia-east1", document:"mail/{mailId}" }, async event => {
+  const mail=event.data?.after.data();if(!mail)return;const db=getFirestore();if(mail.guestReviewInvite){const info=mail.guestReviewInvite,subjectRef=db.doc(`guestReviewSubjects/${info.memberId}`);await db.runTransaction(async tx=>{const subject=await tx.get(subjectRef);if(!subject.exists||subject.data().inviteMailId!==event.params.mailId)return;if(mail.delivery?.state==="SUCCESS")tx.update(subjectRef,{inviteDeliveredAt:FieldValue.serverTimestamp(),lastInviteError:null});else if(mail.delivery?.error)tx.update(subjectRef,{state:"invite_failed",lastInviteError:String(mail.delivery.error).slice(0,1000),updatedAt:FieldValue.serverTimestamp()});});}
+  if(mail.guestReviewComplaint){const reviewRef=db.doc(`guestReviews/${mail.guestReviewComplaint.memberId}`);await db.runTransaction(async tx=>{const review=await tx.get(reviewRef);if(!review.exists||review.data().complaint?.activeMailId!==event.params.mailId)return;const complaint=review.data().complaint,attempts=[...(complaint.attempts||[])],index=attempts.findIndex(a=>a.mailId===event.params.mailId);if(index<0)return;if(mail.delivery?.state==="SUCCESS"){attempts[index]={...attempts[index],deliveredAt:Timestamp.now(),deliveryError:null};tx.update(reviewRef,{state:"complaint_closed",complaint:{...complaint,attempts,closedAt:Timestamp.now()}});}else if(mail.delivery?.error){attempts[index]={...attempts[index],deliveryError:String(mail.delivery.error).slice(0,1000)};tx.update(reviewRef,{state:"complaint_send_failed",complaint:{...complaint,attempts}});}});}
+});
+
+exports.saveGuestReviewConfig = onCall({ region:"asia-east1" }, async request => {const adminId=await requireAdmin(request);let config;try{config=guestReviews.defaultConfig(request.data);}catch(e){throw reviewError(e);}await getFirestore().doc("guestReviewConfig/main").set({...config,updatedAt:FieldValue.serverTimestamp(),updatedBy:adminId},{merge:true});return{ok:true,config};});
 
 exports.ensureWorldBossLifecycle = onCall({ region:"asia-east1" }, async request => {
   if (!request.auth?.uid) throw new HttpsError("unauthenticated", "login_required");

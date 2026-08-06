@@ -28,6 +28,7 @@ import {
 import DateSlotPicker from "../components/booking/DateSlotPicker";
 import PlanDurationPicker from "../components/booking/PlanDurationPicker";
 import ParticipantBreakdownPicker from "../components/booking/ParticipantBreakdownPicker";
+import { getMyGuestReview, submitMyGuestReview, withdrawGuestReviewPublication } from "../lib/guestReviewDb";
 import "./PublicBookingApp.css";
 
 
@@ -120,6 +121,14 @@ export default function PublicBookingApp() {
   const [newPw, setNewPw]             = useState("");
   const [savingPw, setSavingPw]       = useState(false);
   const [pwMsg, setPwMsg]             = useState("");
+  const [guestReview, setGuestReview] = useState(null);
+  const [reviewDraft, setReviewDraft] = useState({rating:0,message:"",consentToPublish:false,publicAlias:""});
+  const [reviewMsg, setReviewMsg] = useState("");
+
+  useEffect(() => {
+    if (!profile || !showMine) return;
+    getMyGuestReview().then(setGuestReview).catch(() => setGuestReview(null));
+  }, [profile, showMine]);
 
   // ⑥ 前台登入入口（回訪訪客不用先選時段就能登入）
   const [showLogin, setShowLogin] = useState(false);
@@ -367,6 +376,18 @@ export default function PublicBookingApp() {
             {selectedSlot?.date}　{selectedSlot?.startTime}－{selectedSlot?.endTime}・{durationLabel(durationHours)}<br />
             我們會保留這個時段給您，現場請提早 10 分鐘到櫃檯報到
           </div>
+
+          {guestReview?.eligible && !guestReview.review && (
+            <form style={cardStyle} onSubmit={async e=>{e.preventDefault();setReviewMsg("");try{const result=await submitMyGuestReview(reviewDraft);setGuestReview({eligible:false,review:{...reviewDraft,state:reviewDraft.consentToPublish?"pending":"private_unread"}});setReviewMsg(result.googleReviewUrl?`已送出。五星訪客可前往 Google 分享：${result.googleReviewUrl}`:"已送出，謝謝你的回饋！");}catch(err){setReviewMsg(err.message);}}}>
+              <div style={sectionTitle}>⭐ 為已完成的體驗留下評價</div>
+              <div style={{display:"flex",gap:6,marginTop:10}}>{[1,2,3,4,5].map(n=><button type="button" key={n} onClick={()=>setReviewDraft({...reviewDraft,rating:n})} aria-label={`${n} 星`} style={{fontSize:24,color:n<=reviewDraft.rating?"#fbbf24":"#64748b",background:"none",border:0}}>★</button>)}</div>
+              <textarea required minLength={2} maxLength={1500} value={reviewDraft.message} onChange={e=>setReviewDraft({...reviewDraft,message:e.target.value})} placeholder="分享這次體驗" style={{...inputStyle,minHeight:90,marginTop:8}} />
+              <label style={{...labelStyle,display:"flex",gap:8,marginTop:8}}><input type="checkbox" checked={reviewDraft.consentToPublish} onChange={e=>setReviewDraft({...reviewDraft,consentToPublish:e.target.checked})}/>同意經審核後公開在官網</label>
+              {reviewDraft.consentToPublish&&<input required maxLength={40} value={reviewDraft.publicAlias} onChange={e=>setReviewDraft({...reviewDraft,publicAlias:e.target.value})} placeholder="匿名公開名稱（不會預填本名）" style={inputStyle}/>}<button style={{width:"100%",marginTop:10,padding:11,border:0,borderRadius:12,background:"#fbbf24",fontWeight:900}}>送出評價</button>
+            </form>
+          )}
+          {guestReview?.review && <div style={cardStyle}><div style={sectionTitle}>⭐ 我的評價</div><p style={{color:"rgba(255,255,255,.8)"}}>{guestReview.review.message}</p><small style={{color:"rgba(255,255,255,.5)"}}>狀態：{guestReview.review.state}</small>{guestReview.review.consentToPublish&&["pending","approved"].includes(guestReview.review.state)&&<button onClick={async()=>{await withdrawGuestReviewPublication();setGuestReview({...guestReview,review:{...guestReview.review,state:"publication_withdrawn",consentToPublish:false}});}} style={{display:"block",marginTop:10,padding:8,borderRadius:10,border:"1px solid #ef4444",background:"transparent",color:"#fca5a5"}}>撤回公開同意</button>}</div>}
+          {reviewMsg&&<p style={{color:"#fde68a",fontSize:13}}>{reviewMsg}</p>}
           <div style={{ fontSize: 12, color: "rgba(255,255,255,.4)", textAlign: "center" }}>
             下次要再約，直接用 Email／密碼登入就能找回這筆帳號，不用重填資料
           </div>

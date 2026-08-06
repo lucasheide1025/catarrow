@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/booking-system.md", "reason": "Verify booking completion and email idempotency"}
+{"file": ".trellis/spec/frontend/guest-kid-mode.md", "reason": "Verify guest identity and privacy"}
