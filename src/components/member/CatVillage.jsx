@@ -24,7 +24,7 @@ import {
   getProductionRate, getUpgradeRequirements, canUpgrade,
   calcPendingResources, RESOURCE_NAMES, DEFAULT_VILLAGE,
   UNLOCK_REQS, isBuildingUnlocked, TIERED_RESOURCES, getResourceKey,
-  getWorkerCatMultiplier, getStageMultiplier, getMaxSlots, normalizeBuildingAllocation, getVillageLastCollectedMs, MAX_COLLECT_HOURS,
+  getWorkerCatMultiplier, getStageMultiplier, normalizeBuildingAllocation, getVillageLastCollectedMs, MAX_COLLECT_HOURS,
 } from "../../lib/villageData";
 import GachaMachine from "./GachaMachine";
 import CatVillageNavArt from "./CatVillageNavArt";
@@ -1174,7 +1174,6 @@ function AllocationSettings({ buildingId, level, allocations, memberId, onSaved 
   const building    = BUILDINGS[buildingId];
   const hasTier     = building && TIERED_RESOURCES.has(building.resource);
   const maxTier     = getBuildingStage(level);
-  const maxSlots    = getMaxSlots(level);
   const stageMult   = getStageMultiplier(level);
 
   // 如果不是分層資源建築（如煉金室、扭蛋亭），不顯示分配 UI
@@ -1247,7 +1246,7 @@ function AllocationSettings({ buildingId, level, allocations, memberId, onSaved 
     <div className="mt-4" style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
       <div className="flex items-center justify-between mb-2">
         <div className="text-[11px] font-bold" style={{ color: C.mid }}>
-          🎛️ 產能分配 ×{stageMult.toFixed(1)}（{maxSlots}槽可用）
+          🎛️ 產能分配 ×{stageMult.toFixed(1)}（T1~T{maxTier} 已解鎖）
         </div>
         {!editing && (
           <button onClick={startEdit}
@@ -1270,9 +1269,10 @@ function AllocationSettings({ buildingId, level, allocations, memberId, onSaved 
         </div>
       ) : (
         <div>
+          {/* 2026-08-08：全部已解鎖 tier 都顯示（含 0%）——原本 pct=0 且槽滿時會把
+              剛解鎖的 tier 列隱藏，玩家升到 9 級根本看不到 T3 可以分配。 */}
           {[1,2,3,4,5].slice(0, maxTier).map(t => {
             const pct = alloc?.[String(t)] || 0;
-            if (pct <= 0 && activeTiers.length >= maxSlots && ![1].includes(t)) return null;
             return (
               <div key={t} className="flex items-center gap-2 mb-1.5">
                 <span className="text-[11px] font-bold shrink-0" style={{ width: 24, color: C.brown }}>T{t}</span>

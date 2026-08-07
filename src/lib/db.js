@@ -5209,6 +5209,27 @@ export async function upgradeVillageBuilding(memberId, buildingId, village) {
     deductUpdates[`village.resources.${resKey}`] = increment(-mat.count);
   }
 
+  // 2026-08-08 跨 stage 分配遷移：升級剛解鎖新 tier（9 級 T3、13 級 T4、17 級 T5）時，
+  // 把新 tier 混入既有分配（保留舊 tier 比例），否則舊帳號升級後新 tier 預設 0% 完全不產。
+  // 只處理分層資源建築（煉金室/扭蛋亭不是分層資源，寫 allocation 只會留下垃圾欄位）。
+  const oldMaxTier = getBuildingStage(currentLevel);
+  const newMaxTier = getBuildingStage(currentLevel + 1);
+  if (newMaxTier > oldMaxTier && TIERED_RESOURCES.has(VB[buildingId]?.resource)) {
+    const oldAlloc = normalizeBuildingAllocation(currentLevel, village?.allocations?.[buildingId]);
+    const share    = Math.round(100 / newMaxTier);
+    const oldShare = 100 - share;
+    const nextAlloc = {};
+    for (let t = 1; t <= newMaxTier; t++) {
+      nextAlloc[String(t)] = t === newMaxTier
+        ? share
+        : Math.round((Number(oldAlloc[String(t)]) || 0) * oldShare / 100);
+    }
+    // 浮點補正：總和補回 100（先 clamp ≥0，避免捨入誤差把低階 tier 補成負數）
+    const sum = Object.values(nextAlloc).reduce((a, b) => a + b, 0);
+    if (sum !== 100) nextAlloc["1"] = Math.max(0, (nextAlloc["1"] || 0) + (100 - sum));
+    deductUpdates[`village.allocations.${buildingId}`] = nextAlloc;
+  }
+
   await updateDoc(doc(db, C.members, memberId), deductUpdates);
 
   resources.arrowdew = (resources.arrowdew || 0) - req.arrowdew;

@@ -172,22 +172,18 @@ export function getResourceKey(resource, tier) {
   return TIERED_RESOURCES.has(resource) ? `${resource}_t${tier}` : resource;
 }
 
-// ── 預設產能分配（等分）───────────────────────────────────
+// ── 預設產能分配（均分）───────────────────────────────────
+// 2026-08-08 修正：原本只把產能分給「前 maxSlots 個 tier」→ 9 級解鎖 T3 後預設仍是
+// 0%，玩家升到 9 級卻完全看不到 T3 生產（同樣問題會發生在 13 級 T4、17 級 T5）。
+// 改為所有「已解鎖 tier（1..maxTier）」均分，新解鎖的階級一升級就能直接開始生產。
 export function getDefaultAllocation(lv) {
   const maxTier = getBuildingStage(lv);
-  const slots   = getMaxSlots(lv);
+  const each    = Math.floor(100 / maxTier);
+  let remainder = 100 - each * maxTier;
   const alloc   = {};
-  // 取可用的前 slots 個 tier 等分；其餘 0
-  const activeCount = Math.min(maxTier, slots);
-  const each        = Math.floor(100 / activeCount);
-  let remainder     = 100 - each * activeCount;
   for (let t = 1; t <= maxTier; t++) {
-    if (t <= activeCount) {
-      alloc[String(t)] = each + (remainder > 0 ? 1 : 0);
-      if (remainder > 0) remainder--;
-    } else {
-      alloc[String(t)] = 0;
-    }
+    alloc[String(t)] = each + (remainder > 0 ? 1 : 0);
+    if (remainder > 0) remainder--;
   }
   return alloc;
 }
