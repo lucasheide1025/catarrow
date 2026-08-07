@@ -7,6 +7,7 @@ import { useState } from "react";
 import {
   TILE_TYPES, BOARD_MODES, JOURNEY_BUFF_INFO, TRAP_EVENTS,
   MAX_CAMP_MULT, MAX_SHOOT_MULT, MAX_CATMATE_STACKS, MAX_DICE_COUNT,
+  MONSTER_BAND_TABLE, SCORE_BAND_MIN_RATIO, BOSS_REWARD_RANGE,
 } from "../../lib/boardData";
 import { JOURNEY_DAILY_DICE } from "../../lib/boardJourney";
 
@@ -193,13 +194,22 @@ function BuffsSection() {
   );
 }
 
+const BAND_ORDER = ["S", "A", "B", "C"];
+const BAND_COLORS = { S: "#fcd34d", A: "#fca5a5", B: "#93c5fd", C: "#cbd5e1" };
+
+// 分帶獎勵直接吃 MONSTER_BAND_TABLE＋SCORE_BAND_MIN_RATIO（boardData 真源），
+// 改平衡時說明書自動跟上，不會跟遊戲規則漂移。
 function ShootingSection() {
-  const bands = [
-    { band: "S", min: "85%↑", desc: "怪物獎勵 ×2.0、素材 ×4、40% 掉寶箱", color: "#fcd34d" },
-    { band: "A", min: "65%↑", desc: "怪物獎勵 ×1.4、素材 ×3、25% 掉寶箱", color: "#fca5a5" },
-    { band: "B", min: "40%↑", desc: "怪物獎勵 ×1.0、素材 ×2、10% 掉寶箱", color: "#93c5fd" },
-    { band: "C", min: "<40%", desc: "怪物獎勵 ×0.6、素材 ×1", color: "#cbd5e1" },
-  ];
+  const bands = BAND_ORDER.map((b, i) => {
+    const info = MONSTER_BAND_TABLE[b] || {};
+    const minPct = i < BAND_ORDER.length - 1 ? Math.round(SCORE_BAND_MIN_RATIO[b] * 100) : null;
+    return {
+      band: b,
+      min: minPct != null ? `${minPct}%↑` : `<${Math.round(SCORE_BAND_MIN_RATIO.B * 100)}%`,
+      desc: `怪物獎勵 ×${info.mult}、素材 ×${info.mats}${info.chest ? `、${Math.round(info.chest * 100)}% 掉寶箱` : ""}`,
+      color: BAND_COLORS[b],
+    };
+  });
   return (
     <>
       <Card title="哪些格子要射箭？" icon="🎯">
@@ -224,8 +234,8 @@ function ShootingSection() {
         </div>
       </Card>
       <Card title="終點 Boss" icon="⚔️">
-        <Row icon="⚔️" label="不會輸，但打越高獎越大">Boss 有血條，完成度越高扣越多血；85% 以上（S 帶）直接擊倒、獎勵最豐。</Row>
-        <Row icon="💰" label="Boss 掉落">金幣 300~600×T、箭露 60~120×T、家族素材、寶箱與貓咪經驗。</Row>
+        <Row icon="⚔️" label="不會輸，但打越高獎越大">Boss 有血條，完成度越高扣越多血；{Math.round(SCORE_BAND_MIN_RATIO.S * 100)}% 以上（S 帶）直接擊倒、獎勵最豐。</Row>
+        <Row icon="💰" label="Boss 掉落">金幣 {BOSS_REWARD_RANGE.coins[0]}~{BOSS_REWARD_RANGE.coins[1]}×T、箭露 {BOSS_REWARD_RANGE.arrowdew[0]}~{BOSS_REWARD_RANGE.arrowdew[1]}×T、家族素材、寶箱與貓咪經驗。</Row>
       </Card>
     </>
   );

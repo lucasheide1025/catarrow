@@ -100,12 +100,20 @@ export function trapEffectOf(type, tier = 1) {
 // ── 完成度分數帶（6 箭）────────────────────────────────────
 // scoreRatio: 0~1（命中總分 / 滿分）。回傳 { band, monsterMult, miningMult, chestCount }
 // 這是全地圖「射箭格」的單一分帶真源——怪物格/終點 Boss 都用它，不另立門檻。
+// 門檻抽成常數（SCORE_BAND_MIN_RATIO）供說明書/UI 共用，改平衡時文案自動跟上、不漂移。
+export const SCORE_BAND_MIN_RATIO = { S: 0.85, A: 0.65, B: 0.40 };   // 其餘歸 C
+const SCORE_BAND_BONUS = {
+  S: { monsterMult: 3.0, miningMult: 1.8, chestCount: 3 },
+  A: { monsterMult: 2.0, miningMult: 1.5, chestCount: 2 },
+  B: { monsterMult: 1.5, miningMult: 1.2, chestCount: 1 },
+  C: { monsterMult: 1.0, miningMult: 1.0, chestCount: 1 },
+};
 export function scoreToBand(scoreRatio = 0) {
   const r = Math.max(0, Math.min(1, scoreRatio));
-  if (r >= 0.85) return { band: "S", monsterMult: 3.0, miningMult: 1.8, chestCount: 3 };
-  if (r >= 0.65) return { band: "A", monsterMult: 2.0, miningMult: 1.5, chestCount: 2 };
-  if (r >= 0.40) return { band: "B", monsterMult: 1.5, miningMult: 1.2, chestCount: 1 };
-  return { band: "C", monsterMult: 1.0, miningMult: 1.0, chestCount: 1 };
+  const band = r >= SCORE_BAND_MIN_RATIO.S ? "S"
+    : r >= SCORE_BAND_MIN_RATIO.A ? "A"
+    : r >= SCORE_BAND_MIN_RATIO.B ? "B" : "C";
+  return { band, ...SCORE_BAND_BONUS[band] };
 }
 
 // ── 怪物格獎勵分層表（6 箭完成度四階）──────────────────────
@@ -135,6 +143,17 @@ export function miningBandFor(progressPct) {
   const p = Math.max(0, Math.min(180, Number(progressPct) || 0));
   return MINING_BAND_TABLE.find(t => p >= t.min) || MINING_BAND_TABLE[MINING_BAND_TABLE.length - 1];
 }
+
+// ── 終點 Boss 獎勵範圍（rollTileReward boss 分支與說明書共用）──────────
+// coins/arrowdew/catXP 為「×T 前」的基底範圍，實際再乘分帶倍率 f
+//（S×1.5 / A×1.0 / B×0.75 / C×0.5）；matsBase 為素材基底數，每帶再加
+// round(monsterMult×2)（S 12 / A 10 / B 9 / C 8）。改平衡時說明書自動跟上。
+export const BOSS_REWARD_RANGE = {
+  coins: [300, 600],
+  arrowdew: [60, 120],
+  catXP: [150, 300],
+  matsBase: 6,
+};
 
 // ── 終點 Boss 決戰狀態（BossDuel 演出用；單一真源可測試）──
 // score60：6 箭分數 0~60。血條 = 100 − 完成度%（打掉多少 Boss HP）；
@@ -325,13 +344,14 @@ export function rollTileReward(tileType, ctx = {}) {
       const band = scoreToBand(scoreRatio);
       // 分帶倍率（乘 band.monsterMult×0.5）：S ×1.5 / A ×1.0 / B ×0.75 / C ×0.5——
       // 與怪物格共用同一張 scoreToBand 分帶表，高低分帶範圍不重疊，打越高獎越大。
+      // 基底範圍吃 BOSS_REWARD_RANGE（說明書直接引用，改平衡自動同步）。
       const f = band.monsterMult * 0.5;
-      r.coins = scale(Math.round(randInt(300, 600) * T * f));
-      r.arrowdew = scale(Math.round(randInt(60, 120) * T * f));
-      addRandomFamilyMat(r, mode.family, T, scale(6 + Math.round(band.monsterMult * 2)));
+      r.coins = scale(Math.round(randInt(BOSS_REWARD_RANGE.coins[0], BOSS_REWARD_RANGE.coins[1]) * T * f));
+      r.arrowdew = scale(Math.round(randInt(BOSS_REWARD_RANGE.arrowdew[0], BOSS_REWARD_RANGE.arrowdew[1]) * T * f));
+      addRandomFamilyMat(r, mode.family, T, scale(BOSS_REWARD_RANGE.matsBase + Math.round(band.monsterMult * 2)));
       r.chests.push({ kind: "family", family: mode.family, tier: T });
       if (band.band === "S") r.chests.push({ kind: "universal", family: mode.family, tier: T });
-      r.catXP = scale(Math.round(randInt(150, 300) * f));   // 隨分帶（與金幣/箭露一致）
+      r.catXP = scale(Math.round(randInt(BOSS_REWARD_RANGE.catXP[0], BOSS_REWARD_RANGE.catXP[1]) * f));   // 隨分帶（與金幣/箭露一致）
       r.band = band.band;
       r.boss = true;
       break;
