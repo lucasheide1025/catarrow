@@ -3,9 +3,8 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
   collectVillageResources, upgradeVillageBuilding, initVillageIfNeeded,
-  exchangeVillageMaterial, exchangeMaterialsForChest,
   subscribeCardMarket, listCardForSale, buyCardListing, cancelCardListing, claimCardSaleProceeds,
-  getVillageMarketConfig, setBuildingAllocation, assignVillageWorker,
+  setBuildingAllocation, assignVillageWorker,
   setDisplayVillageLv,
 } from "../../lib/db";
 import { CAT_CARD_MAP } from "../../lib/catCardData";
@@ -28,6 +27,7 @@ import {
 } from "../../lib/villageData";
 import GachaMachine from "./GachaMachine";
 import CatVillageNavArt from "./CatVillageNavArt";
+import ShopSimulator from "./ShopSimulatorV3";
 import { buildVillageCollectionResult } from "../../lib/villageCollectionResult";
 import CouncilHall  from "./CouncilHall";
 import VillageGoalBanner from "./VillageGoalBanner";
@@ -1431,7 +1431,7 @@ function WorkerCatSettings({ buildingId, village, myCats, memberId, profile, onS
 }
 
 // ── 升級 Modal ───────────────────────────────────────────────
-function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrading, memberId, memberName, catCards, battleExchange, onExchangeDone, onVillageUpdate = null, village, myCats, profile }) {
+function UpgradeModal({ buildingId, level, resources, onUpgrade, onClose, upgrading, memberId, memberName, catCards, onVillageUpdate = null, village, myCats, profile }) {
   const b         = BUILDINGS[buildingId];
   const stage     = getBuildingStage(level);
   const nextStage = getBuildingStage(level + 1);
@@ -1717,152 +1717,6 @@ function ResourceRow({ resources, gachaCoins }) {
         </div>
       )}
     </section>
-  );
-}
-
-const BATTLE_EXCHANGE = [
-  // 六種族材料包（各自消耗對應建築的 T1 村莊資源）
-  { type:'iron', family:'ghost',     icon:'👻', label:'鬼怪族材料包',   costs:[{ resource:'ore',       tier:1, count:30 }] },
-  { type:'iron', family:'mountain',  icon:'🏔️', label:'山林族材料包',  costs:[{ resource:'melon',     tier:1, count:30 }] },
-  { type:'iron', family:'exam',      icon:'📝', label:'考試族材料包',   costs:[{ resource:'fish',      tier:1, count:30 }] },
-  { type:'iron', family:'insect',    icon:'🦂', label:'毒蟲族材料包',   costs:[{ resource:'meat',      tier:1, count:30 }] },
-  { type:'iron', family:'workplace', icon:'💼', label:'職場族材料包',   costs:[{ resource:'driedfish', tier:1, count:30 }] },
-  { type:'iron', family:'temple',    icon:'⛩️', label:'西方怪物材料包', costs:[{ resource:'can',       tier:1, count:30 }] },
-  // 藥水箱、怪物卡包、黃金寶箱
-  { type:'potion',   icon:'🧪', label:'藥水箱',   costs:[{ resource:'melon', tier:1, count:20 }, { resource:'fish',  tier:1, count:15 }] },
-  { type:'card_pack',icon:'🃏', label:'怪物卡包',  costs:[{ resource:'ore',   tier:2, count: 8 }, { resource:'driedfish', tier:1, count:20 }] },
-  { type:'gold',     icon:'🎁', label:'黃金寶箱',  costs:[{ resource:'ore',   tier:2, count:15 }, { resource:'fish',  tier:2, count:10 }] },
-];
-const RES_CN = { ore:'礦物', melon:'瓜瓜', fish:'鮮魚', meat:'動物肉', driedfish:'小魚乾', can:'貓罐頭', potion:'貓薄荷藥水', fur:'貓毛' };
-
-// ── 市集兌換面板 ─────────────────────────────────────────────
-function MarketExchangePanel({ resources, memberId, onDone, battleExchange: bx }) {
-  const effectiveBX = bx || BATTLE_EXCHANGE;
-  const [busy, setBusy] = useState(false);
-  const [justGot, setJustGot] = useState(null);
-
-  async function doBattleExchange(chestType, costs, family) {
-    if (busy) return;
-    setBusy(true);
-    sfxVillageExchange();
-    try {
-      await exchangeMaterialsForChest(memberId, chestType, costs, family || null);
-      setJustGot(chestType + (family || ""));
-      setTimeout(() => setJustGot(null), 2000);
-      onDone?.();
-    } catch (e) { alert(e.message); }
-    finally { setBusy(false); }
-  }
-
-  async function doExchange(resource, fromTier, direction) {
-    if (busy) return;
-    const fromKey = `${resource}_t${fromTier}`;
-    const have = Math.floor(resources?.[fromKey] || 0);
-    if (direction === 'up' && have < 5) { alert('需要 5 個才能升階'); return; }
-    if (direction === 'down' && have < 1) { alert('數量不足'); return; }
-    setBusy(true);
-    sfxVillageExchange();
-    try {
-      await exchangeVillageMaterial(memberId, resource, fromTier, direction);
-      onDone?.();
-    } catch(e) { alert(e.message); }
-    finally { setBusy(false); }
-  }
-
-  return (
-    <div className="px-5 pb-4">
-      {/* ── 市集兌換 ── */}
-      <div className="text-xs font-bold mb-2" style={{ color: C.mid }}>🛒 村莊市集兌換</div>
-      <div className="text-[10px] mb-3" style={{ color: C.muted }}>消耗村莊材料，換取各族材料包、藥水箱、怪物卡包、黃金寶箱（到背包開箱）</div>
-      <div className="flex flex-col gap-2 mb-4">
-        {effectiveBX.map(ex => {
-          const canAfford = ex.costs.every(({ resource, tier, count }) =>
-            Math.floor(resources?.[`${resource}_t${tier}`] || 0) >= count
-          );
-          const gotThis = justGot === ex.type + (ex.family || "");
-          return (
-            <div key={ex.type} className="flex items-center justify-between rounded-xl px-3 py-2"
-              style={{ background: "rgba(255,255,255,0.65)", border: `1px solid ${C.border}` }}>
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-lg">{ex.icon}</span>
-                  <span className="text-xs font-bold" style={{ color: C.brown }}>{ex.label}</span>
-                </div>
-                <div className="flex flex-wrap gap-x-2 gap-y-0.5">
-                  {ex.costs.map(({ resource, tier, count }) => {
-                    const have = Math.floor(resources?.[`${resource}_t${tier}`] || 0);
-                    return (
-                      <span key={`${resource}${tier}`} className="text-[10px] font-bold"
-                        style={{ color: have >= count ? C.sage : "#C0533A" }}>
-                        {RES_CN[resource]}T{tier}×{count}（{have}）
-                      </span>
-                    );
-                  })}
-                </div>
-              </div>
-              <button
-                disabled={!canAfford || busy}
-                onClick={() => doBattleExchange(ex.type, ex.costs, ex.family)}
-                className="text-[10px] font-bold px-3 py-1.5 rounded-lg active:scale-95 transition-all ml-2"
-                style={{
-                  background: gotThis ? "#5A9E50" : canAfford ? "#D4933A" : C.lockBd,
-                  color: canAfford ? "white" : C.muted,
-                  minWidth: 64, textAlign: "center", flexShrink: 0,
-                }}>
-                {gotThis ? "✓ 取得！" : "兌換"}
-              </button>
-            </div>
-          );
-        })}
-      </div>
-
-      <div style={{ height: 1, background: C.border, marginBottom: 12 }} />
-
-      {/* ── 村莊材料換算 ── */}
-      <div className="text-xs font-bold mb-2" style={{ color: C.mid }}>材料換算（村莊材料）</div>
-      <div className="text-[10px] mb-3" style={{ color: C.muted }}>升階：T(n)×5 → T(n+1)×1　降階：T(n)×1 → T(n-1)×3</div>
-      {TIERED_LIST.map(res => {
-        const tiers = [1,2,3,4,5].map(t => ({ t, count: Math.floor(resources?.[`${res}_t${t}`] || 0) }));
-        const hasSome = tiers.some(x => x.count > 0);
-        if (!hasSome) return null;
-        return (
-          <div key={res} className="mb-3">
-            <div className="text-[10px] font-bold mb-1" style={{ color: C.brown }}>
-              {RES_EMOJI[res]} {RESOURCE_NAMES[res]}
-            </div>
-            <div className="flex flex-col gap-1">
-              {tiers.map(({ t, count }) => (
-                <div key={t} className="flex items-center justify-between rounded-xl px-3 py-1.5"
-                  style={{ background: "rgba(255,255,255,0.6)", border: `1px solid ${C.border}` }}>
-                  <div className="flex items-center gap-1.5">
-                    <img src={`/ui/village/resource-${res}${t}.webp`} style={{ width: 22, height: 22, objectFit: "contain", borderRadius: 4 }}
-                      onError={e => { e.target.style.display = 'none'; }} />
-                    <span className="text-xs font-bold" style={{ color: C.brown }}>T{t}</span>
-                    <span className="text-xs" style={{ color: C.mid }}>×{count}</span>
-                  </div>
-                  <div className="flex gap-1.5">
-                    {t < 5 && (
-                      <button disabled={count < 5 || busy} onClick={() => doExchange(res, t, 'up')}
-                        className="text-[10px] font-bold px-2 py-1 rounded-lg active:scale-95"
-                        style={{ background: count >= 5 ? C.sage : C.lockBd, color: count >= 5 ? 'white' : C.muted }}>
-                        ×5→T{t+1}
-                      </button>
-                    )}
-                    {t > 1 && (
-                      <button disabled={count < 1 || busy} onClick={() => doExchange(res, t, 'down')}
-                        className="text-[10px] font-bold px-2 py-1 rounded-lg active:scale-95"
-                        style={{ background: count >= 1 ? "#D4933A" : C.lockBd, color: count >= 1 ? 'white' : C.muted }}>
-                        ×1→T{t-1}×3
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })}
-    </div>
   );
 }
 
@@ -2388,7 +2242,7 @@ const VILLAGE_SECONDARY_NAV = {
   workshop: [
     { id:"forge", label:"裝備鍛造", art:"forge" },
     { id:"potioncraft", label:"藥水製作", art:"potioncraft" },
-    { id:"exchange", label:"材料兌換", art:"trade" },
+    { id:"shop", label:"🏪 商店", art:"trade" },
   ],
   trade: [
     { id:"gacha", label:"貓咪扭蛋", art:"gacha" },
@@ -2398,7 +2252,7 @@ const VILLAGE_SECONDARY_NAV = {
 
 function getVillagePrimaryTab(tab) {
   if (tab === "council") return "tasks";
-  if (tab === "forge" || tab === "potioncraft" || tab === "exchange") return "workshop";
+  if (tab === "forge" || tab === "potioncraft" || tab === "shop") return "workshop";
   if (tab === "gacha" || tab === "cardmarket") return "trade";
   return "village";
 }
@@ -2426,7 +2280,6 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
   const primaryTab = getVillagePrimaryTab(tab);
   const secondaryNav = VILLAGE_SECONDARY_NAV[primaryTab] || [];
 
-  const [marketConfig, setMarketConfig] = useState(null);
   const [myCats, setMyCats] = useState({});
 
   useEffect(() => {
@@ -2441,18 +2294,6 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
       autoSpawnVillageGoal(getVillageLevel(buildings));
     }
   }, [tab, profile?.id]); // eslint-disable-line
-
-  useEffect(() => {
-    let active = true;
-    getVillageMarketConfig()
-      .then(config => {
-        if (active) setMarketConfig(config);
-      })
-      .catch(() => {
-        if (active) setMarketConfig(null);
-      });
-    return () => { active = false; };
-  }, []);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -2622,16 +2463,14 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
         </div>
       )}
 
-      {tab === "exchange" && (
+      {tab === "shop" && (
         <div className="px-4 py-3">
-          <MarketExchangePanel
-            resources={resources}
+          <ShopSimulator
             memberId={profile?.id}
-            onDone={() => {
-              setLocalVillage(null);
-              sfxVillageExchange();
-            }}
-            battleExchange={marketConfig?.battleExchange || BATTLE_EXCHANGE}
+            resources={resources}
+            coins={profile?.coins || 0}
+            village={village}
+            onChange={() => setLocalVillage(null)}
           />
         </div>
       )}
@@ -2729,8 +2568,6 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
           memberId={profile?.id}
           memberName={profile?.nickname || profile?.name || "射手"}
           catCards={catCards}
-          battleExchange={marketConfig?.battleExchange || BATTLE_EXCHANGE}
-          onExchangeDone={() => setLocalVillage(null)}
           onVillageUpdate={setLocalVillage}
           village={village}
           myCats={myCats}
