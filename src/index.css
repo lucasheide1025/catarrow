@@ -389,6 +389,21 @@ body {
 }
 .board-chest-shake { animation: board-chest-shake .62s ease-in-out both; }
 
+/* ── 格子動作演示（TileDemo 08-08）── */
+/* 箭露：水滴從瓶底升起浮到頂（收集箭露的「凝聚」感） */
+@keyframes board-dew-drop {
+  0%   { transform: translateY(0) scale(.7); opacity: 0; }
+  25%  { opacity: 1; }
+  100% { transform: translateY(-96px) scale(1.15); opacity: 0; }
+}
+.board-dew-drop { animation: board-dew-drop 1.1s ease-in-out infinite; }
+/* 箭露容器：收集時整個場景微微上浮呼吸（配合進度條） */
+@keyframes board-dew-rising {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-6px); }
+}
+.board-dew-rising { animation: board-dew-rising 1.4s ease-in-out infinite; }
+
 /* 命運/機會卡：卡背從遠處旋轉飛入（翻牌本身用 rotateY transition，不在這裡） */
 @keyframes board-card-fly-in {
   0%   { opacity: 0; transform: translate3d(0, 46vh, -420px) rotate(-24deg) scale(.55); }
@@ -396,3 +411,37 @@ body {
   100% { opacity: 1; transform: translate3d(0, 0, 0) rotate(0) scale(1); }
 }
 .board-card-fly-in { animation: board-card-fly-in .5s cubic-bezier(.22,1.15,.36,1) both; }
+
+/* ── 🃏 抽卡房：逐張翻卡演出（08-08）──
+   3D 翻轉：inner rotateY(180) 時卡背（front）轉走、卡面（back）轉入。 */
+.card-gacha-scene { perspective: 900px; }
+.card-gacha-inner {
+  transform-style: preserve-3d;
+  transition: transform .55s cubic-bezier(.34,1.56,.64,1);
+  position: relative; width: 100%; height: 100%;
+}
+.card-gacha-inner.flipped { transform: rotateY(180deg); }
+.card-gacha-face {
+  position: absolute; inset: 0; border-radius: inherit; overflow: hidden;
+  backface-visibility: hidden; -webkit-backface-visibility: hidden;
+}
+.card-gacha-face-back { transform: rotateY(180deg); }
+/* 卡背：紫系漸層＋♠ 標誌 */
+.card-gacha-back {
+  background: linear-gradient(160deg, #4a044e, #1e1b4b);
+  border: 2px solid rgba(232,121,249,.55);
+  box-shadow: inset 0 0 28px rgba(232,121,249,.22);
+  display: flex; align-items: center; justify-content: center;
+}
+/* 單張高量：金色光暈 pulse（稀有感） */
+@keyframes gacha-single-glow {
+  0%, 100% { box-shadow: 0 0 22px 6px rgba(250,204,21,.5), 0 0 56px 16px rgba(250,204,21,.22); }
+  50%      { box-shadow: 0 0 42px 14px rgba(250,204,21,.85), 0 0 92px 32px rgba(250,204,21,.4); }
+}
+.gacha-single-glow { animation: gacha-single-glow 1s ease-in-out infinite; }
+/* 翻開瞬間高亮閃光 */
+@keyframes gacha-reveal-flash {
+  0% { filter: brightness(2.3) saturate(1.7); }
+  100% { filter: none; }
+}
+.gacha-reveal-flash { animation: gacha-reveal-flash .6s ease-out both; }

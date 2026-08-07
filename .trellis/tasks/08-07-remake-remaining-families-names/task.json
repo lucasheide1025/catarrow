@@ -1,0 +1,32 @@
+{
+  "id": "remake-remaining-families-names",
+  "name": "remake-remaining-families-names",
+  "title": "其他五族怪物名稱與技能名稱重製",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "your-name",
+  "assignee": "your-name",
+  "createdAt": "2026-08-07",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "08-07-remake-insect-names",
+    "08-07-remake-workplace-names",
+    "08-07-remake-exam-names",
+    "08-07-remake-temple-names",
+    "08-07-remake-treasure-names"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

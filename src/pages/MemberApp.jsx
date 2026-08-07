@@ -10,7 +10,8 @@ import { subscribeResults, subscribeNotifications, subscribeAppVersion, isMember
   subscribeActiveGuildQuests,
   subscribeMyCheckin, submitCheckin, flushPendingShootingSessions, flushPendingArrowProgress,
   subscribeLocalTodayArrows, initializeTodayArrows,
-  subscribeMaintenanceConfig, subscribeTierPermissions } from "../lib/db";
+  subscribeMaintenanceConfig, subscribeTierPermissions,
+  getCompetitions } from "../lib/db";
 import { subscribeMyCats, repairNegativeVillageResources } from "../lib/catDb";
 import { getUnlockedKeys, describeKey } from "../lib/achievementDex";
 import { seedNotifiedIfFirstRun, getUnnotifiedKeys, markNotified, seedSeenIfFirstRun, countUnseen } from "../lib/dexSeen";
@@ -27,12 +28,14 @@ import { subscribeLatestBroadcast } from "../lib/dungeonDb";
 import { getDuelStats } from "../lib/duelDb";
 import { APP_VERSION } from "../lib/version";
 import { getAppTheme, APP_THEMES, saveAppTheme } from "../lib/theme";
-import { OverlayModal } from "../components/shared/UI";
-import { ProgressRing, CountUp } from "../components/shared/Widgets";
+import { OverlayModal, Card } from "../components/shared/UI";
+import { ProgressRing, CountUp, SectionHeader } from "../components/shared/Widgets";
 import { sfxSwitch, sfxLevelUp } from "../lib/sound";
 import CatBuddy from "../components/cat/CatBuddy";
 import { CatBuddyProvider } from "../components/cat/CatBuddyContext";
 import { certLevelStyle } from "../lib/constants";
+import { activeCertComp, certPeriodAllDone } from "../lib/certStatus";
+import { cachedFetch } from "../lib/localCache";
 import { levelFromXP, rankFromLevel } from "../lib/adventurerSystem";
 import { archerLevelFromXP, archerXPProgress } from "../lib/archerLevel";
 import MemberHome         from "../components/member/MemberHome";
@@ -210,6 +213,8 @@ export default function MemberApp() {
   const [cardDataReady, setCardDataReady] = useState(false);
   const [cats,          setCats]          = useState([]);   // 貓咪子集合（成就偵測用）
   const [certRecords,   setCertRecords]   = useState([]);   // 年度檢定紀錄（成就偵測用）
+  // 年度檢定紅點：用已載入的 certActive＋certRecords 計算（成就偵測本來就要載），不加讀取。
+  const [certActive,    setCertActive]    = useState(null);
   const [dexUnlockToast, setDexUnlockToast] = useState(null); // App 層成就解鎖提示
   const [dexSeenTick,   setDexSeenTick]   = useState(0);    // 圖鑑看過後 bump，重算紅點
   const [questCtx,     setQuestCtx]      = useState(null); // 公會任務導航上下文
@@ -499,6 +504,20 @@ export default function MemberApp() {
     () => (profile?.id ? countUnseen(profile.id, unlockedKeys) : 0),
     [unlockedKeys, profile?.id, dexSeenTick],
   );
+
+  // 年度檢定：進行中那場（與首頁/「我的」共用快取，已抓過就 0 讀取）
+  useEffect(() => {
+    if (!profile?.id) return;
+    cachedFetch("cert_active_comp", 10 * 60 * 1000, () => getCompetitions().then(list => activeCertComp(list)))
+      .then(r => setCertActive(r.value || null)).catch(() => {});
+  }, [profile?.id]);
+
+  // 練箭 nav 紅點＝有進行中檢定且我這期還沒考完（尚未報名也會亮，提醒去考）
+  // ⚠️ 整期完成＝三種弓都考過；只考過一支（例如裸弓）仍要亮，提醒去考其他弓種
+  const certRedDot = useMemo(() => {
+    if (!certActive || !profile?.id) return false;
+    return !certPeriodAllDone(certActive, certRecords);
+  }, [certActive, certRecords, profile?.id]);
 
   function handleEnterPartyRoom(roomId, type, host) {
     setPartyRoomId(roomId);
@@ -828,7 +847,8 @@ export default function MemberApp() {
             certification={certification} dexConfig={dexConfig} dexGrants={dexGrants}
             duelStats={duelStats} monsterDex={monsterDex} craftStats={craftStats} chestStats={chestStats}
             potionDex={potionDex} cardData={cardData} todayArrows={todayArrowsGlobal}
-            todayCheckin={todayCheckin} worldBoss={activeWorldBoss} dexUnseenCount={dexUnseenCount} />}
+            todayCheckin={todayCheckin} worldBoss={activeWorldBoss} dexUnseenCount={dexUnseenCount}
+            onOpenVillageBoard={() => { setGachaInitTab("board"); setPage("gacha"); }} />}
         {page==="comps"       && <MemberComps onSelectComp={handleSelectComp} onPageChange={setPage} />}
         {page==="comp-detail" && selComp && !scoring && (
           <CompDetail comp={selComp} profile={profile}
@@ -928,6 +948,10 @@ export default function MemberApp() {
                 </span>
                 {n.id === "profile" && (profile?.hasUnreadReply || profile?.hasNewLearnLog || dexUnseenCount > 0) && (
                   <span style={{ position:"absolute", top:"-2px", right:"-5px", width:"8px", height:"8px", background:"#ef4444", borderRadius:"50%", border:"2px solid var(--bg-deep)", display:"block" }} />
+                )}
+                {/* 年度檢定紅點：有進行中檢定且未完成 → 練箭亮點（teal 與未讀紅點區別） */}
+                {n.id === "training-hub" && certRedDot && (
+                  <span style={{ position:"absolute", top:"-2px", right:"-5px", width:"8px", height:"8px", background:"#22d3ee", borderRadius:"50%", border:"2px solid var(--bg-deep)", display:"block", boxShadow:"0 0 6px rgba(34,211,238,0.9)" }} />
                 )}
               </div>
               <span style={{ fontSize:"10px", fontWeight: active ? "800" : "500", color: active ? "var(--accent)" : "var(--text-muted)" }}>{n.label}</span>
@@ -1074,94 +1098,117 @@ function CompDetail({ comp, onBack, onStartScoring, profile }) {
   else{ canEnter=true; }
   const anyPending = isCert&&myCertResults.some(r=>r.reviewStatus==="pending");
 
+  const isCertBg = isCert
+    ? { card:"linear-gradient(145deg,#0e2a38,#101827 68%)", bar:"from-cyan-300 to-teal-600", bd:"rgba(34,211,238,.28)", feat:"certexam", accent:"#67e8f9" }
+    : { card:"linear-gradient(145deg,#24180a,#101827 68%)", bar:"from-amber-300 to-orange-600", bd:"rgba(251,191,36,.25)", feat:"collection", accent:"#fbbf24" };
+
   return (
     <div className="p-4 flex flex-col gap-4">
-      <button onClick={onBack} className="text-gray-500 text-sm">← 返回</button>
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
-        <div className="text-gray-800 font-black text-lg mb-2">{comp?.title||"比賽"}</div>
-        <div className="grid grid-cols-2 gap-2">
+      <button onClick={onBack} className="self-start text-[13px] font-bold py-1" style={{ color:"var(--text-accent)" }}>← 返回</button>
+      <Card className="relative isolate overflow-hidden p-4" style={{ background:isCertBg.card, border:`1px solid ${isCertBg.bd}`, boxShadow:"0 14px 30px rgba(0,0,0,.28)" }}>
+        <MemberFeatureArt name={isCertBg.feat} size={140} style={{ position:"absolute", right:-28, top:-30, opacity:.12, zIndex:-1 }} />
+        <div className={`absolute inset-y-0 left-0 w-1 bg-gradient-to-b ${isCertBg.bar}`} />
+        <SectionHeader icon={isCert ? "🎖️" : "🏆"} title={comp?.title || "比賽"} action={
+          <span className="text-[10px] font-black px-2 py-0.5 rounded-full" style={{ color:isCertBg.accent, background:`${isCertBg.accent}18`, border:`1px solid ${isCertBg.accent}40` }}>{comp?.type}</span>
+        } />
+        <div style={{ fontSize:10.5, color:"var(--text-secondary)", fontWeight:700 }}>
+          {isCert ? `年度檢定 ・ ${comp?.distance||"—"}米　考到越高級，三圍越強` : `${comp?.date||""}${comp?.endDate?` ～ ${comp.endDate}`:""}`}
+        </div>
+        <div className="grid grid-cols-2 gap-2 mt-3">
           {[["📅 日期",(comp?.date||"")+(comp?.endDate?` ～ ${comp.endDate}`:"")],
             ["🎯 靶紙",comp?.targetName||"—"],
             comp?.arrowCount ? ["🏹 規格",`${comp.arrowCount}箭×${comp.roundCount}回`] : null,
             ["計分","環數"+(comp?.hasMiss?" +M":"")]].filter(Boolean).map(([k,v])=>(
-            <div key={k} className="bg-gray-50 rounded-xl p-3">
-              <div className="text-gray-400 text-xs">{k}</div>
-              <div className="text-gray-700 font-bold text-sm">{v}</div>
+            <div key={k} className="rounded-xl p-3" style={{ background:"rgba(255,255,255,0.05)", border:"1px solid var(--glass-border)" }}>
+              <div className="text-[10px]" style={{ color:"var(--text-muted)" }}>{k}</div>
+              <div className="text-[13px] font-bold" style={{ color:"var(--text-primary)" }}>{v}</div>
             </div>
           ))}
         </div>
-      </div>
+      </Card>
       {comp?.announcement && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-          <div className="text-blue-600 text-xs font-bold mb-1">📢 比賽公告</div>
-          <div className="text-blue-800 text-sm">{comp.announcement}</div>
+        <div className="rounded-xl p-4" style={{ background:"var(--warn-bg)", border:"1px solid rgba(251,191,36,0.3)" }}>
+          <div className="text-[11px] font-bold mb-1" style={{ color:"var(--warn-fg)" }}>📢 比賽公告</div>
+          <div className="text-[13px] leading-relaxed" style={{ color:"var(--text-primary)" }}>{comp.announcement}</div>
         </div>
       )}
-      {comp?.target && <img src={comp.target} alt="靶紙" className="w-full rounded-2xl max-h-48 object-contain bg-gray-100" />}
+      {comp?.target && <img src={comp.target} alt="靶紙" className="w-full rounded-2xl max-h-48 object-contain" style={{ background:"rgba(255,255,255,0.06)" }} />}
       {isCert&&myCertResults.length>0 && (
         <div className="flex flex-col gap-2">
           {myCertResults.map(mr=>(
-            <div key={mr.id} className="bg-blue-600 text-white rounded-2xl p-4 flex items-center justify-between">
-              <div>
-                <div className="text-blue-200 text-xs">{mr.bowLabel||(BOW_GROUP_LABEL[mr.certBowType]||"我的成績")}</div>
-                <div className="font-black text-3xl">{mr.total}</div>
-                <div className="mt-1 flex items-center gap-2 flex-wrap">
-                  {mr.reviewStatus==="pending" && <span className="bg-white/20 text-white text-xs font-bold px-2 py-0.5 rounded-full">⏳ 審核中</span>}
-                  {mr.reviewStatus==="approved"&&mr.certLevel && (
-                    <span className={`text-xs font-black px-2 py-0.5 rounded-full ${mr.certLevel==="未達標"?"bg-white/20 text-white":certLevelStyle(mr.certLevel,"solid")}`}>
-                      {mr.certLevel==="未達標"?"未達標":`${mr.certLevel} 級`}
-                    </span>
-                  )}
-                  {mr.reviewStatus==="rejected" && <span className="bg-white/20 text-white text-xs font-bold px-2 py-0.5 rounded-full">已退回</span>}
+            <Card key={mr.id} className="relative isolate overflow-hidden p-4" style={{ background:"linear-gradient(135deg,#155e75,#0f172a)", border:"1px solid rgba(34,211,238,.4)" }}>
+              <div className={`absolute inset-y-0 left-0 w-1 bg-gradient-to-b ${isCertBg.bar}`} />
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[11px]" style={{ color:"#a5f3fc" }}>{mr.bowLabel||(BOW_GROUP_LABEL[mr.certBowType]||"我的成績")}</div>
+                  <div className="font-black text-3xl" style={{ color:"#fff" }}>{mr.total}</div>
+                  <div className="mt-1 flex items-center gap-2 flex-wrap">
+                    {mr.reviewStatus==="pending" && <span className="bg-white/20 text-white text-xs font-bold px-2 py-0.5 rounded-full">⏳ 審核中</span>}
+                    {mr.reviewStatus==="approved"&&mr.certLevel && (
+                      <span className={`text-xs font-black px-2 py-0.5 rounded-full ${mr.certLevel==="未達標"?"bg-white/20 text-white":certLevelStyle(mr.certLevel,"solid")}`}>
+                        {mr.certLevel==="未達標"?"未達標":`${mr.certLevel} 級`}
+                      </span>
+                    )}
+                    {mr.reviewStatus==="rejected" && <span className="bg-white/20 text-white text-xs font-bold px-2 py-0.5 rounded-full">已退回</span>}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[10px]" style={{ color:"#67e8f9" }}>本場成績</div>
+                  <div className="font-black text-2xl" style={{ color:"#a5f3fc" }}>已送審</div>
                 </div>
               </div>
-            </div>
+            </Card>
           ))}
         </div>
       )}
       {!isCert&&myResult && (
-        <div className="bg-blue-600 text-white rounded-2xl p-4 flex items-center justify-between">
-          <div>
-            <div className="text-blue-200 text-xs">我的成績</div>
-            <div className="font-black text-3xl">{myResult.total}</div>
-          </div>
-          {(myResult.rank||(myRank>=0)) && (
-            <div className="text-right">
-              <div className="text-blue-200 text-xs">名次</div>
-              <div className="font-black text-3xl">{myResult.rank||(myRank+1)}</div>
+        <Card className="relative isolate overflow-hidden p-4" style={{ background:"linear-gradient(135deg,#78350f,#0f172a)", border:"1px solid rgba(251,191,36,.4)" }}>
+          <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-amber-300 to-orange-600" />
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-[11px]" style={{ color:"#fde68a" }}>我的成績</div>
+              <div className="font-black text-3xl" style={{ color:"#fff" }}>{myResult.total}</div>
             </div>
-          )}
-        </div>
+            {(myResult.rank||(myRank>=0)) && (
+              <div className="text-right">
+                <div className="text-[11px]" style={{ color:"#fde68a" }}>名次</div>
+                <div className="font-black text-3xl" style={{ color:"#fbbf24" }}>{myResult.rank||(myRank+1)}</div>
+              </div>
+            )}
+          </div>
+        </Card>
       )}
-      {anyPending && <div className="text-center text-amber-600 text-xs py-2 bg-amber-50 rounded-xl">部分弓種審核中，審核通過前該弓種無法刷分；可改考其他弓種</div>}
+      {anyPending && <div className="text-center text-xs py-2 rounded-xl" style={{ background:"var(--warn-bg)", border:"1px solid rgba(251,191,36,0.3)", color:"var(--warn-fg)" }}>部分弓種審核中，審核通過前該弓種無法刷分；可改考其他弓種</div>}
       {canEnter ? (
         <button onClick={()=>onStartScoring(isCert?null:myResult)}
-          className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-black text-lg rounded-xl">
+          className="w-full py-4 text-white font-black text-lg rounded-xl active:scale-[.98] transition-transform"
+          style={{ border:"none", cursor:"pointer", background: isCert ? "linear-gradient(90deg,#67e8f9,#0891b2)" : "linear-gradient(90deg,#fbbf24,#d97706)", color:"#083344" }}>
           🏹 {isCert?(myCertResults.length>0?"再考一種弓 / 刷分":"進入檢定"):(myResult?"重新挑戰":"開始記分")}
         </button>
       ) : (
-        lockMsg&&<div className="text-center text-gray-400 text-sm py-2 bg-gray-50 rounded-xl">{lockMsg}</div>
+        lockMsg&&<div className="text-center text-sm py-2 rounded-xl" style={{ color:"var(--text-muted)", background:"rgba(255,255,255,0.05)" }}>{lockMsg}</div>
       )}
-      <div className="bg-white rounded-2xl border border-gray-200 p-4">
-        <div className="text-gray-500 text-xs font-bold mb-3">🏅 成績排行{isCert?"（已審核）":""}</div>
-        {loadingR ? <div className="text-gray-400 text-sm text-center py-4">載入中…</div>
+      <Card className="p-4">
+        <SectionHeader icon="🏅" title={`成績排行${isCert?"（已審核）":""}`} />
+        {loadingR ? <div className="text-sm text-center py-4" style={{ color:"var(--text-muted)" }}>載入中…</div>
         : isCert ? (
           Object.keys(certByBow).length===0
-            ? <div className="text-gray-400 text-sm text-center py-4">尚無已審核成績</div>
+            ? <div className="text-sm text-center py-4" style={{ color:"var(--text-muted)" }}>尚無已審核成績</div>
             : <div className="flex flex-col gap-4">
                 {["recurve_bare","compound","traditional"].filter(b=>certByBow[b]?.length).map(b=>(
                   <div key={b}>
-                    <div className="text-gray-600 text-xs font-black mb-1.5">{BOW_GROUP_LABEL[b]||b}</div>
+                    <div className="text-xs font-black mb-1.5" style={{ color:isCertBg.accent }}>{BOW_GROUP_LABEL[b]||b}</div>
                     {certByBow[b].map((r,i)=>{
                       const isMe=r.memberId===myId;
+                      const isLast = i === certByBow[b].length - 1;
                       return (
-                        <div key={r.id||i} className={`flex items-center gap-3 py-2 border-b border-gray-100 last:border-0 ${isMe?"bg-blue-50 -mx-4 px-4 rounded-xl":""}`}>
+                        <div key={r.id||i} className="flex items-center gap-3 py-2 rounded-lg" style={{ borderBottom: isLast ? "none" : "1px solid rgba(255,255,255,0.06)", background: isMe?"rgba(34,211,238,0.10)":"transparent" }}>
                           <span className="w-7 text-center text-sm">{["🥇","🥈","🥉"][i]||i+1}</span>
                           <div className="flex-1 min-w-0">
-                            <div className={`text-sm font-bold ${isMe?"text-blue-700":"text-gray-800"}`}>{r.nickname||r.name||"匿名射手"}{isMe&&"（我）"}</div>
+                            <div className="text-sm font-bold" style={{ color: isMe?"#67e8f9":"var(--text-primary)" }}>{r.nickname||r.name||"匿名射手"}{isMe&&"（我）"}</div>
                             {r.certLevel&&r.certLevel!=="未達標" && <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${certLevelStyle(r.certLevel,"soft")}`}>{r.certLevel}</span>}
                           </div>
-                          <span className={`font-black text-xl ${isMe?"text-blue-600":"text-gray-800"}`}>{r.total}</span>
+                          <span className="font-black text-xl" style={{ color: isMe?"#67e8f9":"var(--text-primary)" }}>{r.total}</span>
                         </div>
                       );
                     })}
@@ -1169,21 +1216,22 @@ function CompDetail({ comp, onBack, onStartScoring, profile }) {
                 ))}
               </div>
         ) : rankList.length===0
-          ? <div className="text-gray-400 text-sm text-center py-4">尚無成績</div>
+          ? <div className="text-sm text-center py-4" style={{ color:"var(--text-muted)" }}>尚無成績</div>
           : rankList.map((r,i)=>{
               const isMe=r.memberId===myId;
+              const isLast = i === rankList.length - 1;
               return (
-                <div key={r.id||r.memberId||i} className={`flex items-center gap-3 py-2.5 border-b border-gray-100 last:border-0 ${isMe?"bg-blue-50 -mx-4 px-4 rounded-xl":""}`}>
+                <div key={r.id||r.memberId||i} className="flex items-center gap-3 py-2.5 rounded-lg" style={{ borderBottom: isLast ? "none" : "1px solid rgba(255,255,255,0.06)", background: isMe?"rgba(34,211,238,0.10)":"transparent" }}>
                   <span className="w-7 text-center text-sm">{["🥇","🥈","🥉"][i]||i+1}</span>
                   <div className="flex-1 min-w-0">
-                    <div className={`text-sm font-bold ${isMe?"text-blue-700":"text-gray-800"}`}>{r.nickname||r.name||"匿名射手"}{isMe&&"（我）"}</div>
+                    <div className="text-sm font-bold" style={{ color: isMe?"#67e8f9":"var(--text-primary)" }}>{r.nickname||r.name||"匿名射手"}{isMe&&"（我）"}</div>
                   </div>
-                  <span className={`font-black text-xl ${isMe?"text-blue-600":"text-gray-800"}`}>{r.total}</span>
+                  <span className="font-black text-xl" style={{ color: isMe?"#67e8f9":"var(--text-primary)" }}>{r.total}</span>
                 </div>
               );
             })
         }
-      </div>
+      </Card>
       <RegList compId={comp?.id} myId={myId} />
     </div>
   );
@@ -1199,22 +1247,22 @@ function RegList({ compId, myId }) {
     });
   },[compId]);
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-4">
-      <div className="text-gray-500 text-xs font-bold mb-3">📋 報名名單{regs.length?`（${regs.length}）`:""}</div>
-      {loading ? <div className="text-gray-400 text-sm text-center py-4">載入中…</div>
-      : regs.length===0 ? <div className="text-gray-400 text-sm text-center py-4">尚無人報名</div>
+    <Card className="p-4">
+      <SectionHeader icon="📋" title={`報名名單${regs.length?`（${regs.length}）`:""}`} />
+      {loading ? <div className="text-sm text-center py-4" style={{ color:"var(--text-muted)" }}>載入中…</div>
+      : regs.length===0 ? <div className="text-sm text-center py-4" style={{ color:"var(--text-muted)" }}>尚無人報名</div>
       : <div className="flex flex-wrap gap-2">
           {regs.map(r=>{
             const isMe=r.memberId===myId;
             const label=r.nickname||r.name||r.guestInfo?.name||"射手";
             return (
-              <span key={r.id||r.memberId} className={`text-xs px-3 py-1.5 rounded-full font-bold ${isMe?"bg-blue-600 text-white":"bg-gray-100 text-gray-600"}`}>
+              <span key={r.id||r.memberId} className={`text-xs px-3 py-1.5 rounded-full font-bold ${isMe?"bg-cyan-500 text-cyan-950":"bg-white/10 text-gray-200"}`}>
                 {label}{isMe&&"（我）"}
               </span>
             );
           })}
         </div>
       }
-    </div>
+    </Card>
   );
 }

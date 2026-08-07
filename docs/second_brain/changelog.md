@@ -5,6 +5,253 @@
 
 ---
 
+## 2026-08-07（🐛 考過裸弓後首頁看不到檢定：整期完成判定從「任一弓通過」改「三弓全過」）
+
+作者：「我是教練帳號 + 我有考過裸弓 所以目前首頁看不到可以考檢定的部分」
+
+**根因**（多弓種檢定的判定 bug）
+- `MemberHome` 的 `certOpen` 與「年度檢定」卡用 `myCertState({ result:
+  periodRecords.length>0 ? approved : ... })`——**只要本期有「任何一張」通過的證
+  （考過裸弓），整期就被標成 approved**，首頁建議＋檢定卡整張消失。
+- 但年度檢定支援**多弓種**（裸弓／獵弓／傳統弓三條獨立跑道，MemberScoring 的
+  selectBow 可任選、notHigher 只擋同弓種刷分）——考過裸弓的人**還要去考獵弓、
+  傳統弓**，卡片不能就此藏起來。
+
+**改了什麼**
+- `certStatus.js` 新增共用判定（純函式，三處共用同一份答案）：
+  - `normCertBow`：recurve_full→recurve_bare 正規化（與送審資格鎖同規則，
+    舊的 recurve_full 紀錄不會被當成沒考過）；
+  - `CERT_SHOW_BOWS`＝三弓種清單；
+  - `certPeriodApprovedBows`：本期已通過弓種集合；
+  - `certPeriodAllDone`：**三種弓都有通過紀錄才算整期完成**。
+- `MemberHome.jsx`：`certOpen` 改 `!certPeriodAllDone(...)`；檢定卡同邏輯（三弓全過
+  才 `return null`），新增「已考 N/3 弓」chip（有 pending 仍顯示送審中）；
+  每弓 best 用 `normCertBow` 過濾（recurve_full 併入裸弓欄）。
+- `MemberApp.jsx`：練箭 nav 紅點改 `!certPeriodAllDone(certActive, certRecords)`；
+  因此變成死碼的 `certMyResults` state＋其 Firestore 讀取 effect 一併移除
+  （紅點改用成就偵測本來就載的 certRecords，不加讀取）。
+- `MemberScoring.jsx`：本機 `RECURVE_NORM` 移除，改用共用的 `normCertBow`
+  （reviewer：單一真源，避免兩處漂移）。
+- `certStatus.test.js`：＋7 測（正規化、期別過濾、只過一弓不算完成、三弓全過才算、
+  legacy recurve_full、無檢定/無紀錄不算）。
+
+**驗證**：ESLint 0 error、certStatus 24 測＋全專案 **1849 測全過**、build 成功。
+
+**踩坑提醒**
+- ⚠️ **「有紀錄＝整期完成」是錯的，除非是「三支弓都有紀錄」**：多弓種檢定下，
+  「任何一張通過」不能代表整期。日後再碰檢定狀態判定，一律用
+  `certPeriodAllDone`（三處已統一），不要自己比 `periodRecords.length > 0`。
+- ⚠️ **弓種 key 有正規化問題**：全配（recurve_full）與裸弓（recurve_bare）在送審時
+  合併為同一檢定分類，舊資料可能存 recurve_full——比對「哪支弓考過」必須過
+  `normCertBow`，否則舊紀錄被當成沒考過。
+- ⚠️ 紅點資料來源換了：以前讀 `cert_my_results`（送審狀態），現在直接吃
+  certRecords（已審核通過紀錄）——「pending 中」不再單獨亮紅點，但有未過弓種時
+  仍亮（提醒去考其他弓），語意一致且省一次讀取。
+
+---
+
+## 2026-08-07（🎨 年度檢定會員端 UI 全面重做：白底舊卡 → 深藍玻璃擬態標準）
+
+作者：「目前檢定的UI介面並沒有重新製作 請幫我按照現在的UI介面標準去重新設計」
+
+**改了什麼**（三塊檢定會員端介面全部換成現行深藍玻璃擬態標準，MemberHome 同款）：
+- 🏷️ **CompDetail**（MemberApp.jsx 內嵌元件）：白底灰框卡（`bg-white rounded-2xl
+  border-gray-200`）→ 深藍玻璃 Card（檢定青 cyan 色條＋`MemberFeatureArt` 浮水印＋
+  `SectionHeader`）＋ token 色（`var(--text-primary)` 等）。我的檢定成績卡改青綠漸層、
+  排行列「我」高亮 rgba(34,211,238,.10)、報名名單 pill 青。一般賽維持琥珀色系。
+- 🎯 **MemberScoring.jsx**：檢定流程全部 phase（confirm／selectBow／scoring／roundDone／
+  result／notHigher）重做成深藍玻璃卡＋左色條＋浮水印；裝備選擇卡 hover 青色邊框、
+  新建裝備青色虛線框、租借改三格 icon 卡；計分按鈕按分數帶分色（10 金漸層／8-9 紅／
+  6-7 青）＋進度條青漸層。**邏輯一行未動**（送審、兩輪取高、notHigher 比對全保留）。
+- 🏆 **MemberComps.jsx**：檢定卡青色左 accent＋青色標題；tab／filter pill 現代化
+  （active＝青漸層＋深字、inactive＝玻璃）；打怪入口卡紫系＋左色條。
+
+**為什麼**
+- 檢定會員端還是舊版白底 UI（灰框、灰字），跟首頁/圖鑑/世界王等深藍玻璃風格
+  完全兩個世界——玩家進檢定像進到另一個舊 App。
+
+**驗證**：ESLint 0 error、全專案 **1842 測全過**、build 成功。
+
+**踩坑提醒**
+- ⚠️ **UI 重做時邏輯零變更是硬規則**：MemberScoring 全檔重寫，送審 payload／
+  兩輪取高（setTimeout 等 allR 更新）／notHigher 比對／finalizePracticeShootingSession
+  全部原樣搬移——reviewer 逐一核對確認無回歸。改 UI 檔案時用 diff 比對邏輯段。
+- ⚠️ **檢定主色＝青色（cyan）**，一般賽＝琥珀——檢定是「正式考級」用冷色系莊重感，
+  一般賽維持暖色；兩者在同一個 CompDetail 元件內用 `isCertBg` 切換，新增視覺時
+  記得跟著 `th`（MemberScoring）／`isCertBg`（CompDetail）走。
+- ⚠️ **深藍 token 只在 content-area 覆寫內有效**（`var(--glass-border)` 等定義在
+  index.css :root）——這些頁面都在 content-area 內，直接用 token；貓貓村
+  （no-override）不適用。
+
+---
+
+## 2026-08-07（🧭 首頁建議跳轉修正：battle/village 無效頁修掉＋貓貓村探索地圖建議）
+
+作者：「但是我選了她建議的內容 他應該要跳到對應有功能的頁面為主 並且除了打怪
+還有貓貓村的探索地圖阿」
+
+**根因**：`suggestNextActions` 有兩個跳轉目標在 MemberApp **根本不存在**：
+- `battle`（打怪頁其實是 `monster`）→ 點「去打怪練等」跳到空白頁；
+- `village`（村目標其實在 `gacha`/貓村）→ 點「村目標還在進行」也跳到空白頁。
+
+**改了什麼**
+- `homeSuggestions.js`：
+  1. villagegoal 建議 page `"village"` → `"gacha"`；
+  2. battle 建議 page `"battle"` → `"monster"`；
+  3. 新增 `boardOpen` 參數（預設 true）→ 有骰子時推「🎲 貓貓村探索地圖」
+     （key:`board`、page:`board`，在 villagegoal 之後、battle 保底之前）——
+     每日 15 顆骰子、擲骰冒險拿寶箱與素材。
+- `MemberHome.jsx`：新增 `onOpenVillageBoard` prop；`boardOpen` 計算
+  （`profile.villageBoard.dice` 沒資料視為可玩）；兩處建議按鈕對 `page==="board"`
+  走 `onOpenVillageBoard`（fallback `onPageChange("gacha")`）。
+- `MemberApp.jsx`：傳 `onOpenVillageBoard`＝`setGachaInitTab("board")`＋`setPage("gacha")`。
+- `CatVillage.jsx`：`initialTab==="board"` 時初始進議事廳（council），並把
+  `CouncilHall` 的 initialTab 設成 `"collect"`（探索地圖）；**只聚焦第一次**——
+  之後玩家自己切 tab 回議事廳恢復預設「探險隊」分頁（reviewer nit）。
+- `CouncilHall.jsx`：新增 `initialTab` prop（預設 `"expedition"`），
+  `"collect"` 時直接開探索地圖分頁。
+- `homeSuggestions.test.js`：＋3 測（battle→monster、villagegoal→gacha、board 建議條件）。
+
+**為什麼**
+- 建議清單的承諾是「每一筆都帶你去能做那件事的頁面」——page key 寫錯等於點擊即死路。
+- 玩家日常除了打怪還有貓貓村探索地圖（大富翁）這條主要玩法線，建議清單卻只有打怪
+  一個保底方向。
+
+**驗證**：ESLint 0 error、homeSuggestions 12 測＋全專案 **1842 測全過**、build 成功。
+
+**踩坑提醒**
+- ⚠️ **`onOpenVillageBoard?.() || onPageChange("gacha")` 是陷阱**：`?.()` 回傳 undefined
+  （函式沒回傳值），`||` fallback **永遠會執行**——等於每次點擊都跳兩次。要判斷
+  prop 本身：`onOpenVillageBoard ? onOpenVillageBoard() : onPageChange("gacha")`。
+- ⚠️ **建議 page key 要跟 MemberApp 的 `page===` 分支對得上**：MemberApp 的打怪是
+  `monster`、村目標在 `gacha`（貓村）、探索地圖是 `gacha` 的議事廳 collect 分頁。
+  新增建議時先 grep MemberApp 確認目標頁存在，不然又是「點下去空白頁」。
+- ⚠️ AdminApp 也渲染 `MemberHome`（沒傳 `onOpenVillageBoard`）→ 探索地圖建議在那裡
+  走 fallback 到 `gacha`（預設村莊分頁），是刻意的降級體驗。
+
+---
+
+## 2026-08-06（🌤️ 首頁「進行中」有項目也持續給建議＋年度檢定提醒加入建議清單）
+
+作者：「進行中的部份 我選擇派出貓貓探險隊後 他就沒有任何建議了 我也沒有看到可以考檢定的提醒部分」
+
+**改了什麼**
+- 🐛 **「進行中」卡是二選一邏輯**：沒有任何進行中項目才顯示「今天可以做什麼」；
+  一旦有項目（例如派出貓貓探險隊），卡片就只剩那一條倒數、**零建議**——
+  玩家派出遠征後就沒下一步了。
+- 修法（`MemberHome.jsx`）：
+  1. 「進行中」卡**有項目時也在項目下方顯示「接下來還能做什麼」建議區**
+     （最多 3 筆，吃同一個 `suggestNextActions`）；
+  2. 建議區傳 `worldBossActive:false`/`worldBossCharging:false`/`villageGoal:null`
+     ——這三項已在卡上／獨立卡顯示，不重複推薦；遠征槽與檢定照實傳。
+- 🎖️ **年度檢定提醒加入建議清單**（`homeSuggestions.js` 新增 `certOpen` 參數）：
+  有進行中檢定且我這期未通過 → 建議「年度檢定開放中・考到越高級三圍越強」
+  → `comps`。放在世界王之後、遠征之前（限時活動優先）。空狀態與「接下來還能做什麼」
+  都帶上。
+- 抽出元件層級 `certOpen`（與下方獨立「年度檢定」卡同邏輯：active 且非 approved），
+  兩處共用一份判定。
+
+**為什麼**
+- 首頁的承諾是「打開來永遠有事做」——但只在**完全沒進行中項目**時兌現；
+  派出遠征這種最常見的「有事做」狀態反而變成死卡。檢定提醒原本只有獨立卡
+  （在進行中卡＋世界王卡下方），玩家看不到。
+
+**驗證**：ESLint 0 error、homeSuggestions 9 測（+1 檢定提醒）＋全專案 **1839 測全過**、build 成功。
+
+**踩坑提醒**
+- ⚠️ **`suggestNextActions` 永遠有保底「去打怪練等」**——「接下來還能做什麼」區塊
+  因此**永遠不為空**（遠征全滿＋已報到＋無檢定時也至少有一條）。這是刻意的
+  （首頁最怕沒方向），不是 bug；若覺得單獨一條很吵，日後可在該區塊過濾保底。
+- ⚠️ **檢定提醒現在可能出現兩次**（進行中建議區的「🎖️ 年度檢定開放中」＋下方獨立
+  檢定卡）。鑑於玩家原本完全看不到，重複是故意的；若日後覺得視覺重複，
+  可在獨立卡顯示時抑制建議區的 cert 列。
+- ⚠️ **`certOpen` 與獨立檢定卡內各自的 state 計算邏輯相同**（periodRecords→hasPending→
+  myCertState）——目前兩處各寫一份，讀取一致；日後改檢定狀態判定記得同步兩處。
+- ⚠️ 進行中卡的建議區**不能**再傳 `worldBossActive`/`villageGoal` 真實值——
+  那些已在卡上顯示，傳了會重複推薦同一件事。
+
+---
+
+## 2026-08-06（🗺️ 首頁「進行中」重構：世界王冷卻/誕生徵兆拆成獨立卡片）
+
+作者：「進行中 目前有世界王顯是冷卻中 導致貓貓探險隊跟其他功能顯示被吃掉了 這裡應該要分開」
+
+**改了什麼**（`MemberHome.jsx`）
+- 原本「進行中」卡內嵌世界王冷卻/誕生徵兆區塊（列向大按鈕：icon＋標題＋說明＋
+  倒數或 2×2 進度格），冷卻中時很長——**把貓貓探險隊（遠征）跟其他進行中項目
+  擠出螢幕**，玩家打開首頁只看到冷卻卡。
+- 拆法：
+  1. 「進行中」卡**只留真正在進行的項目**——世界王現身（wbActive）／遠征隊（expSlots）／
+     村目標（villageGoal）；
+  2. 世界王冷卻/誕生徵兆**拆成獨立卡片**（紫系 accent、🌙 冷卻倒數 或 🌌 本輪條件＋
+     進度格），放在「進行中」卡下方、年度檢定之前；整張卡（含標題）可點 → 世界王大廳。
+  3. 空狀態「今天可以做什麼」條件去掉 wbCharging、`suggestNextActions` 改傳
+     `worldBossCharging:false`——世界王已有專卡，不重複推薦（避免同一件事出現兩次）。
+- 冷卻倒數仍會 tick（`needTick` 含 `status==="resting"` 不變），拆出去不影響計時。
+
+**為什麼**
+- 世界王冷卻**不是玩家個人的進行中事項**（全服狀態），卻佔著個人進行中列表最肥的位置；
+  遠征隊才是玩家自己的事，被壓到螢幕外＝首頁最重要的資訊看不見。
+
+**驗證**：ESLint 0 error、homeSuggestions 8 測＋全專案 **1838 測全過**、build 成功。
+
+**踩坑提醒**
+- ⚠️ **MemberFeatureArt atlas 沒有 `worldboss` 圖案**（只有 home/adventure/training/
+  village/inventory/booking/profile/learn/history/notifications/certexam/external/
+  msgs/bowsetting/guide/collection）——用不存在的 name 會 fallback 到 home 圖；
+  世界王卡改用 `adventure`。
+- ⚠️ 空狀態建議（`suggestNextActions`）與獨立世界王卡是**兩件事**：拆卡後如果不把
+  `worldBossCharging` 關掉，玩家會在「今天可以做什麼」看到「推進世界王降臨進度」
+  **又**在下面看到世界王卡——同一件事講兩次。
+- ⚠️ 世界王「現身中」（wbActive）**仍留在「進行中」卡**（那是個人真的要去打的活動），
+  只有冷卻/蓄力（全服狀態）才拆出去——拆錯方向會把「去討伐」的入口藏起來。
+
+---
+
+## 2026-08-06（🎖️ 年度檢定會員端完工：首頁卡片＋我的期別選單＋練箭紅點＋檢定 ATK bug）
+
+作者：「回到年度檢定（certStatus 已有 17 測試＋規則表單抽共用），繼續完成會員端報名與考試流程」
+
+**改了什麼**（後台規則 tab 上一輪已完成，這輪補完會員端露出）
+- 🏠 **首頁「進行中」檢定卡片**（`MemberHome.jsx`）：有進行中檢定（open/upcoming、取最新期別）
+  才顯示；列出期別（`2026 上半年 ・ 18米`）、我的狀態（尚未報名／已報名・尚未上場／
+  成績已送出・等待教練審核／本期已完成）、各弓種距下一級差 N 分（`certProgress`）。
+  資料走 `cachedFetch`（`cert_active_comp` / `cert_my_results.<compId>.<uid>`，10 分鐘 TTL）——
+  與「我的」、MemberApp 紅點**共用同一組快取 key**，首頁已抓過就 0 讀取。
+- 👤 **「我的」年度檢定級別卡片**（`MemberProfile.jsx`）：改成**期別選單**（`certYearOptions`，
+  新到舊，預設最新一期）＋選中期別的差 N 分行＋「考到越高級 ATK 加成越多（上限 +40）」說明。
+  沒歷年成績但有進行中檢定 → 直接顯示該期門檻/差 N 分＋「前往報名年度檢定 ›」CTA
+  （reviewer 抓的空狀態缺口）。差 N 分用**該場 certScores**（教練調過門檻也對得上）。
+- 🔴 **練箭 nav 紅點**（`MemberApp.jsx`）：有進行中檢定且我這期還沒審核通過就亮
+  （teal 點，與未讀紅點區別；尚未報名也會亮提醒去考），審核通過才熄。
+  判定用 `myCertState({ registered, result }) !== "approved"`。
+- 🐛 **修「考了檢定但三圍完全沒變」隱形 bug**：`upsertCertRecord` 以前**只存 score 不存 level**，
+  而 `calcArcherStats` 讀的是 `r.level` → 檢定的 ATK 加成（級別 ×3，上限 +40）**永遠是 0**。
+  修法雙層：
+  1. `upsertCertRecord` 現在**補存 level**（審核時用該場 certScores 換算的級別優先，
+     教練手動補錄時用預設門檻換算）；
+  2. `calcArcherStats` 讀不到 `r.level`（舊資料）時**用分數現算**——歷史紀錄也立刻生效。
+  `describeStatSources` 同步拆出「年度檢定」獨立來源列（statSources 測試驗證各段相加＝實際三圍）。
+
+**驗證**：ESLint 0 error、certStatus＋statSources 23 測＋全專案 **1838 測全過**、build 成功。
+
+**踩坑提醒**
+- ⚠️ **`upsertCertRecord` 不存 level 是長期潛伏的隱形 bug**：寫入端與讀取端的欄位契約
+  （score vs level）不一致，不報錯、三圍就是少一塊。凡「後台補錄 + 玩家顯示」共用的紀錄，
+  兩端欄位要對齊；舊資料靠「讀不到就現算」的 fallback 補救。
+- ⚠️ **級別換算有兩套門檻來源**：該場檢定賽的 `certScores`（教練可逐場調）vs 預設
+  `CERT_DEFAULT_SCORES`。顯示「差 N 分」與審核寫 level 都要傳**該場**的，
+  只有歷史期別（那場已結束）才退回預設。
+- ⚠️ **審核通過才寫 certRecords**：`cert_my_results` 快取存的是 results 送審狀態；
+  三處共用 10 分鐘 TTL，報名/送審/審核通過後畫面最多慢 10 分鐘（成本與即時性的取捨，
+  維持與既有模式一致）。
+- ⚠️ **紅點判定語意**：練箭紅點亮到「審核通過」才熄——玩家考完但教練還沒審，
+  紅點會繼續亮（狀態寫「成績已送出・等待教練審核」），不是 bug。
+- ⚠️ MemberApp 的 `certRedDot` 用 `certMyResults[0]`（`getMyCompResults` 已按 memberId 過濾），
+  不用再 find——多弓種各一筆時任取一筆即可，紅點只看「有沒有審核通過」不細分弓種。
+
+---
+
 ## 2026-08-06（🚀 佈署：排行榜＋卡片系統＋誕生徵兆＋地下城房圖＋世界王 全量上線）
 
 作者：「完成後請幫我佈署上去」

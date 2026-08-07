@@ -1,6 +1,6 @@
 // src/lib/monsterData.js
 // 六族36隻怪物 + 射手數值公式 + 匹配系統
-import { calcEquipBonus } from "./constants";
+import { calcEquipBonus, getCertLevelByScores } from "./constants";
 import { getAllEquipmentRuneBonus } from "./equipmentRuneData";
 import { archerLevelBonus } from "./archerLevel";
 
@@ -547,7 +547,10 @@ export function calcArcherStats({ member, certification, certRecords, dexStats }
   let atk = 15;
   const certLevelScore = (certRecords || []).reduce((s, r) => {
     const lv = { 入門:1, 初級:2, 中級:3, 進階:4, 精英:5, 菁英:5 };
-    return s + (lv[r.level] || 0);
+    // ⚠️ 舊資料沒有 level 欄位（upsertCertRecord 以前只存 score）→
+    //    用分數現算，否則「考了檢定但 ATK 完全沒加」的 bug 會留在老會員身上。
+    const lvName = r.level || getCertLevelByScores(r.bowType, r.score) || null;
+    return s + (lv[lvName] || 0);
   }, 0);
   // 🎯 射手證：×3 上限 40（維持原值——ATK 的額度要讓給更難的肥貓章）
   atk += Math.min(40, certLevelScore * 3);
@@ -604,16 +607,27 @@ export function calcArcherStats({ member, certification, certRecords, dexStats }
  */
 export function describeStatSources({ member, certification, certRecords, dexStats, archerLevel = 1 }) {
   const stripped = { ...(member || {}), fatCat: null, score: null, achievement: null };
-  const base = calcArcherStats({ member: stripped, certification: null, certRecords, dexStats });
+  // 檢定加成拆成獨立一行（玩家才看得到「考檢定會變強」）：
+  //   基礎 = 完全不含檢定；檢定行 = 有檢定跟沒檢定的差。兩段相加跟以前一樣。
+  const baseNoCert = calcArcherStats({ member: stripped, certification: null, certRecords: [], dexStats });
+  const baseWithCert = calcArcherStats({ member: stripped, certification: null, certRecords, dexStats });
+  const certExam = {
+    hp: baseWithCert.hp - baseNoCert.hp,
+    atk: baseWithCert.atk - baseNoCert.atk,
+    def: baseWithCert.def - baseNoCert.def,
+  };
   const honor = calcHonorBonus(member);
   // 證的效果 = 「有證」跟「沒證」的差（含它把章也一起放大的部分）
-  const beforeCert = { hp: base.hp + honor.hp, atk: base.atk + honor.atk, def: base.def + honor.def };
+  const beforeCert = { hp: baseWithCert.hp + honor.hp, atk: baseWithCert.atk + honor.atk, def: baseWithCert.def + honor.def };
   const afterCert = applyCertBonus(beforeCert, certification);
   const level = archerLevelBonus(archerLevel);
 
   const rows = [
-    { key: "base", label: "基礎（檢定・裝備・報到・射齡…）", ...base },
+    { key: "base", label: "基礎（裝備・報到・射齡…）", ...baseNoCert },
   ];
+  if (certExam.hp || certExam.atk || certExam.def) {
+    rows.push({ key: "certExam", label: "🎖️ 年度檢定（三弓級別）", ...certExam, note: "考到越高級，ATK 加成越多（上限+40）" });
+  }
   if (honor.hp || honor.atk || honor.def) {
     rows.push({ key: "honor", label: "🏅 榮譽章（肥貓・積分・成就）", ...honor, note: "無上限，收越多越多" });
   }

@@ -2,11 +2,14 @@ import {
   CERT_COMP_TYPE,
   activeCertComp,
   certCompTitle,
+  certPeriodApprovedBows,
   certPeriodKey,
+  certPeriodAllDone,
   certProgress,
   certYearOptions,
   halfShortLabel,
   myCertState,
+  normCertBow,
 } from "./certStatus";
 import { CERT_DEFAULT_SCORES } from "./constants";
 
@@ -113,6 +116,72 @@ test("四種狀態分得出來——已送出待審不可被當成沒考", () =>
 
 test("沒報名卻已有成績（教練代登）仍算已送出", () => {
   expect(myCertState({ registered: false, result: { reviewStatus: "pending" } })).toBe("submitted");
+});
+
+// ── 弓種正規化與「整期完成」判斷 ─────────────────────────────────────────
+test("弓種正規化：全配/裸弓都算反曲弓，其餘原樣", () => {
+  expect(normCertBow("recurve_full")).toBe("recurve_bare");
+  expect(normCertBow("recurve_bare")).toBe("recurve_bare");
+  expect(normCertBow("compound")).toBe("compound");
+  expect(normCertBow("traditional")).toBe("traditional");
+});
+
+test("本期已通過弓種：只算本年度本期，舊期別不算", () => {
+  const c = cert({ year: 2026, half: "first" });
+  const recs = [
+    { bowType: "recurve_bare", year: 2026, half: "first"  },  // 本期
+    { bowType: "compound",     year: 2026, half: "second" },  // 下期，不算
+    { bowType: "traditional",  year: 2025, half: "first"  },  // 去年，不算
+  ];
+  const set = certPeriodApprovedBows(c, recs);
+  expect(set.has("recurve_bare")).toBe(true);
+  expect(set.has("compound")).toBe(false);
+  expect(set.has("traditional")).toBe(false);
+  expect(set.size).toBe(1);
+});
+
+test("舊的 recurve_full 紀錄要算成反曲弓已通過", () => {
+  const c = cert({ year: 2026, half: "first" });
+  const set = certPeriodApprovedBows(c, [{ bowType: "recurve_full", year: 2026, half: "first" }]);
+  expect(set.has("recurve_bare")).toBe(true);
+});
+
+test("沒有進行中檢定時回空集合，不會炸", () => {
+  expect(certPeriodApprovedBows(null, [{ bowType: "compound", year: 2026, half: "first" }]).size).toBe(0);
+  expect(certPeriodApprovedBows(cert(), null).size).toBe(0);
+});
+
+test("只考過一支弓不算整期完成（考過裸弓還要考獵弓、傳統弓）", () => {
+  const c = cert();
+  const one = certPeriodAllDone(c, [{ bowType: "recurve_bare", year: 2026, half: "first" }]);
+  expect(one).toBe(false);
+  const two = certPeriodAllDone(c, [
+    { bowType: "recurve_bare", year: 2026, half: "first" },
+    { bowType: "compound",     year: 2026, half: "first" },
+  ]);
+  expect(two).toBe(false);
+});
+
+test("三種弓都通過才算是整期完成", () => {
+  const c = cert();
+  const all = certPeriodAllDone(c, [
+    { bowType: "recurve_bare", year: 2026, half: "first" },
+    { bowType: "compound",     year: 2026, half: "first" },
+    { bowType: "traditional",  year: 2026, half: "first" },
+  ]);
+  expect(all).toBe(true);
+  // 全配算反曲弓：recurve_full + compound + traditional 也該整期完成
+  const legacy = certPeriodAllDone(c, [
+    { bowType: "recurve_full", year: 2026, half: "first" },
+    { bowType: "compound",     year: 2026, half: "first" },
+    { bowType: "traditional",  year: 2026, half: "first" },
+  ]);
+  expect(legacy).toBe(true);
+});
+
+test("沒有檢定或完全沒紀錄時不算完成", () => {
+  expect(certPeriodAllDone(null, [])).toBe(false);
+  expect(certPeriodAllDone(cert(), [])).toBe(false);
 });
 
 // ── 歷年期別選單 ───────────────────────────────────────────────────────────

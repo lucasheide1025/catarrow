@@ -85,6 +85,32 @@ export const CERT_STATE_LABEL = {
   approved:   "本期已完成",
 };
 
+// 弓種正規化：全配與裸弓同屬「反曲弓」檢定分類（與檢定送審的資格鎖共用同一規則）。
+// ⚠️ 判斷「這支弓考過了沒」一定要過這裡，否則舊的 recurve_full 紀錄會被當成沒考過。
+export const normCertBow = k => (k === "recurve_full" || k === "recurve_bare") ? "recurve_bare" : k;
+
+// 年度檢定可考的弓種（首頁卡片／建議／練箭紅點共用一份清單）。
+export const CERT_SHOW_BOWS = ["recurve_bare", "compound", "traditional"];
+
+// 這一期已審核通過的弓種集合。certRecords 只寫入審核通過的紀錄，
+// 所以有紀錄＝已通過；pending 的送審在 results，不在此列。
+export function certPeriodApprovedBows(certActive, certRecords) {
+  if (!certActive) return new Set();
+  return new Set((certRecords || [])
+    .filter(r => r && r.bowType
+      && String(r.year) === String(certActive.year)
+      && (r.half || "first") === (certActive.half || "first"))
+    .map(r => normCertBow(r.bowType)));
+}
+
+// 這一期是否「三種弓都考過」＝整期完成。
+// ⚠️ 舊邏輯「有任何一張通過就整期完成」是錯的：考過裸弓的人還要去考獵弓、傳統弓，
+//    首頁不能就此藏起檢定卡。只有三支弓都有通過紀錄才算整期完成。
+export function certPeriodAllDone(certActive, certRecords) {
+  const approved = certPeriodApprovedBows(certActive, certRecords);
+  return CERT_SHOW_BOWS.every(bk => approved.has(bk));
+}
+
 // 歷年成績的期別選單（新到舊）。groups 是 MemberProfile.buildGroups() 的產物：
 // { "2026_first": { year, half, scores } }。
 export function certYearOptions(groups) {

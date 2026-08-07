@@ -42,6 +42,20 @@ export const TILE_TYPES = {
   catbond:  { id: "catbond",  icon: "🐱", label: "貓咪羈絆", shooting: false },
   fate:     { id: "fate",     icon: "🎴", label: "命運",     shooting: false },
   opp:      { id: "opp",      icon: "🎴", label: "機會",     shooting: false },
+  // ── 探索地圖重製新增（08-07-village-board-journey-redesign）────
+  // 旅程格：營地/強化/貓夥伴/陷阱/捷徑/市集/風景/終點 Boss
+  camp:     { id: "camp",     icon: "🏕️", label: "營地",     shooting: false },
+  empower:  { id: "empower",  icon: "✨",  label: "強化",     shooting: false },
+  catmate:  { id: "catmate",  icon: "🐾",  label: "貓夥伴",   shooting: false },
+  trap:     { id: "trap",     icon: "🕳️", label: "陷阱",     shooting: false },
+  shortcut: { id: "shortcut", icon: "🌉",  label: "捷徑",     shooting: false },
+  market:   { id: "market",   icon: "🎪",  label: "市集",     shooting: false },
+  scenery:  { id: "scenery",  icon: "🌄",  label: "風景",     shooting: false },
+  fork:     { id: "fork",     icon: "🔀",  label: "分岔路",   shooting: false },
+  boss:     { id: "boss",     icon: "⚔️", label: "終點 Boss", shooting: true },
+  // 🃏 抽卡房（08-08）：踩到開抽卡 overlay——免費抽 1 張／付費抽 3 張（金幣），
+  //    池＝該 T 階級的「普通怪」卡片（排除小王/大王/世界王）。
+  cardgacha: { id: "cardgacha", icon: "🃏", label: "抽卡房", shooting: false },
 };
 
 // 28 格固定環形佈局（index 0 = 起點，順時針）。同類盡量分散。
@@ -54,14 +68,125 @@ export const BOARD_LAYOUT = [
 ];
 export const BOARD_SIZE = BOARD_LAYOUT.length; // 28
 
+// ── 陷阱事件（08-08：多種不同事件，不再是單一「後退+扣金」）──
+// 每種事件有自己的 icon/label/說明與懲罰（back＝後退格數、loseCoins/loseArrowdew/loseDice）。
+// 純函式：rollTrapEvent(tier) 隨機抽一種；trapEffectOf(type, tier) 依型別取懲罰量。
+// 單人（settleJourneyTile）與組隊（roomRollAndMove/claimBoardSettle）共用同一張表。
+export const TRAP_EVENTS = [
+  { type: "snake",     icon: "🐍", label: "蛇咬！",     desc: "踩到蛇窩，被咬了一口",   back: 1, loseCoins: [10, 30] },
+  { type: "quicksand", icon: "🟤", label: "流沙！",     desc: "腳陷流沙，費力爬出來",   back: 3, loseArrowdew: [5, 20] },
+  { type: "thief",     icon: "🥷", label: "竊賊！",     desc: "被小賊摸走了金幣",       back: 1, loseCoins: [30, 80] },
+  { type: "dice",      icon: "🎲", label: "骰子被偷！", desc: "纏住貓尾巴，骰子滾掉了", back: 2, loseDice: 1 },
+  { type: "dew",       icon: "💧", label: "箭露灑了！", desc: "打翻箭露瓶，漏了一地",   back: 2, loseArrowdew: [15, 50] },
+];
+const TRAP_TYPE_MAP = Object.fromEntries(TRAP_EVENTS.map(e => [e.type, e]));
+
+// 隨機抽一種陷阱事件（tier 影響懲罰量）
+export function rollTrapEvent(tier = 1) {
+  return trapEffectOf(TRAP_EVENTS[Math.floor(Math.random() * TRAP_EVENTS.length)].type, tier);
+}
+
+// 依型別取該事件的懲罰量（back 固定、loseCoins/Arrowdew 隨機區間、loseDice 固定）
+export function trapEffectOf(type, tier = 1) {
+  const t = Math.max(1, Math.min(6, Number(tier) || 1));
+  const ev = TRAP_TYPE_MAP[type] || TRAP_EVENTS[0];
+  const out = { type: ev.type, icon: ev.icon, label: ev.label, desc: ev.desc, back: ev.back };
+  if (ev.loseCoins) out.loseCoins = randInt(ev.loseCoins[0], ev.loseCoins[1]) * t;
+  if (ev.loseArrowdew) out.loseArrowdew = randInt(ev.loseArrowdew[0], ev.loseArrowdew[1]) * t;
+  if (ev.loseDice) out.loseDice = ev.loseDice;
+  return out;
+}
+
 // ── 完成度分數帶（6 箭）────────────────────────────────────
 // scoreRatio: 0~1（命中總分 / 滿分）。回傳 { band, monsterMult, miningMult, chestCount }
+// 這是全地圖「射箭格」的單一分帶真源——怪物格/終點 Boss 都用它，不另立門檻。
 export function scoreToBand(scoreRatio = 0) {
   const r = Math.max(0, Math.min(1, scoreRatio));
   if (r >= 0.85) return { band: "S", monsterMult: 3.0, miningMult: 1.8, chestCount: 3 };
   if (r >= 0.65) return { band: "A", monsterMult: 2.0, miningMult: 1.5, chestCount: 2 };
   if (r >= 0.40) return { band: "B", monsterMult: 1.5, miningMult: 1.2, chestCount: 1 };
   return { band: "C", monsterMult: 1.0, miningMult: 1.0, chestCount: 1 };
+}
+
+// ── 怪物格獎勵分層表（6 箭完成度四階）──────────────────────
+// 統一四階：S≥85% / A≥65% / B≥40% / C<40%。
+// mult＝村資源倍率、mats＝家族素材數、chest＝額外寶箱機率——逐階遞減，
+// 不再用舊的「過/不過」二階（當時 threshold 沒傳 → 恆過 → 平獎 ×1.5，S/A 分不出差別）。
+export const MONSTER_BAND_TABLE = {
+  S: { mult: 2.0, mats: 4, chest: 0.40 },
+  A: { mult: 1.4, mats: 3, chest: 0.25 },
+  B: { mult: 1.0, mats: 2, chest: 0.10 },
+  C: { mult: 0.6, mats: 1, chest: 0.0 },
+};
+
+// ── 採集格分層表（進度制，不射箭）──────────────────────────
+// gatheringProgress 0~180% → 五階完成度，mult＝村資源倍率。
+// 與 C 三選一的實際產出對齊：140(豐收)/100(完成)。
+export const MINING_BAND_TABLE = [
+  { min: 180, label: "大豐收", mult: 1.8 },
+  { min: 130, label: "豐收",   mult: 1.5 },
+  { min: 100, label: "完成",   mult: 1.2 },
+  { min: 50,  label: "半成品", mult: 0.8 },
+  { min: 0,   label: "安慰獎", mult: 0.5 },
+];
+
+// 依 gatheringProgress 查採集分層（純函式，測試用）
+export function miningBandFor(progressPct) {
+  const p = Math.max(0, Math.min(180, Number(progressPct) || 0));
+  return MINING_BAND_TABLE.find(t => p >= t.min) || MINING_BAND_TABLE[MINING_BAND_TABLE.length - 1];
+}
+
+// ── 終點 Boss 決戰狀態（BossDuel 演出用；單一真源可測試）──
+// score60：6 箭分數 0~60。血條 = 100 − 完成度%（打掉多少 Boss HP）；
+// S 帶（≥85%）＝Boss 倒下。獎勵帶與 scoreToBand 同一張表（不另立門檻）。
+export function bossDuelState(score60) {
+  const ratio = Math.min(1, Math.max(0, Number(score60) || 0) / 60);
+  const band = scoreToBand(ratio);
+  return {
+    ratio,
+    band: band.band,
+    hpLeft: Math.max(0, 100 - ratio * 100),
+    downed: ratio >= 0.85,
+  };
+}
+
+// ── 加成疊加上限（與 mergeBuffs 共用；JOURNEY_BUFF_INFO 文案直接吃，改這裡就同步）──
+// 營地：每踩一次 村資源 ×1.2 相乘（上限 ×3）
+// 強化：每踩一次 下一個射箭格獎勵 ×2 相乘（上限 ×8，打完消耗）
+// 貓夥伴：每踩一次 射箭分數 +5% 相加（上限 5 層＝+25%，完成度本來就封頂 100%）
+export const MAX_CAMP_MULT = 3;
+export const MAX_SHOOT_MULT = 8;
+export const MAX_CATMATE_STACKS = 5;
+// 多骰疊加上限：踩強化格抽到多骰時相加（2+2=4 顆），上限 4 顆骰（4~60 步，一趟 1/3 左右）。
+export const MAX_DICE_COUNT = 4;
+
+// ── 旅程加成說明（buff chips 點開的詳細文案，玩家向）──────────────
+// 三種 buff 格（camp/empower/catmate）的顯示與說明共用同一份資料，
+// UI（單人/組隊）直接吃這裡，避免兩處文案漂移。
+// field＝buffs 物件欄位；icon/name＝頂列短標籤與彈窗標題；desc＝說明彈窗的完整解釋。
+export const JOURNEY_BUFF_INFO = [
+  { field: "campMult",      icon: "🏕️", name: "營地",   desc: `每踩到一次：本趟旅程拿到的「村莊資源」（礦石・甜瓜・魚…）再 ×1.2，可疊加（最多 ×${MAX_CAMP_MULT}）。踩兩次＝×1.44。完成旅程後重置。` },
+  { field: "nextShootMult", icon: "✨",  name: "強化",   desc: `每踩到一次：下一個「怪物格 或 終點決戰」的獎勵再 ×2（金幣・箭露・貓咪經驗・村資源），可疊加（最多 ×${MAX_SHOOT_MULT}）。打完那場就消耗掉。` },
+  { field: "diceCount",     icon: "🎲",  name: "多骰",   desc: `踩到強化格時隨機獲得：下一次擲骰骰 2 顆或 3 顆骰子（每顆 1~15），已有則相加（最多 ×${MAX_DICE_COUNT}）。一次移動距離大增，用完就消失。` },
+  { field: "catmate",       icon: "🐾",  name: "貓夥伴", desc: `每踩到一次：打怪／終點決戰時，輸入的 6 箭分數再 +5%（最多 +${MAX_CATMATE_STACKS * 5}%），更容易達到 S／A 高獎勵帶（例如 62% 會算成 67%＝A 帶）。` },
+];
+
+// 目前疊層的數值標籤（彈窗「啟用中」徽章用）：×1.44 / ×4 / +10% / ×2 骰（裸值，分隔由呼叫端加）
+export function buffValueLabel(buffs = {}, field) {
+  if (field === "campMult")      { const v = Number(buffs.campMult);      return v > 1 ? `×${v}` : ""; }
+  if (field === "nextShootMult") { const v = Number(buffs.nextShootMult); return v > 1 ? `×${v}` : ""; }
+  if (field === "diceCount")     { const n = Number(buffs.diceCount) || 0; return n > 1 ? `×${n} 骰` : ""; }
+  if (field === "catmate")       { const n = Number(buffs.catmate) || 0;  return n > 0 ? `+${n * 5}%` : ""; }
+  return "";
+}
+
+// 該加成目前是否啟用中（buffs 物件欄位值判定）
+export function buffActive(buffs = {}, field) {
+  if (field === "campMult")      return Number(buffs.campMult) > 1;
+  if (field === "nextShootMult") return Number(buffs.nextShootMult) > 1;
+  if (field === "diceCount")     return (Number(buffs.diceCount) || 0) > 1;
+  if (field === "catmate")       return Boolean(buffs.catmate);
+  return false;
 }
 
 // ── 小工具 ───────────────────────────────────────────────
@@ -95,40 +220,34 @@ export function rollTileReward(tileType, ctx = {}) {
       break;
     }
     case "mining": {
-      // 採集進度制：使用 scoreToGatheringProgress 計算進度，最高 180%
+      // 採集進度制（不射箭）：gatheringProgress 0~180% → 五階完成度（MINING_BAND_TABLE）
+      // ⚠️ 基底資源也要乘 partyMult（組隊版採集不射箭，8 人房跟單人一樣多不公平）——
+      //    單人 partyMult=1 不受影響。
       const progressPct = ctx.gatheringProgress || 0;
-      const band = scoreToBand(scoreRatio);
-      const basePct = Math.max(0, Math.min(180, progressPct));
-      let miningMult;
-      if (basePct >= 180)      miningMult = 1.8;
-      else if (basePct >= 130) miningMult = 1.5;
-      else if (basePct >= 100) miningMult = 1.2;
-      else if (basePct >= 50)  miningMult = 0.8;
-      else                     miningMult = 0.5;
+      const tierInfo = miningBandFor(progressPct);
       const base = randInt(6, 15);
-      r.villageResources[mode.resource] = (r.villageResources[mode.resource] || 0) + Math.max(1, Math.round(base * miningMult));
+      r.villageResources[mode.resource] = (r.villageResources[mode.resource] || 0) + Math.max(1, Math.round(base * tierInfo.mult * partyMult));
       if (Math.random() < 0.15) {
         if (Math.random() < 0.5) r.villageResources.fur = (r.villageResources.fur || 0) + scale(1);
         else addRandomFamilyMat(r, mode.family, T, scale(1));
       }
-      // band 改用完成度文字
-      r.band = basePct >= 180 ? "大豐收" : basePct >= 130 ? "豐收" : basePct >= 100 ? "完成" : basePct >= 50 ? "半成品" : "安慰獎";
-      r.progressPct = basePct;
+      r.band = tierInfo.label;
+      r.progressPct = Math.max(0, Math.min(180, progressPct));
       break;
     }
     case "monster": {
-      // 6 箭完成度 → 門檻判定（threshold 在 pendingSettle 內，由 UI 設定）
-      // 若通過門檻 ×1.5 獎勵，未通過 ×0.8
-      const threshold = ctx.threshold || 0;
-      const passed = (scoreRatio * 60) >= threshold;
-      const monsterMult = passed ? 1.5 : 0.8;
+      // 6 箭完成度 → 四階分帶（scoreToBand + MONSTER_BAND_TABLE）判定獎勵大小。
+      // 舊邏輯是「過/不過」二階（threshold 沒傳 → 恆過 → 平獎 ×1.5），
+      // 已統一成 S/A/B/C：資源 S×2.0/A×1.4/B×1.0/C×0.6、素材 4/3/2/1、寶箱 40%/25%/10%/0%。
+      const band = scoreToBand(scoreRatio);
+      const tierInfo = MONSTER_BAND_TABLE[band.band] || MONSTER_BAND_TABLE.C;
       const base = randInt(6, 15);
-      r.villageResources[mode.resource] = (r.villageResources[mode.resource] || 0) + scale(Math.round(base * monsterMult));
-      addRandomFamilyMat(r, mode.family, T, scale(passed ? 3 : 1));
-      if (passed && Math.random() < 0.3) r.chests.push({ kind: "family", family: mode.family, tier: T });
-      r.band = passed ? (scoreRatio >= 0.75 ? "S" : "A") : "C";
-      r.passed = passed;
-      r.threshold = threshold;
+      r.villageResources[mode.resource] = (r.villageResources[mode.resource] || 0) + scale(Math.round(base * tierInfo.mult));
+      addRandomFamilyMat(r, mode.family, T, scale(tierInfo.mats));
+      if (Math.random() < tierInfo.chest) r.chests.push({ kind: "family", family: mode.family, tier: T });
+      r.band = band.band;
+      r.passed = band.band !== "C";   // 相容欄位：組隊版 UI 自己算 passed，這裡僅供參考
+      r.threshold = ctx.threshold || 0;
       break;
     }
     case "chest": {
@@ -151,6 +270,80 @@ export function rollTileReward(tileType, ctx = {}) {
       r.arrowdew = scale(randInt(15, 40) * T);
       r.coins = scale(randInt(50, 150) * T);
       r.lap = true;
+      break;
+    }
+    // ── 探索地圖重製新增格子 ────────────────────────────────
+    // ⚠️ 以下新欄位（buffs/nextShootMult/trapBack/loseCoins/jumpAhead/…）由
+    //    settle 層（villageBoardDb Phase 2）消費，**不會**被 applyBoardReward 套用——
+    //    寫 settle 時記得逐一處理，否則會悄悄消失。
+    case "camp":    // 營地：不直接給獎勵，設定本趟後續資源格 ×1.2
+      r.buffs = { ...(r.buffs || {}), campMult: 1.2 };
+      r.band = "營地";
+      break;
+    case "empower": {
+      // 強化效果池（08-07 新增多骰）：
+      //   50% → 下一射箭格獎勵 ×2（nextShootMult，疊加如舊）
+      //   25% → 下一次擲骰骰 2 顆骰子（diceCount，用完即消耗）
+      //   25% → 下一次擲骰骰 3 顆骰子（一次移動距離大增）
+      const r2 = Math.random();
+      if (r2 < 0.5) {
+        r.nextShootMult = 2;
+        r.band = "強化";
+      } else {
+        r.diceCount = r2 < 0.75 ? 2 : 3;
+        r.band = `多骰 ×${r.diceCount}`;
+      }
+      break;
+    }
+    case "catmate": // 貓夥伴：本趟隨行貓加成（射箭完成度上限 +5%，settle 端套用）
+      r.buffs = { ...(r.buffs || {}), catmate: true };
+      r.band = "貓夥伴";
+      break;
+    case "trap": {  // 陷阱：多種不同事件（蛇咬/流沙/竊金/骰子/箭露），由 rollTrapEvent 決定
+      const ev = rollTrapEvent(T);
+      Object.assign(r, ev);
+      r.trapType = ev.type;
+      r.band = ev.label;
+      break;
+    }
+    case "shortcut": // 捷徑：直接前進 3~5 格（由 settle/UI 套用）
+      r.jumpAhead = randInt(3, 5);
+      r.band = "捷徑";
+      break;
+    case "market": { // 市集：第一期佔位——小機率金幣＋「市集整修中」；完整市集第二期
+      if (Math.random() < 0.5) r.coins = scale(randInt(20, 80) * T);
+      r.marketPlaceholder = true;
+      r.band = "市集整修中";
+      break;
+    }
+    case "scenery": // 風景：純 flavor＋微獎勵
+      r.coins = scale(randInt(1, 5));
+      r.scenery = true;
+      r.band = "風景";
+      break;
+    case "boss": {  // 終點 Boss：按 6 箭完成度分帶 S/A/B/C 判定獎勵大小（無失敗）
+      const band = scoreToBand(scoreRatio);
+      // 分帶倍率（乘 band.monsterMult×0.5）：S ×1.5 / A ×1.0 / B ×0.75 / C ×0.5——
+      // 與怪物格共用同一張 scoreToBand 分帶表，高低分帶範圍不重疊，打越高獎越大。
+      const f = band.monsterMult * 0.5;
+      r.coins = scale(Math.round(randInt(300, 600) * T * f));
+      r.arrowdew = scale(Math.round(randInt(60, 120) * T * f));
+      addRandomFamilyMat(r, mode.family, T, scale(6 + Math.round(band.monsterMult * 2)));
+      r.chests.push({ kind: "family", family: mode.family, tier: T });
+      if (band.band === "S") r.chests.push({ kind: "universal", family: mode.family, tier: T });
+      r.catXP = scale(Math.round(randInt(150, 300) * f));   // 隨分帶（與金幣/箭露一致）
+      r.band = band.band;
+      r.boss = true;
+      break;
+    }
+    case "fork": {  // 分岔路口：不在此結算——由旅程 UI 開二選一（chooseForkPath 跳去目標格）
+      r.fork = true;
+      r.band = "分岔路";
+      break;
+    }
+    case "cardgacha": {  // 抽卡房：不在此給獎勵——由旅程 UI 開抽卡 overlay（免費 1 張／付費 3 張）
+      r.cardgacha = true;
+      r.band = "抽卡房";
       break;
     }
     default: break;

@@ -30,6 +30,30 @@ describe("首頁空狀態的建議", () => {
     expect(r.find(a => a.key === "expedition").title).toContain("2");
   });
 
+  test("年度檢定開放中要給提醒（考到越高級三圍越強）", () => {
+    const r = suggestNextActions({ checkedIn: true, certOpen: true });
+    expect(r.some(a => a.key === "cert" && a.page === "comps")).toBe(true);
+    expect(suggestNextActions({ checkedIn: true }).some(a => a.key === "cert")).toBe(false);
+  });
+
+  test("⚠️ 打怪建議要跳 monster（battle 不是有效頁面，跳過去是空白）", () => {
+    const r = suggestNextActions({ checkedIn: true });
+    const b = r.find(a => a.key === "battle");
+    expect(b).toBeTruthy();
+    expect(b.page).toBe("monster");
+  });
+
+  test("村目標建議要跳 gacha（村目標在貓村，village 不是有效頁面）", () => {
+    const r = suggestNextActions({ checkedIn: true, villageGoal: { status: "active" } });
+    expect(r.find(a => a.key === "villagegoal")?.page).toBe("gacha");
+  });
+
+  test("貓貓村探索地圖建議要給（boardOpen 預設有骰子可玩）", () => {
+    const r = suggestNextActions({ checkedIn: true });
+    expect(r.some(a => a.key === "board" && a.page === "board")).toBe(true);
+    expect(suggestNextActions({ checkedIn: true, boardOpen: false }).some(a => a.key === "board")).toBe(false);
+  });
+
   test("最多只給 3 筆——首頁不能變成待辦清單", () => {
     const r = suggestNextActions({
       checkedIn: false, worldBossActive: true, expeditionCount: 0,

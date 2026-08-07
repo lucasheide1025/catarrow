@@ -44,3 +44,6 @@ nul
 .staging/image-generation/
 
 .env*
+
+# Freebuff desktop local db
+.freebuff/

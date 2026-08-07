@@ -9,7 +9,7 @@ import { MATERIALS } from "./monsterMaterials";
 import { POTIONS, FRAGMENTS, makeFamilyMaterialChest } from "./itemData";
 import { migratePotionInventory } from "./consumableSystem";
 import { makeCoinChest, COIN_CHEST_TIERS } from "./lootTable";
-import { EQUIP_GRADES, EQUIP_SLOT_DEFS } from "./constants";
+import { EQUIP_GRADES, EQUIP_SLOT_DEFS, getCertLevelByScores } from "./constants";
 import { EQUIP_UPGRADE_COST, generateRandomMats, KING_SEAL_BREAKTHROUGH_COST } from "./equipData";
 import { getEquipmentRune, getNextEquipmentRune } from "./equipmentRuneData";
 import { SHOP_PRODUCT_MAP, SPECIAL_TICKET_META, getMaterialUpgradePlan, getShopPeriodKey, getShopDailyKey, getShopWeeklyKey } from "./shopData";
@@ -1263,9 +1263,16 @@ export function subscribeLearnLogs(memberId, callback, maxCount = 100) {
   return onSnapshot(query(collection(db, C.learnLogs), where("memberId", "==", memberId), orderBy("date", "desc"), limit(maxCount)), snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 }
 
-export async function upsertCertRecord(memberId, year, half, bowType, score, operatorId) {
+export async function upsertCertRecord(memberId, year, half, bowType, score, operatorId, level = null) {
   const id = `${memberId}_${year}_${half}_${bowType}`;
-  await setDoc(doc(db, C.certRecords, id), { memberId, year, half, bowType, score, updatedAt: serverTimestamp(), operatorId }, { merge: true });
+  // ⚠️ level 一定要存：calcArcherStats 的檢定加成讀的就是 r.level，
+  //    以前只存 score、不存 level，造成「考了檢定但三圍完全沒變」的隱形 bug
+  //    （審核時用該場 certScores 換算，手動補錄時用預設門檻換算）。
+  const resolvedLevel = level || getCertLevelByScores(bowType, score) || null;
+  await setDoc(doc(db, C.certRecords, id), {
+    memberId, year, half, bowType, score, level: resolvedLevel,
+    updatedAt: serverTimestamp(), operatorId
+  }, { merge: true });
 }
 
 export async function getCertRecords(memberId) {
@@ -1381,7 +1388,10 @@ export async function approveCertResult(resultId, operatorId, finalTotal, certLe
     } catch {}
  
     const best = Math.max(prevScore, Number(finalTotal));
-    await upsertCertRecord(r.memberId, Number(r.certYear), r.certHalf, r.certBowType, best, operatorId);
+    // 審核時用該場檢定賽的 certScores 換算的級別優先（跟 UI 顯示一致），
+    // 免得 upsertCertRecord 用預設門檻重算，教練調過門檻就對不上。
+    const levelForRecord = certLevel && certLevel !== "未達標" ? certLevel : (getCertLevelByScores(r.certBowType, Number(finalTotal), r.compCertScores || null) || null);
+    await upsertCertRecord(r.memberId, Number(r.certYear), r.certHalf, r.certBowType, best, operatorId, levelForRecord);
  
     // ── 直接內嵌「分數→級別」邏輯，不依賴外部函式 ──
     const TH = {
@@ -1425,6 +1435,13 @@ export async function getMyCompResult(compId, memberId) {
   const snap = await getDocs(query(collection(db, C.results), where("compId", "==", compId), where("memberId", "==", memberId)));
   if (snap.empty) return null;
   return { id: snap.docs[0].id, ...snap.docs[0].data() };
+}
+
+// 年度檢定一個人可能考多個弓種 → 複數版。首頁/「我的」要判斷「我這期考到哪一步」
+// （已報名/已送出待審/已通過）時用這支，一筆一弓種。
+export async function getMyCompResults(compId, memberId) {
+  const snap = await getDocs(query(collection(db, C.results), where("compId", "==", compId), where("memberId", "==", memberId)));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
 export async function getAllCertRecords() {

@@ -1,13 +1,14 @@
 // src/components/member/MemberProfile.jsx
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { updateMember, getCertRecords, subscribeMaterials, upgradeEquipSlot } from "../../lib/db";
+import { updateMember, getCertRecords, subscribeMaterials, upgradeEquipSlot, getCompetitions } from "../../lib/db";
 import { computeDexStats } from "../../lib/achievementDex";
 import { archerLevelFromXP, archerXPProgress, archerLevelBonus, MAX_ARCHER_LEVEL, TOTAL_XP_TO_MAX, getLevelStyle } from "../../lib/archerLevel";
 import { useGuildRank } from "../../guild/useGuildRank";
 import { cachedFetch } from "../../lib/localCache";
 import { getCohort, cohortLabel } from "../../lib/cohort";
-import { calcAge, formatArcherNo, BOW_TYPES, getCertLevel, certLevelStyle, EQUIP_SLOT_DEFS, EQUIP_GRADES, getEquipSlotBonus } from "../../lib/constants";
+import { calcAge, formatArcherNo, BOW_TYPES, getCertLevelByScores, certLevelStyle, EQUIP_SLOT_DEFS, EQUIP_GRADES, getEquipSlotBonus } from "../../lib/constants";
+import { certYearOptions, certProgress, activeCertComp } from "../../lib/certStatus";
 import { KING_SEAL_BREAKTHROUGH_COST, EQUIP_UPGRADE_COST } from "../../lib/equipData";
 import { WB_CARDS } from "../../lib/worldBossCards";
 import { Card, Btn, Inp, ST, BadgePip } from "../shared/UI";
@@ -99,7 +100,8 @@ export default function MemberProfile({
 }) {
   const { profile } = useAuth();
   const [certRecords,    setCertRecords]   = useState([]);
-  const [showHistory,   setShowHistory]   = useState(false);
+  const [certActive,    setCertActive]     = useState(null);   // 進行中的年度檢定（與首頁共用 cert_active_comp 快取）
+  const [certPeriodKeySel, setCertPeriodKeySel] = useState(null); // 歷年期別選單選中的 key（null = 最新一期）
   const [cardTheme,     setCardTheme]     = useCardTheme();
   const [showThemePicker, setShowThemePicker] = useState(false);
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
@@ -120,13 +122,14 @@ export default function MemberProfile({
       // 但「我的」是常逛的分頁，每次進來都重讀很浪費。
       cachedFetch(`cert_records.${profile.id}`, 10 * 60 * 1000, () => getCertRecords(profile.id))
         .then(r => setCertRecords(r.value || [])).catch(() => {});
+      // 與首頁共用同 key：首頁已抓過就 0 讀取；用來拿進行中檢定的 certScores（差 N 分用該場門檻）
+      cachedFetch("cert_active_comp", 10 * 60 * 1000, () => getCompetitions().then(list => activeCertComp(list)))
+        .then(r => setCertActive(r.value || null)).catch(() => {});
       cachedFetch(`equip_spec.${profile.id}`, 10 * 60 * 1000, () => getEquipSpecializations(profile.id))
         .then(r => setSpecializations(r.value ?? null)).catch(() => {});
       return subscribeMaterials(profile.id, setMatInv);
     }
   }, [profile?.id]);
-
-  const thisYear = new Date().getFullYear();
 
   // 世界王卡稱號
   const titleKey = cardData?.activeTitleBossKey || null;
@@ -150,10 +153,15 @@ export default function MemberProfile({
     if (gb.year !== ga.year) return gb.year - ga.year;
     return (gb.half==="second"?1:0) - (ga.half==="second"?1:0);
   });
-  const thisYearKeys = sortedKeys.filter(k => groups[k].year === thisYear);
-  const pastKeys     = sortedKeys.filter(k => groups[k].year !== thisYear);
 
-  function CertBlock({ g }) {
+  // 進行中檢定的門檻：目前顯示的是進行中那期才用那場的 certScores（教練調過門檻也對得上）；
+  // 沒歷年成績（sortedKeys 空）時顯示的就是進行中那期，也算 active。
+  const activeKey = certActive ? `${certActive.year}_${certActive.half || "first"}` : null;
+  const shownKey = certPeriodKeySel || sortedKeys[0] || activeKey;
+  const activeCertScores = activeKey && activeKey === shownKey
+    ? certActive.certScores : null;
+
+  function CertBlock({ g, showGap }) {
     return (
       <div className="mb-3 last:mb-0">
         <div className="text-white/70 text-xs font-bold mb-2">{g.year}年{HALF_LABEL[g.half]}</div>
@@ -161,12 +169,28 @@ export default function MemberProfile({
           {CERT_SHOW.map(bk => {
             const bt = BOW_TYPES[bk];
             const score = g.scores[bk] || 0;
-            const level = getCertLevel(bk, score);
-            return <CertChip key={bk} name={bt.short} score={score} level={level} />;
+            const level = getCertLevelByScores(bk, score, activeCertScores);
+            return (
+              <div key={bk} className="flex flex-col gap-1">
+                <CertChip name={bt.short} score={score} level={level} />
+                {showGap && (
+                  <div className="text-center text-[9px] font-bold" style={{ color:"#67e8f9" }}>
+                    {certGapText(bk, score, activeCertScores)}
+                  </div>
+                )}
+              </div>
+            );
           })}
         </div>
       </div>
     );
+  }
+
+  function certGapText(bk, score, certScores) {
+    const p = certProgress({ certScores, bowType: bk, score });
+    if (p.nextLevel) return `距 ${p.nextLevel} 差 ${p.gap} 分`;
+    if (p.level) return `已達最高 ${p.level}`;
+    return "還沒考";
   }
 
   const quickLinkGroups = [
@@ -873,28 +897,49 @@ export default function MemberProfile({
     <ArcherCard profile={profile} certification={certification} onExam={() => onPageChange("certexam")} />
   </div>
 
-  {/* 年度檢定 */}
+  {/* 年度檢定：期別選單 + 差 N 分 + 三圍說明（不新增任何 Firestore 讀取） */}
   <Card className="p-4 border border-white/5 animate-fade-in-up delay-225" style={{ background:"rgba(15,23,42,0.55)" }}>
     <ST>🎖️ 年度檢定級別</ST>
-    {thisYearKeys.length === 0 ? (
-      <div className="grid grid-cols-3 gap-3 mt-1">
-        {CERT_SHOW.map(bk => {
-          const bt = BOW_TYPES[bk];
-          return <CertChip key={bk} name={bt.short} score={0} level={null} />;
-        })}
+    <p className="text-slate-400 text-[10px] mt-1 leading-relaxed">
+      考到越高級，ATK 加成越多（上限 +40）——檢定級別會提升三圍
+    </p>
+    {sortedKeys.length === 0 && !certActive ? (
+      <div className="text-center text-slate-500 text-[11px] font-bold py-5">
+        還沒有任何期別的檢定成績
       </div>
     ) : (
-      <div className="mt-1">{thisYearKeys.map(k => <CertBlock key={k} g={groups[k]} />)}</div>
-    )}
-    {pastKeys.length > 0 && (
-      <div className="mt-2 border-t border-white/20 pt-2">
-        <button onClick={() => setShowHistory(!showHistory)} className="text-white/60 text-xs font-bold flex items-center gap-1">
-          {showHistory ? "▲ 收起歷年檢定成績" : "▼ 查看歷年檢定成績"}
-        </button>
-        {showHistory && (
-          <div className="mt-3">{pastKeys.map(k => <CertBlock key={k} g={groups[k]} />)}</div>
+      <>
+        {/* 期別選單（新到舊），預設最新一期；沒有歷年成績但有進行中檢定 → 只顯示該期 */}
+        <div className="flex gap-1.5 overflow-x-auto mt-3 pb-1" style={{ scrollbarWidth:"none" }}>
+          {(sortedKeys.length > 0 ? certYearOptions(groups) : (certActive ? [{ key: activeKey, label: `${certActive.year}年${HALF_LABEL[certActive.half || "first"]}・進行中` }] : [])).map(opt => (
+            <button key={opt.key} onClick={() => setCertPeriodKeySel(opt.key)}
+              className={`px-2.5 py-1 rounded-full text-[10px] font-bold whitespace-nowrap border transition-all active:scale-95 ${
+                shownKey === opt.key
+                  ? "bg-teal-500/20 text-teal-300 border-teal-400/40"
+                  : "bg-white/5 text-slate-400 border-white/10"
+              }`}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        {/* 選中期別（含差 N 分；進行中那期用該場門檻） */}
+        <div className="mt-3">
+          {(() => {
+            const key = shownKey;
+            const g = groups[key] || (activeKey === key ? { year: certActive.year, half: certActive.half || "first", scores: {} } : null);
+            if (!g) return <div className="text-slate-500 text-[11px] font-bold text-center py-4">這個期別還沒有成績</div>;
+            const showGap = activeKey === key;
+            return <CertBlock key={key} g={g} showGap={showGap} />;
+          })()}
+        </div>
+        {/* 還沒考過任何檢定 → 導去報名 */}
+        {sortedKeys.length === 0 && certActive && (
+          <button onClick={() => onPageChange("comps")}
+            className="mt-3 w-full py-2.5 rounded-xl bg-teal-500/20 border border-teal-400/40 text-teal-300 text-[11px] font-black active:scale-95 transition-all">
+            📋 前往報名年度檢定 ›
+          </button>
         )}
-      </div>
+      </>
     )}
   </Card>
 

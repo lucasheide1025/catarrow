@@ -17,7 +17,8 @@ export const EXPEDITION_SLOTS = 3;
  */
 export function suggestNextActions({
   checkedIn = false, worldBossActive = false, worldBossCharging = false,
-  villageGoal = null, expeditionCount = 0,
+  villageGoal = null, expeditionCount = 0, certOpen = false,
+  boardOpen = true,
 } = {}) {
   const all = [];
 
@@ -33,6 +34,10 @@ export function suggestNextActions({
     all.push({ key: "wbcharge", icon: "🌀", title: "推進世界王降臨進度",
       desc: "射箭、通關、擲骰都算——推滿就提早出現", page: "worldboss" });
   }
+  if (certOpen) {
+    all.push({ key: "cert", icon: "🎖️", title: "年度檢定開放中",
+      desc: "考到越高級，三圍越強，現在就能報名", page: "comps" });
+  }
   if (expeditionCount < EXPEDITION_SLOTS) {
     all.push({ key: "expedition", icon: "🐾",
       title: `派貓咪出遠征（還有 ${EXPEDITION_SLOTS - expeditionCount} 個空槽）`,
@@ -40,11 +45,16 @@ export function suggestNextActions({
   }
   if (villageGoal?.status === "active") {
     all.push({ key: "villagegoal", icon: "🏡", title: "村目標還在進行",
-      desc: "有貢獻就拿得到獎勵，推越多拿越多", page: "village" });
+      desc: "有貢獻就拿得到獎勵，推越多拿越多", page: "gacha" });
+  }
+  if (boardOpen) {
+    all.push({ key: "board", icon: "🎲", title: "貓貓村探索地圖",
+      desc: "每日 15 顆骰子，擲骰冒險拿寶箱與素材", page: "board" });
   }
   // ⚠️ 保底：上面全都不成立時，也**一定要給一件事做**，不能是空的
+  //    ⚠️ 打怪頁是 monster（battle 在 MemberApp 不是有效頁面）
   all.push({ key: "battle", icon: "⚔️", title: "去打怪練等",
-      desc: "累積射手經驗與素材", page: "battle" });
+      desc: "累積射手經驗與素材", page: "monster" });
 
   return all.slice(0, 3);
 }

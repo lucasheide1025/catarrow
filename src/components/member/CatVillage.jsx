@@ -2406,7 +2406,12 @@ function getVillagePrimaryTab(tab) {
 // ── 主元件 ───────────────────────────────────────────────────
 export default function CatVillage({ catCards, gachaCoins, initialTab = "village" }) {
   const { profile } = useAuth();
-  const [tab, setTab]               = useState(initialTab);
+  // ⚠️ initialTab="board"＝從首頁「貓貓村探索地圖」建議跳進來：
+  //    直接進議事廳（council），並讓 CouncilHall 開在探索地圖（collect）分頁。
+  //    只聚焦第一次：之後玩家自己切 tab 回議事廳，恢復預設的「探險隊」分頁。
+  const [boardFocus, setBoardFocus] = useState(initialTab === "board");
+  useEffect(() => { if (boardFocus) setBoardFocus(false); }, [boardFocus]); // eslint-disable-line
+  const [tab, setTab]               = useState(boardFocus ? "council" : initialTab);
   const [selectedBuilding, setSelectedBuilding] = useState(null);
   const [collecting, setCollecting] = useState(false);
   const [upgrading, setUpgrading]   = useState(false);
@@ -2590,6 +2595,7 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
           profile={profile}
           village={localVillage || profile?.village}
           onBack={() => setTab("village")}
+          initialTab={boardFocus ? "collect" : "expedition"}
         />
       )}
 

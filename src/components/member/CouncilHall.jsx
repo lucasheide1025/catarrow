@@ -21,8 +21,8 @@ const CSS = `
 @keyframes gather-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 `;
 
-export default function CouncilHall({ profile, village, onBack }) {
-  const [tab, setTab] = useState("expedition");
+export default function CouncilHall({ profile, village, onBack, initialTab = "expedition" }) {
+  const [tab, setTab] = useState(initialTab === "collect" ? "collect" : "expedition");
   const [boardTeam, setBoardTeam] = useState(false);
   const [boardChecking, setBoardChecking] = useState(false);
   const [activeSite, setActiveSite] = useState(null);

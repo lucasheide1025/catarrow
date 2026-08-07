@@ -123,16 +123,32 @@ export const COUNCIL_MONSTERS = {
     fierce:  { name:'惡意漲租',     action:'房東突然漲租三倍', emoji:'📜', bgColor:'#fce7f3' },
     boss:    { name:'市場壟斷',     action:'財閥壟斷所有貨源', emoji:'🧮', bgColor:'#fef9c3' },
     mythic:  { name:'財閥入侵',     action:'吞併整個貓貓市集', emoji:'💰', bgColor:'#fef3c7' },
-  },
-  warehouse: {
+  },  warehouse: {
     common:  { name:'散落貨物',     action:'整個倉庫地板散滿貨', emoji:'📦', bgColor:'#f8fafc' },
     rare:    { name:'通道堵塞',     action:'主要走道完全無法通行', emoji:'🚧', bgColor:'#f1f5f9' },
-    elite:   { name:'貨架倒塌',     action:'三排貨架連鎖倒下', emoji:'🗄️', bgColor:'#e2e8f0' },
+    elite:   { name:'貨架倒塌',     action:'三排貨架連鎖倒下',   emoji:'🗄️', bgColor:'#e2e8f0' },
     fierce:  { name:'大量庫損',     action:'一半庫存損毀急需清查', emoji:'📋', bgColor:'#ede9fe' },
     boss:    { name:'全庫封鎖',     action:'倉庫遭神秘力量封印', emoji:'🔐', bgColor:'#f5f3ff' },
     mythic:  { name:'龍守古寶',     action:'古龍佔據倉庫最深處', emoji:'🐉', bgColor:'#fef9c3' },
   },
+  // 第七採集點：藏金靶場（寶箱族）——councilMonsters 原為六建築，08-07 探索地圖
+  // 怪物格改吃 COUNCIL_MONSTERS（採集任務障礙）後 archery 也補一組，避免寶箱族地圖沒障礙可用。
+  archery: {
+    common:  { name:'靶心脫漆',     action:'箭靶老化、瞄準線模糊', emoji:'🎯', bgColor:'#fef9c3' },
+    rare:    { name:'弓弦鬆弛',     action:'練習弓張力不足',     emoji:'🏹', bgColor:'#fef3c7' },
+    elite:   { name:'機關卡鎖',     action:'藏金機關卡死無法啟動', emoji:'⚙️', bgColor:'#fde68a' },
+    fierce:  { name:'金庫鎖死',     action:'保險庫轉盤徹底卡住',   emoji:'🔒', bgColor:'#fcd34d' },
+    boss:    { name:'靶場斷電',     action:'整個靶場燈光全滅',   emoji:'💡', bgColor:'#f5f3ff' },
+    mythic:  { name:'龍守金庫',     action:'古龍盤踞寶庫最深處', emoji:'🐉', bgColor:'#fef9c3' },
+  },
 };
+
+// 探索地圖怪物格：取該採集點（建築 id 對齊 BOARD_MODES id）對應階級的「採集任務障礙」。
+// tier 數字（1~6）→ tier 字串（common~mythic）；找不到回 null（UI 有守衛）。
+export function getObstacleForTier(mapId, tier) {
+  const t = TIER_ORDER[Math.max(0, Math.min(5, (Number(tier) || 1) - 1))];
+  return COUNCIL_MONSTERS[mapId]?.[t] || null;
+}
 
 // ── 各建築自扣血訊息（每 2 回合觸發，情境化）────────────────────
 export const BUILDING_PAIN_MSGS = {

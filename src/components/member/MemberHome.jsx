@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { cachedFetch } from "../../lib/localCache";
 import { suggestNextActions } from "../../lib/homeSuggestions";
-import { getMemberResults, subscribePendingBadgeLogs, submitMonthlyCardRequest, subscribeMyMonthlyRequests, checkExpireMonthlyCard, getCertRecords } from "../../lib/db";
+import { getMemberResults, subscribePendingBadgeLogs, submitMonthlyCardRequest, subscribeMyMonthlyRequests, checkExpireMonthlyCard, getCertRecords, getCompetitions, getMyCompResults } from "../../lib/db";
 import { computeDexStats } from "../../lib/achievementDex";
 import { getCohort, cohortLabel } from "../../lib/cohort";
 import { useAuth } from "../../hooks/useAuth";
@@ -11,6 +11,7 @@ import { calcAge, formatArcherNo, fmtDT, BOW_TYPES, getCertLevel, COMP_TYPE_COLO
 //    build 不會擋，是 2026-08-04 用 eslint no-undef 掃出來的。
 import { levelFromXP, rankFromLevel } from "../../lib/adventurerSystem";
 import { useGuildRank } from "../../guild/useGuildRank";
+import { activeCertComp, certProgress, CERT_STATE_LABEL, halfShortLabel, CERT_SHOW_BOWS, certPeriodApprovedBows, certPeriodAllDone, normCertBow } from "../../lib/certStatus";
 import { archerLevelFromXP, archerXPProgress, archerLevelBonus, MAX_ARCHER_LEVEL, getLevelStyle } from "../../lib/archerLevel";
 import { catLevelFromXP, catXPProgress } from "../../lib/catLevel";
 import { getBondLevel, calcCatEquipBonus, CAT_SKILL_GROUPS, CAT_TYPES } from "../../lib/catData";
@@ -29,8 +30,6 @@ import { SectionHeader, StatBar, ProgressRing, HubTile } from "../shared/Widgets
 import ShareCard from "./ShareCard";
 import HomeLeaderboardBlock from "./HomeLeaderboardBlock";
 import MemberFeatureArt from "./MemberFeatureArt";
-
-const CERT_SHOW = ["recurve_bare", "compound", "traditional"];
 
 // ── 4 大功能 Hub 入口（HubTile CSS 漸層底，取代 cell-*.webp）──
 const HOME_HUBS = [
@@ -93,12 +92,15 @@ export default function MemberHome({
   todayCheckin,       // 今日報到（MemberApp/AdminApp 既有訂閱下傳；undefined=載入中, null=未報到）
   worldBoss = null,   // 世界王事件（MemberApp/AdminApp 既有訂閱下傳）
   dexUnseenCount = 0,
+  onOpenVillageBoard = null,   // 跳到貓貓村探索地圖（大富翁）；預設 null＝沒有入口
 }) {
   const { profile } = useAuth();
   const [worldBossCycle, setWorldBossCycle] = useState(null);
   useEffect(() => subscribeWorldBossSpawnCycle(setWorldBossCycle), []);
   const { catHP, catATK, catDEF, hasCat } = useCatCompanion();
   const [certRecords, setCertRecords]     = useState([]);
+  const [certActive, setCertActive]       = useState(null);    // 進行中的年度檢定賽（cachedFetch，10 分鐘）
+  const [certMyResults, setCertMyResults] = useState([]);      // 我在該檢定的送審成績（cachedFetch，10 分鐘）
   const [results, setResults]             = useState([]);
   const [badgeLogs, setBadgeLogs]         = useState([]);
   const [showShare, setShowShare]         = useState(false);
@@ -116,6 +118,9 @@ export default function MemberHome({
   const [villageGoal, setVillageGoal]     = useState(null);
   const [nowMs, setNowMs]                 = useState(Date.now());
   const [dungeonSeenTick, setDungeonSeenTick] = useState(0);
+  // 探索地圖有骰子才能玩（每日 15 顆）。profile 快照可能過時，保守起見沒資料也當可玩。
+  const boardDice = profile?.villageBoard?.dice;
+  const boardOpen = boardDice === undefined ? true : Number(boardDice) > 0;
 
   // 村目標（重用 villageGoalDb 既有訂閱函式）
   useEffect(() => subscribeActiveGoal(setVillageGoal), []);
@@ -149,11 +154,33 @@ export default function MemberHome({
       .then(r => setResults(r.value || [])).catch(() => {});
     cachedFetch(`cert_records.${profile.id}`, 10 * 60 * 1000, () => getCertRecords(profile.id))
       .then(r => setCertRecords(r.value || [])).catch(() => {});
+    // 年度檢定：進行中的那場（取不到就 null）。10 分鐘快取，跟「我的」/練箭紅點共用同 key。
+    cachedFetch("cert_active_comp", 10 * 60 * 1000, () => getCompetitions().then(list => activeCertComp(list)))
+      .then(r => setCertActive(r.value || null)).catch(() => {});
     // 首頁只需要「待領取」的那幾筆，不必把歷來所有徽章紀錄都拉下來
     const unsub  = subscribePendingBadgeLogs(profile.id, setBadgeLogs);
     const unsub5 = subscribeMyMonthlyRequests(profile.id, setMonthlyReqs);
     return () => { unsub?.(); unsub5?.(); };
   }, [profile?.id]); // eslint-disable-line
+
+  // 我在進行中檢定的送審狀態（綁 certActive 已載入後才查，快取 key 含 compId）
+  useEffect(() => {
+    if (!profile?.id || !certActive?.id) { setCertMyResults([]); return; }
+    let alive = true;
+    cachedFetch(`cert_my_results.${certActive.id}.${profile.id}`, 10 * 60 * 1000,
+      () => getMyCompResults(certActive.id, profile.id))
+      .then(r => { if (alive) setCertMyResults(r.value || []); }).catch(() => {});
+    return () => { alive = false; };
+  }, [certActive?.id, profile?.id]); // eslint-disable-line
+
+  // 年度檢定：有進行中檢定且我這期未考完 → 建議區要提醒、下方檢定卡要顯示。
+  // ⚠️ 整期完成＝三種弓都考過。只考過一支（例如裸弓）不算完成——獵弓、傳統弓還能考，
+  //    不能因為「有任何一張通過」就把整個檢定藏起來。
+  // 抽出供「接下來還能做什麼」與「年度檢定」卡共用，避免兩處各算一份狀態。
+  const certOpen = (() => {
+    if (!certActive || !profile?.id) return false;
+    return !certPeriodAllDone(certActive, certRecords);
+  })();
 
   const unreadNotif = notifications.filter(x =>
     !(x.readBy    || []).includes(profile?.id) &&
@@ -350,20 +377,23 @@ export default function MemberHome({
         );
       })()}
 
-      {/* ── 進行中卡：世界王／遠征倒數／村目標（有內容才顯示）──── */}
+      {/* ── 進行中卡：世界王現身／遠征倒數／村目標（有內容才顯示）────
+          ⚠️ 世界王的「冷卻中／誕生徵兆」**不在這裡**——拆成下方獨立卡片。
+             冷卻卡體積大，塞進來會把貓貓探險隊（遠征）跟其他項目擠出螢幕。 */}
       {(() => {
         const wbActive = worldBoss && worldBoss.status === "active";
-        const wbCharging = !wbActive && worldBossCycle && !["spawned"].includes(worldBossCycle.status);
         // ⚠️ 舊版在這裡直接 return null，整張卡消失——但**那正是最需要給方向的時候**。
         //    首頁最怕打開來沒事做。改成顯示「今天可以做什麼」。
         //    建議完全來自首頁已訂閱的資料，不多讀任何一筆 Firestore。
-        if (!wbActive && !wbCharging && expSlots.length === 0 && !villageGoal) {
+        if (!wbActive && expSlots.length === 0 && !villageGoal) {
           const picks = suggestNextActions({
             checkedIn: !!todayCheckin,
             worldBossActive: wbActive,
-            worldBossCharging: wbCharging,
+            worldBossCharging: false,   // 世界王狀態有獨立卡片，不重複推薦
             villageGoal,
             expeditionCount: expSlots.length,
+            certOpen,                   // 有進行中檢定且未通過 → 提醒可以考
+            boardOpen,                  // 探索地圖有骰子才建議
           });
           return (
             <Card className="relative isolate overflow-hidden p-4"
@@ -372,7 +402,7 @@ export default function MemberHome({
               <SectionHeader icon="🌤️" title="今天可以做什麼" />
               <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
                 {picks.map(a => (
-                  <button key={a.key} onClick={() => onPageChange(a.page)}
+                  <button key={a.key} onClick={() => a.page === "board" ? (onOpenVillageBoard ? onOpenVillageBoard() : onPageChange("gacha")) : onPageChange(a.page)}
                     style={{
                       display:"flex", alignItems:"center", gap:10, width:"100%",
                       background:"rgba(255,255,255,0.05)", border:"1px solid var(--glass-border)",
@@ -413,55 +443,6 @@ export default function MemberHome({
                   <span style={{ fontSize:11, color:"var(--danger-fg)", fontWeight:700, flexShrink:0 }}>參戰 →</span>
                 </button>
               )}
-              {wbCharging && (() => {
-                const WB_LABELS = { arrows:"射箭", dungeonClears:"通關地下城", monsterKills:"擊倒怪物", villageDice:"探索骰子" };
-                const restLeftMs = Math.max(0, Number(worldBossCycle.restEndsAtMs || 0) - nowMs);
-                const inRest = worldBossCycle.status === "resting" && restLeftMs > 0;
-                const required = WB_LABELS[worldBossCycle.requiredType] ? worldBossCycle.requiredType : null;
-                const restH = Math.floor(restLeftMs / 3600000);
-                const restM = Math.floor((restLeftMs % 3600000) / 60000);
-                return (
-                  <button onClick={() => onPageChange("worldboss")}
-                    style={{ ...rowStyle("rgba(124,58,237,0.13)", "rgba(167,139,250,0.32)"), flexDirection:"column", alignItems:"stretch", gap:7 }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                      <span style={{ fontSize:20 }}>{inRest ? "🌙" : "🌌"}</span>
-                      <div style={{ flex:1 }}>
-                        <div style={{ fontSize:13, fontWeight:900, color:"#c4b5fd" }}>
-                          {inRest ? "世界王冷卻中" : "世界王誕生徵兆"}
-                        </div>
-                        <div style={{ fontSize:10, color:"var(--text-secondary)" }}>
-                          {inRest
-                            ? "王剛被擊倒，冷卻結束後行動才會累積進度"
-                            : required
-                              ? `本輪條件：${WB_LABELS[required]}（其他行動不計）`
-                              : "全體射箭、通關、擊倒怪物與探索骰子都會累積"}
-                        </div>
-                      </div>
-                    </div>
-                    {inRest ? (
-                      <div style={{ display:"flex", alignItems:"baseline", gap:6 }}>
-                        <span style={{ fontSize:11, color:"#c4b5fd" }}>冷卻剩餘</span>
-                        <span style={{ fontSize:15, fontWeight:800, color:"#fcd34d" }}>
-                          {restH} 小時 {restM} 分
-                        </span>
-                      </div>
-                    ) : (
-                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:4 }}>
-                        {[
-                          ["arrows","🏹"], ["dungeonClears","🏰"], ["monsterKills","👹"], ["villageDice","🎲"],
-                        ].map(([key,icon]) => {
-                          const value = Number(worldBossCycle.progress?.[key] || 0);
-                          const target = Number(worldBossCycle.targets?.[key] || 1);
-                          const isReq = required === key;
-                          return <div key={key} style={{ fontSize:9, color: isReq ? "#fcd34d" : "rgba(221,214,254,0.45)", fontWeight: isReq ? 800 : 400 }}>
-                            {icon} {value.toLocaleString()} / {target.toLocaleString()}{isReq ? " ★" : ""}
-                          </div>;
-                        })}
-                      </div>
-                    )}
-                  </button>
-                );
-              })()}
               {expSlots.map(e => {
                 const mission = EXPEDITION_MISSIONS.find(m => m.tier === e.missionTier);
                 const left = tsToMs(e.endsAt) - nowMs;
@@ -506,6 +487,159 @@ export default function MemberHome({
                 );
               })()}
             </div>
+
+            {/* ── 接下來還能做什麼：有進行中項目也持續給方向（含檢定提醒）────
+                ⚠️ 只有「沒有任何進行中項目」才整張換成「今天可以做什麼」；
+                有項目（例如派出貓貓探險隊）時，這裡仍要推其他可做的事，
+                不然玩家派出遠征後就只剩一條倒數，沒有下一步。 */}
+            {(() => {
+              const picks = suggestNextActions({
+                checkedIn: !!todayCheckin,
+                worldBossActive: false,      // 世界王現身已在上面那格
+                worldBossCharging: false,    // 世界王狀態有獨立卡片
+                villageGoal: null,           // 村目標已在上面那格
+                expeditionCount: expSlots.length,
+                certOpen,                    // 有進行中檢定且未通過 → 提醒可以考
+                boardOpen,                   // 探索地圖有骰子才建議
+              });
+              if (picks.length === 0) return null;
+              return (
+                <>
+                  <div style={{ fontSize:10, fontWeight:800, color:"var(--text-muted)", marginTop:8, padding:"2px 2px 0" }}>
+                    接下來還能做什麼
+                  </div>
+                  {picks.slice(0, 3).map(a => (
+                    <button key={a.key} onClick={() => a.page === "board" ? (onOpenVillageBoard ? onOpenVillageBoard() : onPageChange("gacha")) : onPageChange(a.page)}
+                      style={{
+                        display:"flex", alignItems:"center", gap:10, width:"100%",
+                        background:"rgba(255,255,255,0.04)", border:"1px solid var(--glass-border)",
+                        borderRadius:"var(--r-md)", padding:"7px 12px", cursor:"pointer", textAlign:"left",
+                      }}>
+                      <span style={{ fontSize:17, flexShrink:0 }}>{a.icon}</span>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:12, fontWeight:900, color:"var(--text-primary)" }}>{a.title}</div>
+                        <div style={{ fontSize:9.5, color:"var(--text-secondary)" }}>{a.desc}</div>
+                      </div>
+                      <span style={{ fontSize:13, color:"var(--text-muted)", flexShrink:0 }}>›</span>
+                    </button>
+                  ))}
+                </>
+              );
+            })()}
+          </Card>
+        );
+      })()}
+
+      {/* ── 世界王誕生徵兆／冷卻（獨立卡片，不佔「進行中」空間，
+          貓貓探險隊不會再被冷卻卡擠出螢幕）─────────────── */}
+      {(() => {
+        const wbActive = worldBoss && worldBoss.status === "active";
+        const wbCharging = !wbActive && worldBossCycle && !["spawned"].includes(worldBossCycle.status);
+        if (!wbCharging) return null;
+        const WB_LABELS = { arrows:"射箭", dungeonClears:"通關地下城", monsterKills:"擊倒怪物", villageDice:"探索骰子" };
+        const restLeftMs = Math.max(0, Number(worldBossCycle.restEndsAtMs || 0) - nowMs);
+        const inRest = worldBossCycle.status === "resting" && restLeftMs > 0;
+        const required = WB_LABELS[worldBossCycle.requiredType] ? worldBossCycle.requiredType : null;
+        const restH = Math.floor(restLeftMs / 3600000);
+        const restM = Math.floor((restLeftMs % 3600000) / 60000);
+        return (
+          <Card className="relative isolate overflow-hidden p-4"
+            style={{ background:"linear-gradient(145deg,#241227,#101827 68%)", border:"1px solid rgba(167,139,250,.22)", boxShadow:"0 14px 30px rgba(0,0,0,.28)" }}>
+            <MemberFeatureArt name="adventure" size={150} style={{ position:"absolute", right:-32, top:-34, opacity:.10, zIndex:-1 }} />
+            <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-purple-300 to-violet-600" />
+            <button onClick={() => onPageChange("worldboss")} style={{ width:"100%", background:"transparent", border:"none", cursor:"pointer", textAlign:"left", padding:0 }}>
+              <SectionHeader icon={inRest ? "🌙" : "🌌"} title={inRest ? "世界王冷卻中" : "世界王誕生徵兆"} />
+              <div style={{ fontSize:10, color:"var(--text-secondary)", marginBottom:6 }}>
+                {inRest
+                  ? "王剛被擊倒，冷卻結束後行動才會累積進度"
+                  : required
+                    ? `本輪條件：${WB_LABELS[required]}（其他行動不計）`
+                    : "全體射箭、通關、擊倒怪物與探索骰子都會累積"}
+              </div>
+              {inRest ? (
+                <div style={{ display:"flex", alignItems:"baseline", gap:6 }}>
+                  <span style={{ fontSize:11, color:"#c4b5fd" }}>冷卻剩餘</span>
+                  <span style={{ fontSize:15, fontWeight:800, color:"#fcd34d" }}>
+                    {restH} 小時 {restM} 分
+                  </span>
+                </div>
+              ) : (
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:4 }}>
+                  {[
+                    ["arrows","🏹"], ["dungeonClears","🏰"], ["monsterKills","👹"], ["villageDice","🎲"],
+                  ].map(([key,icon]) => {
+                    const value = Number(worldBossCycle.progress?.[key] || 0);
+                    const target = Number(worldBossCycle.targets?.[key] || 1);
+                    const isReq = required === key;
+                    return <div key={key} style={{ fontSize:9, color: isReq ? "#fcd34d" : "rgba(221,214,254,0.45)", fontWeight: isReq ? 800 : 400 }}>
+                      {icon} {value.toLocaleString()} / {target.toLocaleString()}{isReq ? " ★" : ""}
+                    </div>;
+                  })}
+                </div>
+              )}
+              <div style={{ fontSize:10, color:"#c4b5fd", fontWeight:700, marginTop:6, textAlign:"right" }}>
+                查看詳情 →
+              </div>
+            </button>
+          </Card>
+        );
+      })()}
+
+      {/* ── 年度檢定（有進行中檢定且我這期還沒「三種弓都考過」才顯示）──────── */}
+      {(() => {
+        if (!certActive) return null;
+        const periodRecords = certRecords.filter(r =>
+          String(r.year) === String(certActive.year) && (r.half || "first") === (certActive.half || "first"));
+        // 已審核通過的弓種（certRecords 審核通過才寫入；pending 只在 results）
+        const approvedSet = certPeriodApprovedBows(certActive, certRecords);
+        // 三種弓都考過＝整期完成，不留空卡；只要還有一支弓能考就繼續顯示
+        if (certPeriodAllDone(certActive, certRecords)) return null;
+        const hasPending = certMyResults.some(r => r.reviewStatus === "pending");
+        const registered = (certActive.participants || []).includes(profile?.id);
+        const state = hasPending ? "submitted" : registered ? "registered" : "none";
+        const passedCount = CERT_SHOW_BOWS.filter(bk => approvedSet.has(bk)).length;
+        const chipLabel = hasPending ? CERT_STATE_LABEL.submitted
+          : passedCount > 0 ? `已考 ${passedCount}/${CERT_SHOW_BOWS.length} 弓`
+          : CERT_STATE_LABEL[state];
+        const periodLabel = `${certActive.year} ${halfShortLabel(certActive.half)}`;
+        const bows = CERT_SHOW_BOWS.map(bk => {
+          const best = periodRecords
+            .filter(r => normCertBow(r.bowType) === bk)
+            .reduce((m, r) => Math.max(m, r.score || 0), 0);
+          const p = certProgress({ certScores: certActive.certScores, bowType: bk, score: best });
+          return { bk, best, ...p };
+        });
+        return (
+          <Card className="relative isolate overflow-hidden p-4"
+            style={{ background:"linear-gradient(145deg,#0e2a38,#101827 68%)", border:"1px solid rgba(34,211,238,.28)", boxShadow:"0 14px 30px rgba(0,0,0,.28)" }}>
+            <MemberFeatureArt name="profile" size={150} style={{ position:"absolute", right:-32, top:-34, opacity:.10, zIndex:-1 }} />
+            <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-cyan-300 to-teal-600" />
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+              <SectionHeader icon="🎖️" title="年度檢定開放中" />
+              <span style={{ fontSize:10, fontWeight:900, color:"#67e8f9", background:"rgba(34,211,238,.12)", border:"1px solid rgba(34,211,238,.3)", borderRadius:999, padding:"2px 9px", whiteSpace:"nowrap" }}>
+                {chipLabel}
+              </span>
+            </div>
+            <div style={{ fontSize:11, color:"rgba(255,255,255,0.55)", fontWeight:700 }}>
+              {periodLabel} ・ {certActive.distance}米　考到越高級，三圍越強
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(3, minmax(0,1fr))", gap:8, marginTop:10 }}>
+              {bows.map(({ bk, best, level, nextLevel, gap }) => (
+                <div key={bk} style={{ background:"rgba(255,255,255,0.05)", border:"1px solid var(--glass-border)", borderRadius:"var(--r-md)", padding:"8px 6px", textAlign:"center" }}>
+                  <div style={{ fontSize:10, color:"rgba(255,255,255,0.6)", fontWeight:800 }}>{BOW_TYPES[bk]?.short}</div>
+                  <div style={{ fontSize:15, fontWeight:900, color: level ? "#67e8f9" : "rgba(255,255,255,0.35)", marginTop:2 }}>
+                    {best > 0 ? `${best} 分` : "未報分"}
+                  </div>
+                  <div style={{ fontSize:9, color: nextLevel ? "#fcd34d" : "rgba(255,255,255,0.45)", fontWeight:700, marginTop:1 }}>
+                    {nextLevel ? `距 ${nextLevel} 差 ${gap} 分` : (level ? `已達 ${level}` : "還沒考")}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <button onClick={() => onPageChange("comps")}
+              style={{ marginTop:10, width:"100%", minHeight:40, borderRadius:10, border:"none", cursor:"pointer", fontWeight:900, fontSize:13, color:"#083344", background:"linear-gradient(90deg,#67e8f9,#22d3ee)" }}>
+              {state === "none" ? "前往報名 →" : state === "registered" ? "前往上場 →" : "查看送審狀態 →"}
+            </button>
           </Card>
         );
       })()}

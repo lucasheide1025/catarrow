@@ -73,24 +73,29 @@ export default function MemberComps({ onSelectComp, onPageChange }) {
 
   function CompCard({ c }) {
     const tc = COMP_TYPE_COLOR[c.type] || {};
+    const isCert = c.type === "年度檢定";
     const joined = c.participants?.includes(profile.id) || justJoined.has(c.id);
+    const cardBg = isCert
+      ? { bar:"from-cyan-300 to-teal-600", bd:"rgba(34,211,238,.28)", accent:"#67e8f9" }
+      : { bar:"from-amber-300 to-orange-600", bd:"rgba(251,191,36,.22)", accent:"#fbbf24" };
     return (
-      <div className="rounded-xl p-4" style={typeStyle(c.type)}>
+      <div className="relative isolate overflow-hidden rounded-xl p-4" style={{...typeStyle(c.type), ...(isCert && { borderLeft:"4px solid #22d3ee" })}}>
+        <div className={`absolute inset-y-0 left-0 w-1 bg-gradient-to-b ${cardBg.bar}`} style={{ opacity:.7 }} />
         <div className="flex justify-between mb-1">
-          <span className={`text-xs font-bold ${tc.darkText || "text-gray-400"}`}>{c.type}</span>
+          <span className="text-xs font-bold" style={{ color:isCert ? cardBg.accent : (tc.darkText || "var(--text-secondary)") }}>{c.type}</span>
           <Pill status={c.status} />
         </div>
-        <div className="text-gray-100 font-bold text-sm mb-1">{c.title}</div>
-        <div className="text-gray-400 text-xs mb-3">
+        <div className="font-bold text-sm mb-1" style={{ color:"var(--text-primary)" }}>{c.title}</div>
+        <div className="text-xs mb-3" style={{ color:"var(--text-secondary)" }}>
           📅 {c.date}{c.endDate ? ` ～ ${c.endDate}` : ""}{c.targetName && `　🎯 ${c.targetName}`}{c.arrowCount && `　${c.arrowCount}箭×${c.roundCount}回`}
         </div>
         {c.announcement && (
-          <div className="bg-white/5 border border-white/10 rounded-lg p-2 mb-3">
-            <div className="text-blue-400 text-xs font-bold mb-0.5">📢 公告</div>
-            <div className="text-blue-200 text-xs">{c.announcement}</div>
+          <div className="bg-white/5 border rounded-lg p-2 mb-3" style={{ borderColor:"rgba(255,255,255,0.1)" }}>
+            <div className="text-xs font-bold mb-0.5" style={{ color:cardBg.accent }}>📢 公告</div>
+            <div className="text-xs" style={{ color:"var(--text-secondary)" }}>{c.announcement}</div>
           </div>
         )}
-        {joined && <div className="text-green-400 text-xs font-bold mb-2">✅ 已報名</div>}
+        {joined && <div className="text-xs font-bold mb-2" style={{ color:"#34d399" }}>✅ 已報名</div>}
         <div className="flex gap-2">
           <Btn v="primary" size="sm" className="flex-1" onClick={() => onSelectComp(c)}>查看詳情</Btn>
           {!joined && (c.status === "open" || c.status === "upcoming") && (
@@ -110,8 +115,9 @@ export default function MemberComps({ onSelectComp, onPageChange }) {
       <div className="flex gap-2 px-4 pt-4">
         {[["comps","🏆 比賽列表"],["achievements","🎯 成就任務"],["history","📜 歷史比賽"]].map(([id,label]) => (
           <button key={id} onClick={() => setTab(id)}
-            className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all
-              ${tab === id ? "bg-blue-600 text-white border-blue-600" : "bg-white/10 text-gray-300 border-white/15"}`}>
+            className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all active:scale-[.97]
+              ${tab === id ? "text-cyan-950" : "text-gray-300"}`}
+            style={tab === id ? { background:"linear-gradient(90deg,#67e8f9,#22d3ee)", border:"1px solid #22d3ee" } : { background:"rgba(255,255,255,0.06)", border:"1px solid var(--glass-border)" }}>
             {label}
           </button>
         ))}
@@ -134,12 +140,13 @@ export default function MemberComps({ onSelectComp, onPageChange }) {
           {onPageChange && (
             <button onClick={() => onPageChange("monster")}
               className="w-full rounded-2xl p-4 text-left relative overflow-hidden active:scale-95 transition-transform"
-              style={{ background: "linear-gradient(135deg,#7c3aed,#1e3a8a)" }}>
+              style={{ background: "linear-gradient(135deg,#4c1d95,#1e1b4b)", border:"1px solid rgba(167,139,250,.35)", boxShadow:"0 14px 30px rgba(0,0,0,.28)" }}>
               <div className="absolute -right-4 -bottom-4 text-8xl opacity-20 pointer-events-none">👹</div>
+              <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-purple-300 to-violet-600" />
               <div className="relative">
-                <div className="text-xs font-black tracking-widest text-purple-200 mb-1">⚔️ RPG 模式</div>
+                <div className="text-xs font-black tracking-widest mb-1" style={{ color:"#c4b5fd" }}>⚔️ RPG 模式</div>
                 <div className="text-white font-black text-lg mb-1">打怪模式</div>
-                <div className="text-purple-200 text-xs">選擇怪物，回合制射箭戰鬥，擊敗後開寶箱掉寶！</div>
+                <div className="text-xs" style={{ color:"#ddd6fe" }}>選擇怪物，回合制射箭戰鬥，擊敗後開寶箱掉寶！</div>
                 <div className="mt-3 inline-flex items-center gap-1 bg-white/20 text-white text-xs font-bold px-3 py-1.5 rounded-full">
                   立即挑戰 →
                 </div>
@@ -150,7 +157,8 @@ export default function MemberComps({ onSelectComp, onPageChange }) {
           <div className="flex gap-2 overflow-x-auto pb-1">
             {types.map(t => (
               <button key={t} onClick={() => setFilter(t)}
-                className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border ${filter === t ? "bg-blue-600 text-white border-blue-600" : "bg-white/10 text-gray-300 border-white/15"}`}>
+                className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border transition-all active:scale-95 ${filter === t ? "text-cyan-950" : "text-gray-300"}`}
+                style={filter === t ? { background:"linear-gradient(90deg,#67e8f9,#22d3ee)", border:"1px solid #22d3ee" } : { background:"rgba(255,255,255,0.06)", border:"1px solid var(--glass-border)" }}>
                 {t}
               </button>
             ))}

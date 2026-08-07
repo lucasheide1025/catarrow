@@ -8,12 +8,19 @@ function buildGate(room, curSeq) {
   const claimedStep = id => (room.settleClaims?.[id] || 0) >= curSeq || (room.eventClaims?.[id] || 0) >= curSeq;
   const ackedStep = id => (room.ackClaims?.[id] || 0) >= curSeq;
   const passedStep = id => claimedStep(id) && ackedStep(id);
-  const hasPending = curSeq > 0 && ((room.pendingSettle?.seq === curSeq) || (room.pendingEvent?.seq === curSeq));
+  const hasPending = curSeq > 0 && ((room.pendingSettle?.seq === curSeq) || (room.pendingEvent?.seq === curSeq) || (room.pendingFork?.seq === curSeq));
   const forced = (room.forcedSeq || 0) >= curSeq && curSeq > 0;
-  const allPassed = !hasPending || forced || activeMems.every(([id]) => passedStep(id));
-  const waitingAck = hasPending
-    ? activeMems.filter(([id]) => claimedStep(id) && !ackedStep(id)).map(([id]) => id)
-    : [];
+  // 分岔路：全員投完票 + 各自 ack（看完投票畫面）才算通過，房主才決定路線
+  const forkPending = !!(room.pendingFork && room.pendingFork.seq === curSeq);
+  const forkAllVoted = forkPending && activeMems.every(([id]) => room.forkVotes?.[id]);
+  const allPassed = !hasPending || forced || (forkPending
+    ? forkAllVoted && activeMems.every(([id]) => ackedStep(id))
+    : activeMems.every(([id]) => passedStep(id)));
+  const waitingAck = forkPending
+    ? []
+    : hasPending
+      ? activeMems.filter(([id]) => claimedStep(id) && !ackedStep(id)).map(([id]) => id)
+      : [];
   return { allPassed, waitingAck, hasPending };
 }
 
@@ -93,5 +100,51 @@ test("離開房間的成員（members 值為 falsy）不列入等待", () => {
   room.members.m2 = null;
   room.settleClaims = { host: 3, m1: 3 };
   room.ackClaims = { host: 3, m1: 3 };
+  expect(buildGate(room, 3).allPassed).toBe(true);
+});
+
+test("分岔路：還沒全員投票 → 不可通過", () => {
+  const room = base(3);
+  room.pendingSettle = null;
+  room.pendingFork = { seq: 3, options: {} };
+  room.forkVotes = { host: "left", m1: "right" }; // m2 還沒投
+  const gate = buildGate(room, 3);
+  expect(gate.hasPending).toBe(true);
+  expect(gate.allPassed).toBe(false);
+});
+
+test("分岔路：全員投票但有人沒 ack（沒看完投票畫面）→ 不可通過", () => {
+  const room = base(3);
+  room.pendingSettle = null;
+  room.pendingFork = { seq: 3, options: {} };
+  room.forkVotes = { host: "left", m1: "right", m2: "left" };
+  room.ackClaims = { host: 3, m1: 3 }; // m2 投了但沒按 ack
+  expect(buildGate(room, 3).allPassed).toBe(false);
+});
+
+test("分岔路：全員投票且全員 ack → 可通過（房主才決定路線）", () => {
+  const room = base(3);
+  room.pendingSettle = null;
+  room.pendingFork = { seq: 3, options: {} };
+  room.forkVotes = { host: "left", m1: "right", m2: "left" };
+  room.ackClaims = { host: 3, m1: 3, m2: 3 };
+  expect(buildGate(room, 3).allPassed).toBe(true);
+});
+
+test("分岔路：房主強制推進 → 不再等任何人投票", () => {
+  const room = base(3);
+  room.pendingSettle = null;
+  room.pendingFork = { seq: 3, options: {} };
+  room.forcedSeq = 3;
+  expect(buildGate(room, 3).allPassed).toBe(true);
+});
+
+test("分岔路的投票不算領取：決定後的結算仍要各自 claim", () => {
+  const room = base(3);
+  room.pendingSettle = { seq: 3, tileType: "material" };
+  room.forkVotes = { host: "left", m1: "right", m2: "left" }; // 舊票不應滿足 settleClaims
+  room.ackClaims = { host: 3, m1: 3, m2: 3 };
+  expect(buildGate(room, 3).allPassed).toBe(false);
+  room.settleClaims = { host: 3, m1: 3, m2: 3 };
   expect(buildGate(room, 3).allPassed).toBe(true);
 });

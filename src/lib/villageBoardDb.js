@@ -2,12 +2,18 @@
 // 貓貓村大富翁：玩家棋盤狀態 + 每日骰 + 移動 + 結算 + 事件效果。
 // 規格見 docs/second_brain/village-board-spec.md。
 // ⚠️ members.villageBoard 為新欄位，已加進 firestore.rules 白名單。
-import { doc, getDoc, updateDoc, onSnapshot, increment, serverTimestamp } from "firebase/firestore";
+import { doc, getDoc, updateDoc, onSnapshot, increment, serverTimestamp, deleteField } from "firebase/firestore";
 import { db } from "./firebase";
-import { addCoins, addArrowdew, addGachaCoins, addMaterials, addChests, addPotions } from "./db";
+import { addCoins, addArrowdew, addGachaCoins, addMaterials, addChests, addPotions, addMonsterCard, spendCoins } from "./db";
+import { rollCardGachaOne, rollCardGachaN, cardToMonsterCard, cardToView, CARD_GACHA_PAID_PRICE } from "./boardCardGacha";
 import { addCatXP, addCatBond } from "./catDb";
 import { CARRY_POTIONS, makeFamilyMaterialChest } from "./itemData";
 import { BOARD_LAYOUT, BOARD_SIZE, BOARD_MODE_MAP, getModeTierCap, rollTileReward } from "./boardData";
+import {
+  JOURNEY_MAP_META, generateJourney, normalizeVillageBoard, emptyMapState,
+  nextPos, applyTrapPos, applyShortcutPos, mergeBuffs, applyJourneyMultipliers,
+  combineRewards, rollDice, rollJourneyDice, randomSeed, findNextTile, lockedJourneyTier,
+} from "./boardJourney";
 import { getNormalMaterialPool } from "./monsterEconomyCatalog";
 
 export const DAILY_DICE = 15;   // 每日補滿至 15（上限 15、不囤積）
@@ -22,7 +28,11 @@ const DEFAULT_BOARD = { dice: DAILY_DICE, diceGrantedDate: "", boardPos: 0, lapC
 export function subscribeBoardState(memberId, cb) {
   if (!memberId) return () => {};
   return onSnapshot(doc(db, "members", memberId), snap => {
-    cb(snap.exists() ? { ...DEFAULT_BOARD, ...(snap.data().villageBoard || {}) } : { ...DEFAULT_BOARD });
+    // _hasVillageBoard：區分「全新玩家（無 villageBoard 文件）」與「有文件」——
+    // 新 UI 靠它避免把 DEFAULT_BOARD 的 boardPos:0 當成 legacy 遷移。
+    cb(snap.exists()
+      ? { ...DEFAULT_BOARD, ...(snap.data().villageBoard || {}), _hasVillageBoard: Boolean(snap.data().villageBoard) }
+      : { ...DEFAULT_BOARD });
   }, () => cb({ ...DEFAULT_BOARD }));
 }
 
@@ -236,4 +246,264 @@ async function applyGainLose(memberId, mode, resource, amount, tierCap, catId, s
   }
   // 其他村資源
   return updateDoc(doc(db, "members", memberId), { [`village.resources.${resource}`]: increment(n) });
+}
+
+// ── 探索地圖重製：per-map 旅程（08-07-village-board-journey-redesign）────
+// ⚠️ 舊版單人/組隊棋盤（boardPos/lapCount/mode）**完全保留不動**——旅程寫 maps.{id}，
+//    兩套並存直到 Phase 3/4 把舊版換掉。旅程進度跨日保留（ensureDailyDice 只重置骰子與
+//    舊棋盤欄位，不碰 maps）。
+//
+// 旅程狀態：{ seed, pos, length, clears, tier, buffs }
+//   length===0 表示尚未開始（startJourney 才生成）；clears＝完成次數（= 舊 lapCount 語意）；
+//   buffs：本趟營地 campMult / 強化 nextShootMult / 貓夥伴 catmate，完成旅程時一併清空。
+
+// 首次進場生成 seed（未開始才生成）；已開始只更新 tier。
+// 遷移寫入邊界：舊 boardPos/lapCount/mode/boardSeed 併入 maps 後**清掉**，
+// 避免 normalizeVillageBoard 每次重塞過時的 boardPos。
+export async function startJourney(memberId, mapId, tier) {
+  if (!memberId || !JOURNEY_MAP_META[mapId]) return { ok: false, reason: "地圖錯誤" };
+  try {
+    const ref = doc(db, "members", memberId);
+    const snap = await getDoc(ref);
+    const vb = snap.data()?.villageBoard || {};
+    const norm = normalizeVillageBoard(vb);
+    const cur = norm.maps[mapId];
+    const patch = {};
+    if (!cur || !cur.length) {
+      const seed = randomSeed();
+      const j = generateJourney(mapId, seed);
+      patch[`villageBoard.maps.${mapId}`] = { seed, pos: 0, length: j.length, clears: 0, tier: tier || 1, buffs: {} };
+    } else {
+      // ⚠️ 階級鎖定（08-07）：進行中的旅程不接受改 tier——UI 已禁用選擇器，
+      //    這裡是第二道防線。舊資料 cur.tier 可能為 0（遷移前未記錄），
+      //    這種情況才接受新選值並從此鎖定（lockedJourneyTier）。
+      patch[`villageBoard.maps.${mapId}.tier`] = lockedJourneyTier(cur, tier);
+    }
+    // 遷移：舊欄位已併入 maps，清掉避免重塞
+    if (typeof vb.boardPos === "number") {
+      patch["villageBoard.boardPos"] = deleteField();
+      patch["villageBoard.lapCount"] = deleteField();
+      patch["villageBoard.mode"] = deleteField();
+      patch["villageBoard.boardSeed"] = deleteField();
+    }
+    await updateDoc(ref, patch);
+    const started = patch[`villageBoard.maps.${mapId}`];
+    return { ok: true, map: started || { ...cur, tier: patch[`villageBoard.maps.${mapId}.tier`] } };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+// 花 1 骰、隨機 1~6 步、旅程內前進（夾在終點）。回傳落點資訊（獎勵由 settleJourneyTile 結算）。
+export async function rollJourney(memberId, mapId) {
+  if (!memberId || !JOURNEY_MAP_META[mapId]) return { ok: false };
+  try {
+    const ref = doc(db, "members", memberId);
+    const snap = await getDoc(ref);
+    const vb = snap.data()?.villageBoard || {};
+    const norm = normalizeVillageBoard(vb);
+    const m = norm.maps[mapId];
+    if (!m || !m.length) return { ok: false, reason: "旅程尚未開始" };
+    if ((norm.dice || 0) <= 0) return { ok: false, reason: "骰子用完了，明天再來！" };
+    // 🎲 多骰（強化格 diceCount buff）：一次擲 2~3 顆骰子、移動距離大增；用完即消耗。
+    const diceN = m.buffs?.diceCount || 1;
+    const { rolls, total } = rollJourneyDice(diceN);
+    const roll = total;
+    const from = m.pos || 0;
+    const to = nextPos(from, roll, m.length);
+    const patch = {
+      "villageBoard.dice": increment(-1),
+      [`villageBoard.maps.${mapId}.pos`]: to,
+    };
+    if (diceN > 1) patch[`villageBoard.maps.${mapId}.buffs.diceCount`] = deleteField();
+    await updateDoc(ref, patch);
+    import("./worldBossDb").then(module => module.contributeWorldBossSpawnProgress({
+      memberId, type: "villageDice", amount: 1, operationId: `village-journey:${memberId}:${Date.now()}:${from}:${to}`,
+    })).catch(() => {});
+    return { ok: true, roll, rolls, from, to, reachedBoss: to === m.length - 1, diceLeft: (norm.dice || 0) - 1 };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+// 採集 C 三選一的獎勵組合：0＝素材、1＝資源（豐收）、2＝混合
+function rollMiningRewards(choice, ctx) {
+  if (choice === 0) return [rollTileReward("material", ctx)];
+  if (choice === 1) return [rollTileReward("mining", { ...ctx, gatheringProgress: 140 })];
+  return [rollTileReward("mining", { ...ctx, gatheringProgress: 100 }), rollTileReward("material", ctx)];
+}
+
+// 結算旅程落點。tileType 來自旅程 cells[to]。
+// ctx: { villageBuildings, catId, scoreRatio, miningChoice }
+// 特殊回傳：movedTo（陷阱/捷徑）、buffs（更新後）、completed（終點 Boss 完成旅程）
+export async function settleJourneyTile(memberId, mapId, tileType, ctx = {}) {
+  if (!memberId || !JOURNEY_MAP_META[mapId]) return { ok: false };
+  const { villageBuildings = {}, catId, scoreRatio = 0, miningChoice } = ctx;
+  try {
+    const ref = doc(db, "members", memberId);
+    const snap = await getDoc(ref);
+    const vb = snap.data()?.villageBoard || {};
+    const norm = normalizeVillageBoard(vb);
+    const m = norm.maps[mapId];
+    if (!m || !m.length) return { ok: false, reason: "旅程尚未開始" };
+    const mode = JOURNEY_MAP_META[mapId];
+    const tierCap = getModeTierCap(mapId, villageBuildings);
+    const T = Math.max(1, Math.min(m.tier || tierCap, tierCap));
+    const buffs = m.buffs || {};
+    // 貓夥伴 buff：射箭完成度 +5%/層（可疊加；怪物/終點 Boss 都吃）
+    // ⚠️ 舊資料 catmate:true 視為 1 層（Number(true)=1）
+    const effRatio = Math.min(1, (scoreRatio || 0) + (Number(buffs.catmate) || 0) * 0.05);
+    const baseCtx = { mode, tierCap, tier: T, scoreRatio: effRatio, partyMult: 1 };
+    const campMult = buffs.campMult || 1;
+    const shootMult = buffs.nextShootMult || 1;
+
+    // ── buff 格：只改 buffs，不給資源 ──
+    if (tileType === "camp" || tileType === "empower" || tileType === "catmate") {
+      const reward = rollTileReward(tileType, baseCtx);
+      const newBuffs = mergeBuffs(buffs, reward);
+      await updateDoc(ref, { [`villageBoard.maps.${mapId}.buffs`]: newBuffs });
+      return { ok: true, reward, buffs: newBuffs, kind: "buff" };
+    }
+
+    // ── 陷阱：多種事件（蛇咬/流沙/竊金/骰子/箭露），懲罰由 trapType 決定（下限保護）──
+    if (tileType === "trap") {
+      const reward = rollTileReward("trap", baseCtx);
+      const newPos = applyTrapPos(m.pos, m.length, reward.back ?? 2);
+      const coins = snap.data()?.coins || 0;
+      const lose = Math.min(coins, reward.loseCoins || 0);
+      const patch = { [`villageBoard.maps.${mapId}.pos`]: newPos };
+      if (lose > 0) patch.coins = increment(-lose);
+      // 箭露損失（流沙/箭露灑了）——直接扣 addArrowdew（下限 0，扣不動就 0）
+      const dewLose = Math.min(reward.loseArrowdew || 0, Math.max(0, (snap.data()?.arrowdew || 0)));
+      if (dewLose > 0) patch.arrowdew = increment(-dewLose);
+      // 骰子被偷（dice 事件）——骰子用完了就退回金幣懲罰
+      let diceLost = 0;
+      if (reward.loseDice) {
+        const have = norm.dice || 0;
+        if (have > 0) { diceLost = Math.min(have, reward.loseDice); patch["villageBoard.dice"] = increment(-diceLost); }
+      }
+      await updateDoc(ref, patch);
+      return { ok: true, reward: { ...reward, coins: 0, loseCoins: lose, loseArrowdew: dewLose, loseDice: diceLost }, buffs, kind: "trap", movedTo: newPos };
+    }
+
+    // ── 捷徑：前進 3~5 格（可能直達終點→由 UI 開 Boss 射箭）──
+    if (tileType === "shortcut") {
+      const reward = rollTileReward("shortcut", baseCtx);
+      const newPos = applyShortcutPos(m.pos, m.length, reward.jumpAhead);
+      await updateDoc(ref, { [`villageBoard.maps.${mapId}.pos`]: newPos });
+      return { ok: true, reward, buffs, kind: "shortcut", movedTo: newPos, reachedBoss: newPos === m.length - 1 };
+    }
+
+    // ── 採集（挖礦）：不射箭，直接給資源（08-08 起不再有三選一——動畫只播不選，
+    //    進度以「完成」（gatheringProgress 100 → ×1.2）結算；miningChoice 保留給舊版棋盤）──
+    if (tileType === "mining") {
+      if (miningChoice != null) {
+        const parts = rollMiningRewards(miningChoice, baseCtx);
+        const reward = combineRewards(parts[0], parts[1] || {});
+        for (const part of parts) {
+          await applyBoardReward(memberId, applyJourneyMultipliers(part, { campMult }), { catId });
+        }
+        return { ok: true, reward: applyJourneyMultipliers(reward, { campMult }), buffs, kind: "mining", choice: miningChoice };
+      }
+      const reward = applyJourneyMultipliers(rollTileReward("mining", { ...baseCtx, gatheringProgress: 100 }), { campMult });
+      await applyBoardReward(memberId, reward, { catId });
+      return { ok: true, reward, buffs, kind: "mining" };
+    }
+
+    // ── 射箭格（怪物／終點 Boss）──
+    if (tileType === "monster" || tileType === "boss") {
+      let reward = rollTileReward(tileType, baseCtx);
+      reward = applyJourneyMultipliers(reward, { shootMult, campMult });
+      if (tileType === "boss") {
+        // 終點：無失敗，按分數帶給獎 → 完成旅程 clears+1 → 村目標 board_laps → 重置換新 seed
+        const clears = (m.clears || 0) + 1;
+        const seed = randomSeed();
+        const j = generateJourney(mapId, seed);
+        // ⚠️ 階級重選（08-07）：每趟走完回選單重選 T——tier 歸 0＝未鎖定，
+        //    lockedJourneyTier 接受新選（跟舊資料 tier=0 同一條路）。
+        const patch = {
+          [`villageBoard.maps.${mapId}`]: { seed, pos: 0, length: j.length, clears, tier: 0, buffs: {} },
+        };
+        await applyBoardReward(memberId, reward, { catId });
+        await updateDoc(ref, patch);
+        import("./villageGoalDb").then(m2 => m2.contributeLapToGoal(memberId, 1)).catch(() => {});
+        return { ok: true, reward, buffs: {}, kind: "boss", completed: true, clears, newSeed: seed };
+      }
+      const patch = {};
+      if (shootMult > 1) patch[`villageBoard.maps.${mapId}.buffs.nextShootMult`] = deleteField();
+      await applyBoardReward(memberId, reward, { catId });
+      if (Object.keys(patch).length) await updateDoc(ref, patch);
+      return { ok: true, reward, buffs: { ...buffs, nextShootMult: 0 }, kind: "shoot" };
+    }
+
+    // ── 一般格（material/coins/arrowdew/gacha/potion/chest/catbond/start/scenery/market）──
+    // 命運/機會在旅程中不翻卡：給少量金幣（避免空獎），事件卡僅舊版棋盤使用。
+    const reward = applyJourneyMultipliers(
+      (tileType === "fate" || tileType === "opp")
+        ? { coins: 20 + Math.floor(Math.random() * 60) * T }
+        : rollTileReward(tileType, baseCtx),
+      { campMult }
+    );
+    await applyBoardReward(memberId, reward, { catId });      return { ok: true, reward, buffs, kind: "default" };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+// 分岔路口：玩家二選一後跳到目標格（不耗骰）。
+// side "left"＝穩妥路（前方最近的素材/採集格）、"right"＝冒險路（前方最近的怪物格）。
+// 回傳 { ok, movedTo, tile, reachedBoss }，UI 播移動動畫後照常結算目標格。
+export async function chooseForkPath(memberId, mapId, side) {
+  if (!memberId || !JOURNEY_MAP_META[mapId]) return { ok: false };
+  try {
+    const ref = doc(db, "members", memberId);
+    const snap = await getDoc(ref);
+    const vb = snap.data()?.villageBoard || {};
+    const norm = normalizeVillageBoard(vb);
+    const m = norm.maps[mapId];
+    if (!m || !m.length) return { ok: false, reason: "旅程尚未開始" };
+    const j = generateJourney(mapId, m.seed);
+    const targets = side === "right" ? ["monster"] : ["material", "mining"];
+    const found = findNextTile(j.cells, m.pos || 0, targets);
+    // 找不到目標格（太接近終點）→ 退回固定步數
+    const fallback = side === "right" ? 4 : 2;
+    const movedTo = found != null ? found : Math.min(j.length - 1, (m.pos || 0) + fallback);
+    await updateDoc(ref, { [`villageBoard.maps.${mapId}.pos`]: movedTo });
+    return { ok: true, movedTo, tile: j.cells[movedTo], reachedBoss: movedTo === j.length - 1 };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+// ── 🃏 抽卡房（08-08）：踩到抽卡房格後開抽卡 overlay ──────────
+// 免費抽 1 張（不花錢）／付費抽 3 張（扣金幣 CARD_GACHA_PAID_PRICE）。
+// 池＝該 T 階級普通怪卡（boardCardGacha 純函式）；入帳走既有 addMonsterCard
+// （重複卡自動累計 duplicates 供升星）。回傳卡面 view 陣列供 UI 顯示。
+
+// 單人免費抽：不花錢，抽 1 張入帳。回傳 { ok, views }（views＝卡面 view 陣列）
+export async function claimCardGachaFree(memberId, mapId, tier) {
+  if (!memberId || !JOURNEY_MAP_META[mapId]) return { ok: false };
+  try {
+    const entry = rollCardGachaOne(tier);
+    if (!entry) return { ok: false, reason: "此階級尚無卡片" };
+    await addMonsterCard(memberId, cardToMonsterCard(entry));
+    return { ok: true, views: [cardToView(entry, true)] };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+// 單人付費抽：扣金幣 CARD_GACHA_PAID_PRICE，抽 3 張入帳。回傳 { ok, views }
+export async function claimCardGachaPaid(memberId, mapId, tier) {
+  if (!memberId || !JOURNEY_MAP_META[mapId]) return { ok: false };
+  try {
+    const spend = await spendCoins(memberId, CARD_GACHA_PAID_PRICE);
+    if (!spend?.ok) return { ok: false, reason: spend?.reason || "金幣不足" };
+    const entries = rollCardGachaN(tier, 3);
+    if (!entries.length) { await addCoins(memberId, CARD_GACHA_PAID_PRICE); return { ok: false, reason: "此階級尚無卡片" }; }
+    for (const e of entries) await addMonsterCard(memberId, cardToMonsterCard(e));
+    return { ok: true, views: entries.map(e => cardToView(e, true)) };
+  } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+// 組隊 claim 用：免費抽 1 張入帳（組隊結算自動化，不開付費互動）。
+// 回傳 { ok, views }——由 claimBoardSettle 的 cardgacha 分支呼叫。
+export async function claimCardGachaTeamFree(memberId, tier) {
+  if (!memberId) return { ok: false };
+  try {
+    const entry = rollCardGachaOne(tier);
+    if (!entry) return { ok: false, reason: "此階級尚無卡片" };
+    await addMonsterCard(memberId, cardToMonsterCard(entry));
+    return { ok: true, views: [cardToView(entry, true)] };
+  } catch (e) { return { ok: false, reason: e?.message }; }
 }
