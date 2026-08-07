@@ -138,6 +138,10 @@
   scrollbar-color: #334155 transparent;
 }
 
+/* ── 隱藏捲軸（橫向 chip 列等）── */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
 body {
   margin: 0;
   background: var(--bg-deep);

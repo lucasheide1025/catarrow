@@ -20,6 +20,7 @@ import BoardRewardPopup from "./BoardRewardPopup";
 import TileDemo from "./TileDemo";
 import BossDuel from "./BossDuel";
 import CardGachaRoom from "./CardGachaRoom";
+import BoardGuide from "./BoardGuide";
 import { MATERIALS } from "../../lib/monsterMaterials";
 import { NORMAL_MATERIALS } from "../../lib/monsterEconomyCatalog";
 import { RESOURCE_NAMES } from "../../lib/villageData";
@@ -129,6 +130,7 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
   const [showSummary, setShowSummary] = useState(false);
   const [buffs, setBuffs] = useState({});
   const [buffHelp, setBuffHelp] = useState(false);   // 加成說明彈窗（buff chips 點開）
+  const [boardGuide, setBoardGuide] = useState(false);   // 📖 探索地圖說明書（完整玩法總覽）
   const sessionRef = useRef({});
   const scrollRef = useRef(null);
   const busyRef = useRef(false);
@@ -390,6 +392,8 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
             <button onClick={onClose} className="w-9 h-9 rounded-full bg-black/40 text-amber-200 font-black">←</button>
             <div className="text-amber-100 font-black">選擇探索地圖</div>
             <div className="flex items-center gap-1.5">
+              <button onClick={() => setBoardGuide(true)} title="探索地圖說明書：完整玩法總覽"
+                className="rounded-lg bg-sky-600/60 border border-sky-400/40 px-2 py-1 text-sky-50 text-[10px] font-black active:scale-95">📖 說明</button>
               {isAdmin && (
                 <div className="flex items-center gap-1">
                   <button onClick={() => addBoardDice(myId, 1)} title="測試用：＋1 骰"
@@ -494,6 +498,8 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
             </button>
           )}
         </div>
+        {/* 📖 探索地圖說明書（選單也可開啟） */}
+        {boardGuide && <BoardGuide onClose={() => setBoardGuide(false)} />}
       </div>
     );
   }
@@ -531,6 +537,8 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
         <div className="flex items-center justify-between gap-2">
           <div className="rounded-xl bg-black/30 border border-amber-500/25 px-3 py-1 text-amber-100 text-xs font-black">T{tierShown}・{meta.name}</div>
           <div className="flex items-center gap-1.5 flex-wrap justify-end">
+            <button onClick={() => setBoardGuide(true)} title="探索地圖說明書：完整玩法總覽"
+              className="rounded-full bg-sky-600/40 border border-sky-400/40 px-2 py-0.5 text-[10px] font-black text-sky-100 active:scale-95">📖 說明</button>
             <button onClick={() => setBuffHelp(true)} title="查看加成說明"
               className="rounded-full bg-white/10 border border-white/20 px-2 py-0.5 text-[10px] font-black text-slate-200 active:scale-95">❓ 加成</button>
             {buffActive(buffs, "campMult") && <button onClick={() => setBuffHelp(true)} className="rounded-full bg-emerald-500/20 border border-emerald-400/40 px-2 py-0.5 text-[10px] font-black text-emerald-200 active:scale-95">🏕️ 資源 ×{buffs.campMult}</button>}
@@ -699,6 +707,9 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
           </div>
         </div>
       )}
+
+      {/* 📖 探索地圖說明書（選單與遊戲中都可開啟） */}
+      {boardGuide && <BoardGuide onClose={() => setBoardGuide(false)} />}
 
       {/* 加成說明（點 ❓ 或任一 buff chip 打開） */}
       {buffHelp && (

@@ -53,6 +53,7 @@ TILES = {
     "scenery":   "a miniature mountain vista with a warm sun and fluffy clouds",
     "fork":      "a wooden signpost splitting into two diverging paths with glowing arrows left and right, tiny lanterns",
     "boss":      "a fearsome dragon skull boss emblem with a red glow and horns",
+    "cardgacha": "a magical monster-card gacha machine with a glowing golden slot, colorful trading cards fanned out and popping out, sparkling gold and purple magic swirl",
 }
 NEG = ("realistic, photorealistic, text, letters, watermark, ui, frame, people, hands, multiple objects, "
        "cluttered, blurry, lowres, deformed, dark, scary")
