@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { normalizedConfig, evaluate } = require("./worldBossLifecycle");
+const { normalizedConfig, evaluate, activeStatusPatch } = require("./worldBossLifecycle");
 
 test("world boss lifecycle clamps deadline to 48 hours and keeps all four targets", () => {
   const config = normalizedConfig({
@@ -14,6 +14,21 @@ test("world boss lifecycle clamps deadline to 48 hours and keeps all four target
     restHours:8,
     deadlineHours:48,
     targets:{ arrows:123, dungeonClears:4, monsterKills:56, villageDice:7 },
+    enabledTypes:["arrows", "dungeonClears", "monsterKills", "villageDice"],
+  });
+});
+
+test("new active status fully replaces previous boss replay identity", () => {
+  assert.deepEqual(activeStatusPatch("event-new", {
+    bossKey:"cat_baobao",
+    bossData:{ name:"Bao Bao" },
+  }), {
+    eventId:"event-new",
+    status:"active",
+    bossKey:"cat_baobao",
+    bossName:"Bao Bao",
+    announcement:null,
+    killReplay:null,
   });
 });
 

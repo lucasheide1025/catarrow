@@ -178,3 +178,14 @@ export function shouldReplayKill(payload, seenAt = 0, now = Date.now()) {
   if (!isKillReplayFresh(payload, now)) return false;
   return (payload.at || 0) > (seenAt || 0);
 }
+
+// worldBossStatus/current is a singleton and may be observed between writes.
+// Never let a replay from the previous boss animate a different event.
+export function isKillReplayForEvent(payload, eventId) {
+  return !!(payload && eventId && payload.eventId === eventId);
+}
+
+// Shared persistent marker used by MemberApp and WorldBossLobby.
+export function worldBossKillSeenKey(eventId) {
+  return eventId ? `wb_kill_seen_${eventId}` : null;
+}

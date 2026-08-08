@@ -6,7 +6,9 @@ import {
   detectKillStyle,
   findKillingBlow,
   isKillReplayFresh,
+  isKillReplayForEvent,
   shouldReplayKill,
+  worldBossKillSeenKey,
   killAnnouncement,
   lastHitReward,
 } from "./raidKill";
@@ -212,5 +214,18 @@ describe("全服擊倒重播（作者 2026-07-31 澄清）", () => {
     expect(shouldReplayKill(p, 0, 1000)).toBe(true);
     expect(shouldReplayKill(p, 1000, 1000)).toBe(false);   // 已經看過這一次
     expect(shouldReplayKill(p, 999, 1000)).toBe(true);     // 上次看的是更早那場
+  });
+
+  test("kill replay only belongs to its own world boss event", () => {
+    const p = payload();
+    expect(isKillReplayForEvent(p, "e1")).toBe(true);
+    expect(isKillReplayForEvent(p, "e2")).toBe(false);
+    expect(isKillReplayForEvent(null, "e1")).toBe(false);
+  });
+
+  test("persistent kill seen marker is scoped per event id", () => {
+    expect(worldBossKillSeenKey("e1")).toBe("wb_kill_seen_e1");
+    expect(worldBossKillSeenKey("e2")).toBe("wb_kill_seen_e2");
+    expect(worldBossKillSeenKey(null)).toBeNull();
   });
 });

@@ -64,6 +64,19 @@ function evaluate(cycle, nowMs) {
   return nowMs >= Number(cycle.deadlineAtMs || Infinity) ? "deadline" : null;
 }
 
+function activeStatusPatch(eventId, event = {}) {
+  return {
+    eventId,
+    status:"active",
+    bossKey:event.bossKey || null,
+    bossName:event.bossData?.name || "",
+    announcement:null,
+    // worldBossStatus/current is merged in place. Explicitly clear the
+    // previous boss replay whenever a different event becomes active.
+    killReplay:null,
+  };
+}
+
 async function ensureCycle(db) {
   const cycleRef = db.doc("worldBossSpawnCycles/current");
   const latest = await db.collection("worldBossEvents").orderBy("createdAt", "desc").limit(1).get();
@@ -112,8 +125,13 @@ async function trySpawn(db, forcedBy = null) {
   try {
     const active = await db.collection("worldBossEvents").where("status", "==", "active").limit(1).get();
     if (!active.empty) {
-      await cycleRef.update({ status:"spawned", spawnedEventId:active.docs[0].id, spawnedAt:FieldValue.serverTimestamp() });
-      return { ok:true, eventId:active.docs[0].id, existing:true };
+      const activeDoc = active.docs[0];
+      await db.doc("worldBossStatus/current").set({
+        ...activeStatusPatch(activeDoc.id, activeDoc.data()),
+        updatedAt:FieldValue.serverTimestamp(),
+      }, { merge:true });
+      await cycleRef.update({ status:"spawned", spawnedEventId:activeDoc.id, spawnedAt:FieldValue.serverTimestamp() });
+      return { ok:true, eventId:activeDoc.id, existing:true };
     }
     const template = await pickBossTemplate(db, lock.previousBossKey);
     if (!template) throw new Error("world_boss_template_missing");
@@ -143,8 +161,8 @@ async function trySpawn(db, forcedBy = null) {
         autoSpawned:true,
       });
       tx.set(db.doc("worldBossStatus/current"), {
-        eventId:eventRef.id, status:"active", bossName:template.bossData?.name || "",
-        announcement:null, updatedAt:FieldValue.serverTimestamp(),
+        ...activeStatusPatch(eventRef.id, template),
+        updatedAt:FieldValue.serverTimestamp(),
       }, { merge:true });
       tx.update(cycleRef, {
         status:"spawned", spawnedEventId:eventRef.id, spawnedBossKey:template.bossKey,
@@ -199,4 +217,4 @@ async function contribute(db, request) {
   return result;
 }
 
-module.exports = { DEFAULTS, normalizedConfig, evaluate, ensureCycle, trySpawn, contribute };
+module.exports = { DEFAULTS, normalizedConfig, evaluate, activeStatusPatch, ensureCycle, trySpawn, contribute };

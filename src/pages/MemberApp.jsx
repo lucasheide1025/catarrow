@@ -23,7 +23,7 @@ const ACH_ANNOUNCE = new Set(["epic", "legendary", "mythic"]);
 import { getAllowedPages, isAutoLocked } from "../lib/accessControl";
 import { MaintenanceScreen, FrozenScreen, LockedFeatureCard } from "../components/member/AccessLockScreens";
 import { subscribeWorldBossStatus } from "../lib/worldBossDb";
-import { shouldReplayKill } from "../worldboss/domain/raidKill";
+import { isKillReplayForEvent, shouldReplayKill, worldBossKillSeenKey } from "../worldboss/domain/raidKill";
 import { subscribeLatestBroadcast } from "../lib/dungeonDb";
 import { getDuelStats } from "../lib/duelDb";
 import { APP_VERSION } from "../lib/version";
@@ -408,24 +408,28 @@ export default function MemberApp() {
     return subscribeWorldBossStatus(ev => {   // 小狀態文件：不再因為別人打王而被推 HP 更新
       setActiveWorldBoss(ev && ev.status === "active" ? ev : null);
       if (!ev) return;
-      // 登場動畫
-      const key = `wb_intro_${ev.id}`;
-      if (!sessionStorage.getItem(key)) {
-        sessionStorage.setItem(key, "1");
-        setBossIntroEvent(ev);
+      if (ev.status === "active") {
+        const key = `wb_intro_${ev.id}`;
+        if (!sessionStorage.getItem(key)) {
+          sessionStorage.setItem(key, "1");
+          setBossIntroEvent(ev);
+        }
+        return;
       }
       // 擊殺公告（每個 eventId 只播一次）
       if (ev.status === "defeated" && ev.id !== shownWbKillRef.current) {
-        shownWbKillRef.current = ev.id;
+        const seenKey = worldBossKillSeenKey(ev.id);
+        try { if (seenKey && localStorage.getItem(seenKey)) return; } catch { /* storage unavailable */ }
         // ⚠️ 世界王頁面時**不要**在這裡消耗 seen／播全服重播：
         //    大廳自己會播新版 RaidKillCutscene（含領取面板），
         //    這裡的 overlay z-index 在大廳底下，播了玩家也看不到，只會吃掉 seen。
         if (pageRef.current === "worldboss") return;
+        shownWbKillRef.current = ev.id;
         setWbKillAlert(ev);
         // ⚠️ 作者 2026-07-31：其他玩家原本只看得到這一行文字。
         //    王被打倒時，**那段終結演出要在全服重播一次**。
         //    看過的不重播（存 seenAt），太舊的也不跳出來嚇人。
-        const payload = ev.killReplay;
+        const payload = isKillReplayForEvent(ev.killReplay, ev.id) ? ev.killReplay : null;
         if (payload) {
           const seen = Number(localStorage.getItem("wb_kill_seen_at") || 0);
           if (shouldReplayKill(payload, seen)) {
@@ -433,6 +437,7 @@ export default function MemberApp() {
             setWbKillReplay(payload);
           }
         }
+        try { if (seenKey) localStorage.setItem(seenKey, "1"); } catch { /* storage unavailable */ }
         const t = setTimeout(() => setWbKillAlert(null), 8000);
         return () => clearTimeout(t);
       }

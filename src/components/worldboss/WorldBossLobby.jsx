@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { activeSpawnTypes, describeSpawnCycle, evaluateWorldBossSpawnCycle, requiredSpawnType, spawnProgressRatio, SPAWN_PROGRESS_LABEL } from "../../lib/worldBossSpawnCycle";
-import { subscribeLatestWorldBoss, subscribeWorldBossSpawnCycle, subscribeWorldBossStatus, ensureWorldBossLifecycle, getLatestWorldBossKill, getPendingWorldBossRewards, claimWorldBossKillReward, previewWorldBossKillReward, getWorldBossAttackDateKeys } from "../../lib/worldBossDb";
+import { subscribeLatestWorldBoss, subscribeWorldBossSpawnCycle, subscribeWorldBossStatus, getLatestWorldBossKill, getPendingWorldBossRewards, claimWorldBossKillReward, previewWorldBossKillReward, getWorldBossAttackDateKeys } from "../../lib/worldBossDb";
 import { normalizeWorldBossState } from "../../lib/worldBossState";
 import { WORLD_BOSSES, getBossPhase, PHASE_LABELS, getParticipantBonus } from "../../lib/worldBossData";
 import WorldBossSVG from "./WorldBossSVG";
@@ -11,6 +11,7 @@ import RaidGate from "../../worldboss/RaidGate";
 import MatchGate from "../../worldboss/MatchGate";
 import WorldBossIntro from "./WorldBossIntro";
 import RaidKillCutscene from "../../worldboss/ui/RaidKillCutscene";
+import { isKillReplayForEvent, worldBossKillSeenKey } from "../../worldboss/domain/raidKill";
 import { sfxTap } from "../../lib/sound";
 
 function HPBar({ current, max }) {
@@ -234,12 +235,11 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
   //    有機會自我觸發。
   //    掛載時叫一次就夠；週期性的部分本來就有排程 worldBossLifecycleSchedule 在跑。
   useEffect(() => subscribeWorldBossSpawnCycle(setSpawnCycle), []);
-  useEffect(() => { ensureWorldBossLifecycle().catch(() => {}); }, []);
 
   // 新版擊倒演出：status 小文件才有 killReplay（event 文件沒有），
   // 訂閱它才能在大廳擊倒後播放新版 RaidKillCutscene（2026-08-06）。
   useEffect(() => subscribeWorldBossStatus(ev => {
-    setKillReplay(ev?.status === "defeated" && ev.killReplay ? ev.killReplay : null);
+    setKillReplay(ev?.status === "defeated" && isKillReplayForEvent(ev.killReplay, ev.id) ? ev.killReplay : null);
   }), []);
 
   useEffect(() => {
@@ -248,19 +248,34 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
       setEvent(normalized);
       setLoading(false);
       if (normalized?.status === "defeated") {
-        const key = `wb_kill_seen_${normalized.id}`;
-        if (!sessionStorage.getItem(key)) {
-          sessionStorage.setItem(key, "1");
-          setKillEvent(normalized);
-          setShowKillScreen(true);
-        }
+        const key = worldBossKillSeenKey(normalized.id);
+        let seen = false;
+        try { seen = !!(key && localStorage.getItem(key)); } catch { /* storage unavailable */ }
+        if (!seen) setKillEvent(normalized);
       } else {
         // 新的 active boss 到來，或無 boss → 關掉 kill screen
+        setKillEvent(null);
         setShowKillScreen(false);
       }
     });
     return unsub;
   }, [myId, isGuestMode]);
+
+  useEffect(() => {
+    if (!killEvent?.id || showKillScreen) return;
+    const key = worldBossKillSeenKey(killEvent.id);
+    try { if (key && localStorage.getItem(key)) return; } catch { /* storage unavailable */ }
+    const show = () => {
+      try { if (key) localStorage.setItem(key, "1"); } catch { /* storage unavailable */ }
+      setShowKillScreen(true);
+    };
+    if (isKillReplayForEvent(killReplay, killEvent.id)) {
+      show();
+      return;
+    }
+    const timer = setTimeout(show, 1500);
+    return () => clearTimeout(timer);
+  }, [killEvent?.id, killReplay, showKillScreen]);
 
   const [pendingEvent, setPendingEvent] = useState(null);
   useEffect(() => {
@@ -490,7 +505,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
 
       {showKillScreen && killEvent && (
         <KillScreen event={killEvent} myReward={myReward} rewardPreview={rewardPreview}
-          replay={killReplay?.eventId === killEvent.id ? killReplay : null}
+          replay={isKillReplayForEvent(killReplay, killEvent.id) ? killReplay : null}
           canClaim={!isGuestMode && pendingEventId === killEvent.id}
           onClaim={() => claimPendingReward(killEvent.id)} onClose={() => setShowKillScreen(false)}/>
       )}
