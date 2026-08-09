@@ -3075,8 +3075,11 @@ export async function openChestsBulk(memberId, chests, contentsOf) {
       });
     }
 
-    // 卡片有 duplicates／星級邏輯，仍逐張處理（一次開箱最多幾張，不會卡）
-    for (const card of cards) await addMonsterCard(memberId, card, null).catch(() => {});
+    // 同批卡片用一次 transaction 入庫，避免多個卡包或其他獎勵同時寫入時互相覆蓋。
+    if (cards.length) {
+      const cardResult = await addMonsterCards(memberId, cards);
+      if (!cardResult.ok) throw new Error(cardResult.reason || "卡片入庫失敗");
+    }
 
     // ── 3. 特殊箱各自走原本的流程 ──
     const catResults = [];
@@ -3132,9 +3135,8 @@ export async function openChest(memberId, chestId, contents) {
     if (contents?.potions?.length)    await addPotions(memberId, contents.potions.map(p => ({ id: p.id, count: 1 })));
     if (contents?.fragments?.length)  await addFragments(memberId, contents.fragments);
     if (contents?.cards?.length) {
-      for (const card of contents.cards) {
-        await addMonsterCard(memberId, card, null);
-      }
+      const cardResult = await addMonsterCards(memberId, contents.cards);
+      if (!cardResult.ok) throw new Error(cardResult.reason || "卡片入庫失敗");
     }
     if (contents?.coins) await addCoins(memberId, contents.coins);
 
@@ -3731,25 +3733,45 @@ function resolveEquippedCard(item, cards, wbCards) {
 }
 
 // cardData = { monsterId, name, icon, tier, family }
-export async function addMonsterCard(memberId, cardData, chosenStat) {
-  if (!memberId || !cardData?.monsterId || await isGuestOrKidMember(memberId)) return;
+export async function addMonsterCards(memberId, cardDataList, chosenStat = null) {
+  const rewards = (Array.isArray(cardDataList) ? cardDataList : [])
+    .filter(card => card?.monsterId);
+  if (!memberId || !rewards.length) return { ok:false, reason:"卡片資料錯誤" };
+  if (await isGuestOrKidMember(memberId)) return { ok:false, reason:"此帳號不會寫入卡片收藏" };
   try {
     const ref  = doc(db, C_CARDS, memberId);
-    const snap = await getDoc(ref);
-    const data = snap.exists() ? snap.data() : EMPTY_COLLECTION;
-    const cards = { ...(data.cards || {}) };
-    const key   = cardData.monsterId;
-    if (cards[key]) {
-      cards[key] = { ...cards[key], duplicates: (cards[key].duplicates || 0) + 1 };
-    } else {
-      cards[key] = {
-        ...cardData, stars: 1, duplicates: 0,
-        chosenStat: cardData.tier === "mythic" ? (chosenStat || null) : null,
-        ts: Date.now(),
-      };
-    }
-    await setDoc(ref, { cards, wbCards: data.wbCards || {}, equipped: data.equipped || [], updatedAt: serverTimestamp() }, { merge: true });
-  } catch (e) { console.warn("addMonsterCard:", e?.message); }
+    await runTransaction(db, async transaction => {
+      const snap = await transaction.get(ref);
+      const data = snap.exists() ? snap.data() : EMPTY_COLLECTION;
+      const cards = { ...(data.cards || {}) };
+      rewards.forEach(cardData => {
+        const key = cardData.monsterId;
+        if (cards[key]) {
+          cards[key] = { ...cards[key], duplicates:(cards[key].duplicates || 0) + 1 };
+        } else {
+          cards[key] = {
+            ...cardData, stars:1, duplicates:0,
+            chosenStat:cardData.tier === "mythic" ? (chosenStat || null) : null,
+            ts:Date.now(),
+          };
+        }
+      });
+      transaction.set(ref, {
+        cards,
+        wbCards:data.wbCards || {},
+        equipped:data.equipped || [],
+        updatedAt:serverTimestamp(),
+      }, { merge:true });
+    });
+    return { ok:true, count:rewards.length };
+  } catch (e) {
+    console.warn("addMonsterCards:", e?.message);
+    return { ok:false, reason:e?.message || "卡片入庫失敗" };
+  }
+}
+
+export async function addMonsterCard(memberId, cardData, chosenStat) {
+  return addMonsterCards(memberId, [cardData], chosenStat);
 }
 
 // 世界王卡：一隻王一張，沒有重複張數概念。已擁有則直接略過（呼叫端可另外轉換材料）。
@@ -3913,14 +3935,13 @@ export async function setWorldBossCardStat(memberId, bossKey, chosenStat) {
 
 export function subscribeCardCollection(memberId, callback) {
   if (!memberId) { callback(EMPTY_COLLECTION); return () => {}; }
-  getDoc(doc(db, C_CARDS, memberId)).then(snap => {
+  return onSnapshot(doc(db, C_CARDS, memberId), snap => {
     const data = snap.exists() ? { ...EMPTY_COLLECTION, ...snap.data() } : EMPTY_COLLECTION;
-    callback({ ...data, wbCards: normalizeWorldBossCards(data.wbCards || {}) });
-  }).catch(err => {
-    console.warn("subscribeCardCollection:", err?.message);
+    callback({ ...data, wbCards:normalizeWorldBossCards(data.wbCards || {}) });
+  }, error => {
+    console.warn("subscribeCardCollection:", error?.message);
     callback(EMPTY_COLLECTION);
   });
-  return () => {};
 }
 export function refreshCardCollection(memberId, callback) {
   if (!memberId) { callback(EMPTY_COLLECTION); return Promise.resolve(); }

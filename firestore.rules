@@ -110,7 +110,7 @@ service cloud.firestore {
           "dailyQuestCount", "eventPoints", "coins", "lastDungeonDate", "equippedCat", "avatarId",
           "lastBattleDate", "monsterSessionsToday", "rpgEquip", "shareSlogan", "nickname",
           "adventurerXP", "archerXP", "arrowMilestoneDone", "promotionDone", "village", "bookingStats",
-          "gachaCoins", "catCards", "villageCardAlbums", "dungeonCollectibles", "dungeonClearLog", "dungeonFirstKills", "dungeonFirstClears",
+          "gachaCoins", "catCards", "catCardStars", "villageCardAlbums", "dungeonCollectibles", "dungeonClearLog", "dungeonFirstKills", "dungeonFirstClears",
           "dungeonScrollCount", "coinShopPurchases", "coinShopSpending", "specialItems", "unlockedEquipItems", "coinShopRecycle",
           "totalArrowsAllTime", "dungeonExcavation", "expeditionRecords", "lastCheckinDate", "kingSeals",
           "equipmentRuneFragments", "equipmentRuneInventory", "activeExpedition",
@@ -134,7 +134,7 @@ service cloud.firestore {
           "dailyQuestCount", "eventPoints", "coins", "lastDungeonDate", "equippedCat", "avatarId",
           "lastBattleDate", "monsterSessionsToday", "rpgEquip", "shareSlogan", "nickname",
           "adventurerXP", "archerXP", "arrowMilestoneDone", "promotionDone", "village", "bookingStats",
-          "gachaCoins", "catCards", "villageCardAlbums", "dungeonCollectibles", "dungeonClearLog", "dungeonFirstKills", "dungeonFirstClears",
+          "gachaCoins", "catCards", "catCardStars", "villageCardAlbums", "dungeonCollectibles", "dungeonClearLog", "dungeonFirstKills", "dungeonFirstClears",
           "dungeonScrollCount", "coinShopPurchases", "coinShopSpending", "specialItems", "unlockedEquipItems", "coinShopRecycle",
           "totalArrowsAllTime", "dungeonExcavation", "expeditionRecords", "lastCheckinDate", "kingSeals",
           "equipmentRuneFragments", "equipmentRuneInventory", "activeExpedition",
@@ -647,7 +647,11 @@ service cloud.firestore {
     // 只有本人或教練可讀寫（透過 members doc 確認 uid）
     match /members/{memberId}/cats/{catId} {
       allow read, write: if isAdmin()
-        || (isLoggedIn() && get(/databases/$(database)/documents/members/$(memberId)).data.uid == request.auth.uid);
+        || (isLoggedIn() && (
+          get(/databases/$(database)/documents/members/$(memberId)).data.uid == request.auth.uid
+          || (request.auth.token.email != null
+            && get(/databases/$(database)/documents/members/$(memberId)).data.email == request.auth.token.email)
+        ));
     }
     // guildQuests：任務公告，登入者可讀；admin 可寫
     match /guildQuests/{docId} {

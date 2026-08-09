@@ -5,7 +5,7 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import { deleteDoc, doc, getDoc, setDoc } from "firebase/firestore";
+import { deleteDoc, doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 
 const PROJECT_ID = "demo-catarrow";
 const OWNER_MEMBER_ID = "member-owner";
@@ -100,5 +100,22 @@ test("identity lookup cannot be redirected by payload memberId", async () => {
   await assertFails(setDoc(doc(db, "chestInventory", OWNER_MEMBER_ID), {
     memberId: "member-other",
     value: 999,
+  }));
+});
+
+test("returning member can update owned cat when login uid changed but email still matches", async () => {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, "members", OWNER_MEMBER_ID), {
+      uid:"previous-login-uid",
+      email:OWNER_AUTH.email,
+      accountType:"member",
+    });
+    await setDoc(doc(db, "members", OWNER_MEMBER_ID, "cats", "guagua"), { equip:{} });
+  });
+
+  const db = testEnv.authenticatedContext(OWNER_AUTH.uid, { email:OWNER_AUTH.email }).firestore();
+  await assertSucceeds(updateDoc(doc(db, "members", OWNER_MEMBER_ID, "cats", "guagua"), {
+    "equip.arrow":{ grade:"精英", plusLevel:4 },
   }));
 });

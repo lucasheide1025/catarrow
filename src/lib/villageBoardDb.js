@@ -4,7 +4,7 @@
 // ⚠️ members.villageBoard 為新欄位，已加進 firestore.rules 白名單。
 import { doc, getDoc, updateDoc, onSnapshot, increment, serverTimestamp, deleteField } from "firebase/firestore";
 import { db } from "./firebase";
-import { addCoins, addArrowdew, addGachaCoins, addMaterials, addChests, addPotions, addMonsterCard, spendCoins } from "./db";
+import { addCoins, addArrowdew, addGachaCoins, addMaterials, addChests, addPotions, addMonsterCards, spendCoins } from "./db";
 import { rollCardGachaOne, rollCardGachaN, cardToMonsterCard, cardToView, CARD_GACHA_PAID_PRICE } from "./boardCardGacha";
 import { addCatXP, addCatBond } from "./catDb";
 import { CARRY_POTIONS, makeFamilyMaterialChest } from "./itemData";
@@ -478,7 +478,8 @@ export async function claimCardGachaFree(memberId, mapId, tier) {
   try {
     const entry = rollCardGachaOne(tier);
     if (!entry) return { ok: false, reason: "此階級尚無卡片" };
-    await addMonsterCard(memberId, cardToMonsterCard(entry));
+    const write = await addMonsterCards(memberId, [cardToMonsterCard(entry)]);
+    if (!write.ok) return { ok:false, reason:write.reason || "卡片入庫失敗" };
     return { ok: true, views: [cardToView(entry, true)] };
   } catch (e) { return { ok: false, reason: e?.message }; }
 }
@@ -491,7 +492,11 @@ export async function claimCardGachaPaid(memberId, mapId, tier) {
     if (!spend?.ok) return { ok: false, reason: spend?.reason || "金幣不足" };
     const entries = rollCardGachaN(tier, 3);
     if (!entries.length) { await addCoins(memberId, CARD_GACHA_PAID_PRICE); return { ok: false, reason: "此階級尚無卡片" }; }
-    for (const e of entries) await addMonsterCard(memberId, cardToMonsterCard(e));
+    const write = await addMonsterCards(memberId, entries.map(cardToMonsterCard));
+    if (!write.ok) {
+      await addCoins(memberId, CARD_GACHA_PAID_PRICE);
+      return { ok:false, reason:write.reason || "卡片入庫失敗，金幣已退回" };
+    }
     return { ok: true, views: entries.map(e => cardToView(e, true)) };
   } catch (e) { return { ok: false, reason: e?.message }; }
 }
@@ -503,7 +508,8 @@ export async function claimCardGachaTeamFree(memberId, tier) {
   try {
     const entry = rollCardGachaOne(tier);
     if (!entry) return { ok: false, reason: "此階級尚無卡片" };
-    await addMonsterCard(memberId, cardToMonsterCard(entry));
+    const write = await addMonsterCards(memberId, [cardToMonsterCard(entry)]);
+    if (!write.ok) return { ok:false, reason:write.reason || "卡片入庫失敗" };
     return { ok: true, views: [cardToView(entry, true)] };
   } catch (e) { return { ok: false, reason: e?.message }; }
 }

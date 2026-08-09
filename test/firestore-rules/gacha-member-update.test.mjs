@@ -42,3 +42,21 @@ test("regular member can persist a gacha draw and album progress", async () => {
     },
   }));
 });
+
+test("regular member can spend a duplicate cat card to upgrade its star", async () => {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), "members", MEMBER_ID), {
+      uid: AUTH.uid,
+      email: AUTH.email,
+      accountType: "member",
+      catCards: { cat_001: 3 },
+      catCardStars: { cat_001: 1 },
+    });
+  });
+
+  const db = testEnv.authenticatedContext(AUTH.uid, { email: AUTH.email }).firestore();
+  await assertSucceeds(updateDoc(doc(db, "members", MEMBER_ID), {
+    "catCards.cat_001": 2,
+    "catCardStars.cat_001": 2,
+  }));
+});

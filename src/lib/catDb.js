@@ -206,34 +206,36 @@ export async function repairNegativeVillageResources(memberId, resources = {}) {
 export async function upgradeCatEquip(memberId, catId, slotId, newGrade, newPlusLevel, deductMap = {}) {
   try {
     const memberRef  = doc(db, "members", memberId);
+    const targetCatRef = catRef(memberId, catId);
     const equipField = `equip.${slotId}`;
     const equipValue = { grade: newGrade, plusLevel: newPlusLevel };
 
-    // 扣除村莊資源：transaction 內用伺服器當下值驗證＋扣到 0 為底
-    // （舊寫法盲目 increment(-n),多分頁/連點會把資源扣成負數）
-    if (Object.entries(deductMap).some(([, amount]) => amount > 0)) {
-      await runTransaction(db, async transaction => {
-        const snap = await transaction.get(memberRef);
-        const resources = snap.data()?.village?.resources || {};
-        const resUpdates = {};
-        for (const [key, amount] of Object.entries(deductMap)) {
-          if (amount <= 0) continue;
-          const owned = Math.max(0, Number(resources[key]) || 0);
-          if (owned < amount) throw new Error(`資源不足（${key} 需 ${amount}）`);
-          resUpdates[`village.resources.${key}`] = owned - amount;
-        }
-        transaction.update(memberRef, resUpdates);
-      });
-    }
+    // 扣料、貓咪裝備與目前裝備中的快照必須同一筆交易完成；任何一步失敗都不扣材料。
+    await runTransaction(db, async transaction => {
+      const [memberSnap, catSnap] = await Promise.all([
+        transaction.get(memberRef),
+        transaction.get(targetCatRef),
+      ]);
+      if (!memberSnap.exists()) throw new Error("找不到會員資料");
+      if (!catSnap.exists()) throw new Error("找不到這隻貓咪");
 
-    // 更新貓咪裝備
-    await updateDoc(catRef(memberId, catId), { [equipField]: equipValue });
+      const member = memberSnap.data();
+      const resources = member.village?.resources || {};
+      const memberUpdates = {};
+      for (const [key, rawAmount] of Object.entries(deductMap)) {
+        const amount = Math.max(0, Number(rawAmount) || 0);
+        if (!amount) continue;
+        const owned = Math.max(0, Number(resources[key]) || 0);
+        if (owned < amount) throw new Error(`資源不足（${key} 需 ${amount}）`);
+        memberUpdates[`village.resources.${key}`] = owned - amount;
+      }
+      if (member.equippedCat?.catId === catId) {
+        memberUpdates[`equippedCat.equip.${slotId}`] = equipValue;
+      }
 
-    // 若此貓正在裝備中，同步 equippedCat.equip
-    const memberSnap = await getDoc(memberRef);
-    if (memberSnap.data()?.equippedCat?.catId === catId) {
-      await updateDoc(memberRef, { [`equippedCat.equip.${slotId}`]: equipValue });
-    }
+      transaction.update(targetCatRef, { [equipField]:equipValue });
+      if (Object.keys(memberUpdates).length) transaction.update(memberRef, memberUpdates);
+    });
 
     return { ok: true };
   } catch (e) { return { ok: false, reason: e.message }; }
