@@ -26,7 +26,27 @@ const TIER_LEVEL_RANGE = { 1: [1, 6], 2: [7, 12], 3: [13, 18], 4: [19, 24], 5: [
 const TIER_GATE = { 1: 1, 2: 1, 3: 5, 4: 10, 5: 13 };
 
 export const RESOURCE_WORTH = { 1: 2, 2: 4, 3: 6, 4: 8, 5: 12 };
-export const TIER_GOLD = { 1: 20, 2: 40, 3: 80, 4: 160, 5: 320 };
+
+// V9：商店是射箭主系統裡的「貓貓村材料去化器」，不是另一條金幣消耗線。
+// 保留 TIER_GOLD 欄位做舊 UI / 測試相容，但製作費固定為 0；真正成本只來自 village.resources。
+export const TIER_GOLD = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+export const SHOP_GOOD_STOCK_CAP = 999;
+export const SHOP_QUICK_REFILL_THRESHOLD = 10;
+export const SHOP_QUICK_REFILL_TARGET = 30;
+
+// 商店唯一允許大量消耗的九種村莊分層資源。
+// arrowdew / gachaToken 是村莊貨幣，不放進商品配方；怪物 family materials 也完全不在此池。
+export const SHOP_VILLAGE_RESOURCE_META = Object.freeze({
+  ore:       { name: "礦物",       icon: "⛏️" },
+  melon:     { name: "瓜瓜",       icon: "🌿" },
+  fish:      { name: "鮮魚",       icon: "🐟" },
+  meat:      { name: "動物肉",     icon: "🥩" },
+  driedfish: { name: "小魚乾",     icon: "🐠" },
+  can:       { name: "貓罐頭",     icon: "🥫" },
+  potion:    { name: "貓薄荷藥水", icon: "🍵" },
+  fur:       { name: "貓毛",       icon: "🐾" },
+  archer:    { name: "貓貓射手",   icon: "🏹" },
+});
 // 每 tier 的配方資源數量區間（spec §3.3）
 const TIER_RECIPE_COUNTS = {
   1: [3, 3, 4, 4, 4, 5, 5, 5],
@@ -42,7 +62,6 @@ const CATEGORY_DEFS = {
     nouns: ["弓", "短劍", "長劍", "法杖", "投石索", "戰錘", "魚骨劍", "重弩"],
     icons: ["🏹", "🗡️", "⚔️", "🪄", "🪃", "🔨", "🦴", "🎯"],
     adjs:  ["木製", "石製", "鐵製", "秘銀", "龍骨"],
-    pools: ["ore", "driedfish", "can", "meat"],
     desc:  (n) => `貓貓冒險隊愛用的${n}，堅固耐用，擺上攤位總能吸引冒險系顧客。`,
     flavor: "純展示商品・冒險系顧客的最愛",
   },
@@ -50,7 +69,6 @@ const CATEGORY_DEFS = {
     nouns: ["胸甲", "護符", "斗篷", "頭盔", "靴子", "手甲", "圓盾", "項圈"],
     icons: ["🦺", "🍀", "🧥", "⛑️", "🥾", "🧤", "🛡️", "🐾"],
     adjs:  ["布製", "皮製", "鎖甲", "精鋼", "傳說"],
-    pools: ["can", "ore", "melon", "fish", "driedfish"],
     desc:  (n) => `保護貓貓遠征的${n}，輕巧又安心，裝扮系顧客看了就走不動。`,
     flavor: "純展示商品・裝扮系顧客的最愛",
   },
@@ -58,7 +76,6 @@ const CATEGORY_DEFS = {
     nouns: ["蓋飯", "沙拉", "湯品", "烤肉串", "蛋糕", "壽司", "拉麵", "蒸餃"],
     icons: ["🍱", "🥗", "🍲", "🍢", "🎂", "🍣", "🍜", "🥟"],
     adjs:  ["清爽", "香煎", "紅燒", "燉煮", "盛宴"],
-    pools: ["melon", "fish", "meat", "driedfish", "can"],
     desc:  (n) => `村莊廚房現做${n}，香氣飄滿整條街，貪吃系顧客聞香而來。`,
     flavor: "純展示商品・貪吃系顧客的最愛",
   },
@@ -75,6 +92,24 @@ export const SHOP_GOOD_EXACT_ART = Object.freeze({
 // 未來新增真正商品插畫時，只要在上表補 visualKey -> public 路徑即可，不必改 UI。
 export const COUNTER_ATTRACTION_BONUS = 0.15;
 
+function recipePoolFor(category, tier) {
+  // T1/T2 只用早期六種建築資源，避免新玩家被尚未取得的後段資源卡死。
+  // T3 起把採集/遠征會累積的 potion、fur，以及練箭場持續生產的 archer 正式納入 sink。
+  if (category === "weapon") {
+    return tier >= 3
+      ? ["ore", "archer", "driedfish", "can", "fur"]
+      : ["ore", "driedfish", "can", "meat"];
+  }
+  if (category === "armor") {
+    return tier >= 3
+      ? ["can", "ore", "fur", "fish", "archer"]
+      : ["can", "ore", "melon", "fish", "driedfish"];
+  }
+  return tier >= 3
+    ? ["melon", "fish", "meat", "driedfish", "can", "potion"]
+    : ["melon", "fish", "meat", "driedfish", "can"];
+}
+
 function buildGoods() {
   const goods = [];
   // tier 外層迴圈：每個 tier 有 24 件（3 類 × 8 件），全域索引 0~23 每 4 件一級 →
@@ -86,12 +121,14 @@ function buildGoods() {
       const cat = GOODS_CATEGORIES[c];
       const def = CATEGORY_DEFS[cat.id];
       for (let i = 0; i < 8; i++) {
-        const globalIdx = c * 8 + i; // 0~23（tier 內全域）
+        // 依品類交錯解鎖，確保 Lv.1 就同時有武器、裝備與料理可製作，
+        // 初始檯面因此不會在料理到 Lv.5 前失去用途。
+        const globalIdx = i * GOODS_CATEGORIES.length + c; // 0~23（tier 內全域）
         const noun = def.nouns[i];
         const name = `${def.adjs[tier - 1]}${noun}`;
         const id = `${cat.id}_${tier}_${i}`;
         // 配方：偶數 idx 用 1 種資源，奇數用 2 種混合；總數量依 TIER_RECIPE_COUNTS
-        const pool = def.pools;
+        const pool = recipePoolFor(cat.id, tier);
         const total = counts[i];
         const mainCount = i % 2 === 0 ? total : Math.ceil(total / 2);
         const subCount = i % 2 === 0 ? 0 : total - mainCount;
@@ -146,4 +183,104 @@ export function getGoodsByCategory(category, level) {
 
 export function getGoodsByTier(tier, level) {
   return SHOP_GOODS.filter(g => g.tier === tier && g.unlockLevel <= (level || 1));
+}
+
+// V9：用玩家「已經擁有的 village.resources」算目前最能大量去化材料的商品。
+// 純函式、零 Firestore；UI 直接吃 CatVillage 已經訂閱到的 resources，不增加讀取。
+function getShopGoodCraftCapacity(good, resources = {}, stock = {}) {
+  if (!good?.recipe?.length) return 0;
+  const currentStock = Math.max(0, Math.floor(Number(stock?.[good.id]) || 0));
+  const room = Math.max(0, SHOP_GOOD_STOCK_CAP - currentStock);
+  if (room <= 0) return 0;
+  const materialCaps = good.recipe.map(part => {
+    const key = `${part.resource}_t${part.tier}`;
+    return Math.floor(Math.max(0, Number(resources?.[key]) || 0) / part.count);
+  });
+  return Math.max(0, Math.min(room, ...materialCaps));
+}
+
+// V11：把九種資源拆成真正的 45 個 exact-tier stack，讓 UI 能直接指出「貓貓射手 T3 爆倉」。
+// 這是純函式；resources 直接使用 CatVillage 已經取得的資料，不增加 Firestore read。
+export function getShopTierOverflowEntries(resources = {}, shop = {}) {
+  const level = Math.max(1, Number(shop?.level) || 1);
+  const stock = shop?.stock || {};
+  return Object.entries(SHOP_VILLAGE_RESOURCE_META)
+    .flatMap(([resource, meta]) => [1, 2, 3, 4, 5].map(tier => {
+      const key = `${resource}_t${tier}`;
+      const amount = Math.max(0, Math.floor(Number(resources?.[key]) || 0));
+      const consumers = SHOP_GOODS.filter(good => good.recipe.some(part => `${part.resource}_t${part.tier}` === key));
+      const minUnlockLevel = consumers.length ? Math.min(...consumers.map(good => good.unlockLevel)) : null;
+      const unlockedConsumers = consumers.filter(good => good.unlockLevel <= level);
+      const actionable = amount > 0 && unlockedConsumers.some(good => getShopGoodCraftCapacity(good, resources, stock) > 0);
+      return {
+        key, resource, tier, name:meta.name, icon:meta.icon, amount,
+        minUnlockLevel,
+        unlocked:unlockedConsumers.length > 0,
+        actionable,
+        consumerCount:consumers.length,
+      };
+    }))
+    .sort((a, b) => b.amount - a.amount
+      || Number(b.actionable) - Number(a.actionable)
+      || a.tier - b.tier
+      || a.key.localeCompare(b.key));
+}
+
+export function getShopSinkRecommendations(resources = {}, shop = {}, limit = 4, focusResourceKey = null) {
+  const level = Math.max(1, Number(shop?.level) || 1);
+  const stock = shop?.stock || {};
+  const safeLimit = Math.max(1, Math.min(8, Math.floor(Number(limit) || 4)));
+  const focusKey = typeof focusResourceKey === "string" && focusResourceKey ? focusResourceKey : null;
+
+  return SHOP_GOODS
+    .filter(good => good.unlockLevel <= level
+      && (Number(stock[good.id]) || 0) < SHOP_GOOD_STOCK_CAP
+      && (!focusKey || good.recipe.some(part => `${part.resource}_t${part.tier}` === focusKey)))
+    .map(good => {
+      const maxCraft = getShopGoodCraftCapacity(good, resources, stock);
+      const materialPerGood = good.recipe.reduce((sum, part) => sum + part.count, 0);
+      const sinkUnits = maxCraft * materialPerGood;
+      const sourceTotal = good.recipe.reduce((sum, part) => {
+        const key = `${part.resource}_t${part.tier}`;
+        return sum + Math.max(0, Number(resources?.[key]) || 0);
+      }, 0);
+      const focusPerGood = focusKey
+        ? good.recipe.reduce((sum, part) => sum + (`${part.resource}_t${part.tier}` === focusKey ? part.count : 0), 0)
+        : 0;
+      const focusUnits = maxCraft * focusPerGood;
+      return { good, maxCraft, sinkUnits, sourceTotal, focusUnits };
+    })
+    .filter(entry => entry.maxCraft > 0)
+    .sort((a, b) => (focusKey ? b.focusUnits - a.focusUnits : 0)
+      || b.sinkUnits - a.sinkUnits
+      || b.sourceTotal - a.sourceTotal
+      || a.good.unlockLevel - b.good.unlockLevel
+      || a.good.id.localeCompare(b.good.id))
+    .slice(0, safeLimit);
+}
+
+// V11：目前 display 只存商品 ID，真正可販售數量就是 shop.stock。
+// 因此「補貨」＝直接用原配方把同一件已上架商品加工到安全存量，不建立第二層貨架庫存。
+export function getShopQuickRefillPlan(resources = {}, shop = {}, goodId) {
+  const good = getGoodById(goodId);
+  const displayed = Boolean(good && Array.isArray(shop?.display) && shop.display.some(d => d?.goodId === goodId));
+  const currentStock = Math.max(0, Math.floor(Number(shop?.stock?.[goodId]) || 0));
+  const needsRefill = Boolean(good && displayed && currentStock <= SHOP_QUICK_REFILL_THRESHOLD);
+  const desired = needsRefill
+    ? Math.max(0, Math.min(SHOP_QUICK_REFILL_TARGET - currentStock, SHOP_GOOD_STOCK_CAP - currentStock))
+    : 0;
+  const craftCapacity = good ? getShopGoodCraftCapacity(good, resources, shop?.stock || {}) : 0;
+  const refillCount = Math.max(0, Math.min(desired, craftCapacity));
+  return {
+    goodId,
+    good,
+    displayed,
+    currentStock,
+    needsRefill,
+    refillCount,
+    canRefill:needsRefill && refillCount > 0,
+    materialInsufficient:needsRefill && refillCount <= 0,
+    threshold:SHOP_QUICK_REFILL_THRESHOLD,
+    target:SHOP_QUICK_REFILL_TARGET,
+  };
 }

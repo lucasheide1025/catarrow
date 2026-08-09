@@ -24,7 +24,7 @@ const _sfxBroken = {};     // 載入失敗的檔名 → 之後直接走合成，
 //    所以每個音檔**第一次下載後就永久留在使用者裝置上**，之後 0 個請求。
 //    但 immutable 有個代價：換了同名檔案，舊裝置永遠不會知道。
 //    解法＝網址帶版本號。**換掉任何音檔後把 SFX_VERSION +1**，網址一變就會自動抓新的。
-const SFX_VERSION = 1;
+const SFX_VERSION = 2;
 
 function playAudio(name, volume = 1) {
   if (!getSoundEnabled()) return false;
@@ -65,7 +65,7 @@ function sample(name, volume, fallback, vib) {
 const SAMPLE_NAMES = [
   "ui_tap", "ui_switch", "ui_success",              // 介面：每天按幾百次
   "normal_atk", "crit", "monster_atk", "monster_crit", "miss",   // 戰鬥：每回合都響
-  "round_end", "coin",                              // 回合/獎勵：頻繁
+  "round_end", "coin", "shop_buy",                  // 回合/獎勵與商店收銀：頻繁
 ];
 let _preloaded = false;
 function preloadSamples() {

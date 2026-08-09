@@ -12,6 +12,7 @@ import { COIN_CHEST_TIERS } from "../../lib/lootTable";
 import { getVillagePack } from "../../lib/villagePack";
 import { sfxSuccess, sfxTap } from "../../lib/sound";
 import ArrowMilestonePopup from "./ArrowMilestonePopup";
+import { claimVillageShopRushTime } from "../../lib/villageShopDb";
 
 // ── 今日里程碑全覽板 ─────────────────────────────────────────────
 function MilestoneBoard({ todayArrows }) {
@@ -92,6 +93,7 @@ export default function DailyQuest({ onJoinParty }) {
   const [showConfirm,    setShowConfirm]    = useState(false);
   const [todayArrows,    setTodayArrows]    = useState(0);
   const [milestoneQueue, setMilestoneQueue] = useState([]);
+  const [rushToast,       setRushToast]       = useState("");
 
   // 月卡扣抵相關 State
   const [wantUseMonthly, setWantUseMonthly] = useState(true);
@@ -149,6 +151,17 @@ export default function DailyQuest({ onJoinParty }) {
       }
 
       await submitClassEnd(profile.id, checkin.id);
+      try {
+        const rush = await claimVillageShopRushTime(profile.id);
+        if (rush.awardedSeconds > 0) {
+          const minutes = Math.floor(rush.awardedSeconds / 60);
+          const seconds = rush.awardedSeconds % 60;
+          const duration = [minutes > 0 ? `${minutes} 分鐘` : "", seconds > 0 ? `${seconds} 秒` : ""]
+            .filter(Boolean).join(" ");
+          setRushToast(`🏪 商店旺季時間 +${duration}`);
+          setTimeout(() => setRushToast(""), 4000);
+        }
+      } catch (e) { console.warn("claimVillageShopRushTime:", e?.message); }
       if (todayArrows > 0) {
         addArrowdew(profile.id, todayArrows).catch(() => {});
         checkAndGrantArrowMilestones(profile.id, todayArrows).then(res => {
@@ -320,6 +333,16 @@ export default function DailyQuest({ onJoinParty }) {
               確認下課
             </button>
           </div>
+        </div>
+      )}
+      {rushToast && (
+        <div role="status" aria-live="polite" style={{
+          position: "fixed", left: "50%", bottom: 96, transform: "translateX(-50%)",
+          zIndex: 230, maxWidth: "90vw", padding: "10px 16px", borderRadius: 16,
+          background: "rgba(0,0,0,0.88)", border: "1px solid rgba(251,191,36,0.45)",
+          color: "#fef3c7", fontSize: 14, fontWeight: 900, textAlign: "center",
+        }}>
+          {rushToast}
         </div>
       )}
     </div>

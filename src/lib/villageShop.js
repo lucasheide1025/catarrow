@@ -1,6 +1,7 @@
 // src/lib/villageShop.js — 貓貓村商店販售模擬器・純邏輯（零 firebase 依賴，全部可測）
 
 import { COUNTER_ATTRACTION_BONUS } from "./shopGoodsCatalog";
+import { SPECIAL_TICKET_META } from "./shopData";
 // 對應 spec：docs/second_brain/village-shop-simulator-spec.md
 //
 // 內容：
@@ -116,13 +117,13 @@ export function getLevelProgress(totalRevenue) {
 // 家具（7 類；價格 = base × 2^(lv-1)，luckyCat/starLamp 只 1 階）
 // ────────────────────────────────────────────────────────────
 export const FURNITURE_DEFS = {
-  cabinet:  { id: "cabinet",  name: "櫃子",   icon: "🗄️", base: 100,   maxLevel: 10, effect: "每級 +1 格位",     desc: "更多展示空間，可擺更多商品。" },
-  counter:  { id: "counter",  name: "檯面",   icon: "🧺", base: 80,    maxLevel: 10, effect: "每級 +1 格位，料理吸引力 +15%", desc: "寬敞的料理檯，擺料理特別吸引人。" },
-  flower:   { id: "flower",   name: "花飾",   icon: "🌸", base: 150,   maxLevel: 10, effect: "每級 +8% 客速",   desc: "芬芳花飾吸引貓貓上門。" },
-  flag:     { id: "flag",     name: "旗幟",   icon: "🎏", base: 120,   maxLevel: 10, effect: "每級 +8 顧客上限", desc: "飄揚的旗幟讓更多貓貓駐足。" },
-  sign:     { id: "sign",     name: "招牌",   icon: "🏪", base: 300,   maxLevel: 10, effect: "每級 +10% 客速",  desc: "醒目的招牌讓遠方的貓貓也聞名而來。" },
-  luckyCat: { id: "luckyCat", name: "招財貓", icon: "🐈", base: 10000, maxLevel: 1,  effect: "+25% 客速",      desc: "舉起招財小手的幸運貓！" },
-  starLamp: { id: "starLamp", name: "星塵燈", icon: "🌠", base: 16000, maxLevel: 1,  effect: "+10% 顧客上限",  desc: "星塵光芒映照，店內人氣高漲。" },
+  cabinet:  { id: "cabinet",  name: "櫃子",   icon: "🗄️", base: 100,   maxLevel: 10, effect: "每級 +1 格位",     liveEffect: "即時營業：補貨動作會逐級加快。", desc: "更多展示空間，可擺更多商品。" },
+  counter:  { id: "counter",  name: "檯面",   icon: "🧺", base: 80,    maxLevel: 10, effect: "每級 +1 格位，料理吸引力 +15%", liveEffect: "即時營業：妹妹的收銀結帳會逐級加快。", desc: "寬敞的料理檯，擺料理特別吸引人。" },
+  flower:   { id: "flower",   name: "花飾",   icon: "🌸", base: 150,   maxLevel: 10, effect: "每級 +8% 客速",   liveEffect: "即時營業：提升招客節奏，也讓排隊顧客更有耐心。", desc: "芬芳花飾吸引貓貓上門。" },
+  flag:     { id: "flag",     name: "旗幟",   icon: "🎏", base: 120,   maxLevel: 10, effect: "每級 +8 顧客上限", liveEffect: "即時營業：Lv.3 起店內可同時容納 3 位顧客。", desc: "飄揚的旗幟讓更多貓貓駐足。" },
+  sign:     { id: "sign",     name: "招牌",   icon: "🏪", base: 300,   maxLevel: 10, effect: "每級 +10% 客速",  liveEffect: "即時營業：讓下一位顧客更快推門進店。", desc: "醒目的招牌讓遠方的貓貓也聞名而來。" },
+  luckyCat: { id: "luckyCat", name: "招財貓", icon: "🐈", base: 10000, maxLevel: 1,  effect: "+25% 客速",      liveEffect: "即時營業：一次大幅提升店內招客節奏。", desc: "舉起招財小手的幸運貓！" },
+  starLamp: { id: "starLamp", name: "星塵燈", icon: "🌠", base: 16000, maxLevel: 1,  effect: "+10% 顧客上限",  liveEffect: "即時營業：直接開放 3 人同場，並大幅提升排隊耐性。", desc: "星塵光芒映照，店內人氣高漲。" },
 };
 
 export function getFurniturePrice(fid, currentLevel) {
@@ -146,6 +147,46 @@ export function calcShopSlots(furniture) {
   return ((f.cabinet || 1)) + ((f.counter || 1));
 }
 
+// V10：規劃「加工後順手上架」的展示位置（純函式，零 Firebase）。
+// 已展示商品維持原位；料理優先 counter，武器/裝備優先 cabinet；滿格時絕不覆蓋既有陳列。
+export function planQuickShopDisplay(shop, goodId, category) {
+  const capacity = calcShopSlots(shop?.furniture);
+  const display = (Array.isArray(shop?.display) ? shop.display : [])
+    .slice(0, capacity)
+    .map(d => ({ slot:d?.slot || "counter", goodId:d?.goodId || null }));
+  while (display.length < capacity) display.push({ slot:"counter", goodId:null });
+
+  const existingIndex = display.findIndex(d => d.goodId === goodId);
+  if (existingIndex >= 0) {
+    return {
+      display,
+      index:existingIndex,
+      slot:display[existingIndex].slot,
+      alreadyDisplayed:true,
+      full:false,
+      changed:false,
+    };
+  }
+
+  const preferredSlot = category === "food" ? "counter" : "cabinet";
+  let index = display.findIndex(d => !d.goodId && d.slot === preferredSlot);
+  if (index < 0) index = display.findIndex(d => !d.goodId);
+  if (index < 0) {
+    return { display, index:-1, slot:null, alreadyDisplayed:false, full:true, changed:false };
+  }
+
+  const next = display.map(d => ({ ...d }));
+  next[index] = { ...next[index], goodId };
+  return {
+    display:next,
+    index,
+    slot:next[index].slot,
+    alreadyDisplayed:false,
+    full:false,
+    changed:true,
+  };
+}
+
 // 客速（位/分鐘）：基礎 1 × (1+等級加成) × 花飾 × 招牌 × 招財貓
 export function calcShopRate(furniture, level) {
   const f = furniture || {};
@@ -156,18 +197,22 @@ export function calcShopRate(furniture, level) {
   return speedBonus * flowerMult * signMult * luckyMult;
 }
 
-// 顧客上限：基礎 10 + 旗幟×8 + 等級加成，再乘星塵燈 +10%
+// 顧客上限：原本的基礎＋裝修／等級完整結果 ×5，讓手動營業有足夠客潮可消耗。
 export function calcShopCap(furniture, level) {
   const f = furniture || {};
   const base = 10 + 8 * (f.flag || 0) + getShopCapBonus(level || 1);
-  return Math.round(base * (1 + 0.10 * (f.starLamp || 0)));
+  return Math.round(base * (1 + 0.10 * (f.starLamp || 0))) * 5;
+}
+
+export function getShopLastVisitedMs(shop, fallbackNow = Date.now()) {
+  if (typeof shop?.lastVisitedAt === "number") return shop.lastVisitedAt;
+  const timestampMs = shop?.lastVisitedAt?.toMillis?.();
+  return Number.isFinite(timestampMs) ? timestampMs : fallbackNow;
 }
 
 // 等待顧客數（沿用村莊產能模式：真實時間累積，cap 上限）
 export function calcWaitingVisitors(shop, now = Date.now()) {
-  const lastMs = typeof shop?.lastVisitedAt === "number"
-    ? shop.lastVisitedAt
-    : shop?.lastVisitedAt?.toMillis?.() || Date.now();
+  const lastMs = getShopLastVisitedMs(shop, now);
   const elapsedMin = Math.max(0, (now - lastMs) / 60000);
   const rate = calcShopRate(shop?.furniture, shop?.level);
   const cap  = calcShopCap(shop?.furniture, shop?.level);
@@ -305,6 +350,7 @@ export function simulateServe(shop, { now = Date.now(), rng = Math.random, goods
 
   const sales = [];
   const disappointed = [];
+  const events = [];
   const newCustomers = new Set();
   let totalTickets = 0;
   let totalItems = 0;
@@ -314,6 +360,15 @@ export function simulateServe(shop, { now = Date.now(), rng = Math.random, goods
     const picks = pickGoodForCustomer(customer, displayed, rng);
     if (!picks || picks.length === 0) {
       disappointed.push(customer.id);
+      events.push({
+        customerId: customer.id,
+        customerName: customer.name,
+        customerEmoji: customer.emoji,
+        customerLine: customer.line,
+        outcome: "disappointed",
+        items: [],
+        tickets: 0,
+      });
       continue;
     }
     // 依序購買（庫存不足就買少的；全無庫存跳過）
@@ -328,7 +383,7 @@ export function simulateServe(shop, { now = Date.now(), rng = Math.random, goods
       const tickets = Math.round(good.price * customer.priceMult);
       saleTickets += tickets;
       totalItems += 1;
-      perSale.items.push({ goodId: good.id, goodName: good.name, goodIcon: good.icon, tier: good.tier, qty, tickets });
+      perSale.items.push({ goodId: good.id, goodName: good.name, goodIcon: good.icon, category: good.category, tier: good.tier, qty, tickets });
     }
     if (perSale.items.length) {
       // ⚠️ 只在實際成交後才計入 served／發現（避免與 disappointed 重複計數）
@@ -336,9 +391,27 @@ export function simulateServe(shop, { now = Date.now(), rng = Math.random, goods
       newCustomers.add(customer.id);
       perSale.tickets = saleTickets;
       sales.push(perSale);
+      events.push({
+        customerId: customer.id,
+        customerName: customer.name,
+        customerEmoji: customer.emoji,
+        customerLine: customer.line,
+        outcome: "sale",
+        items: perSale.items,
+        tickets: saleTickets,
+      });
       totalTickets += saleTickets;
     } else {
       disappointed.push(customer.id);
+      events.push({
+        customerId: customer.id,
+        customerName: customer.name,
+        customerEmoji: customer.emoji,
+        customerLine: customer.line,
+        outcome: "disappointed",
+        items: [],
+        tickets: 0,
+      });
     }
   }
 
@@ -347,6 +420,7 @@ export function simulateServe(shop, { now = Date.now(), rng = Math.random, goods
     waiting,
     served: customersServed,
     disappointed: disappointed.length,
+    events,
     sales,
     totalTickets,
     totalItems,
@@ -374,11 +448,11 @@ const SHOP_MATERIAL_FAMILIES = [
 ];
 
 const SHOP_MATERIAL_TIER_CONFIG = {
-  1: { price: 15, dailyLimit: 3, unlockLevel: 1 },
-  2: { price: 25, dailyLimit: 3, unlockLevel: 7 },
-  3: { price: 40, dailyLimit: 2, unlockLevel: 13 },
-  4: { price: 60, dailyLimit: 2, unlockLevel: 19 },
-  5: { price: 90, dailyLimit: 1, unlockLevel: 25 },
+  1: { price: 15, unlockLevel: 1 },
+  2: { price: 25, unlockLevel: 7 },
+  3: { price: 40, unlockLevel: 13 },
+  4: { price: 60, unlockLevel: 19 },
+  5: { price: 90, unlockLevel: 25 },
 };
 
 const SHOP_MATERIAL_REWARDS = Object.entries(SHOP_MATERIAL_TIER_CONFIG).flatMap(([tierText, cfg]) => {
@@ -391,18 +465,35 @@ const SHOP_MATERIAL_REWARDS = Object.entries(SHOP_MATERIAL_TIER_CONFIG).flatMap(
     icon: family.icon,
     label: `${family.label} T${tierIndex} 材料箱`,
     price: cfg.price,
-    dailyLimit: cfg.dailyLimit,
-    period: "daily",
-    limitKey: `material_t${tierIndex}`,
+    period: "unlimited",
     unlockLevel: cfg.unlockLevel,
   }));
 });
 
+const SHOP_SPECIAL_TICKET_PRICES = Object.freeze({
+  soloBattleTicket: 500,
+  partyBattleTicket: 750,
+  boardDiceTicket: 400,
+});
+
+const SHOP_SPECIAL_TICKET_REWARDS = Object.entries(SPECIAL_TICKET_META).map(([ticketId, meta]) => ({
+  id: ticketId,
+  type: "special_ticket",
+  ticketId,
+  icon: meta.icon,
+  label: meta.name,
+  price: SHOP_SPECIAL_TICKET_PRICES[ticketId],
+  dailyLimit: 1,
+  period: "daily",
+  unlockLevel: 1,
+  holdCap: meta.holdCap,
+}));
+
 export const SHOP_EXCHANGE_REWARDS = [
   ...SHOP_MATERIAL_REWARDS,
+  ...SHOP_SPECIAL_TICKET_REWARDS,
   { id: "potion", type: "potion", family: null, icon: "🧪", label: "藥水箱", price: 40, dailyLimit: 2, period: "daily", unlockLevel: 1 },
   { id: "card_pack", type: "card_pack", family: null, icon: "🃏", label: "怪物卡包 ×3", price: 600, weeklyLimit: 1, period: "weekly", unlockLevel: 13 },
-  { id: "cat_box", type: "cat_box", family: null, icon: "🐾", label: "貓貓箱", price: 2000, weeklyLimit: 1, period: "weekly", unlockLevel: 25 },
 ];
 
 export function getExchangeRewardById(id) {
@@ -426,6 +517,10 @@ export function getExchangeUsed(shop, rewardId) {
   const reward = getExchangeRewardById(rewardId);
   if (!reward) return 0;
   const ex = shop?.exchange || {};
+  if (reward.type === "special_ticket") {
+    if (ex.date !== todayStr()) return 0;
+    return Math.max(0, Math.floor(Number(ex.daily?.specialTickets?.[reward.ticketId]) || 0));
+  }
   const key = reward.limitKey || reward.id;
   if (reward.period === "weekly") {
     if (ex.week !== weekStr()) return 0;
@@ -438,8 +533,57 @@ export function getExchangeUsed(shop, rewardId) {
 export function getExchangeRemaining(shop, rewardId) {
   const reward = getExchangeRewardById(rewardId);
   if (!reward) return 0;
+  if (reward.period === "unlimited") return Infinity;
   const limit = reward.period === "weekly" ? reward.weeklyLimit : reward.dailyLimit;
   return Math.max(0, (limit || 0) - getExchangeUsed(shop, rewardId));
+}
+
+// Public exchange seam: UI previews and the DB transaction share exactly the
+// same catalog, daily-limit, balance, and special-item hold-cap validation.
+export function planShopExchange(shop, rewardId, count = 1, specialItems = {}) {
+  if (!Number.isFinite(count) || !Number.isInteger(count) || count < 1) throw new Error("參數錯誤");
+  const reward = getExchangeRewardById(rewardId);
+  if (!reward) throw new Error("找不到兌換項目");
+  if ((shop?.level || 1) < (reward.unlockLevel || 1)) throw new Error(`商店 Lv.${reward.unlockLevel} 才能兌換`);
+  const remaining = getExchangeRemaining(shop, rewardId);
+  const periodLabel = reward.period === "weekly" ? "本週" : "今日";
+  if (count > remaining) throw new Error(`${periodLabel}限購剩 ${remaining} 次`);
+  const cost = reward.price * count;
+  if ((shop?.tickets || 0) < cost) throw new Error(`票券不足（需 ${cost.toLocaleString()}）`);
+
+  if (reward.type !== "special_ticket") return { reward, count, cost };
+  const held = Math.max(0, Math.floor(Number(specialItems?.[reward.ticketId]) || 0));
+  const heldAfter = held + count;
+  if (heldAfter > reward.holdCap) throw new Error(`${reward.label}持有上限 ${reward.holdCap}`);
+  return { reward, count, cost, ticketId:reward.ticketId, held, heldAfter };
+}
+
+export const SHOP_RUSH_SECONDS_PER_TEN_ARROWS = 60;
+export const SHOP_RUSH_SECONDS_CAP = 30 * 60;
+
+// 在「確認下課」成功後以官方累計箭數呼叫。回傳完整持久化欄位與本次差額，
+// 讓呼叫端可在 transaction 內寫入 checkpoint，重送同一累計值時不會重複發放。
+export function claimShopRushTime(shop, officialArrowTotal) {
+  const previousTotal = Math.max(0, Math.floor(Number(shop?.rushClaimedArrowTotal) || 0));
+  const nextTotal = Math.max(previousTotal, Math.floor(Number(officialArrowTotal) || 0));
+  const claimedArrowDelta = nextTotal - previousTotal;
+  const combinedArrows = Math.max(0, Math.min(9, Math.floor(Number(shop?.rushArrowRemainder) || 0)))
+    + claimedArrowDelta;
+  const convertedSets = Math.floor(combinedArrows / 10);
+  const currentSeconds = Math.max(0, Math.min(SHOP_RUSH_SECONDS_CAP, Math.floor(Number(shop?.rushSeconds) || 0)));
+  const rushSeconds = Math.min(
+    SHOP_RUSH_SECONDS_CAP,
+    currentSeconds + convertedSets * SHOP_RUSH_SECONDS_PER_TEN_ARROWS,
+  );
+
+  return {
+    rushSeconds,
+    rushArrowRemainder: combinedArrows % 10,
+    rushClaimedArrowTotal: nextTotal,
+    claimedArrowDelta,
+    awardedSeconds: rushSeconds - currentSeconds,
+    isReplay: claimedArrowDelta === 0,
+  };
 }
 
 // ────────────────────────────────────────────────────────────
@@ -455,9 +599,14 @@ export function defaultShopState(now = Date.now()) {
       { slot: "counter", goodId: null, qty: 0 },
     ],
     furniture: { cabinet: 1, counter: 1, flower: 0, flag: 0, sign: 0, luckyCat: 0, starLamp: 0 },
+    managerId: "meimei",
     lastVisitedAt: now - 60 * 60000, // 首次開店即有 ~1 小時累積（開場驚喜）
     stats: { totalSales: 0, totalTickets: 0, customersServed: 0, totalRevenue: 0, discoveredCustomers: [], customerLog: [] },
-    exchange: { date: todayStr(), counts: {}, week: weekStr(), weeklyCounts: {} },
+    exchange: { date: todayStr(), counts: {}, daily: { specialTickets:{} }, week: weekStr(), weeklyCounts: {} },
+    rushSeconds: 0,
+    rushArrowRemainder: 0,
+    rushClaimedArrowTotal: 0,
+    lastAutoSaleAt: now,
     createdAt: now,
   };
 }
@@ -473,8 +622,15 @@ export function normalizeShop(raw) {
   const stats = { ...(base.stats || {}), ...(raw.stats || {}) };
   const rawExchange = raw.exchange || {};
   const exchange = {
+    ...rawExchange,
     date: todayStr(),
     counts: rawExchange.date === todayStr() ? { ...(rawExchange.counts || {}) } : {},
+    daily: {
+      ...(rawExchange.daily || {}),
+      specialTickets: rawExchange.date === todayStr()
+        ? { ...(rawExchange.daily?.specialTickets || {}) }
+        : {},
+    },
     week: weekStr(),
     weeklyCounts: rawExchange.week === weekStr() ? { ...(rawExchange.weeklyCounts || {}) } : {},
   };
@@ -489,5 +645,8 @@ export function normalizeShop(raw) {
   // 等級由營業額推導（若手動存過舊 level 則以營業額為準）
   out.level = getShopLevel(out.stats?.totalRevenue || 0);
   out.tickets = Math.max(0, Number(out.tickets) || 0);
+  out.rushSeconds = Math.max(0, Math.min(SHOP_RUSH_SECONDS_CAP, Math.floor(Number(out.rushSeconds) || 0)));
+  out.rushArrowRemainder = Math.max(0, Math.min(9, Math.floor(Number(out.rushArrowRemainder) || 0)));
+  out.rushClaimedArrowTotal = Math.max(0, Math.floor(Number(out.rushClaimedArrowTotal) || 0));
   return out;
 }
