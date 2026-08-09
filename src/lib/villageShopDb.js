@@ -8,7 +8,7 @@ import { addChests } from "./db";
 import { SHOP_GOODS, SHOP_GOOD_STOCK_CAP, getGoodById } from "./shopGoodsCatalog";
 import {
   normalizeShop, defaultShopState, simulateServe,
-  getFurniturePrice, FURNITURE_DEFS, calcShopSlots, planQuickShopDisplay,
+  getFurniturePrice, FURNITURE_DEFS, calcShopSlots, calcShopRate, planQuickShopDisplay,
   getExchangeRewardById, getExchangeRemaining, getShopLastVisitedMs, todayStr, weekStr,
   planShopExchange,
   claimShopRushTime,
@@ -274,21 +274,35 @@ export async function completeLiveShopSession(memberId, session) {
 
     const goodsMap = {};
     SHOP_GOODS.forEach(g => { goodsMap[g.id] = g; });
-    const live = buildLiveShopSession(sessionShop, {
+    const fullLive = buildLiveShopSession(sessionShop, {
       now: session.startedAt,
       seed: session.seed,
       goodsMap,
     });
+    const completedVisitors = Math.min(
+      fullLive.result.events.length,
+      Number.isFinite(Number(session.completedVisitors))
+        ? Math.max(0, Math.floor(Number(session.completedVisitors)))
+        : fullLive.result.events.length,
+    );
+    const live = completedVisitors === fullLive.result.events.length
+      ? fullLive
+      : buildLiveShopSession(sessionShop, {
+          now:session.startedAt,
+          seed:session.seed,
+          goodsMap,
+          visitorLimit:completedVisitors,
+        });
     const result = live.result;
 
     let mission = null;
     let missionBonus = 0;
-    if (session.missionId && session.missionId === live.mission?.id) {
+    if (session.missionId && session.missionId === fullLive.mission?.id) {
       const requestedStart = Math.floor(Number(session.missionStartIndex));
       const missionStartIndex = Number.isFinite(requestedStart)
-        ? Math.max(live.offerAt, requestedStart)
-        : live.offerAt;
-      mission = evaluateLiveShopMission(live.mission, result.events, missionStartIndex);
+        ? Math.max(fullLive.offerAt, requestedStart)
+        : fullLive.offerAt;
+      mission = evaluateLiveShopMission(fullLive.mission, result.events, missionStartIndex);
       if (mission?.completed) missionBonus = Math.max(0, Math.floor(mission.rewardTickets || 0));
     }
 
@@ -298,12 +312,17 @@ export async function completeLiveShopSession(memberId, session) {
       manualMode:session.manualMode,
       elapsedSeconds:session.manualElapsedSeconds,
     });
+    const persistedStock = Object.fromEntries(Array.from(new Set([
+      ...Object.keys(result.stockAfter || {}), ...Object.keys(allowedStockAdditions),
+    ])).map(goodId => [goodId, Math.max(0, Number(result.stockAfter?.[goodId]) || 0) + (allowedStockAdditions[goodId] || 0)]));
+    const rate = Math.max(0.0001, calcShopRate(sessionShop.furniture, sessionShop.level));
+    const consumedThroughMs = completedVisitors >= fullLive.result.events.length
+      ? session.startedAt
+      : Math.min(session.startedAt, actualLastVisitedAtMs + (completedVisitors / rate) * 60000);
     const updates = {
       "village.shop.tickets": increment(awardedTickets),
-      "village.shop.stock": Object.fromEntries(Array.from(new Set([
-        ...Object.keys(result.stockAfter || {}), ...Object.keys(allowedStockAdditions),
-      ])).map(goodId => [goodId, Math.max(0, Number(result.stockAfter?.[goodId]) || 0) + (allowedStockAdditions[goodId] || 0)])),
-      "village.shop.lastVisitedAt": new Date(session.startedAt),
+      "village.shop.stock": persistedStock,
+      "village.shop.lastVisitedAt": new Date(consumedThroughMs),
       "village.shop.stats.totalRevenue": increment(result.totalTickets),
       "village.shop.stats.totalTickets": increment(awardedTickets),
       "village.shop.stats.totalSales": increment(result.totalItems),
@@ -321,11 +340,28 @@ export async function completeLiveShopSession(memberId, session) {
     updates["village.shop.stats.customerLog"] = log.slice(-30);
 
     transaction.update(ref, updates);
+    const shopAfter = {
+      ...shop,
+      tickets:(Number(shop.tickets) || 0) + awardedTickets,
+      stock:persistedStock,
+      lastVisitedAt:consumedThroughMs,
+      rushSeconds:rushClock.rushSeconds,
+      stats:{
+        ...stats,
+        totalRevenue:(Number(stats.totalRevenue) || 0) + result.totalTickets,
+        totalTickets:(Number(stats.totalTickets) || 0) + awardedTickets,
+        totalSales:(Number(stats.totalSales) || 0) + result.totalItems,
+        customersServed:(Number(stats.customersServed) || 0) + result.served,
+        discoveredCustomers:updates["village.shop.stats.discoveredCustomers"],
+        customerLog:updates["village.shop.stats.customerLog"],
+      },
+    };
     return {
       ok: true,
       rushSeconds:rushClock.rushSeconds,
       consumedRushSeconds:rushClock.consumedRushSeconds,
       result: { ...result, mission, missionBonus, awardedTickets },
+      shopAfter,
     };
   });
 }

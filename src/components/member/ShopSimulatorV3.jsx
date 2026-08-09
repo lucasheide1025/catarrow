@@ -13,6 +13,7 @@ import {
 } from "../../lib/shopGoodsCatalog";
 import {
   normalizeShop, calcShopRate, calcShopCap, calcShopSlots, calcWaitingVisitors,
+  getShopLastVisitedMs,
   getLevelProgress, getLevelReward, FURNITURE_DEFS, getFurniturePrice,
   SHOP_EXCHANGE_REWARDS, SHOP_CUSTOMERS, getExchangeRemaining,
 } from "../../lib/villageShop";
@@ -214,7 +215,8 @@ const CSS = `
 `;
 
 export default function ShopSimulatorV3({ memberId, resources, coins, village, onChange }) {
-  const shop = useMemo(() => normalizeShop(village?.shop), [village?.shop]);
+  const [shopOverride, setShopOverride] = useState(null);
+  const shop = useMemo(() => normalizeShop(shopOverride || village?.shop), [shopOverride, village?.shop]);
   const [tab, setTab] = useState(null);
   const [tick, setTick] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -244,6 +246,14 @@ export default function ShopSimulatorV3({ memberId, resources, coins, village, o
   const initializationMemberRef = useRef(null);
 
   useEffect(() => { preloadShopArt(); }, []);
+  useEffect(() => {
+    if (!shopOverride || !village?.shop) return;
+    const serverShop = normalizeShop(village.shop);
+    if ((Number(serverShop.tickets) || 0) >= (Number(shopOverride.tickets) || 0)
+        && getShopLastVisitedMs(serverShop, 0) >= getShopLastVisitedMs(shopOverride, 0)) {
+      setShopOverride(null);
+    }
+  }, [shopOverride, village?.shop]);
 
   useEffect(() => {
     // Wait until the parent profile has actually loaded. Treating an undefined
@@ -439,11 +449,13 @@ export default function ShopSimulatorV3({ memberId, resources, coins, village, o
         missionStartIndex,
         manualElapsedSeconds:manualElapsedRef.current,
         manualMode:liveMode,
+        completedVisitors:completedCount,
         allowedStockAdditions:liveAddedStockRef.current,
         initialDisplay:live.initialDisplay,
       });
       if (!res?.ok) throw new Error("營業結算沒有完成，請再試一次。");
       const result = res.result;
+      setShopOverride(res.shopAfter);
       setServeResult(result);
       if (result.newLevel > result.oldLevel) {
         sfxLevelUp();

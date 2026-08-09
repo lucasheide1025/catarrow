@@ -472,6 +472,7 @@ export function buildLiveShopSession(shop, {
   seed = null,
   goodsMap = {},
   mode = "manual",
+  visitorLimit = Infinity,
 } = {}) {
   const startedAt = Number(now) || Date.now();
   const expectedLastVisitedAtMs = getShopLastVisitedMs(shop, startedAt);
@@ -482,6 +483,7 @@ export function buildLiveShopSession(shop, {
     now:startedAt,
     goodsMap,
     rng:createSeededRng(resolvedSeed),
+    visitorLimit,
   });
   const offerAt = result.waiting <= 1
     ? 0

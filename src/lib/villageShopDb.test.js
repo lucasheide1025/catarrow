@@ -91,6 +91,7 @@ test("live session persists batched rush consumption in its single guarded trans
 test("ending a live session deposits sold-item tickets in the same transaction", async () => {
   const now = 1700000000000;
   const shop = defaultShopState(now);
+  shop.tickets = 1000;
   const good = SHOP_GOODS[0];
   shop.display = [{ slot:"counter", goodId:good.id }];
   shop.stock = { [good.id]:50 };
@@ -107,6 +108,32 @@ test("ending a live session deposits sold-item tickets in the same transaction",
   expect(result.result.totalItems).toBeGreaterThan(0);
   expect(result.result.awardedTickets).toBeGreaterThan(0);
   expect(increment).toHaveBeenCalledWith(result.result.awardedTickets);
+});
+
+test("ending early settles only customers completed at the button press and preserves the remaining queue", async () => {
+  const now = 1700000000000;
+  const shop = defaultShopState(now);
+  shop.tickets = 1000;
+  const good = SHOP_GOODS[0];
+  shop.display = [{ slot:"counter", goodId:good.id }];
+  shop.stock = { [good.id]:100 };
+  mockTransactionGet.mockResolvedValue(memberSnapshot({ village:{ shop } }));
+
+  const result = await completeLiveShopSession("member-1", {
+    startedAt:now,
+    seed:456,
+    expectedLastVisitedAtMs:now - 60 * 60000,
+    completedVisitors:1,
+    manualElapsedSeconds:2,
+    manualMode:"manual",
+  });
+
+  expect(result.result.events).toHaveLength(1);
+  expect(result.result.served + result.result.disappointed).toBe(1);
+  const updates = mockTransactionUpdate.mock.calls[0][1];
+  expect(updates["village.shop.lastVisitedAt"].getTime()).toBeLessThan(now);
+  expect(result.shopAfter.tickets).toBe(1000 + result.result.awardedTickets);
+  expect(result.shopAfter.stock).toEqual(updates["village.shop.stock"]);
 });
 
 test("live settlement accepts in-session crafting and preserves the added stock", async () => {

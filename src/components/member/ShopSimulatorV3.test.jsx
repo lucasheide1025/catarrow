@@ -58,6 +58,8 @@ test("live play is fullscreen, keeps readable controls, and exits only from the 
   expect(source).toContain("旺季時間");
   expect(source).toContain('flex-direction:column!important');
   expect(source).toContain('manualMode:liveMode');
+  expect(source).toContain('completedVisitors:completedCount');
+  expect(source).toContain('setShopOverride(res.shopAfter)');
   expect(source).toContain('回到商店・離線販售收益');
   expect(source).toContain('離店期間以 5% 速度自動販售');
   expect(source).toContain('sale.items.slice(0,3)');

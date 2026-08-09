@@ -331,7 +331,7 @@ function pickGoodForCustomer(customer, displayed, rng) {
 // 開店結算（純函式）：回傳這次營業的全部購買計畫，DB 端套用
 // shop = { display:[{slot,goodId,qty}], stock:{goodId:count}, furniture, level, lastVisitedAt, stats }
 // goodsMap = { goodId: good }（由呼叫端注入目錄，避免此檔相依商品目錄）
-export function simulateServe(shop, { now = Date.now(), rng = Math.random, goodsMap = {} } = {}) {
+export function simulateServe(shop, { now = Date.now(), rng = Math.random, goodsMap = {}, visitorLimit = Infinity } = {}) {
   const display = (shop?.display || []).filter(d => d && d.goodId);
   const stock   = { ...(shop?.stock || {}) };
   // 解析 good 並過濾庫存
@@ -345,8 +345,9 @@ export function simulateServe(shop, { now = Date.now(), rng = Math.random, goods
   }
 
   const waiting = calcWaitingVisitors(shop, now);
+  const processedVisitors = Math.min(waiting, Math.max(0, Math.floor(Number(visitorLimit) || 0)));
   const customers = [];
-  for (let i = 0; i < waiting; i++) customers.push(pickCustomer(shop?.level || 1, rng));
+  for (let i = 0; i < processedVisitors; i++) customers.push(pickCustomer(shop?.level || 1, rng));
 
   const sales = [];
   const disappointed = [];
@@ -418,6 +419,7 @@ export function simulateServe(shop, { now = Date.now(), rng = Math.random, goods
   const oldRevenue = (shop?.stats?.totalRevenue) || 0;
   return {
     waiting,
+    processedVisitors,
     served: customersServed,
     disappointed: disappointed.length,
     events,
