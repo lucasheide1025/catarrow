@@ -208,6 +208,7 @@ const CSS = `
 .shop3 .s3-shelfscroll{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;overflow:visible;padding:2px}.shop3 .s3-slotwrap{width:100%;min-width:0;flex:none}.shop3 .s3-slotwrap .s3-slot{min-height:132px}@media(max-width:430px){.shop3 .s3-shelfscroll{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}@media(max-width:330px){.shop3 .s3-shelfscroll{grid-template-columns:1fr}}
 .shop3 .s3-customerbasket{right:-25px!important;bottom:34px!important;display:flex!important;flex-direction:column!important;align-items:center!important;gap:1px!important}
 .shop3 .s3-modepicker{width:min(92vw,560px);padding:22px;border:2px solid #9a683b;border-radius:24px;background:#fff8e9;color:#513923;box-shadow:0 20px 60px rgba(28,15,7,.45)}.shop3 .s3-modepicker h3{margin:0;font-size:24px}.shop3 .s3-modepicker>p{margin:7px 0 16px;color:#7a624c;font-size:15px;line-height:1.5}.shop3 .s3-modechoices{display:grid;grid-template-columns:1fr 1fr;gap:12px}.shop3 .s3-modechoice{min-height:150px;padding:16px;border:2px solid #d3b17c;border-radius:18px;background:#fffdf7;color:#513923;text-align:left}.shop3 .s3-modechoice.rush{background:linear-gradient(145deg,#fff1bd,#f4c765);border-color:#bd7c28}.shop3 .s3-modechoice:disabled{filter:grayscale(.65);opacity:.58}.shop3 .s3-modechoice strong,.shop3 .s3-modechoice span,.shop3 .s3-modechoice small{display:block}.shop3 .s3-modechoice strong{font-size:20px}.shop3 .s3-modechoice span{margin-top:8px;font-size:15px;font-weight:900}.shop3 .s3-modechoice small{margin-top:8px;font-size:13px;line-height:1.45}.shop3 .s3-modecancel{width:100%;margin-top:14px;min-height:44px;border:0;border-radius:12px;background:#76513a;color:#fff;font-size:15px;font-weight:900}@media(max-width:520px){.shop3 .s3-modechoices{grid-template-columns:1fr}.shop3 .s3-modechoice{min-height:118px}}
+.shop3 .s3-autostatus{display:flex;align-items:center;gap:10px;margin:9px 2px;padding:10px 12px;border:1px solid #a9bd8c;border-radius:15px;background:linear-gradient(135deg,#eef5df,#ddebc9);color:#405532}.shop3 .s3-autostatus.paused{border-color:#d3b98f;background:linear-gradient(135deg,#fff6e6,#f1e2c9);color:#745638}.shop3 .s3-autostatus.checking{border-color:#94b5ca;background:linear-gradient(135deg,#edf7fb,#dcecf4);color:#35566b}.shop3 .s3-autostatus>span{font-size:25px}.shop3 .s3-autostatus b,.shop3 .s3-autostatus small{display:block}.shop3 .s3-autostatus b{font-size:15px}.shop3 .s3-autostatus small{margin-top:3px;font-size:12px;line-height:1.4;font-weight:750}
 .shop3>.s3-modalbg{z-index:1120}.shop3 .s3-livehud>span:nth-child(4) small{color:#ffe0a0;font-weight:950}
 .shop3 .s3-livescene.v8 .s3-livegoodart .s3-goodvisual-img,.shop3 .s3-preview-product .s3-goodvisual-img{padding:8%!important;transform:scale(.84);transform-origin:center;object-fit:contain!important}
 `;
@@ -267,12 +268,15 @@ export default function ShopSimulatorV3({ memberId, resources, coins, village, o
       stateSignature:liveShopStateSignature(shop),
     }).then(response => {
       const offline = response?.result?.result;
+      const offlineElapsedMs = Number(response?.result?.elapsedMs) || 0;
       const settledAt = Number(response?.result?.settledAt);
       if (Number.isFinite(settledAt)) autoSettlementTargetRef.current = settledAt;
       else setAutoSettling(false);
-      if (offline?.totalItems > 0 || offline?.totalTickets > 0) {
+      if (offline && (offline.totalItems > 0 || offline.totalTickets > 0 || offlineElapsedMs >= 60000)) {
         setServeResult({ ...offline, receiptKind:"auto" });
-        flash(`離店期間售出 ${offline.totalItems} 件商品，獲得 ${offline.totalTickets} 張票券`);
+        flash(offline.totalItems > 0
+          ? `離店期間售出 ${offline.totalItems} 件商品，獲得 ${offline.totalTickets} 張票券`
+          : "已檢查離店自動經營；這段期間沒有成交。");
       }
       onChange?.();
     }).catch(() => {
@@ -314,6 +318,8 @@ export default function ShopSimulatorV3({ memberId, resources, coins, village, o
   }, [shop.display, slots]);
   const displayGoods = useMemo(() => baseDisplay.map(d => ({ ...d, good:d.goodId ? getGoodById(d.goodId) : null })), [baseDisplay]);
   const displayCount = baseDisplay.filter(d => d.goodId).length;
+  const hasDisplayedStock = baseDisplay.some(d => d.goodId && (shop.stock?.[d.goodId] || 0) > 0);
+  const autoReady = displayCount > 0 && hasDisplayedStock;
   const liveActive = Boolean(live);
   const liveActors = live?.timeline?.actors || [];
   const completedCount = liveActors.filter(actor => liveElapsed >= actor.checkoutEnd).length;
@@ -339,7 +345,6 @@ export default function ShopSimulatorV3({ memberId, resources, coins, village, o
   function requestOpenShop() {
     if (busy || autoSettling || liveActive || !memberId || waiting === 0) return;
     if (displayCount === 0) { flash("先把商品擺上貨架，客人才有東西可以逛。"); setTab("stall"); return; }
-    const hasDisplayedStock = baseDisplay.some(d => d.goodId && (shop.stock?.[d.goodId] || 0) > 0);
     if (!hasDisplayedStock) { flash("貨架上的商品都售完了，先補貨再開店。"); return; }
     sfxTap(); setOpenModePicker(true);
   }
@@ -517,6 +522,11 @@ export default function ShopSimulatorV3({ memberId, resources, coins, village, o
           </div>}
         </div>
       : <CrossSectionStore shop={shop} manager={manager} displayGoods={displayGoods} />}
+    {!liveActive && <div className={`s3-autostatus ${autoSettling ? "checking" : autoReady ? "" : "paused"}`} role="status">
+      <span aria-hidden="true">{autoSettling ? "🧾" : autoReady ? "🌙" : "📦"}</span>
+      <div><b>{autoSettling ? "正在結算離線自動經營…" : autoReady ? "離店自動經營 5%・已啟用" : "離店自動經營 5%・暫停中"}</b>
+        <small>{autoReady ? "離開商店後會自動販售已陳列且有庫存的商品；下次回來會顯示收益帳單。" : "請先陳列商品並補足庫存，缺貨時不會憑空販售。"}</small></div>
+    </div>}
     {toast && <div className="s3-toast" role="status" aria-live="polite">{toast}</div>}
     {!liveActive && <nav className="s3-actiondock" aria-label="商店營運操作">
       <button type="button" onClick={requestOpenShop} disabled={busy || autoSettling || waiting === 0}><span>🔔</span><b>{autoSettling?"結算離線收益…":"開店"}</b><small>{waiting} 位等候</small></button>
