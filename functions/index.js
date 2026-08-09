@@ -114,8 +114,20 @@ async function queueGuestReviewInvite(db, subjectRef, { operatorId = null, reque
 
 exports.processGuestReviewInvites = onSchedule({ region:"asia-east1", schedule:"0 10 * * *", timeZone:"Asia/Taipei", retryCount:1 }, async () => {
   const db = getFirestore(), config = guestReviews.defaultConfig((await db.doc("guestReviewConfig/main").get()).data()); if (!config.enabled) return;
+  // 自動清理：邀請已送達超過 14 天仍未提交評價 → 刪除該邀請（避免管理清單累積）
+  const staleCutoff = Timestamp.fromMillis(Date.now() - 14 * guestReviews.DAY_MS);
+  const stale = await db.collection("guestReviewSubjects").where("inviteDeliveredAt", "<=", staleCutoff).limit(100).get();
+  let cleaned = 0;
+  for (const snap of stale.docs) {
+    const s = snap.data();
+    if (s.state !== "invited" || s.hiddenAt) continue;
+    const review = await db.doc(`guestReviews/${snap.id}`).get();
+    if (review.exists) continue;
+    await snap.ref.delete(); cleaned += 1;
+  }
+  if (cleaned) logger.info("Guest review stale invites cleaned", { cleaned });
   const due = await db.collection("guestReviewSubjects").where("state", "in", ["scheduled", "invite_failed"]).where("dueAt", "<=", Timestamp.now()).limit(50).get();
-  for (const subject of due.docs) await queueGuestReviewInvite(db, subject.ref).catch(error => logger.error("Guest review invite failed", { subjectId:subject.id, error:error.message }));
+  for (const subject of due.docs) await queueGuestReviewInvite(db, subject.ref).catch(error => logger.error("Guest review invite failed", { subjectId: subject.id, error: error.message }));
 });
 
 exports.previewGuestReview = onCall({ region:"asia-east1" }, async request => {
@@ -345,12 +357,6 @@ exports.handleCostSignal = onMessagePublished({
     ...result,
   });
 });
-
-async function requireAdmin(request) {
-  if (!request.auth?.uid) throw new HttpsError("unauthenticated", "請先登入");
-  const adminSnap = await getFirestore().doc(`admins/${request.auth.uid}`).get();
-  if (!adminSnap.exists) throw new HttpsError("permission-denied", "只有管理員可以執行此操作");
-}
 
 exports.saveBookingEmailConfig = onCall({ region: "asia-east1" }, async (request) => {
   await requireAdmin(request);

@@ -122,12 +122,10 @@ export default function AdminGuestReviews() {
         <div className="flex items-center justify-between gap-2">
           <h3 className="font-black">邀請寄送狀態</h3>
           <div className="flex items-center gap-2">
-            {hiddenList.length > 0 && (
-              <button onClick={() => setShowHidden(v => !v)}
-                className="rounded-lg border border-slate-600 px-2 py-1 text-xs font-bold text-slate-300">
-                {showHidden ? "隱藏已隱藏列" : `顯示已隱藏 (${hiddenList.length})`}
-              </button>
-            )}
+            <button onClick={() => setShowHidden(v => !v)}
+              className={`rounded-lg border px-2 py-1 text-xs font-bold ${hiddenList.length ? "border-slate-600 text-slate-300 hover:bg-slate-700" : "border-slate-800 text-slate-600"}`}>
+              {showHidden ? "隱藏已隱藏列" : `顯示已隱藏${hiddenList.length ? ` (${hiddenList.length})` : ""}`}
+            </button>
           </div>
         </div>
         <p className="mt-1 text-xs text-slate-400">邀請信統一在每天早上 10:00 批次寄出；「已排程」表示等待 10:00 寄出，屬正常狀態。</p>
