@@ -106,7 +106,7 @@ async function queueGuestReviewInvite(db, subjectRef, { operatorId = null, reque
     const config = guestReviews.defaultConfig((await tx.get(db.doc("guestReviewConfig/main"))).data()); if (!config.enabled) throw new HttpsError("failed-precondition", "guest_reviews_disabled");
     const mailId = guestReviews.inviteMailId(subject.id, sequence, operatorId ? "manual" : "auto"), appUrl=String(process.env.GUEST_REVIEW_APP_URL||"https://catarrow.vercel.app").replace(/\/$/,""), reviewUrl = `${appUrl}/?review=${encodeURIComponent(rawToken)}`;
     const mailRef = db.doc(`mail/${mailId}`), mail = await tx.get(mailRef); if (mail.exists) return { queued:false };
-    tx.create(mailRef, { to:email, message:{ subject:config.inviteSubject, text:`${config.inviteText}\n\n${reviewUrl}\n\n此連結於 30 天後失效。` }, guestReviewInvite:{ memberId:subject.id, bookingId:current.bookingId, sequence }, createdAt:FieldValue.serverTimestamp() });
+    tx.create(mailRef, { to:email, message:{ subject:config.inviteSubject, text:`${config.inviteText}\n\n${reviewUrl}\n\n此連結於 14 天後失效。` }, guestReviewInvite:{ memberId:subject.id, bookingId:current.bookingId, sequence }, createdAt:FieldValue.serverTimestamp() });
     tx.update(subjectRef, { state:"invited", tokenHash:guestReviews.tokenHash(rawToken), tokenExpiresAt:Timestamp.fromDate(guestReviews.tokenExpiresAt(now)), inviteMailId:mailId, inviteQueuedAt:FieldValue.serverTimestamp(), inviteDeliveredAt:null, lastInviteError:null, ...(!operatorId?{inviteAttemptCount:sequence}:{}), ...(operatorId ? { manualInviteCount:sequence, lastManualInviteAt:FieldValue.serverTimestamp(), lastManualInviteBy:operatorId, lastManualRequestId:requestId } : {}), updatedAt:FieldValue.serverTimestamp() });
     return { queued:true };
   });

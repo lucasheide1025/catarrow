@@ -3,7 +3,7 @@
 const crypto = require("node:crypto");
 
 const DAY_MS = 86400000;
-const TOKEN_DAYS = 30;
+const TOKEN_DAYS = 14;
 const REVIEW_STATES = new Set(["pending", "private_unread", "private_read", "approved", "complaint_open", "complaint_sending", "complaint_send_failed", "complaint_closed", "approval_revoked", "publication_withdrawn"]);
 
 function normalizeEmail(value) {
