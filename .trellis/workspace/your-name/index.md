@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 3
-- **Last Active**: 2026-07-16
+- **Total Sessions**: 4
+- **Last Active**: 2026-08-11
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~107 | Active |
+| `journal-1.md` | ~171 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 4 | 2026-08-11 | Fix dungeon floor 3 recovery and encounter tiers | `03bb4b8c`, `804330ce` | `main` |
+| 4 | 2026-08-09 | 新版貓貓村商店修復與營運介面調整 | — | `main` |
 | 3 | 2026-07-16 | 完成預約 Email 通知系統 | `0afd63b` | `main` |
 | 2 | 2026-07-03 | UI 改版 Phase 3：會員端逐頁套版完工 | `997c0ec`, `a340aa1` | `main` |
 | 1 | 2026-07-03 | UI 全面改版 Phase 0-2：設計系統+導覽+首頁儀表板 | `83e1a6a` | `main` |

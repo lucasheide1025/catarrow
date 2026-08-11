@@ -40,6 +40,36 @@
 - None - task complete
 
 
+## Session 4: 新版貓貓村商店修復與營運介面調整
+
+**Date**: 2026-08-09
+**Task**: `.trellis/tasks/08-09-fix-new-village-shop`
+**Branch**: `main`
+
+### Summary
+
+修復新版商店入口錯誤並持續調整為場景式商店模擬遊戲。完成一般／旺季營業選擇、離線 5% 販售與收益帳單、營業中製造補貨、顧客路徑與持有商品、店長選擇、任務及結算顯示；重整商品、顧客、店長與庫存背景美術，修正切圖黑邊與貨架顯示切邊。新增真實收銀機音效與圖片預載，並調整兌換及背包入口圖片。
+
+手動營業結算改由「結束營業」按鈕直接觸發 transaction。移除會因營業中補貨或 Firestore 快照同步而誤擋結算的全庫存 `stateSignature` guard，保留 `lastVisitedAt` 場次游標防止重複結算。
+
+### Testing
+
+- [OK] 商店 focused tests：94 passed
+- [OK] Production build compiled successfully
+- [OK] `git diff --check`
+- [OK] 本機 `http://localhost:3000` 回應 HTTP 200
+
+### Status
+
+[WIP] **In Progress — 尚未提交**
+
+### Next Steps
+
+- 實機確認結束營業後庫存扣除、票券入帳與帳單顯示。
+- 實機確認顧客結算後從低數量依時間累積，不再持續顯示 18/18。
+- 抽查貨架上的長形武器與料理圖片不再切邊。
+
+
 ## Session 2: UI 改版 Phase 3：會員端逐頁套版完工
 
 **Date**: 2026-07-03
@@ -93,6 +123,40 @@
 | Hash | Message |
 |------|---------|
 | `0afd63b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 4: Fix dungeon floor 3 recovery and encounter tiers
+
+**Date**: 2026-08-11
+**Task**: Fix dungeon floor 3 recovery and encounter tiers
+**Branch**: `main`
+
+### Summary
+
+Fixed exact floor-3 solo/team recovery, locked every dungeon encounter to the selected Tier, rejected stale boss snapshots, and added a bounded host fallback for stuck resolving. Added 48 focused tests and verified the production build.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `03bb4b8c` | (see git log) |
+| `804330ce` | (see git log) |
 
 ### Testing
 
