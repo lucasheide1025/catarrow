@@ -8,7 +8,7 @@ import {
   computeTierProgress,
   isActiveAchievement,
 } from "./achievementDex";
-import { getMonsterCardPackPool } from "./itemData";
+import { EXPANSION_MONSTERS } from "./monsterExpansionCatalog";
 import { GUILD_RANKS } from "../guild/domain/guildRank";
 import { normalizeGuildExpeditionStats } from "../guild/domain/guildExpeditionStats";
 
@@ -33,12 +33,13 @@ test("死掉寶、舊公會與舊 36 怪終局成就保留 id 但已退役", () 
 });
 
 test("一般怪物卡包以現行 126 張 normal catalog 為真本，里程碑自動封頂", () => {
-  expect(getMonsterCardPackPool()).toHaveLength(126);
+  const normalCards = EXPANSION_MONSTERS.filter(monster => monster.encounter === "normal");
+  expect(normalCards).toHaveLength(126);
   expect(MONSTER_CARD_PACK).toHaveLength(126);
   const cardCollect = TIERED_ACHIEVEMENTS.find(item => item.id === "card_collect");
   const counts = cardCollect.tiers.map(tier => tier.count);
   expect(counts).toEqual(expect.arrayContaining([1, 10, 25, 50, 100]));
-  expect(counts[counts.length - 1]).toBe(getMonsterCardPackPool().length);
+  expect(counts[counts.length - 1]).toBe(normalCards.length);
 });
 
 test("怪物卡族群已是七族，card_all6fam 舊 id 以七族條件判定", () => {

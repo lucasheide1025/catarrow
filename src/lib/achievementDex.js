@@ -4,7 +4,8 @@
 import { calcBadgePoints, getCertLevel } from "./constants";
 import { getCohort, cohortRarity, cohortLabel, cohortTitle } from "./cohort";
 import { MONSTERS } from "./monsterData";
-import { POTIONS, getMonsterCardPackPool } from "./itemData";
+import { POTIONS } from "./itemData";
+import { EXPANSION_MONSTERS } from "./monsterExpansionCatalog";
 import { levelFromXP } from "./adventurerSystem";
 import { FAMILY_COLLECTIBLES, COLLECTIBLE_MAP } from "./dungeonCollectibles";
 import { WB_TROPHY_MAP } from "./worldBossData";
@@ -75,7 +76,9 @@ export function isActiveAchievement(achievement) {
 }
 
 // 一般怪物卡包的單一真本：擴充目錄中 encounter=normal 的怪物。
-export const MONSTER_CARD_PACK = Object.freeze(getMonsterCardPackPool());
+export const MONSTER_CARD_PACK = Object.freeze(
+  EXPANSION_MONSTERS.filter(monster => monster.encounter === "normal")
+);
 export const MONSTER_CARD_FAMILIES = Object.freeze([
   ...new Set(MONSTER_CARD_PACK.map(card => card.family).filter(Boolean)),
 ]);
