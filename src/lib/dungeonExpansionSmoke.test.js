@@ -1,11 +1,11 @@
 // 全族系 × 全難度 × 全樓層的整合煙霧測試：確認擴充池與技能引擎在真實 catalog 上不會爆，
 // 且中途樓層永遠不會混進小王/大王（母任務 PRD §151-152 的回歸防線）。
-import { drawDungeonFloorMonsters } from "./dungeonExpansionMonsters";
+import { drawDungeonFallbackMonster, drawDungeonFloorMonsters, getDungeonTierPool } from "./dungeonExpansionMonsters";
 import { planDungeonRoundAbility } from "./dungeonAbilityRound";
 import { createLockedDungeonBossEncounter } from "./dungeonBossEncounter";
 
 const FAMILIES = ["ghost", "mountain", "insect", "workplace", "exam", "temple", "treasure"];
-const DIFFICULTIES = [1, 2, 3, 4];
+const DIFFICULTIES = [1, 2, 3, 4, 5, 6];
 const calcCounter = (atk, def) => Math.max(1, atk * 2 - def);
 
 beforeAll(() => window.localStorage.setItem("monsterExpansionV1", "on"));
@@ -26,10 +26,23 @@ describe("地下城擴充接線煙霧測試", () => {
           const midFloorMonsters = [...floor.monsters, ...(floor.elite ? [floor.elite] : [])];
           for (const monster of midFloorMonsters) {
             expect(monster.encounter).toBe("normal");
+            expect(monster.tier).toBe(getDungeonTierPool(difficulty)[0]);
+            expect(monster.tierIndex).toBe(difficulty);
             expect(monster.hp).toBeGreaterThan(0);
             expect(monster.atk).toBeGreaterThan(0);
           }
-          if (floorIndex === 2) expect(["miniBoss", "boss"]).toContain(floor.boss.encounter);
+          if (floorIndex === 2) {
+            expect(["miniBoss", "boss"]).toContain(floor.boss.encounter);
+            expect(floor.boss.tier).toBe(getDungeonTierPool(difficulty)[0]);
+            expect(floor.boss.tierIndex).toBe(difficulty);
+          }
+        }
+
+        for (const variant of ["weak", "normal", "strong"]) {
+          const fallback = drawDungeonFallbackMonster(variant, difficulty, { family });
+          expect(fallback.family).toBe(family === "forest" ? "mountain" : family);
+          expect(fallback.tier).toBe(getDungeonTierPool(difficulty)[0]);
+          expect(fallback.tierIndex).toBe(difficulty);
         }
       }
     }

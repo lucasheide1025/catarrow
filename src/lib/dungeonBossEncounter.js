@@ -51,6 +51,16 @@ export function isLockedDungeonBossEncounter(value) {
     && ["miniBoss", "boss"].includes(value?.encounter);
 }
 
+function lockedEncounterMatches(value, family, difficultyTier) {
+  if (!isLockedDungeonBossEncounter(value)) return false;
+  const normalizedFamily = FAMILY_ALIASES[family] || family;
+  const expectedTier = normalizeTier(difficultyTier);
+  return value.family === normalizedFamily
+    && value.tier === expectedTier
+    && value.monsterSnapshot?.family === normalizedFamily
+    && value.monsterSnapshot?.tier === expectedTier;
+}
+
 // ── 預覽端與戰鬥端共用的王解析入口（2026-07-19）──────────────────
 // 選擇畫面顯示的王，必須跟遠征第 3 層打到的王是同一隻。做法是兩邊都呼叫
 // 這支，用「同一個地下城 → 同一個 runId → 同一隻王」的決定性推導。
@@ -71,7 +81,10 @@ export function resolveDungeonBossRunId(dungeon) {
 // 回傳鎖定的 encounter；已存 bossEncounter 就原封不動沿用，否則依 runId 現算。
 // 抽不到（例如寶箱族湊不齊王池）回 null，由呼叫端自行 fallback。
 export function resolveDungeonBossEncounter(dungeon, { difficultyTier } = {}) {
-  if (isLockedDungeonBossEncounter(dungeon?.bossEncounter)) return dungeon.bossEncounter;
+  const resolvedDifficulty = difficultyTier ?? dungeon?.difficulty;
+  if (lockedEncounterMatches(dungeon?.bossEncounter, dungeon?.family, resolvedDifficulty)) {
+    return dungeon.bossEncounter;
+  }
   const runId = resolveDungeonBossRunId(dungeon);
   if (!runId) return null;
   try {
@@ -79,7 +92,7 @@ export function resolveDungeonBossEncounter(dungeon, { difficultyTier } = {}) {
       runId,
       roomId: "floor-3-boss",
       family: dungeon.family,
-      difficultyTier: difficultyTier ?? dungeon.difficulty,
+      difficultyTier: resolvedDifficulty,
     });
   } catch {
     return null;
@@ -94,7 +107,7 @@ export function createLockedDungeonBossEncounter({
   consecutiveNonBoss = 0,
   lockedEncounter = null,
 }) {
-  if (isLockedDungeonBossEncounter(lockedEncounter)) return lockedEncounter;
+  if (lockedEncounterMatches(lockedEncounter, family, difficultyTier)) return lockedEncounter;
   if (!runId) throw new Error("missing_dungeon_run_id");
 
   const normalizedFamily = FAMILY_ALIASES[family] || family;

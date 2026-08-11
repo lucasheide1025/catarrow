@@ -592,6 +592,19 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     triggerCatAction();
   }, [room?.round, room?.currentFloor]); // eslint-disable-line
 
+  // A presentation callback normally confirms `resolving` after the shared
+  // round animation. Keep the authoritative room from remaining there
+  // forever if an ability/asset animation is interrupted or the callback is
+  // lost during a refresh. confirmDungeonResolution is idempotent and checks
+  // the persisted pending state again before advancing.
+  useEffect(() => {
+    if (!isHost || room?.status !== "resolving" || !room?.pendingDungeonNextStatus) return;
+    const timer = setTimeout(() => {
+      confirmDungeonResolution(roomId).catch(() => {});
+    }, 12000);
+    return () => clearTimeout(timer);
+  }, [isHost, room?.status, room?.pendingDungeonNextStatus, roomId]);
+
   // ── 小回合動畫（新 log 到 → 逐箭播放，useMiniRoundReveal）──
   useEffect(() => {
     const len = room?.log?.length || 0;

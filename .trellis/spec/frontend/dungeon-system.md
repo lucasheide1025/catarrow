@@ -403,6 +403,14 @@ Do not install temporary browser-automation packages into this project's live `n
 - Per-room battle documents remain multiplayer `DungeonBattleRoom` documents. Copy `role`, `displayGroup`, `buffs`, HP, and alive state both into and back out of every battle room so front/rear behavior survives the entire expedition.
 - After the final boss, synchronize one treasure-room loot object before rendering teammates' treasure cards, then publish the shared final result.
 
+### Floor-shape-aware recovery
+
+- Floors 1 and 2 are restorable when `gridFloor` and `playerPos` exist.
+- Floor 3 intentionally has no `gridFloor`; restore it from `branchFloor`, `branchChoice`, `branchStep`, and `pendingRoom`.
+- Never use the presence of `gridFloor` as the universal saved-map validity check.
+- A persisted locked boss may be reused only when both its normalized family and exact tier still match the current dungeon settings. Difficulty upgrades/downgrades must deterministically rebuild a stale lock for the same run.
+- `resolving` is a persisted transition, not a permanent presentation state. The normal animation confirmation remains primary, but the host must have a bounded fallback confirmation so an interrupted animation/reload cannot strand the room.
+
 ## Firestore Cannot Store Nested Arrays
 
 `generateGridFloor()` (`src/lib/expeditionGrid.js`) returns a `gridFloor` object whose `grid` field is a literal 2D array (`grid[y][x] = roomId`). Firestore's `updateDoc`/`setDoc` reject any array-of-arrays with `"Function updateDoc() called with invalid data. Nested arrays are not supported"`. Solo play never hit this because its `gridFloor` lives only in local React state; team play crashed immediately on `建立組隊 → 進入` because `TeamExpeditionBattle.jsx` persists the map to the coordination room's `expeditionMapState`.

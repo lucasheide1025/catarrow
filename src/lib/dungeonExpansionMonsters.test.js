@@ -75,11 +75,19 @@ describe("樓層組合", () => {
     expect(floor.boss).toBeNull();
   });
   test("第3層：鎖定王快照不再疊舊版 boss 倍率，只貼標籤", () => {
-    const snapshot = { id: "ghost_t1_boss", name: "鎮界靈將・初陣", hp: 425, atk: 30, def: 22, expansionVersion: 1 };
+    const snapshot = { id: "ghost_t1_boss", name: "鎮界靈將・初陣", family:"ghost", tier:"common", tierIndex:1, hp: 425, atk: 30, def: 22, expansionVersion: 1 };
     const floor = drawExpansionDungeonFloorMonsters(2, 1, { family: "ghost", fixedBoss: snapshot });
     expect(floor.boss.hp).toBe(425);
     expect(floor.boss.atk).toBe(30);
     expect(floor.boss.variant).toBe("boss");
+  });
+  test("第3層：不沿用與目前難度不符的舊王快照", () => {
+    const stale = { id:"exam_t4_boss", family:"exam", tier:"fierce", tierIndex:4, hp:9999 };
+    const floor = drawDungeonFloorMonsters(2, 3, { family:"exam", fixedBoss:stale });
+    [...floor.monsters, floor.elite, floor.boss].filter(Boolean).forEach(monster => {
+      expect(monster.family).toBe("exam");
+      expect(monster.tierIndex).toBe(3);
+    });
   });
 });
 

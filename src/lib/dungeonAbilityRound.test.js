@@ -12,6 +12,7 @@ import { toLegacyBattleMonster } from "./monsterExpansionAdapter";
 const legacy = id => toLegacyBattleMonster(EXPANSION_MONSTERS.find(m => m.id === id));
 const normalMonster = legacy("ghost_t1_normal_a");
 const bossMonster = legacy("ghost_t1_boss");
+const examT1Boss = legacy("exam_t1_boss");
 const calcCounter = (atk, def) => Math.max(1, atk * 2 - def);
 
 function member(id, overrides = {}) {
@@ -34,6 +35,18 @@ describe("技能目標推導", () => {
 });
 
 describe("planDungeonRoundAbility", () => {
+  test("考試族 T1 王受到玩家傷害後的技能回合可完整序列化並推進", () => {
+    const plan = planDungeonRoundAbility({
+      battleId:"dungeon:exam-t1-boss", monster:examT1Boss, round:2,
+      participants:[member("a", { arrows:["M","M","M","M","M","M"] })],
+      monsterAtk:examT1Boss.atk, monsterHpRatio:0.6, calcCounter,
+    });
+    expect(plan.resolvedKey).toContain("exam_t1_boss");
+    expect(plan.monsterEffect).toBeDefined();
+    expect(plan.statusesByMember.a?.[0]).toMatchObject({ id:"defDown", duration:1 });
+    expect(JSON.parse(JSON.stringify(plan))).toEqual(plan);
+  });
+
   test("舊 60 隻怪（無 signatureSkillId）完全不出招", () => {
     const plan = planDungeonRoundAbility({
       battleId: "dungeon:r1", monster: { id: "ghost_1", name: "舊怪", atk: 20 },

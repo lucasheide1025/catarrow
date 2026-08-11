@@ -33,6 +33,18 @@ describe("預覽與實戰解析出同一隻王", () => {
     const resolved = resolveDungeonBossEncounter({ id:"other-id", family:"exam", difficulty:4, bossEncounter:locked });
     expect(resolved).toBe(locked);
   });
+
+  test("difficulty changed after locking regenerates the same run at the current tier", () => {
+    const stale = createLockedDungeonBossEncounter({
+      runId:"tier-change", roomId:"floor-3-boss", family:"exam", difficultyTier:4,
+    });
+    const resolved = resolveDungeonBossEncounter({
+      id:"tier-change", family:"exam", difficulty:3, bossEncounter:stale,
+    });
+    expect(resolved).not.toBe(stale);
+    expect(resolved.tier).toBe("elite");
+    expect(resolved.monsterSnapshot.tierIndex).toBe(3);
+  });
 });
 
 describe("dungeon boss encounter locking", () => {
@@ -103,6 +115,18 @@ describe("dungeon boss encounter locking", () => {
     });
     expect(restored).toBe(locked);
     expect(isLockedDungeonBossEncounter(restored)).toBe(true);
+  });
+
+  test("does not reuse a locked encounter from a different tier", () => {
+    const stale = createLockedDungeonBossEncounter({
+      runId:"stale", roomId:"boss-room", family:"exam", difficultyTier:4,
+    });
+    const current = createLockedDungeonBossEncounter({
+      runId:"stale", roomId:"boss-room", family:"exam", difficultyTier:3,
+      lockedEncounter:stale,
+    });
+    expect(current.tier).toBe("elite");
+    expect(current.monsterSnapshot.tierIndex).toBe(3);
   });
 
   test("rejects an absent run identity", () => {

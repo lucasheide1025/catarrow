@@ -66,8 +66,11 @@ function drawExpansionPool(count, variant, difficulty, family, random) {
 }
 
 // 擴充王快照數值已含錨點倍率（母任務 PRD §67），只貼 boss 標籤供 UI 光暈，不再套舊版 ×2/×1.6
-function tagExpansionBoss(fixedBoss) {
+function tagExpansionBoss(fixedBoss, difficulty, family) {
   if (!fixedBoss) return null;
+  const normalizedFamily = FAMILY_ALIASES[family] || family;
+  const expectedTier = getDungeonTierPool(difficulty)[0];
+  if (fixedBoss.tier !== expectedTier || fixedBoss.family !== normalizedFamily) return null;
   return fixedBoss.variant === "boss" ? { ...fixedBoss } : { ...fixedBoss, variant: "boss" };
 }
 
@@ -87,7 +90,7 @@ export function drawExpansionDungeonFloorMonsters(floorIndex, difficulty, { fami
   return {
     monsters: drawExpansionPool(3, "strong", difficulty, family, random),
     elite: drawExpansionDungeonMonster("strong", difficulty, { family, random }),
-    boss: tagExpansionBoss(fixedBoss),
+    boss: tagExpansionBoss(fixedBoss, difficulty, family),
   };
 }
 
@@ -104,7 +107,7 @@ export function drawDungeonFloorMonsters(floorIndex, difficulty, options = {}) {
       // 王缺席是上游的問題（見 DungeonExpedition 的 fixedBoss），不該波及整層。
       if (floorIndex === 2 && !result.boss) {
         // 王缺席時優先用上游傳來的 fixedBoss（與預覽同源），真的沒有才補隨機 strong
-        return { ...result, boss: options.fixedBoss ? tagExpansionBoss(options.fixedBoss) : drawExpansionDungeonMonster("strong", difficulty, options) };
+        return { ...result, boss: tagExpansionBoss(options.fixedBoss, difficulty, options.family) || drawExpansionDungeonMonster("strong", difficulty, options) };
       }
       return result;
     }

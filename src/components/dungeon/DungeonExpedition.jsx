@@ -10,6 +10,7 @@ import { db } from "../../lib/firebase";
 import { drawExpeditionBoss } from "../../lib/monsterData";
 import { drawDungeonFloorMonsters, drawDungeonFallbackMonster } from "../../lib/dungeonExpansionMonsters";
 import { resolveDungeonBossEncounter } from "../../lib/dungeonBossEncounter";
+import { getRestoredExpeditionPhase, isRestorableExpeditionMapState } from "../../lib/expeditionMapState";
 import { buildExpeditionMemberData } from "../../lib/expeditionMemberData";
 import { preloadDungeonUiAssets } from "../../lib/dungeonAssetCache";
 import { subscribeCardCollection } from "../../lib/db";
@@ -497,7 +498,7 @@ export default function DungeonExpedition({
     setMonsterPool(monsters);
     monsterQueueRef.current = [...(monsters.monsters || [])];
 
-    if (restoredMapState && restoredMapState.floorIndex === fi && restoredMapState.gridFloor) {
+    if (isRestorableExpeditionMapState(restoredMapState, fi)) {
       // 成功還原已保存的地圖結構與狀態！
       setGridFloor(restoredMapState.gridFloor);
       setPlayerPos(restoredMapState.playerPos);
@@ -505,7 +506,8 @@ export default function DungeonExpedition({
       setBranchFloor(restoredMapState.branchFloor || null);
       setBranchChoice(restoredMapState.branchChoice || null);
       setBranchStep(restoredMapState.branchStep || 0);
-      setPhase(fi < 2 ? "grid" : "branch");
+      setPendingRoom(restoredMapState.pendingRoom || null);
+      setPhase(getRestoredExpeditionPhase(restoredMapState, fi));
     } else {
       if (fi < 2) {
         const gen = generateGridFloor(fi, difficultyTier);

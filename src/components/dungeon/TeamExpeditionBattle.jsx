@@ -17,8 +17,8 @@ import {
   generateGridFloor,
   generateBranchFloor,
   isAdjacent,
-  stripGridForSync,
 } from "../../lib/expeditionGrid";
+import { stripExpeditionMapStateForSync } from "../../lib/expeditionMapState";
 import {
   createTeamExpeditionBattleRoom,
   subscribeTeamExpeditionRoom,
@@ -168,8 +168,7 @@ function attachGridMonsters(gridFloor, floorIndex, difficulty, plan, family) {
 
 // expeditionMapState 寫入 Firestore 前，剔除 gridFloor.grid（巢狀陣列，Firestore 不支援）
 function stripMapStateGrid(state) {
-  if (!state?.gridFloor) return state;
-  return { ...state, gridFloor: stripGridForSync(state.gridFloor) };
+  return stripExpeditionMapStateForSync(state);
 }
 
 function buildTeamFloorState(floorIndex, difficulty, family, fixedBoss) {
