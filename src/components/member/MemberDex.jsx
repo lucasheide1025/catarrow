@@ -2,13 +2,14 @@
 // 數位圖鑑牆（學生端）— 像素風徽章版 + 成就提示 + 公告系統
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
+import { useGuildRank } from "../../guild/useGuildRank";
 import { getCertRecords, getCertification, subscribeDexGrants, getDexConfig, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection, saveDexSummary } from "../../lib/db";
 import { getDuelStats } from "../../lib/duelDb";
 import { subscribeMyCats } from "../../lib/catDb";
 import {
-  AUTO_ACHIEVEMENTS, SPECIAL_GRANTS, DEX_CATEGORIES, RARITY_STYLE, RANK_STYLE,
+  AUTO_ACHIEVEMENTS, SPECIAL_GRANTS, DEX_CATEGORIES, DEX_THEMES, RARITY_STYLE, RANK_STYLE,
   TIERED_ACHIEVEMENTS, computeTierProgress, getUnlockedKeys,
-  buildRoundAchievements, computeDexStats, buildCohortAchievement,
+  buildRoundAchievements, computeDexStats, buildCohortAchievement, isActiveAchievement,
 } from "../../lib/achievementDex";
 import { seedSeenIfFirstRun, seedNotifiedIfFirstRun, getUnseenKeys, markSeen } from "../../lib/dexSeen";
 
@@ -62,6 +63,7 @@ const rarityLabelColor = r => ({ common:"#64748b", uncommon:"#16a34a", rare:"#25
 /* ─── 主元件 ─────────────────────────────────────────────── */
 export default function MemberDex({ onBack, onDexViewed, sharedData }) {
   const { profile } = useAuth();
+  const guildRankInfo = useGuildRank(profile?.id);
   const [certRecords, setCertRecords]     = useState([]);
   const [certification, setCertification] = useState(null);
   const [granted, setGranted]             = useState([]);
@@ -73,6 +75,7 @@ export default function MemberDex({ onBack, onDexViewed, sharedData }) {
   const [cardData,   setCardData]         = useState({ cards: {}, equipped: [] });
   const [duelStats,  setDuelStats]        = useState({});
   const [cats,       setCats]             = useState([]);
+  const [theme, setTheme]               = useState("career");
   const [cat, setCat]                   = useState("start");
   const [detail, setDetail]             = useState(null);
 
@@ -122,7 +125,9 @@ export default function MemberDex({ onBack, onDexViewed, sharedData }) {
   const cardCount     = Object.keys(_cards).length;
   const mythicCards   = Object.values(_cards).filter(c => c.tier === "mythic").length;
   const cardFamilies  = [...new Set(Object.values(_cards).map(c => c.family).filter(Boolean))];
-  const ctx   = { member: profile, certification, certRecords, checkinCount: profile?.dailyQuestCount || 0, monsterDex, craftStats, chestStats, potionDex, cardData, cardCount, mythicCards, cardFamilies, duelStats, cats };
+  const guildRep      = sharedData?.guildRep ?? guildRankInfo.rep;
+  const guildExpeditionStats = sharedData?.guildExpeditionStats ?? guildRankInfo.expeditionStats;
+  const ctx   = { member: profile, certification, certRecords, checkinCount: profile?.dailyQuestCount || 0, monsterDex, craftStats, chestStats, potionDex, cardData, cardCount, mythicCards, cardFamilies, duelStats, cats, guildRep, guildExpeditionStats };
   const stats = computeDexStats({ ...ctx, granted, physicalMax: config.physicalMax, pointMax: config.pointMax });
   // 快取給首頁/我的頁面使用，避免重複讀取
   if (profile?.id) { try { sessionStorage.setItem(`dex_stats_${profile.id}`, JSON.stringify({ totalUnlocked: stats.totalUnlocked, totalAll: stats.totalAll, gold: stats.gold, silver: stats.silver, bronze: stats.bronze })); } catch {} }
@@ -149,7 +154,7 @@ export default function MemberDex({ onBack, onDexViewed, sharedData }) {
     }
     markSeen(profile.id, keys);               // 看過了 → 清紅點
     onDexViewed && onDexViewed();             // 通知 App 層重算 nav 紅點
-  }, [profile?.id, certification, certRecords, granted, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats, cats]); // eslint-disable-line
+  }, [profile?.id, certification, certRecords, granted, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats, cats, guildRep, guildExpeditionStats]); // eslint-disable-line
 
   // 某個格子是否為「新」（unlocked 且其 key 在快照內）。tiered 格子 id 對應 `${id}#*`
   function isCellNew(a) {
@@ -163,10 +168,20 @@ export default function MemberDex({ onBack, onDexViewed, sharedData }) {
   const newCatSet = new Set();
   newKeys.forEach(k => {
     const id = k.includes("#") ? k.split("#")[0] : k;
-    const t = TIERED_ACHIEVEMENTS.find(x => x.id === id);
-    const catId = t ? t.cat : AUTO_ACHIEVEMENTS.find(x => x.id === id)?.cat;
+    const t = TIERED_ACHIEVEMENTS.find(x => x.id === id && isActiveAchievement(x));
+    const catId = t ? t.cat : AUTO_ACHIEVEMENTS.find(x => x.id === id && isActiveAchievement(x))?.cat;
     if (catId) newCatSet.add(catId);
   });
+
+  const categoryById = Object.fromEntries(DEX_CATEGORIES.map(item => [item.id, item]));
+  const activeTheme = DEX_THEMES.find(item => item.id === theme) || DEX_THEMES[0];
+  const childCategories = activeTheme.categories.map(id => categoryById[id]).filter(Boolean);
+
+  function selectTheme(nextTheme) {
+    setTheme(nextTheme.id);
+    setCat(nextTheme.categories[0]);
+    setDetail(null);
+  }
 
   function cellsFor(catId) {
     if (catId === "cohort")   { const c = buildCohortAchievement(profile?.joinDate); return c ? [c] : []; }
@@ -179,14 +194,14 @@ export default function MemberDex({ onBack, onDexViewed, sharedData }) {
       return SPECIAL_GRANTS.map(a => ({ ...a, unlocked: ids.has(a.id) }));
     }
     // 階段式成就：從 TIERED_ACHIEVEMENTS 過濾
-    const tieredForCat = TIERED_ACHIEVEMENTS.filter(t => t.cat === catId);
+    const tieredForCat = TIERED_ACHIEVEMENTS.filter(t => t.cat === catId && isActiveAchievement(t));
     // 收集被階段式成就取代的舊成就 id
     const replacedIds = new Set();
     tieredForCat.forEach(t => (t.replacesIds || []).forEach(id => replacedIds.add(id)));
 
     // 一般成就：排除已被階段式取代的
     const flat = AUTO_ACHIEVEMENTS
-      .filter(a => a.cat === catId && !replacedIds.has(a.id))
+      .filter(a => a.cat === catId && isActiveAchievement(a) && !replacedIds.has(a.id))
       .map(a => ({ ...a, unlocked: a.check(ctx) }));
 
     // 階段式成就：加上 tierProgress
@@ -238,15 +253,28 @@ export default function MemberDex({ onBack, onDexViewed, sharedData }) {
         </div>
       </div>
 
-      {/* 分類標籤 */}
+      {/* V3：頂層只顯示 9 大主題 */}
       <div className="flex gap-2 overflow-x-auto pb-1">
-        {DEX_CATEGORIES.map(c => (
-          <button key={c.id} onClick={() => setCat(c.id)}
-            className={`relative px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border ${cat===c.id ? "bg-blue-600 text-white border-blue-600" : "bg-white/10 text-gray-300 border-white/15"}`}>
-            {c.label}
-            {newCatSet.has(c.id) && (
+        {DEX_THEMES.map(item => {
+          const hasNew = item.categories.some(id => newCatSet.has(id));
+          return (
+          <button key={item.id} onClick={() => selectTheme(item)}
+            className={`relative px-3 py-2 rounded-xl text-xs font-black whitespace-nowrap border ${theme===item.id ? "bg-blue-600 text-white border-blue-500" : "bg-white/10 text-gray-300 border-white/15"}`}>
+            {item.label}
+            {hasNew && (
               <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-red-500 ring-2 ring-[#0f172a]" />
             )}
+          </button>
+        )})}
+      </div>
+
+      {/* 主題內的 legacy 子分類，cat id 不變 */}
+      <div className="flex gap-2 overflow-x-auto pb-1 -mt-2">
+        {childCategories.map(c => (
+          <button key={c.id} onClick={() => { setCat(c.id); setDetail(null); }}
+            className={`relative px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border ${cat===c.id ? "bg-cyan-500/20 text-cyan-200 border-cyan-400/50" : "bg-white/5 text-gray-400 border-white/10"}`}>
+            {c.label}
+            {newCatSet.has(c.id) && <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-500" />}
           </button>
         ))}
       </div>
@@ -258,6 +286,9 @@ export default function MemberDex({ onBack, onDexViewed, sharedData }) {
         <div className="grid grid-cols-4 gap-2">
           {cells.length === 0 && cat === "cohort" && (
             <div className="col-span-4 text-gray-400 text-sm text-center py-6">尚未設定加入日期，無法判定期數</div>
+          )}
+          {cells.length === 0 && cat !== "cohort" && (
+            <div className="col-span-4 text-gray-500 text-sm text-center py-6">目前沒有可追蹤成就</div>
           )}
           {cells.map(a => <DexCell key={a.id} a={a} isNew={isCellNew(a)} onTap={() => setDetail(a)} />)}
         </div>

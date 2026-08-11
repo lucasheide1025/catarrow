@@ -4,11 +4,12 @@
 import { calcBadgePoints, getCertLevel } from "./constants";
 import { getCohort, cohortRarity, cohortLabel, cohortTitle } from "./cohort";
 import { MONSTERS } from "./monsterData";
-import { POTIONS } from "./itemData";
+import { POTIONS, getMonsterCardPackPool } from "./itemData";
 import { levelFromXP } from "./adventurerSystem";
 import { FAMILY_COLLECTIBLES, COLLECTIBLE_MAP } from "./dungeonCollectibles";
 import { WB_TROPHY_MAP } from "./worldBossData";
 import { getVillageLevel } from "./villageData";
+import { GUILD_RANKS } from "../guild/domain/guildRank";
 
 // 裝備品階順序（equipData.js：common→mythic），供裝備成就取「最高品階」用
 const EQUIP_GRADE_ORDER = ["common", "rare", "elite", "epic", "legend", "mythic"];
@@ -50,6 +51,93 @@ export const DEX_CATEGORIES = [
   { id: "village",  label: "🏘️ 貓貓村" },
   { id: "equip",    label: "🛡️ 裝備" },
 ];
+
+// V3：頂層先收斂成 9 個玩家主題，再顯示既有分類。
+// legacy cat id 完全不改，避免 seen key、授予紀錄與歷史資料失效。
+export const DEX_THEMES = [
+  { id:"career",     label:"🎯 射手生涯", categories:["start","practice","cohort","cert","level"] },
+  { id:"honor",      label:"🏆 榮耀紀錄", categories:["collect","physical","point","special"] },
+  { id:"combat",     label:"⚔️ 戰鬥", categories:["monster","duel"] },
+  { id:"worldboss",  label:"🐲 世界王", categories:["worldboss"] },
+  { id:"adventure",  label:"🗺️ 冒險", categories:["guild","dungeon"] },
+  { id:"collection", label:"🃏 收藏", categories:["card"] },
+  { id:"cat",        label:"🐈 貓小隊", categories:["cat"] },
+  { id:"village",    label:"🏘️ 貓貓村", categories:["village"] },
+  { id:"growth",     label:"🛡️ 養成", categories:["equip","forge"] },
+];
+
+export const DEX_CATEGORY_THEME = Object.freeze(Object.fromEntries(
+  DEX_THEMES.flatMap(theme => theme.categories.map(cat => [cat, theme.id]))
+));
+
+export function isActiveAchievement(achievement) {
+  return !!achievement && achievement.retired !== true && achievement.futureData !== true;
+}
+
+// 一般怪物卡包的單一真本：擴充目錄中 encounter=normal 的怪物。
+export const MONSTER_CARD_PACK = Object.freeze(getMonsterCardPackPool());
+export const MONSTER_CARD_FAMILIES = Object.freeze([
+  ...new Set(MONSTER_CARD_PACK.map(card => card.family).filter(Boolean)),
+]);
+
+const PLAYABLE_MONSTER_BY_ID = new Map(MONSTERS.map(monster => [monster.id, monster]));
+const PLAYABLE_MONSTER_TIERS = Object.freeze(["common", "rare", "elite", "fierce", "boss", "mythic"]);
+
+function monsterDexMeta(id, entry) {
+  const monster = PLAYABLE_MONSTER_BY_ID.get(id);
+  return {
+    family: monster?.family || entry?.family || null,
+    tier: monster?.tier || entry?.tier || null,
+  };
+}
+
+function monsterWinsByTier(monsterDex, tier) {
+  return Object.entries(monsterDex || {}).reduce((sum, [id, entry]) => {
+    return monsterDexMeta(id, entry).tier === tier ? sum + (entry?.wins || 0) : sum;
+  }, 0);
+}
+
+function defeatedFamilyTierCount(monsterDex, family) {
+  const defeatedTiers = new Set();
+  Object.entries(monsterDex || {}).forEach(([id, entry]) => {
+    if ((entry?.wins || 0) <= 0) return;
+    const meta = monsterDexMeta(id, entry);
+    if (meta.family === family && PLAYABLE_MONSTER_TIERS.includes(meta.tier)) defeatedTiers.add(meta.tier);
+  });
+  return defeatedTiers.size;
+}
+
+// 地下城目前是七族；收藏品系統仍是舊六族，不能拿 FAMILY_COLLECTIBLES 當通關族群來源。
+const DUNGEON_CLEAR_FAMILIES = Object.freeze([
+  "ghost", "mountain", "insect", "workplace", "exam", "temple", "treasure",
+]);
+
+function dungeonClearTotal(member) {
+  const clears = member?.dungeonClears || {};
+  return DUNGEON_CLEAR_FAMILIES.reduce(
+    (sum, family) => sum + Math.max(0, Math.floor(Number(clears?.[family]) || 0)),
+    0,
+  );
+}
+
+function buildCardCollectTiers(total) {
+  const counts = [...new Set([1, 10, 25, 50, 100, total].filter(n => n > 0 && n <= total))];
+  const meta = {
+    1:["common", "初探怪窟"],
+    10:["uncommon", "卡片達人"],
+    25:["rare", "收藏有成"],
+    50:["epic", "半百圖鑑"],
+    100:["legendary", "百卡收藏家"],
+  };
+  return counts.map(count => {
+    const isLast = count === total;
+    const [rarity, name] = isLast ? ["mythic", "全圖鑑"] : (meta[count] || ["legendary", `${count} 張收藏`]);
+    return {
+      count, rarity, icon:"🃏", name,
+      desc:isLast ? `收集全部 ${total} 種一般怪物卡` : `收集 ${count} 種怪物卡`,
+    };
+  });
+}
 
 // ── helpers ──────────────────────────────────────────────────
 const LEVEL_ORDER = ["入門", "初級", "中級", "進階", "精英", "菁英"];
@@ -262,14 +350,14 @@ export const AUTO_ACHIEVEMENTS = [
     check: c => Object.values(c.monsterDex || {}).reduce((s, m) => s + (m.wins || 0), 0) >= 30 },
   { id: "monster_mvp1",    cat: "monster", icon: "🌟", name: "首殺頭目",   rarity: "rare",
     desc: "擊敗任意一隻頭目（boss）",
-    check: c => Object.entries(c.monsterDex || {}).some(([id, m]) => id.endsWith("_5") && (m.wins || 0) > 0) },
+    check: c => monsterWinsByTier(c.monsterDex, "boss") >= 1 },
   { id: "monster_mvp10",   cat: "monster", icon: "💥", name: "頭目獵人",   rarity: "legendary",
     desc: "累積擊敗頭目（boss）10 次以上",
-    check: c => Object.entries(c.monsterDex || {}).filter(([id]) => id.endsWith("_5")).reduce((s, [, m]) => s + (m.wins || 0), 0) >= 10 },
+    check: c => monsterWinsByTier(c.monsterDex, "boss") >= 10 },
   // 神話成就
   { id: "mythic_first",    cat: "monster", icon: "🌋", name: "神話挑戰者", rarity: "epic",
     desc: "第一次擊敗神話怪物",
-    check: c => Object.entries(c.monsterDex || {}).some(([id, m]) => id.endsWith("_6") && (m.wins || 0) > 0) },
+    check: c => monsterWinsByTier(c.monsterDex, "mythic") >= 1 },
   { id: "mythic_all",      cat: "monster", icon: "👑", name: "封神之路",   rarity: "mythic",
     desc: "擊敗全部 6 隻神話怪物", hidden: true,
     riddle: "六大神話，一個都不能少…",
@@ -414,11 +502,10 @@ export const AUTO_ACHIEVEMENTS = [
     desc: "獲得至少一張神話怪物卡", hidden: true,
     riddle: "凡俗之手，握住了傳說…",
     check: c => (c.mythicCards || 0) >= 1 },
-  { id: "card_all6fam",   cat: "card", icon: "🌐", name: "六族全收",   rarity: "epic",
-    desc: "六大族群各收集至少一張卡", hidden: true,
-    riddle: "六種血脈，盡收囊中…",
-    check: c => ["ghost","mountain","insect","workplace","exam","temple"].every(
-      fam => c.cardFamilies?.includes(fam)) },
+  { id: "card_all6fam",   cat: "card", icon: "🌐", name: "七族全收",   rarity: "epic",
+    desc: `${MONSTER_CARD_FAMILIES.length} 大族群各收集至少一張一般怪物卡`, hidden: true,
+    riddle: "七種血脈，盡收囊中…",
+    check: c => MONSTER_CARD_FAMILIES.every(fam => c.cardFamilies?.includes(fam)) },
 
   // ══ 冒險者公會 ══
   { id: "guild_first_xp",     cat: "guild", icon: "⚔️", name: "初入公會",   rarity: "common",
@@ -481,8 +568,8 @@ export const AUTO_ACHIEVEMENTS = [
 ];
 
 // ── 動態加入：族群 1~6 級各一個成就 ───────────────────────────
-const FAM_ICONS = { ghost:"👻", mountain:"🏔️", insect:"🦂", workplace:"💼", exam:"📝", temple:"🏰" };
-const FAM_LABELS = { ghost:"鬼怪族", mountain:"山林族", insect:"毒蟲族", workplace:"職場族", exam:"考試族", temple:"西方怪物族" };
+const FAM_ICONS = { ghost:"👻", mountain:"🏔️", insect:"🦂", workplace:"💼", exam:"📝", temple:"🏰", treasure:"📦" };
+const FAM_LABELS = { ghost:"鬼怪族", mountain:"山林族", insect:"毒蟲族", workplace:"職場族", exam:"考試族", temple:"西方怪物族", treasure:"寶箱族" };
 const TIER_RARITIES_LIST = ["common","uncommon","rare","epic","legendary","mythic"];
 const TIER_NAMES_LIST    = ["一星","二星","三星","四星","五星","六星"];
 
@@ -645,6 +732,28 @@ for (const potion of POTIONS.filter(item => !item.futureFeature)) {
 }
 
 // ── 後台授予的特殊成就 ──────────────────────────────────────
+// V3 退役層：保留舊 id 供歷史資料 / localStorage seen key 相容，
+// 但不再顯示、不提醒，也不進完成率分母。
+const LEGACY_GUILD_AUTO_IDS = new Set([
+  "guild_first_xp", "guild_lv10", "guild_promo_bronze", "guild_promo_silver",
+  "guild_promo_gold", "guild_promo_plat", "guild_promo_legend", "guild_max",
+]);
+const RETIRED_AUTO_IDS = new Set([
+  ...LEGACY_GUILD_AUTO_IDS,
+  "drop_rare", "drop_epic", "drop_legendary", "drop_mythic",
+  "dex_all6", "dex_all36", "mythic_all",
+]);
+AUTO_ACHIEVEMENTS.forEach(achievement => {
+  if (!RETIRED_AUTO_IDS.has(achievement.id)) return;
+  achievement.retired = true;
+  achievement.retiredReason = LEGACY_GUILD_AUTO_IDS.has(achievement.id)
+    ? "舊冒險者等級系統已由新公會聲望／階級取代"
+    : achievement.id.startsWith("drop_")
+      ? "目前沒有可靠的掉寶稀有度累計資料"
+      : "舊 36 怪／六族終局條件已不符合現行擴充怪物目錄";
+  if (achievement.id.startsWith("drop_")) achievement.futureData = true;
+});
+
 export const SPECIAL_GRANTS = [
   { id: "beat_coach",  cat: "special", icon: "⚔️", name: "擊敗主教練",     rarity: "legendary", hidden: true,
     riddle: "在他面前，沒有人能輕易取勝…",             desc: "在對戰中擊敗主教練" },
@@ -737,7 +846,7 @@ export const TIERED_ACHIEVEMENTS = [
     id: "monster_boss", cat: "monster", icon: "🌟", name: "頭目擊殺",
     desc: "擊敗頭目（boss）級怪物的次數",
     replacesIds: ["monster_mvp1","monster_mvp10"],
-    getValue: c => Object.entries(c.monsterDex || {}).filter(([id]) => id.endsWith("_5")).reduce((s, [, m]) => s + (m.wins || 0), 0),
+    getValue: c => monsterWinsByTier(c.monsterDex, "boss"),
     tiers: [
       { count: 1,  rarity: "rare",     icon: "🌟", name: "首殺頭目",   desc: "擊敗任意一隻頭目（boss）" },
       { count: 10, rarity: "legendary",icon: "💥", name: "頭目獵人",   desc: "累積擊敗頭目（boss）10 次以上" },
@@ -777,12 +886,75 @@ export const TIERED_ACHIEVEMENTS = [
     desc: "收集不同種類的怪物卡",
     replacesIds: ["card_1","card_5","card_10","card_15","card_20"],
     getValue: c => (c.cardCount || 0),
+    tiers: buildCardCollectTiers(MONSTER_CARD_PACK.length),
+  },
+
+  {
+    id: "guild_reputation", cat: "guild", icon: "🏰", name: "公會聲望",
+    desc: "完成公會遠征累積聲望，逐步晉升冒險者階級",
+    getValue: c => Math.max(0, Math.floor(Number(c.guildRep) || 0)),
     tiers: [
-      { count: 1,  rarity: "common",   icon: "🃏", name: "初探怪窟",     desc: "收集第一張怪物卡" },
-      { count: 5,  rarity: "uncommon", icon: "🃏", name: "收藏家入門",   desc: "收集 5 種怪物卡" },
-      { count: 10, rarity: "rare",     icon: "🃏", name: "卡片達人",     desc: "收集 10 種怪物卡" },
-      { count: 15, rarity: "epic",     icon: "🃏", name: "卡片狂人",     desc: "收集 15 種怪物卡" },
-      { count: 20, rarity: "legendary",icon: "🃏", name: "怪物圖鑑家",   desc: "收集 20 種怪物卡" },
+      { count: 1, rarity: "common", icon: "🔰", name: "踏入公會", desc: "在新版冒險者公會獲得第一點聲望" },
+      ...GUILD_RANKS.filter(rank => rank.rep > 0).map((rank, index) => ({
+        count: rank.rep,
+        rarity: ["uncommon", "rare", "epic", "legendary", "mythic"][index] || "mythic",
+        icon: rank.icon,
+        name: rank.name,
+        desc: `公會聲望達 ${rank.rep.toLocaleString()}，晉升${rank.name}`,
+      })),
+    ],
+  },
+
+  {
+    id: "guild_expeditions", cat: "guild", icon: "🧭", name: "公會遠征",
+    desc: "累積完成冒險者公會遠征的次數（勝負皆計）",
+    getValue: c => Math.max(0, Number(c.guildExpeditionStats?.total) || 0),
+    tiers: [
+      { count: 1, rarity: "common", icon: "🧭", name: "首次出征", desc: "完成第一次公會遠征" },
+      { count: 10, rarity: "uncommon", icon: "🥾", name: "遠征常客", desc: "累積完成 10 次公會遠征" },
+      { count: 30, rarity: "rare", icon: "🗺️", name: "踏遍險境", desc: "累積完成 30 次公會遠征" },
+      { count: 100, rarity: "legendary", icon: "🌍", name: "百征冒險家", desc: "累積完成 100 次公會遠征" },
+    ],
+  },
+  {
+    id: "guild_wins", cat: "guild", icon: "⚔️", name: "遠征勝利",
+    desc: "累積在冒險者公會遠征中獲勝的次數",
+    getValue: c => Math.max(0, Number(c.guildExpeditionStats?.won) || 0),
+    tiers: [
+      { count: 1, rarity: "common", icon: "⚔️", name: "遠征初勝", desc: "第一次贏得公會遠征" },
+      { count: 10, rarity: "uncommon", icon: "🏹", name: "十勝之士", desc: "累積贏得 10 次公會遠征" },
+      { count: 30, rarity: "rare", icon: "🏆", name: "遠征菁英", desc: "累積贏得 30 次公會遠征" },
+      { count: 100, rarity: "legendary", icon: "👑", name: "百勝傳說", desc: "累積贏得 100 次公會遠征" },
+    ],
+  },
+  {
+    id: "guild_hard_wins", cat: "guild", icon: "🔥", name: "高危遠征",
+    desc: "累積贏得危險度 3 以上的公會遠征",
+    getValue: c => Math.max(0, Number(c.guildExpeditionStats?.hardWon) || 0),
+    tiers: [
+      { count: 1, rarity: "rare", icon: "🔥", name: "迎難而上", desc: "首次贏得危險度 3 以上遠征" },
+      { count: 5, rarity: "epic", icon: "⚡", name: "險境獵人", desc: "累積贏得 5 次危險度 3 以上遠征" },
+      { count: 15, rarity: "legendary", icon: "🏆", name: "高危專家", desc: "累積贏得 15 次危險度 3 以上遠征" },
+    ],
+  },
+  {
+    id: "guild_deadly_wins", cat: "guild", icon: "💀", name: "致命遠征",
+    desc: "累積贏得危險度 5 以上的公會遠征",
+    getValue: c => Math.max(0, Number(c.guildExpeditionStats?.deadlyWon) || 0),
+    tiers: [
+      { count: 1, rarity: "epic", icon: "💀", name: "死地歸來", desc: "首次贏得危險度 5 以上遠征" },
+      { count: 5, rarity: "legendary", icon: "☠️", name: "絕境行者", desc: "累積贏得 5 次危險度 5 以上遠征" },
+      { count: 15, rarity: "mythic", icon: "🔥", name: "死境征服者", desc: "累積贏得 15 次危險度 5 以上遠征" },
+    ],
+  },
+  {
+    id: "guild_mythic_wins", cat: "guild", icon: "👑", name: "神話遠征",
+    desc: "累積贏得最高危險度 6 的公會遠征",
+    getValue: c => Math.max(0, Number(c.guildExpeditionStats?.mythicWon) || 0),
+    tiers: [
+      { count: 1, rarity: "legendary", icon: "👑", name: "神話首勝", desc: "首次贏得危險度 6 遠征" },
+      { count: 3, rarity: "mythic", icon: "🌋", name: "三破神話", desc: "累積贏得 3 次危險度 6 遠征" },
+      { count: 10, rarity: "mythic", icon: "🌠", name: "神話征服者", desc: "累積贏得 10 次危險度 6 遠征" },
     ],
   },
 
@@ -811,6 +983,18 @@ export const TIERED_ACHIEVEMENTS = [
       { count: 10,  rarity: "uncommon", icon: "🧳", name: "小有收穫",       desc: "累積拾獲 10 種不同收藏品" },
       { count: 60,  rarity: "rare",     icon: "📦", name: "探險家的行囊",   desc: "累積拾獲 60 種不同收藏品" },
       { count: 150, rarity: "epic",     icon: "🏺", name: "秘寶收藏家",     desc: "累積拾獲 150 種不同收藏品" },
+    ],
+  },
+  {
+    id: "dungeon_clears", cat: "dungeon", icon: "🏚️", name: "地下城通關",
+    desc: "單人或組隊地下城的終身累積通關次數",
+    getValue: c => dungeonClearTotal(c.member),
+    tiers: [
+      { count: 1, rarity: "common", icon: "🚪", name: "首次踏破", desc: "完成第一次地下城通關" },
+      { count: 5, rarity: "uncommon", icon: "🗺️", name: "地城熟客", desc: "累積通關地下城 5 次" },
+      { count: 20, rarity: "rare", icon: "⚔️", name: "地下獵人", desc: "累積通關地下城 20 次" },
+      { count: 50, rarity: "epic", icon: "🏆", name: "深淵行者", desc: "累積通關地下城 50 次" },
+      { count: 100, rarity: "legendary", icon: "👑", name: "百城踏破", desc: "累積通關地下城 100 次" },
     ],
   },
 ];
@@ -873,18 +1057,20 @@ for (const potion of POTIONS.filter(item => !item.futureFeature)) {
 // 各族討伐進度（6 族各 1 格，取代 dex_{fam}_t{1..6}）
 // ⚠️ 語意調整：舊版每格＝「擊敗該族第 N 級怪物」，非單調值套不進進度條；
 // 改為「擊破該族不同怪物的數量」(0~6)，單調遞增，符合里程碑模型。
-// 一族只有 fam_1..fam_6 共 6 隻、且 fam_6 為神話怪，要到 6 星必然打過神話怪。
-for (const fam of ["ghost","mountain","insect","workplace","exam","temple"]) {
+// 目前先沿用每族 legacy 代表怪的單調進度；族群清單改由現行一般卡包派生，包含寶箱族。
+for (const fam of MONSTER_CARD_FAMILIES) {
   TIERED_ACHIEVEMENTS.push({
     id: `dex_${fam}`, cat: "monster", icon: FAM_ICONS[fam],
     name: `${FAM_LABELS[fam]}討伐`,
     desc: `擊破${FAM_LABELS[fam]}不同怪物的數量`,
-    replacesIds: [1,2,3,4,5,6].map(t => `dex_${fam}_t${t}`),
-    getValue: c => [1,2,3,4,5,6].filter(t => (c.monsterDex?.[`${fam}_${t}`]?.wins || 0) > 0).length,
+    replacesIds: [1,2,3,4,5,6]
+      .map(t => `dex_${fam}_t${t}`)
+      .filter(id => AUTO_ACHIEVEMENTS.some(a => a.id === id)),
+    getValue: c => defeatedFamilyTierCount(c.monsterDex, fam),
     tiers: [1,2,3,4,5,6].map((n, i) => ({
       count: n, rarity: TIER_RARITIES_LIST[i], icon: FAM_ICONS[fam],
       name: `${FAM_LABELS[fam]}${TIER_NAMES_LIST[i]}`,
-      desc: `擊破 ${n} 種${FAM_LABELS[fam]}怪物`,
+      desc: `擊破 ${n} 個階級的${FAM_LABELS[fam]}怪物`,
     })),
   });
 }
@@ -1156,7 +1342,8 @@ export function computeTierProgress(tieredAch, ctx) {
 // 被階段式成就取代的舊 AUTO id（模組層級算一次）：這些改由 tiered 里程碑計數/顯示，
 // 統計與「已解鎖 key」都要跳過，避免同一系列被算兩次。
 export const REPLACED_BY_TIERED = new Set();
-TIERED_ACHIEVEMENTS.forEach(t => (t.replacesIds || []).forEach(id => REPLACED_BY_TIERED.add(id)));
+TIERED_ACHIEVEMENTS.filter(isActiveAchievement)
+  .forEach(t => (t.replacesIds || []).forEach(id => REPLACED_BY_TIERED.add(id)));
 
 // ── getUnlockedKeys：回傳「目前已解鎖的成就 key」陣列 ────────────
 // 供 App 層即時偵測 + 紅點/NEW 高亮共用。
@@ -1167,10 +1354,12 @@ TIERED_ACHIEVEMENTS.forEach(t => (t.replacesIds || []).forEach(id => REPLACED_BY
 export function getUnlockedKeys(ctx) {
   const keys = [];
   AUTO_ACHIEVEMENTS.forEach(a => {
+    if (!isActiveAchievement(a)) return;
     if (REPLACED_BY_TIERED.has(a.id)) return;
     try { if (a.check(ctx)) keys.push(a.id); } catch { /* 資料未就緒時忽略 */ }
   });
   TIERED_ACHIEVEMENTS.forEach(t => {
+    if (!isActiveAchievement(t)) return;
     const prog = computeTierProgress(t, ctx);
     if (!prog) return;
     for (let i = 0; i <= prog.currentTierIndex; i++) keys.push(`${t.id}#${i}`);
@@ -1192,15 +1381,16 @@ export function describeKey(key) {
 }
 
 // ── 統計 ───────────────────────────────────────────────────
-export function computeDexStats({ member, certification, certRecords, checkinCount, granted, physicalMax, pointMax, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats, cats }) {
+export function computeDexStats({ member, certification, certRecords, checkinCount, granted, physicalMax, pointMax, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats, cats, guildRep, guildExpeditionStats }) {
   const cards       = cardData?.cards || {};
   const cardCount   = Object.keys(cards).length;
   const mythicCards = Object.values(cards).filter(c => c.tier === "mythic").length;
   const cardFamilies = [...new Set(Object.values(cards).map(c => c.family).filter(Boolean))];
-  const ctx = { member, certification, certRecords, checkinCount, monsterDex: monsterDex || {}, craftStats: craftStats || {}, chestStats: chestStats || {}, potionDex: potionDex || {}, cardCount, mythicCards, cardFamilies, duelStats: duelStats || {}, cats: cats || [] };
+  const ctx = { member, certification, certRecords, checkinCount, monsterDex: monsterDex || {}, craftStats: craftStats || {}, chestStats: chestStats || {}, potionDex: potionDex || {}, cardCount, mythicCards, cardFamilies, duelStats: duelStats || {}, cats: cats || [], guildRep: Math.max(0, Number(guildRep) || 0), guildExpeditionStats: guildExpeditionStats || {} };
 
   let autoUnlocked = 0, autoTotal = 0;
   AUTO_ACHIEVEMENTS.forEach(a => {
+    if (!isActiveAchievement(a)) return;
     if (REPLACED_BY_TIERED.has(a.id)) return; // 已被 tiered 取代，跳過（下面用里程碑計）
     autoTotal++;
     if (a.check(ctx)) autoUnlocked++;
@@ -1209,6 +1399,7 @@ export function computeDexStats({ member, certification, certRecords, checkinCou
   // 階段式成就：每個里程碑各算一格（totalTiers=總格、unlockedCount=已解鎖）
   let tieredUnlocked = 0, tieredTotal = 0;
   TIERED_ACHIEVEMENTS.forEach(t => {
+    if (!isActiveAchievement(t)) return;
     const prog = computeTierProgress(t, ctx);
     if (!prog) return;
     tieredTotal    += prog.totalTiers;

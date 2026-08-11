@@ -14,6 +14,7 @@ import { subscribeResults, subscribeNotifications, subscribeAppVersion, isMember
   getCompetitions } from "../lib/db";
 import { subscribeMyCats, repairNegativeVillageResources } from "../lib/catDb";
 import { getUnlockedKeys, describeKey } from "../lib/achievementDex";
+import { useGuildRank } from "../guild/useGuildRank";
 import { seedNotifiedIfFirstRun, getUnnotifiedKeys, markNotified, seedSeenIfFirstRun, countUnseen } from "../lib/dexSeen";
 import DexUnlockToast from "../components/member/DexUnlockToast";
 
@@ -129,6 +130,7 @@ const NAV_PRELOADS = {
 
 export default function MemberApp() {
   const { logout, profile, role } = useAuth();
+  const guildRankInfo = useGuildRank(profile?.id);
   const { policy: costPolicy, allows: costAllows } = useCostControl();
   // 成本防護升到 restricted 以上時關掉「非必要監聽」（橫幅/播報/彈窗這類看板功能）。
   // ⚠️ 這個能力旗標本來就定義在 costControl.js，但一直沒有任何地方真的用它——等於警報升級了
@@ -227,8 +229,10 @@ export default function MemberApp() {
     monsterDex, craftStats, chestStats, potionDex,
     cardData: cardDataReady ? cardData : undefined,
     cats,
+    guildRep: guildRankInfo.rep,
+    guildExpeditionStats: guildRankInfo.expeditionStats,
     todayArrows: todayArrowsGlobal,
-  }), [certification, certRecords, dexConfig, dexGrants, duelStats, monsterDex, craftStats, chestStats, potionDex, cardData, cardDataReady, cats, todayArrowsGlobal]);
+  }), [certification, certRecords, dexConfig, dexGrants, duelStats, monsterDex, craftStats, chestStats, potionDex, cardData, cardDataReady, cats, guildRankInfo.rep, guildRankInfo.expeditionStats, todayArrowsGlobal]);
   const [todayCheckin, setTodayCheckin] = useState(undefined);  // 今日報到狀態
   const [showCheckinPopup, setShowCheckinPopup] = useState(false);
   const [checkinBusy, setCheckinBusy] = useState(false);
@@ -474,9 +478,10 @@ export default function MemberApp() {
       cardCount: Object.keys(cards).length,
       mythicCards: Object.values(cards).filter(c => c.tier === "mythic").length,
       cardFamilies: [...new Set(Object.values(cards).map(c => c.family).filter(Boolean))],
-      duelStats: duelStats || {}, cats,
+      duelStats: duelStats || {}, cats, guildRep: guildRankInfo.rep,
+      guildExpeditionStats: guildRankInfo.expeditionStats,
     };
-  }, [profile, certification, certRecords, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats, cats]);
+  }, [profile, certification, certRecords, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats, cats, guildRankInfo.rep, guildRankInfo.expeditionStats]);
 
   const unlockedKeys = useMemo(() => (profile?.id ? getUnlockedKeys(achCtx) : []), [achCtx, profile?.id]);
 

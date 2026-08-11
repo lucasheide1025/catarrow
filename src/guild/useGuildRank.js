@@ -11,8 +11,15 @@ import { useEffect, useState } from "react";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { nextRankInfo } from "./domain/guildRank";
+import { EMPTY_GUILD_EXPEDITION_STATS, normalizeGuildExpeditionStats } from "./domain/guildExpeditionStats";
 
-const EMPTY = { loading: true, rep: 0, ...nextRankInfo(0), expeditions: 0 };
+const EMPTY = {
+  loading: true,
+  rep: 0,
+  ...nextRankInfo(0),
+  expeditions: 0,
+  expeditionStats: EMPTY_GUILD_EXPEDITION_STATS,
+};
 
 // 模組級快取：首頁與「我的」都會用，切分頁又會重新掛載——沒有快取的話每切一次就打一發網路。
 // 公會階級不是即時性資料（聲望只在遠征結算才變），5 分鐘綽綽有餘。
@@ -29,13 +36,16 @@ async function fetchRank(memberId) {
   const snap = await getDoc(doc(db, "guildProfiles", memberId));
   const d = snap.exists() ? snap.data() : null;
   const rep = Math.max(0, Math.floor(Number(d?.rep) || 0));
+  const expeditionStats = normalizeGuildExpeditionStats(d?.expeditions);
   return {
     loading: false,
     rep,
     ...nextRankInfo({ rep, rankId: d?.rankId }),
     // 沒有存檔＝還沒踏進公會，UI 可以據此顯示「尚未註冊」
     registered: !!d,
-    expeditions: Math.max(0, Math.floor(Number(d?.expeditions?.total) || 0)),
+    // 舊 UI 仍把 expeditions 當 number 顯示，保留相容欄位；成就使用完整統計。
+    expeditions: expeditionStats.total,
+    expeditionStats,
   };
 }
 
