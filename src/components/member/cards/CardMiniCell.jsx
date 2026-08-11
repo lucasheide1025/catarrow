@@ -56,12 +56,19 @@ export default function CardMiniCell({ view, isNew = false, onOpen }) {
           {owned ? view.name : "？？？"}
         </span>
         {owned && <span style={{ display: "block", fontSize: 9, color: "#facc15" }}>{"★".repeat(view.stars || 1)}</span>}
-        {owned && (() => {
+        {owned && (view.source === "wb" ? (
+          <>
+            <span style={{ display: "block", fontSize: 9, fontWeight: 900, color: "#fde68a" }}>👑 專屬被動</span>
+            <span style={{ display: "block", fontSize: 9, fontWeight: 800, color: "#fef3c7", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {view.effectText || "世界王專屬能力"}
+            </span>
+          </>
+        ) : (() => {
           const stat = getCardStat(view);
           if (!stat) return <span style={{ display: "block", fontSize: 9, color: "#a5b4fc" }}>待選屬性</span>;
           return <span style={{ display: "block", fontSize: 9, fontWeight: 800, color: "#6ee7b7" }}>{STAT_ICON[stat] || ""} {stat.toUpperCase()} +{calcCardBonus(view.tier, view.stars || 1)}</span>;
-        })()}
-        {owned && (() => {
+        })())}
+        {owned && view.source !== "wb" && (() => {
           const talent = getCardTalent(view);
           return talent ? <span style={{ display: "block", fontSize: 9, fontWeight: 800, color: "#c4b5fd", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{talent.icon} {talent.label}</span> : null;
         })()}

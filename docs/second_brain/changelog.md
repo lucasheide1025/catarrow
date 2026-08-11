@@ -5,6 +5,24 @@
 
 ---
 
+## 2026-08-11（🐛 組隊地下城：探索地圖置頂＋最終王房結算驗證失敗）
+
+**改了什麼**
+- `TeamExpeditionBattle.jsx`：組隊探索的 `grid` / `branch` 主畫面不再顯示上方 `TeamRoomVotingBar`，地圖直接置頂；功能房與實際戰鬥需要的隊友資訊仍保留。
+- 最終 Boss 戰鬥房不再於房主成功推進後 8 秒刪除，改為保留到全隊都完成個人遠征結算後才清除。
+- `handleFloorDone` 另存 `finalBossBattleRoomId` 作為最終清理指標，不拿 `bossRewardBattleId` 代替，避免誤啟用 expansion reward。
+- 王房戰利品錯誤訊息加入 Firebase error code，之後可直接辨認 `permission-denied`、`failed-precondition` 等實際原因。
+
+**根因**
+- 王房獎勵 Cloud Function 會回讀原 `dungeonRooms/{battleId}` 驗證該 member 是否真的參戰；舊流程卻在房主推進後 8 秒刪除同一份王房文件。較慢進入戰利品／結算頁的隊員因此失去驗證依據，造成領獎或進結算失敗。
+- 已核對 Firestore rules：`dungeonRooms`、會員王房獎勵欄位與本人 inventory ownership 規則並未缺權限，因此沒有用放寬規則掩蓋問題。
+
+**踩坑提醒**
+- ⚠️ 最終王房在個人戰利品領取完成前，同時是 Cloud Function 的參戰資格證據，不能跟普通戰鬥房一樣提早清除。
+- ⚠️ 共享遠征進度仍只由房主推進；每位玩家的個人獎勵仍由自己的 member 身份領取，兩條責任不可混在一起。
+
+---
+
 ## 2026-08-07（🐛 考過裸弓後首頁看不到檢定：整期完成判定從「任一弓通過」改「三弓全過」）
 
 作者：「我是教練帳號 + 我有考過裸弓 所以目前首頁看不到可以考檢定的部分」
@@ -5520,4 +5538,19 @@ match /systemBroadcasts/{id} { allow read: if request.auth != null; allow write:
 
 ---
 
+
+
+## 2026-08-11（世界王卡 v2 收藏介面補齊）
+
+**改了什麼**
+- 修正世界王卡雖已改成 v2 專屬被動，收藏詳情仍誤顯示舊版 `HP/ATK/DEF +25`。
+- `wbViews` 改以 `WB_CARDS` v2 定義為能力唯一來源，不再讓 Firestore 舊 `stat/chosenStat` 覆蓋新版資料。
+- 世界王卡詳情直接列出專屬被動；怪物卡才繼續使用原本面板數值與升星預覽。
+- `CardMiniCell` 外部小卡同步切到 v2：世界王卡不再呼叫舊 `calcCardBonus("worldboss")` 顯示 `ATK/HP/DEF +25`，改顯示「👑 專屬被動」與 `effectText` 摘要；一般怪物卡維持原本屬性加成與天賦。
+
+**原因**
+- v2 能力定義已存在，但收藏 view 沒把 `effects/effectText` 帶進 UI，詳情頁又仍共用舊 `calcCardBonus(worldboss)` 路徑。
+
+**範圍**
+- 未修改尚未完成的世界王戰鬥畫面流程。
 
