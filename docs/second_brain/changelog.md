@@ -5,6 +5,96 @@
 
 ---
 
+## 2026-08-12（裝備精練素材名稱／掉落來源一致化）
+
+**根因**
+- 精練顯示與現行怪物掉落曾各讀不同素材名稱來源；同一個素材 id 因此可能顯示兩個名字。典型例子：`exam_m3` 在 legacy `monsterMaterials.js` 叫「崩潰眼淚」，現行擴充／經濟清冊則是「期末考卷」。
+- `exam_m3` 的現行掉落來源其實存在：**T3「期末考」**。T4 精練配方依既有曲線可以合法抽到較低階的 T3 素材，因此問題不是素材無法取得，而是舊名稱讓玩家無法把需求和掉落對起來。
+
+**修正**
+- `RPGEquipPanel.resolveMatMeta()` 改以現行 expansion/economy catalog 為素材顯示單一真本；只有現行清冊找不到 id 時才退回 legacy `MATERIALS`，不改任何已存素材 id。
+- 一般材料與關鍵材料列都會額外顯示 `來源：T{tier} {monster}`；例如 `exam_m3` 現在顯示「期末考卷｜來源：T3 期末考」。
+- 沒有遷移 inventory、沒有改 Firestore schema、沒有新增 Firestore 讀取。
+
+**回歸驗證**
+- 測試鎖定 `exam_m3 = 期末考卷 / T3 / 期末考`。
+- 現行精練使用的 **126 個 normal 素材池**全部能反查到現行怪物來源，避免再出現真正的孤兒 normal 素材。
+- 精練／素材經濟 targeted tests、`git diff --check`、production build 均通過。
+- 本次仍只在本機，未 commit / push / deploy。
+
+## 2026-08-12（成就圖鑑 V3 第三輪：公會遠征終身戰績＋地下城永久通關）
+
+**改了什麼**
+- 新增 `src/guild/domain/guildExpeditionStats.js`，只整理既有 `guildProfiles.expeditions.total/won/byDanger`，正規化為 `total / won / hardWon / deadlyWon / mythicWon`；沒有新增 Firestore schema。
+- `useGuildRank` 沿用原本 5 分鐘快取＋一次性讀取；既有 `guildRank.expeditions` 仍維持 number 相容舊 UI，另外提供 `expeditionStats` 給成就系統。
+- 公會新增 5 條永久里程碑：遠征總次數、遠征勝場、危險度 3+ 勝場、危險度 5+ 勝場、危險度 6 神話勝場。
+- 地下城新增 `dungeon_clears`：1 / 5 / 20 / 50 / 100 次，直接讀永久 `member.dungeonClears`；單人與組隊通關本來都會累積這個欄位，因此不會因歷史紀錄裁切而倒退。
+- 地下城總數只計 `FAMILY_COLLECTIBLES` 的六個正式地城族群，忽略 `treasure` 或未知 legacy key，避免錯誤灌進度。
+- `MemberApp` 全站解鎖提示與 `MemberDex` 顯示 context 都已接入 `guildExpeditionStats`。
+
+**為什麼這樣做**
+- 沒有使用只保留近期約 20 筆的 `expeditionRecords`，否則舊通關被擠掉時成就進度可能倒退。
+- 射箭高分成就這輪刻意不加：完整成績目前主要在歷史集合裡，為成就額外掃描歷史紀錄不划算；等之後有個人最佳摘要欄位再接。
+
+**驗證**
+- `achievementDexV3.test.js` + `monsterCardPack.test.js`：通過。
+- `git diff --check`：通過。
+- `CI=true npx react-scripts build`：Compiled successfully。
+
+**邊界**
+- 沒改 Firestore schema、沒改戰鬥核心、沒新增即時監聽。
+- 本輪仍只在本機，未 commit / push / deploy。
+
+
+
+## 2026-08-12（🎖️ 成就圖鑑 V3 第二輪：新版公會聲望落地＋怪物判定去除舊 ID 假設）
+
+**改了什麼**
+- 新增 `guild_reputation` 階段成就，直接沿用新版公會單一真本 `GUILD_RANKS`：1 點聲望啟程，之後依 300 / 900 / 2400 / 6000 / 15000 晉升銅牌、銀牌、金牌、白金、傳說冒險者。
+- `MemberApp` 與 `MemberDex` 接入既有 `useGuildRank(profile.id)`；這支 hook 使用 5 分鐘快取的一次性 `getDoc`，沒有新增 Firestore 即時監聽、schema 或寫入。全站成就解鎖提示、紅點與圖鑑因此都能讀到同一份 `guildRep`。
+- 舊版 8 個公會 XP／升階 AUTO id 改成明確白名單退役，不再使用「所有 `guild_*` 都退役」的粗略規則，避免新版公會成就被誤殺。
+- 頭目／神話判定與頭目累積次數不再依賴 monster id 的 `_5` / `_6` 尾碼，改讀目前可玩 `MONSTERS` metadata，並以已存 `monsterDex.family/tier` 作相容 fallback。
+- 七族討伐進度改為計算 common / rare / elite / fierce / boss / mythic 六個階級；同階級多隻怪不重複灌進度，treasure 寶箱族也能使用非舊式 id。
+
+**重要決策**
+- 暫時**不建立 252 怪全圖鑑成就**。雖然 `monsterExpansionCatalog` 已有 252 隻資料，但目前一般 `MonsterBattle` 仍從 legacy `MONSTERS` 戰鬥池選怪，`MemberMonsterDex` 也仍以 36 隻為可玩圖鑑。把 252 放進完成率會製造現階段無法完成的成就。
+- 等未來戰鬥池與怪物圖鑑正式遷移到擴充目錄後，再啟用 252 收集／討伐終局成就。
+
+**驗證**
+- `achievementDexV3.test.js` + `monsterCardPack.test.js`：通過。新增覆蓋公會聲望門檻、舊公會退役、非標準 id 的 boss/mythic metadata、寶箱族六階級去重。
+- `git diff --check`：通過。
+- `CI=true npx react-scripts build`：Compiled successfully。
+
+**踩坑提醒**
+- ⚠️ 「資料目錄有 252」不等於「玩家現在能打 252」。成就完成條件必須跟實際 playable pool／持久化資料一致，不能只看 catalog 數量。
+- ⚠️ 公會成就資料來源維持 `guildProfiles.rep`，不要重新接回舊 `adventurerXP/promotionDone`。
+
+---
+
+## 2026-08-12（🎖️ 成就圖鑑 V3 第一輪：19 類平鋪→9 大主題＋舊成就退役）
+
+**改了什麼**
+- `MemberDex` 的 19 個頂層分類不再全部塞在同一條手機橫向列，改成 **9 大主題 → 主題內子分類**：射手生涯／榮耀紀錄／戰鬥／世界王／冒險／收藏／貓小隊／貓貓村／養成。既有 `cat` id 完全不改，因此舊授予紀錄、NEW/seen key、排行榜完成度資料都不用遷移。
+- 新增 `isActiveAchievement()` 退役層：舊定義與 id 保留，但 `retired/futureData` 不再出現在玩家圖鑑、不觸發新成就提醒，也不算進 `totalAll` 分母。
+- 退役三批已失真的內容：① `adventurerXP/promotionDone` 的舊公會等級成就（新公會已改聲望／階級）；② `drop_rare~drop_mythic` 四顆沒有資料來源、永遠 false 的死成就；③ `dex_all36`／`dex_all6`／`mythic_all` 這些綁死舊 36 怪／六族世界觀的終局成就。
+- 怪物卡改讀真正卡包單一真本 `getMonsterCardPackPool()`：完整擴充怪物目錄是 **252 隻**，一般怪物卡包只收 `encounter=normal`，目前是 **126 張、7 族**。`card_collect` 里程碑由舊 1/5/10/15/20 改為 1/10/25/50/100/全收，最後一階永遠跟卡包實際總數同步。
+- `card_all6fam` 為了舊資料相容**保留 id 不改**，但顯示與判定已改成「七族全收」；族群討伐 tiered 也加入 treasure 寶箱族，不再把六族陣列寫死。
+- 公會子分類目前顯示明確空態，下一輪才接新公會聲望／階級／遠征資料，避免這一輪新增 Firestore 讀寫。
+
+**為什麼**
+- 7/16 的圖鑑規劃建立了正確的 tiered 骨架，但一個月內怪物、公會、卡片都已大改；繼續在舊 36 怪／六族／Lv60 冒險者模型上加內容，只會讓玩家完成率越來越失真。
+- 這輪先做「資訊架構與資料契約清理」，**完全不改 Firestore schema、戰鬥結算、掉落或公會存檔**，把風險限制在圖鑑顯示與純判定層。
+
+**驗證**
+- `achievementDexV3.test.js` + `monsterCardPack.test.js`：2 suites / **6 tests passed**。
+- `git diff --check`：通過。
+- `CI=true npx react-scripts build`：Compiled successfully。
+
+**踩坑提醒 / 下一輪**
+- ⚠️ `MONSTERS` 是 legacy/mixed 戰鬥目錄，不能拿 `MONSTERS.length` 當現代怪物總數；現行完整目錄看 `monsterExpansionCatalog`（252），一般怪物卡看 `getMonsterCardPackPool()`（126）。
+- ⚠️ 退役成就不要直接刪 id。玩家 localStorage 的 seen/notified、舊資料與歷史畫面可能仍引用它；用 active filter 隔離最安全。
+- 下一輪：以新公會 `guildProfiles.rep/rank` 設計公會成就；另重新設計「252 怪物圖鑑」要追蹤什麼，先確認 `monsterDex` 對擴充 monster id 的實際覆蓋，再決定是否做全收集終局成就。
+
 ## 2026-08-11（🐛 組隊地下城：探索地圖置頂＋最終王房結算驗證失敗）
 
 **改了什麼**

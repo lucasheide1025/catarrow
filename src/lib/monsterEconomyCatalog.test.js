@@ -1,10 +1,12 @@
 import {
   getNormalMaterialPool,
   getNormalMonsterMaterialDrop,
+  MATERIAL_BY_ID,
   previewSameTierConversion,
   previewTierUpgrade,
   validateMonsterEconomyCatalog,
 } from "./monsterEconomyCatalog";
+import { EXPANSION_MONSTER_BY_ID } from "./monsterExpansionCatalog";
 
 describe("monster economy catalog", () => {
   test("contains only the 126 convertible normal materials", () => {
@@ -33,5 +35,15 @@ describe("monster economy catalog", () => {
 
   test("never allows boss materials into conversion", () => {
     expect(() => previewSameTierConversion({ sourceMaterialId: "mat_ghost_t1_mini_a", targetMaterialId: "ghost_m1", batches: 1 })).toThrow("normal_material_required");
+  });
+
+  test("refinement material metadata resolves to the current monster catalog", () => {
+    const examT3 = MATERIAL_BY_ID.exam_m3;
+    expect(examT3).toMatchObject({ name: "期末考卷", tierIndex: 3 });
+    expect(EXPANSION_MONSTER_BY_ID[examT3.monsterId]).toMatchObject({ name: "期末考", tierIndex: 3 });
+
+    getNormalMaterialPool({ maxTier: 6 }).forEach(material => {
+      expect(EXPANSION_MONSTER_BY_ID[material.monsterId]).toBeTruthy();
+    });
   });
 });

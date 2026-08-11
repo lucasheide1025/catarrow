@@ -5,6 +5,7 @@ import { equipItem, changeEquipBrand, unequipSlot, upgradeEquipSlot, saveEquipNe
 import { EQUIP_GRADES, EQUIP_SLOT_DEFS, calcEquipBonus, getEquipSlotBonus } from "../../lib/constants";
 import { MATERIALS, RARITY_CONFIG } from "../../lib/monsterMaterials";
 import { MATERIAL_BY_ID as EXPANSION_MATERIAL_BY_ID } from "../../lib/monsterEconomyCatalog";
+import { EXPANSION_MONSTER_BY_ID } from "../../lib/monsterExpansionCatalog";
 import { EQUIP_UPGRADE_COST, GRADE_PREFIX, generateRandomMats, isMatsCurveCurrent, KING_SEAL_BREAKTHROUGH_COST } from "../../lib/equipData";
 import { sfxLevelUp } from "../../lib/sound";
 import EquipmentIcon from "../shared/EquipmentIcon";
@@ -179,7 +180,7 @@ function UpgradeCelebration({ result, onClose }) {
   );
 }
 
-// 材料中繼資料查詢：先查 legacy MATERIALS，查不到再查擴充素材清冊。
+// 材料中繼資料查詢：現行擴充素材清冊為顯示單一真本，legacy MATERIALS 僅作舊 id fallback。
 // 沒有這層的話，擴充素材（mat_ghost_t5_mini_a 之類）會直接把原始 id 顯示給玩家。
 // 從材料 id 反推階級（T1~T6）。舊 id 是 `${family}_m${N}`，擴充 id 是 `mat_${family}_t${N}_...`。
 // 顯示出來讓玩家（和我們）能一眼核對需求階級對不對 —— 之前對應表被推高一階，
@@ -225,19 +226,23 @@ function MaterialFamilyBadge({ material, size = 46 }) {
 }
 
 function resolveMatMeta(id) {
-  const legacy = MATERIALS.find(x => x.id === id);
-  if (legacy) return { ...legacy, family:legacy.family || materialFamilyFromId(id), tierIndex: matTierIndex(id) };
   const expansion = EXPANSION_MATERIAL_BY_ID[id];
-  if (!expansion) return null;
-  return {
-    id: expansion.id,
-    name: expansion.name,
-    icon: expansion.kind === "boss" ? "👑" : expansion.kind === "miniBoss" ? "🔱" : "🧱",
-    family: expansion.family,
-    kind: expansion.kind,
-    rarity: null,
-    tierIndex: expansion.tierIndex ?? matTierIndex(id),
-  };
+  if (expansion) {
+    const sourceMonster = EXPANSION_MONSTER_BY_ID[expansion.monsterId] || null;
+    return {
+      id: expansion.id,
+      name: expansion.name,
+      icon: expansion.kind === "boss" ? "👑" : expansion.kind === "miniBoss" ? "🔱" : "🧱",
+      family: expansion.family,
+      kind: expansion.kind,
+      rarity: null,
+      tierIndex: expansion.tierIndex ?? matTierIndex(id),
+      sourceMonsterName: sourceMonster?.name || "",
+      sourceTierIndex: sourceMonster?.tierIndex ?? expansion.tierIndex ?? null,
+    };
+  }
+  const legacy = MATERIALS.find(x => x.id === id);
+  return legacy ? { ...legacy, family:legacy.family || materialFamilyFromId(id), tierIndex: matTierIndex(id) } : null;
 }
 
 // ── 裝備選擇 Modal ─────────────────────────────────────────
@@ -408,9 +413,16 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
                               T{mat.tierIndex}
                             </span>
                           )}
-                          <span style={{ color: nameColor }} className="font-bold text-[11px]">
-                            {mat?.name || m.id}
-                            {m.note && <span className="ml-1 text-[9px] text-amber-400/80">（{m.note}）</span>}
+                          <span className="min-w-0">
+                            <span style={{ color: nameColor }} className="block font-bold text-[11px]">
+                              {mat?.name || m.id}
+                              {m.note && <span className="ml-1 text-[9px] text-amber-400/80">（{m.note}）</span>}
+                            </span>
+                            {mat?.sourceMonsterName && (
+                              <span className="block text-[9px] text-slate-400">
+                                來源：{mat.sourceTierIndex != null ? `T${mat.sourceTierIndex} ` : ""}{mat.sourceMonsterName}
+                              </span>
+                            )}
                           </span>
                           <span className="ml-auto font-black"
                             style={{ color: ok ? "#86efac" : "#f87171" }}>
@@ -436,8 +448,15 @@ function EquipModal({ slotDef, equipped, onEquip, onUnequip, onUpgrade, onClose,
                               T{mat.tierIndex}
                             </span>
                           )}
-                          <span style={{ color: nameColor }} className="font-black text-[11px]">
-                            {mat?.name || mats.keyItem.id}
+                          <span className="min-w-0">
+                            <span style={{ color: nameColor }} className="block font-black text-[11px]">
+                              {mat?.name || mats.keyItem.id}
+                            </span>
+                            {mat?.sourceMonsterName && (
+                              <span className="block text-[9px] text-amber-200/60">
+                                來源：{mat.sourceTierIndex != null ? `T${mat.sourceTierIndex} ` : ""}{mat.sourceMonsterName}
+                              </span>
+                            )}
                           </span>
                           <span className="ml-auto font-black"
                             style={{ color: ok ? "#86efac" : "#f87171" }}>
