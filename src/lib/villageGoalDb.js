@@ -12,11 +12,15 @@ import {
   GOAL_TYPE_MAP, buildGoalTitle, buildGoalDesc,
   GOAL_TYPES,
 } from "./villageGoalData";
-import { canAutoSpawn, goalEndAtMs, normalizeGoalSchedule } from "./villageGoalSchedule";
+import {
+  canAutoSpawn, goalEndAtMs, legacyActiveGoalDeadlinePatch, normalizeGoalSchedule,
+  resolveGoalSchedule, VILLAGE_GOAL_SCHEDULE_VERSION,
+} from "./villageGoalSchedule";
 import {
   buildCelebrationChests, calcVillageGoalRewards,
   villageGoalConsolation, villageGoalParticipation,
 } from "./villageGoalRewards";
+import { villageGoalOperationKey } from "./villageGoalContribution";
 
 const COLLECTION = "villageGoals";
 
@@ -127,31 +131,51 @@ export async function contributeDamageToGoal(memberId, amount) {
 }
 
 // ── 會員貢獻擊殺（由 saveMonsterLog 呼叫）───────────────────
-export async function contributeKillToGoal(memberId) {
-  const goal = _cachedActiveGoal;
-  if (!goal || goal.goalType !== "monster_kills") return;
-  try {
-    await updateDoc(doc(db, COLLECTION, goal.id), {
-      currentValue: increment(1),
-      [`participants.${memberId}.contributed`]: increment(1),
+async function contributeOnce(goal, memberId, amount, operationId) {
+  const op = villageGoalOperationKey(operationId);
+  if (!goal || !memberId || !(amount > 0) || !op) return false;
+  const ref = doc(db, COLLECTION, goal.id);
+  // Keep idempotency markers in bounded child documents. Storing every session
+  // as a field on the month-long goal would eventually hit Firestore's 1 MiB
+  // document limit and make every contribution transaction progressively larger.
+  const opRef = doc(ref, "operations", op);
+  return runTransaction(db, async tx => {
+    const [snap, opSnap] = await Promise.all([tx.get(ref), tx.get(opRef)]);
+    if (!snap.exists() || snap.data().status !== "active") return false;
+    if (opSnap.exists()) return false;
+    tx.update(ref, {
+      currentValue: increment(amount),
+      [`participants.${memberId}.contributed`]: increment(amount),
     });
-  } catch (e) {
-    console.warn("[villageGoal] contributeKill failed:", e.message);
-  }
+    tx.set(opRef, { memberId, amount, operationId: String(operationId), createdAt: serverTimestamp() });
+    return true;
+  });
+}
+
+export async function contributeKillToGoal(memberId, operationId) {
+  const goal = _cachedActiveGoal;
+  if (!goal || goal.goalType !== "monster_kills") return false;
+  // Let deferred shooting-session flushes observe transient Firestore failures
+  // so the local queue is retained and retried. Immediate callers explicitly
+  // catch this promise to keep battle settlement responsive.
+  return contributeOnce(goal, memberId, 1, operationId);
 }
 
 // 大富翁探索地圖繞圈貢獻（單人/組隊繞回起點時呼叫）
-export async function contributeLapToGoal(memberId, count = 1) {
+export async function contributeExplorationCompletionToGoal(memberId, operationId, count = 1) {
   const goal = _cachedActiveGoal;
-  if (!goal || goal.goalType !== "board_laps" || count <= 0) return;
+  if (!goal || !["board_laps", "exploration_completions"].includes(goal.goalType) || count <= 0) return;
   try {
-    await updateDoc(doc(db, COLLECTION, goal.id), {
-      currentValue: increment(count),
-      [`participants.${memberId}.contributed`]: increment(count),
-    });
+    return await contributeOnce(goal, memberId, count, operationId);
   } catch (e) {
-    console.warn("[villageGoal] contributeLap failed:", e.message);
+    console.warn("[villageGoal] contributeExplorationCompletion failed:", e.message);
   }
+}
+
+// Compatibility for callers outside the linear journey. New code must provide
+// a stable completion operation ID through contributeExplorationCompletionToGoal.
+export async function contributeLapToGoal(memberId, count = 1, operationId = `legacy:${memberId}:${Date.now()}`) {
+  return contributeExplorationCompletionToGoal(memberId, operationId, count);
 }
 
 export async function contributeGatheringToGoal(memberId, {
@@ -198,7 +222,18 @@ const GOAL_SCHEDULE_DOC = "villageGoal";
 export async function getVillageGoalSchedule() {
   try {
     const snap = await getDoc(doc(db, "sysConfig", GOAL_SCHEDULE_DOC));
-    return normalizeGoalSchedule(snap.data()?.schedule);
+    const resolved = resolveGoalSchedule(snap.data()?.schedule);
+    if (resolved.migrated) {
+      const { migrated, ...schedule } = resolved;
+      // Migration persistence is best effort: ordinary players can read this
+      // config but production rules intentionally reserve writes for admins.
+      // The resolved 30-day value must still be returned if that write is denied.
+      await setDoc(doc(db, "sysConfig", GOAL_SCHEDULE_DOC), {
+        schedule, scheduleMigratedAt: serverTimestamp(),
+      }, { merge: true }).catch(() => {});
+    }
+    const { migrated, ...schedule } = resolved;
+    return schedule;
   } catch {
     // ⚠️ 讀不到就用預設，不要讓村目標因為設定讀失敗就停擺
     return normalizeGoalSchedule(null);
@@ -209,7 +244,7 @@ export async function saveVillageGoalSchedule(schedule, operatorId) {
   try {
     const normalized = normalizeGoalSchedule(schedule);
     await setDoc(doc(db, "sysConfig", GOAL_SCHEDULE_DOC), {
-      schedule: normalized, updatedAt: serverTimestamp(), updatedBy: operatorId || null,
+      schedule: { ...normalized, version: VILLAGE_GOAL_SCHEDULE_VERSION }, updatedAt: serverTimestamp(), updatedBy: operatorId || null,
     }, { merge: true });
     return { ok: true, schedule: normalized };
   } catch (e) { return { ok: false, reason: e.message }; }
@@ -242,7 +277,19 @@ export async function autoSpawnVillageGoal(villageLevel = 1) {
     if (!snap.empty) {
       const latest = { id: snap.docs[0].id, ...snap.docs[0].data() };
       // 還有活躍目標是最常見的情況，這一步不需要任何設定
-      if (latest.status === "active") return { ok: false, reason: "already_active" };
+      if (latest.status === "active") {
+        await schedule(); // also performs the one-time legacy config migration
+        const deadlinePatch = legacyActiveGoalDeadlinePatch(latest, now);
+        if (deadlinePatch) {
+          await updateDoc(doc(db, COLLECTION, latest.id), {
+            endAt: new Date(deadlinePatch.endAtMs),
+            deadlineMigrationVersion: deadlinePatch.deadlineMigrationVersion,
+            deadlineMigratedAt: serverTimestamp(),
+          });
+          return { ok: false, reason: "already_active", deadlineMigrated: true };
+        }
+        return { ok: false, reason: "already_active" };
+      }
       // ⚠️ 能不能刷的判斷抽到 villageGoalSchedule.js（純函式、有測試）。
       //    舊版把「還有活躍目標」跟「冷卻中」都回 false，教練看不出是哪一種。
       const gate = canAutoSpawn(latest, await schedule());
@@ -265,6 +312,8 @@ export async function autoSpawnVillageGoal(villageLevel = 1) {
 
     const ref = await addDoc(collection(db, COLLECTION), {
       goalType,
+      title: buildGoalTitle(goalType, targetValue),
+      description: buildGoalDesc(goalType, targetValue),
       targetValue,
       ...applyGatheringTargetFields(goalType, gatheringTarget),
       currentValue: 0,
@@ -276,6 +325,7 @@ export async function autoSpawnVillageGoal(villageLevel = 1) {
       participants: {},
       announced: false,
       createdAt: serverTimestamp(),
+      scheduleVersion: VILLAGE_GOAL_SCHEDULE_VERSION,
     });
 
     // 發公告通知全體會員

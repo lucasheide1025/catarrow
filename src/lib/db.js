@@ -205,10 +205,17 @@ export async function flushPendingShootingSessions(memberId) {
 export async function finalizeMonsterShootingSession(input) {
   const record = buildMonsterShootingRecord(input);
   if (!record) return null;
+  const { isQualifyingMonsterKill } = await import("./villageGoalContribution");
+  const contributesKill = isQualifyingMonsterKill(input);
+  const contributeVillageKill = () => contributesKill
+    ? import("./villageGoalDb").then(m => m.contributeKillToGoal(input.memberId, `monster:${record.session.id}`))
+    : Promise.resolve();
+
   // 一律先存 localStorage，下課或下次登入時才 flush 到 Firestore
   if (!input.__skipPendingQueue) {
     queuePendingShootingSession("game", input);
     await flushPendingArrowProgress(input.memberId).catch(() => {});
+    contributeVillageKill().catch(() => {});
     return record.session.id;
   }
   assertCostCapability(COST_CAPABILITIES.shootingHistorySync);
@@ -239,6 +246,10 @@ export async function finalizeMonsterShootingSession(input) {
   if (input.memberId && Number(input.totalDamage || 0) > 0) {
     import("./villageGoalDb").then(m => m.contributeDamageToGoal(input.memberId, Number(input.totalDamage))).catch(() => {});
   }
+  // This branch is the deferred queue flush. Await the idempotent contribution
+  // so a transient failure keeps the shooting session queued for a later retry.
+  await contributeVillageKill();
+
   if (input.memberId && input.result === "win" && Number(input.finalMonsterHp) <= 0) {
     import("./worldBossDb").then(module => module.contributeWorldBossSpawnProgress({
       memberId:input.memberId, type:"monsterKills", amount:1, operationId:`monster:${record.session.id}`,

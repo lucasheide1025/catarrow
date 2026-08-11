@@ -38,7 +38,7 @@ export default function AdminVillageGoals() {
   const [goalForm, setGoalForm]         = useState({
     goalType: "total_arrows",
     targetValue: 5000,
-    durationHours: 24,
+    durationHours: VILLAGE_GOAL_SCHEDULE_DEFAULTS.baseHours,
     tier: 1,
     rewardArrowdew: 200,
     rewardCoins: 100,

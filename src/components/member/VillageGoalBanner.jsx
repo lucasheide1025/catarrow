@@ -2,7 +2,8 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { subscribeLatestGoal, checkGoalStatus, claimVillageGoalReward } from "../../lib/villageGoalDb";
-import { GOAL_TYPE_MAP, buildGoalTitle } from "../../lib/villageGoalData";
+import { GOAL_TYPE_MAP, resolveGoalDisplay } from "../../lib/villageGoalData";
+import { celebrationChestCount, villageGoalCelebration, villageGoalEffortPerPlayer, villageGoalParticipation } from "../../lib/villageGoalRewards";
 import { useToast } from "../shared/UI";
 
 const C = {
@@ -18,7 +19,8 @@ const C = {
 
 function gatheringGoalTitle(goal, fallbackTitle) {
   if (!goal?.goalType?.startsWith("gathering_")) return fallbackTitle;
-  const meta = GOAL_TYPE_MAP[goal.goalType];
+  const display = resolveGoalDisplay(goal);
+  const meta = display.meta || GOAL_TYPE_MAP[goal.goalType];
   const targetName = goal.targetMaterialName || goal.targetResourceName || "";
   const value = Number(goal.targetValue || 0).toLocaleString();
   return `${targetName ? `${targetName} ` : ""}${value} ${meta?.contributionLabel || ""}`;
@@ -88,10 +90,15 @@ export default function VillageGoalBanner() {
   const participantEntries = Object.entries(goal.participants || {});
   const totalCount = participantEntries.filter(([, p]) => (p.contributed || 0) > 0).length;
 
-  const meta = GOAL_TYPE_MAP[goal.goalType];
+  const display = resolveGoalDisplay(goal);
+  const meta = display.meta || GOAL_TYPE_MAP[goal.goalType];
   const pct = Math.min(100, Math.round((goal.currentValue / goal.targetValue) * 100));
-  const titleText = gatheringGoalTitle(goal, goal.customTitle || buildGoalTitle(goal.goalType, goal.targetValue));
-  const desc = gatheringGoalDesc(goal, goal.customDescription || meta?.desc || "");
+  const titleText = gatheringGoalTitle(goal, display.title);
+  const desc = gatheringGoalDesc(goal, display.description || meta?.desc || "");
+  const tier = Number(goal.tier) || 0;
+  const participation = goal.rewards || villageGoalParticipation(tier);
+  const effort = villageGoalEffortPerPlayer(tier);
+  const celebration = villageGoalCelebration(tier);
 
   return (
     <div className="mx-4 my-2.5 rounded-2xl p-3.5 shadow-sm transition-all relative overflow-hidden"
@@ -153,11 +160,11 @@ export default function VillageGoalBanner() {
         )}
       </div>
 
-      {showRewards && goal.rewards && (
-        <div className="mt-2 flex gap-3 p-2 rounded-xl text-xs font-black" style={{ background: "rgba(255,255,255,0.6)", border: "1px solid rgba(245,158,11,0.2)" }}>
-          <span>💧 箭露 <span style={{ color: C.gold }}>+{goal.rewards.arrowdew ?? 0}</span></span>
-          <span>🪙 金幣 <span style={{ color: C.gold }}>+{goal.rewards.coins ?? 0}</span></span>
-          <span>🎰 扭蛋幣 <span style={{ color: C.gold }}>+{goal.rewards.gachaToken ?? 0}</span></span>
+      {showRewards && (
+        <div className="mt-2 space-y-2 p-2 rounded-xl text-xs font-bold" style={{ background: "rgba(255,255,255,0.6)", border: "1px solid rgba(245,158,11,0.2)" }}>
+          <div><b>參與保底：</b>箭露 {participation.arrowdew || 0}、金幣 {participation.coins || 0}、扭蛋幣 {participation.gachaToken || 0}</div>
+          <div><b>努力分潤：</b>每位參與者加入箭露 {effort.arrowdew || 0}、金幣 {effort.coins || 0}、扭蛋幣 {effort.gachaToken || 0} 的獎池；實領依貢獻平方根權重分配。</div>
+          <div><b>完成慶功：</b>咪咪箱 {celebration.mimiBoxes || 0} 個，加上七族素材箱共 {celebrationChestCount(tier)} 個（T{celebration.chestTierRange?.[0]}–T{celebration.chestTierRange?.[1]}）。</div>
         </div>
       )}
     </div>

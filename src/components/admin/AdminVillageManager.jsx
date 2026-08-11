@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { getMembers, adminSetVillageBuilding, adminAdjustVillageResource, adminResetVillage, subscribeVillageMarketConfig, saveVillageMarketConfig } from "../../lib/db";
 import { adminCreateCustomGoal, adminCancelGoal, adminForceCompleteGoal, adminUpdateGoal, adminBackfillVillageGoalRewards, subscribeActiveGoal } from "../../lib/villageGoalDb";
 import { GOAL_TYPES, GOAL_TYPE_MAP } from "../../lib/villageGoalData";
+import { VILLAGE_GOAL_SCHEDULE_DEFAULTS } from "../../lib/villageGoalSchedule";
 import {
   BUILDING_LIST, BUILDINGS, TIERED_RESOURCES, RESOURCE_NAMES, DEFAULT_VILLAGE,
 } from "../../lib/villageData";
@@ -32,7 +33,7 @@ export default function AdminVillageManager() {
   const [activeGoal,   setActiveGoal]   = useState(null);
   const [goalEditMode, setGoalEditMode] = useState(false);
   const [goalForm,     setGoalForm]     = useState({
-    goalType: "total_arrows", targetValue: 5000, durationHours: 24,
+    goalType: "total_arrows", targetValue: 5000, durationHours: VILLAGE_GOAL_SCHEDULE_DEFAULTS.baseHours,
     rewardArrowdew: 200, rewardCoins: 100, rewardGachaToken: 3,
     customTitle: "", customDescription: "",
   });

@@ -15,6 +15,7 @@ import {
   combineRewards, rollDice, rollJourneyDice, randomSeed, findNextTile, lockedJourneyTier,
 } from "./boardJourney";
 import { getNormalMaterialPool } from "./monsterEconomyCatalog";
+import { soloExplorationCompletionOperation } from "./villageGoalContribution";
 
 export const DAILY_DICE = 15;   // 每日補滿至 15（上限 15、不囤積）
 
@@ -102,8 +103,6 @@ export async function rollAndMove(memberId) {
       "villageBoard.boardPos": to,
       ...(lapped ? { "villageBoard.lapCount": increment(1), villageTotalLaps: increment(1) } : {}),
     });
-    // 繞圈 → 貢獻村目標「繞 N 圈」
-    if (lapped) import("./villageGoalDb").then(m => m.contributeLapToGoal(memberId, 1)).catch(() => {});
     import("./worldBossDb").then(module => module.contributeWorldBossSpawnProgress({
       memberId, type:"villageDice", amount:1, operationId:`village-dice:${memberId}:${Date.now()}:${from}:${to}`,
     })).catch(() => {});
@@ -411,7 +410,7 @@ export async function settleJourneyTile(memberId, mapId, tileType, ctx = {}) {
       let reward = rollTileReward(tileType, baseCtx);
       reward = applyJourneyMultipliers(reward, { shootMult, campMult });
       if (tileType === "boss") {
-        // 終點：無失敗，按分數帶給獎 → 完成旅程 clears+1 → 村目標 board_laps → 重置換新 seed
+        // 終點：無失敗，按分數帶給獎 → 完成探險地圖一次 → 重置換新 seed
         const clears = (m.clears || 0) + 1;
         const seed = randomSeed();
         const j = generateJourney(mapId, seed);
@@ -422,7 +421,10 @@ export async function settleJourneyTile(memberId, mapId, tileType, ctx = {}) {
         };
         await applyBoardReward(memberId, reward, { catId });
         await updateDoc(ref, patch);
-        import("./villageGoalDb").then(m2 => m2.contributeLapToGoal(memberId, 1)).catch(() => {});
+        const completionId = soloExplorationCompletionOperation({
+          memberId, mapId, journeySeed: m.seed, completed: true,
+        });
+        import("./villageGoalDb").then(m2 => m2.contributeExplorationCompletionToGoal(memberId, completionId, 1)).catch(() => {});
         return { ok: true, reward, buffs: {}, kind: "boss", completed: true, clears, newSeed: seed };
       }
       const patch = {};

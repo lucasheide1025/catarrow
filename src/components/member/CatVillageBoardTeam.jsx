@@ -34,6 +34,7 @@ import TileDemo from "./TileDemo";
 import BossDuel from "./BossDuel";
 import BoardGuide from "./BoardGuide";
 import CardArtImage from "./cards/CardArt";
+import { teamExplorationCompletionOperation } from "../../lib/villageGoalContribution";
 
 const ASSET = "/assets/board";
 // 旅程畫布尺寸（與單機版同一套）：76px 格子、88×96 間距、鏡頭雙軸跟隨
@@ -453,7 +454,15 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
         addVillageLap(myId).catch(() => {});
         sfxBoardLap();
         showToast("🏁 完成旅程！下一趟開房可重新選階級");
-        import("../../lib/villageGoalDb").then(m => m.contributeLapToGoal(myId, 1)).catch(() => {});
+        // A team clears one map, not one map per member. The host emits the
+        // stable operation and Firestore deduplicates reconnect/replay.
+        const completionId = teamExplorationCompletionOperation({
+          memberId: myId, hostId: room.hostId, roomId,
+          sequence: room.seq, completed: true,
+        });
+        if (completionId) {
+          import("../../lib/villageGoalDb").then(m => m.contributeExplorationCompletionToGoal(myId, completionId, 1)).catch(() => {});
+        }
       }
       if (isCatBond && catId) {
         setCatBondPop({

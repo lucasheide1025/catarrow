@@ -59,16 +59,17 @@ export const GOAL_TYPES = [
     color: "#facc15",
   },
   {
-    id: "board_laps",
-    icon: "🎲",
-    name: "探索地圖繞圈",
-    desc: "全村在大富翁探索地圖累積繞圈數",
-    contributionLabel: "圈",
+    id: "exploration_completions",
+    icon: "🗺️",
+    name: "完成貓咪探險地圖",
+    desc: "全村一起完成指定次數的貓咪探險地圖",
+    contributionLabel: "次",
     color: "#fb923c",
   },
 ];
 
 export const GOAL_TYPE_MAP = Object.fromEntries(GOAL_TYPES.map(g => [g.id, g]));
+GOAL_TYPE_MAP.board_laps = GOAL_TYPE_MAP.exploration_completions;
 
 export const GATHERING_GOAL_MATERIALS = [
   { id: "mountain_m1", label: "山岳族 T1素材" },
@@ -117,11 +118,12 @@ export function getGoalTarget(villageLevel, goalType) {
   const targets = {
     total_arrows:  [5000, 15000, 25000, 38000],
     total_damage:  [50000, 150000, 250000, 380000],
-    monster_kills: [20, 50, 80, 120],
+    monster_kills: [40, 100, 160, 240],
     gathering_progress: [1500, 4000, 6500, 10000],
     gathering_participants: [20, 45, 70, 100],
     gathering_material: [80, 180, 280, 400],
     gathering_resource: [60, 140, 220, 320],
+    exploration_completions: [30, 70, 105, 150],
     board_laps: [30, 70, 105, 150],
   };
   const arr = targets[goalType];
@@ -154,11 +156,23 @@ export function buildGoalTitle(goalType, targetValue) {
   const label = targetValue >= 10000
     ? (targetValue / 10000).toFixed(targetValue % 10000 === 0 ? 0 : 1) + "萬"
     : targetValue.toLocaleString();
-  return `${meta.icon} 村目標：${label} ${meta.contributionLabel}`;
+  return `${meta.icon} ${meta.name}：${label} ${meta.contributionLabel}`;
 }
 
 export function buildGoalDesc(goalType, targetValue) {
   const meta = GOAL_TYPE_MAP[goalType];
   if (!meta) return "";
   return `全體村民合作累積 ${targetValue.toLocaleString()} ${meta.contributionLabel}！`;
+}
+
+export function resolveGoalDisplay(goal = {}) {
+  const canonicalType = goal.goalType === "board_laps" ? "exploration_completions" : goal.goalType;
+  const meta = GOAL_TYPE_MAP[canonicalType] || GOAL_TYPE_MAP[goal.goalType];
+  const target = Number(goal.targetValue || 0);
+  return {
+    goalType: canonicalType,
+    meta,
+    title: goal.customTitle || goal.title || buildGoalTitle(canonicalType, target),
+    description: goal.customDescription || goal.description || buildGoalDesc(canonicalType, target),
+  };
 }

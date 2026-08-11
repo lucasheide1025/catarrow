@@ -52,6 +52,34 @@ export function normalizeGoalSchedule(raw = {}) {
   };
 }
 
+export const VILLAGE_GOAL_SCHEDULE_VERSION = 2;
+
+export function resolveGoalSchedule(raw = null) {
+  const source = raw || {};
+  const isLegacy24Hour = source.version == null
+    && Number(source.baseHours) === 24
+    && Number(source.perTierHours || 0) === 0
+    && Number(source.cooldownHours ?? 72) === 72;
+  return {
+    ...normalizeGoalSchedule(isLegacy24Hour ? VILLAGE_GOAL_SCHEDULE_DEFAULTS : source),
+    version: VILLAGE_GOAL_SCHEDULE_VERSION,
+    migrated: isLegacy24Hour,
+  };
+}
+
+export function legacyActiveGoalDeadlinePatch(goal, nowMs = Date.now()) {
+  if (!goal || goal.status !== "active" || goal.isAdminCreated
+    || goal.scheduleVersion != null
+    || goal.deadlineMigrationVersion >= VILLAGE_GOAL_SCHEDULE_VERSION) return null;
+  const startMs = goal.startAt?.toMillis?.() ?? Number(goal.startAtMs);
+  const endMs = goal.endAt?.toMillis?.() ?? Number(goal.endAtMs);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || (endMs - startMs) / 3600000 > 24.01) return null;
+  return {
+    endAtMs: nowMs + VILLAGE_GOAL_SCHEDULE_DEFAULTS.baseHours * 3600000,
+    deadlineMigrationVersion: VILLAGE_GOAL_SCHEDULE_VERSION,
+  };
+}
+
 /** 這個階級的目標要給幾小時 */
 export function goalDurationHours(tier = 0, config = null) {
   const cfg = normalizeGoalSchedule(config || {});

@@ -46,4 +46,9 @@ describe("目標值曲線", () => {
   test("不認識的目標類型有保底值，不會回 undefined", () => {
     expect(getGoalTarget(1, "不存在")).toBeGreaterThan(0);
   });
+
+  test("擊殺與探險完成採用核准後的四階曲線", () => {
+    expect(LEVEL_FOR_TIER.map(lv => getGoalTarget(lv, "monster_kills"))).toEqual([40, 100, 160, 240]);
+    expect(LEVEL_FOR_TIER.map(lv => getGoalTarget(lv, "exploration_completions"))).toEqual([30, 70, 105, 150]);
+  });
 });

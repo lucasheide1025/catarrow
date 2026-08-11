@@ -1,6 +1,7 @@
 import {
   SCHEDULE_LIMITS, VILLAGE_GOAL_SCHEDULE_DEFAULTS, canAutoSpawn, describeSchedule,
   goalDurationHours, goalEndAtMs, normalizeGoalSchedule,
+  legacyActiveGoalDeadlinePatch, resolveGoalSchedule,
 } from "./villageGoalSchedule";
 
 const H = 3600000;
@@ -33,6 +34,26 @@ describe("作者定案：完成期限一個月、結束三天後才刷下一個"
 
   test("一個月要設得進去（上限不能卡住）", () => {
     expect(normalizeGoalSchedule({ baseHours: 720 }).baseHours).toBe(720);
+  });
+});
+
+describe("舊 24 小時期限遷移", () => {
+  test("只遷移未版本化的舊預設", () => {
+    expect(resolveGoalSchedule({ baseHours: 24, perTierHours: 0, cooldownHours: 72 })).toMatchObject({ baseHours: 720, migrated: true });
+    expect(resolveGoalSchedule({ version: 2, baseHours: 24, perTierHours: 0, cooldownHours: 72 })).toMatchObject({ baseHours: 24, migrated: false });
+  });
+
+  test("活躍舊目標從遷移當下重新獲得 30 天且冪等", () => {
+    const goal = { status: "active", startAtMs: 0, endAtMs: 24 * H };
+    const patch = legacyActiveGoalDeadlinePatch(goal, 10 * H);
+    expect(patch.endAtMs).toBe(730 * H);
+    expect(legacyActiveGoalDeadlinePatch({ ...goal, ...patch }, 20 * H)).toBeNull();
+  });
+
+  test("不延長教練建立或已帶新版排程標記的刻意短目標", () => {
+    const shortGoal = { status: "active", startAtMs: 0, endAtMs: 24 * H };
+    expect(legacyActiveGoalDeadlinePatch({ ...shortGoal, isAdminCreated: true }, 10 * H)).toBeNull();
+    expect(legacyActiveGoalDeadlinePatch({ ...shortGoal, scheduleVersion: 2 }, 10 * H)).toBeNull();
   });
 });
 

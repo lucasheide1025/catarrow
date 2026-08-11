@@ -688,6 +688,18 @@ service cloud.firestore {
       allow create: if isAdmin() || isLoggedIn();
       allow update: if isLoggedIn();
       allow delete: if isAdmin();
+
+      // Stable session/completion markers keep retryable contributions from
+      // incrementing twice without growing the month-long goal document.
+      match /operations/{operationId} {
+        allow read: if isLoggedIn();
+        allow create: if isLoggedIn()
+          && ownsMember(request.resource.data.memberId)
+          && request.resource.data.keys().hasOnly(["memberId", "amount", "operationId", "createdAt"])
+          && request.resource.data.amount is number
+          && request.resource.data.amount > 0;
+        allow update, delete: if false;
+      }
     }
 
     // cardMarket：貓咪卡片市集，登入者可讀寫

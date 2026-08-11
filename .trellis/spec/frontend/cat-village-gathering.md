@@ -136,6 +136,17 @@ function CatVillage() {
 - Foreground game illustrations are alpha WebP with transparent corners, no baked card frame, no text, and no cast shadow. Keep generated source images out of `public/` after the final WebP has been validated.
 - Dynamic SVG that communicates live topology or progress is functional visualization and is not replaced by decorative raster art.
 
+## Village shop simulation
+
+- The Cat Village shop is a scene-first management minigame, not a dashboard. Its primary mobile viewport is a single 2D shop cutaway; supporting operations open as contextual drawers and must not reintroduce a second legacy mode.
+- Preserve existing `village.shop` progress when the UI changes: level, tickets, furniture, stock, display, discovered customers, stats, and exchange history are player-owned state.
+- Shop initialization and offline settlement must wait until the parent `village` snapshot is known to be loaded. An undefined or not-yet-arrived village must never be treated as a new account, because doing so can overwrite an existing shop.
+- Manual rush, normal manual play, and offline sales share one demand and stock model. Their baseline rate multipliers are `1`, `0.5`, and `0.2`; do not create parallel inventory truths or a second shelf-stock schema.
+- Offline sales settle on entry or an explicit boundary with a cursor and state signature inside one transaction. Do not add a listener, polling loop, or per-customer Firestore write.
+- Rush time is granted only after successful class-end settlement: every 10 official arrows adds 60 seconds, the remainder carries forward, and stored rush time caps at 1,800 seconds. Use an arrow checkpoint or session idempotency key so retries cannot grant twice.
+- Runtime timers stay local and persist in batches at settlement boundaries. Never write rush countdown state once per second.
+- Shop customer and merchandise art resolves through a central manifest. Do not build asset paths inside components or use unrelated guild/dungeon art as the final visual layer.
+
 ## Co-op preparation
 
 - Future team rooms persist the complete contract descriptor, never regenerate it independently on each client.
