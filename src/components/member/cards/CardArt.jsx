@@ -79,6 +79,8 @@ export default function CardArtImage({ view }) {
     return (
       <img
         src={sources[index]}
+        width="240"
+        height="320"
         alt={view.owned ? view.name : "未取得卡片"}
         loading="lazy"
         decoding="async"

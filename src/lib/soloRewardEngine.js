@@ -1,3 +1,5 @@
+import { resolveCardDropChance } from "./cardDropPolicy";
+
 function seededRoll(key) {
   let hash = 2166136261;
   for (const char of String(key)) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
@@ -23,7 +25,8 @@ export function normalizeSoloRewardMaterials(materialTotals = {}, resolveMateria
 
 export function buildSoloExpansionReward({ battleId, memberId, monster, materialQty = 5, cardChance = 0.2 }) {
   if (!battleId || !memberId || monster?.expansionVersion !== 1 || monster?.encounter !== "normal" || !monster?.materialId) return null;
-  const cardDropped = seededRoll(`${battleId}:${memberId}:${monster.id}:card`) < cardChance;
+  const chance = resolveCardDropChance({ mode:"solo", encounter:monster.encounter, baseChance:cardChance });
+  const cardDropped = seededRoll(`${battleId}:${memberId}:${monster.id}:card`) < chance;
   return {
     rewardKey:`${battleId}:${memberId}:solo`,
     materials:[{ id:monster.materialId, quantity:materialQty }],

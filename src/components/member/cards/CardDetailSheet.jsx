@@ -3,7 +3,7 @@
 // 開啟時透過 onSeen 清除該卡紅點（寫入在 effect,不在 render）。
 // 裝備/升星等實際動作由 props callback 提供（Codex 最後接線）。
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import CardArtImage from "./CardArt";
 import { calcCardBonus, getCardStat, canUpgradeStar, getUpgradeCost } from "../../../lib/monsterCards";
 import { EXPANSION_MONSTER_BY_ID } from "../../../lib/monsterExpansionCatalog";
@@ -20,31 +20,65 @@ const ENC_LABEL = { normal: "一般怪", miniBoss: "小王", boss: "大王", wor
 const FAMILY_LABEL = { ghost: "鬼怪", mountain: "山林", insect: "毒蟲", workplace: "職場", exam: "考試", temple: "西方", treasure: "寶箱", worldboss: "世界王" };
 
 export default function CardDetailSheet({ view, onClose, onSeen, onEquip, onUpgrade, onPickStat, onSetTitle }) {
+  const sheetRef = useRef(null);
+  const openerRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   // 開啟一張已取得的卡 → 清紅點（effect,不在 render 寫）
   useEffect(() => {
     if (view && view.owned && onSeen) onSeen(view.monsterId);
   }, [view, onSeen]);
+
+  useEffect(() => {
+    if (!view) return undefined;
+    openerRef.current = document.activeElement;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const sheet = sheetRef.current;
+    const focusables = () => Array.from(sheet?.querySelectorAll('button:not([disabled]), summary, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])') || []);
+    const onKeyDown = event => {
+      if (event.key === "Escape") { event.preventDefault(); onCloseRef.current?.(); return; }
+      if (event.key !== "Tab") return;
+      const list = focusables();
+      if (!list.length) { event.preventDefault(); sheet?.focus(); return; }
+      const first = list[0]; const last = list[list.length - 1];
+      const activeIndex = list.indexOf(document.activeElement);
+      if (event.shiftKey && activeIndex <= 0) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && (activeIndex < 0 || document.activeElement === last)) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    const focusFrame = requestAnimationFrame(() => (focusables()[0] || sheet)?.focus());
+    return () => {
+      cancelAnimationFrame(focusFrame);
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      openerRef.current?.focus?.();
+    };
+  }, [view]);
 
   if (!view) return null;
   const owned = view.owned;
 
   return (
     <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={owned ? view.name : "未取得卡片"}
-      onClick={onClose}
-      style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(2,6,23,.7)", display: "flex", alignItems: "flex-end" }}
+      style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "flex-end", overscrollBehavior:"contain" }}
     >
+      <button type="button" className="card-action" onClick={onClose} aria-label="關閉卡片詳情"
+        style={{position:"absolute",inset:0,border:0,padding:0,background:"rgba(2,6,23,.7)",cursor:"default"}} />
       <div
-        onClick={e => e.stopPropagation()}
+        ref={sheetRef}
+        tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-label={owned ? view.name : "未取得卡片"}
         className="card-sheet"
         style={{
-          width: "100%", maxHeight: "82vh", overflowY: "auto", background: "#0f172a",
+          position:"relative", zIndex:1, width: "100%", maxHeight: "82vh", overflowY: "auto", background: "#0f172a",
           borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 16,
-          borderTop: "1px solid rgba(255,255,255,.1)",
+          borderTop: "1px solid rgba(255,255,255,.1)", overscrollBehavior:"contain",
         }}
       >
+        <button type="button" className="card-action" onClick={onClose} aria-label="關閉卡片詳情" style={{position:"sticky",top:0,float:"right",zIndex:3,width:44,height:44,borderRadius:999,border:"1px solid rgba(255,255,255,.18)",background:"#1e293b",color:"#fff",fontSize:20,touchAction:"manipulation"}}>×</button>
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
           <span style={{ width: 40, height: 4, borderRadius: 999, background: "rgba(255,255,255,.2)" }} />
         </div>
@@ -100,13 +134,15 @@ export default function CardDetailSheet({ view, onClose, onSeen, onEquip, onUpgr
           </div>
         </div>
 
+        {view.source !== "wb" && <details style={{marginTop:14,padding:"10px 12px",borderRadius:12,background:"rgba(255,255,255,.03)",border:"1px solid rgba(255,255,255,.08)"}}>
+          <summary style={{cursor:"pointer",minHeight:44,display:"flex",alignItems:"center",fontWeight:900,color:"#cbd5e1",touchAction:"manipulation"}}>進階資訊：故事、技能與破解規則</summary>
         {/* 怪物設定介紹：舊 60 隻用原 desc;新擴充怪用招牌技能設定＋破解提示 */}
         {view.source !== "wb" && (() => {
           const legacy = MONSTERS.find(m => m.id === view.monsterId);
           const mon = EXPANSION_MONSTER_BY_ID?.[view.monsterId];
           if (!legacy?.desc && !mon) return null;
           return (
-            <div style={{ marginTop: 14, padding: "10px 12px", borderRadius: 12, background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.08)" }}>
+            <div style={{ marginTop: 10 }}>
               {legacy?.desc && <div style={{ fontSize: 12, color: "#cbd5e1", lineHeight: 1.6, fontStyle: "italic" }}>「{legacy.desc}」</div>}
               {mon?.signatureSummary && (
                 <div style={{ marginTop: legacy?.desc ? 8 : 0, fontSize: 11, color: "#d8b4fe", lineHeight: 1.55 }}>
@@ -118,14 +154,15 @@ export default function CardDetailSheet({ view, onClose, onSeen, onEquip, onUpgr
             </div>
           );
         })()}
+        </details>}
 
         {/* 動作（實際邏輯由 Codex 接線;無 callback 時停用） */}
         {owned && (<>
           {/* 自選屬性已移除（使用者拍板 2026-07-19）：屬性一律由卡片本身寫死，
               同一張卡在任何玩家身上效果都相同，方便平衡與說明。舊資料殘留的
               chosenStat 由 getCardStat 直接忽略，不需要遷移。 */}
-          <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-            <button type="button" disabled={!onEquip} onClick={() => onEquip && onEquip(view)}
+          <div style={{ display: "flex", gap: 8, marginTop: 16, position:"sticky", bottom:0, zIndex:2, padding:"10px 0 calc(10px + env(safe-area-inset-bottom))", background:"linear-gradient(180deg,rgba(15,23,42,0),#0f172a 18%)" }}>
+            <button type="button" className="card-action" disabled={!onEquip} onClick={() => onEquip && onEquip(view)}
               style={{ flex: 1, padding: 12, borderRadius: 12, fontWeight: 800, fontSize: 14, border: "1px solid rgba(255,255,255,.15)", background: onEquip ? "#6366f1" : "rgba(255,255,255,.06)", color: onEquip ? "#fff" : "#475569" }}>
               {view.equipped ? "卸下" : "裝備"}
             </button>
@@ -133,16 +170,16 @@ export default function CardDetailSheet({ view, onClose, onSeen, onEquip, onUpgr
               const upgradable = view.source !== "wb" && canUpgradeStar(view.stars || 1, view.duplicates || 0, view.tier);
               const cost = (view.stars || 1) < 5 ? getUpgradeCost(view.stars || 1) : null;
               const enabled = !!onUpgrade && upgradable;
-              return <button type="button" disabled={!enabled} onClick={() => enabled && onUpgrade(view)}
+              return <button type="button" className="card-action" disabled={!enabled} onClick={() => enabled && onUpgrade(view)}
                 style={{ flex: 1, padding: 12, borderRadius: 12, fontWeight: 800, fontSize: 14, border: "1px solid rgba(255,255,255,.15)", background: enabled ? "#f59e0b" : "rgba(255,255,255,.06)", color: enabled ? "#111827" : "#475569" }}>
                 {(view.stars || 1) >= 5 ? "已滿星" : view.source === "wb" ? "王卡不升星" : enabled ? `升星（耗重複×${cost}）` : `升星（重複 ${view.duplicates || 0}/${cost ?? "-"}）`}
               </button>;
             })()}
           </div>
-          {view.source === "wb" && <button type="button" onClick={() => onSetTitle?.(view)} style={{width:"100%",marginTop:8,padding:10,borderRadius:10,border:"1px solid rgba(250,204,21,.35)",background:"rgba(250,204,21,.12)",color:"#fde68a",fontWeight:900}}>{view.activeTitle?"取消稱號":"設為展示稱號"}</button>}
+          {view.source === "wb" && <button type="button" className="card-action" onClick={() => onSetTitle?.(view)} style={{width:"100%",minHeight:44,marginTop:8,padding:10,borderRadius:10,border:"1px solid rgba(250,204,21,.35)",background:"rgba(250,204,21,.12)",color:"#fde68a",fontWeight:900}}>{view.activeTitle?"取消稱號":"設為展示稱號"}</button>}
         </>)}
 
-        <button type="button" onClick={onClose}
+        <button type="button" className="card-action" onClick={onClose}
           style={{ width: "100%", marginTop: 10, padding: 12, borderRadius: 12, fontWeight: 800, fontSize: 14, border: "1px solid rgba(255,255,255,.12)", background: "rgba(255,255,255,.05)", color: "#94a3b8" }}>
           關閉
         </button>

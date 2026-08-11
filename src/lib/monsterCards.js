@@ -75,12 +75,9 @@ export function calcEquippedBonus(equippedCards = []) {
   for (const card of equippedCards) {
     if (!card) continue;
     const stat = getCardStat(card);
-    bonus[stat] = (bonus[stat] || 0) + calcCardBonus(card.tier, card.stars || 1);
-    if (card.tier === "worldboss") {
-      if (stat === "atk") bonus.dmgBonusPct  += WB_PASSIVE_PCT_PER_CARD;
-      if (stat === "def") bonus.dmgReducePct += WB_PASSIVE_PCT_PER_CARD;
-      if (stat === "hp")  bonus.healBonusPct += WB_PASSIVE_PCT_PER_CARD;
-    }
+    if (card.tier !== "worldboss") bonus[stat] = (bonus[stat] || 0) + calcCardBonus(card.tier, card.stars || 1);
+    // 世界王卡 v2 的戰鬥效果由 stable boss key resolver 決定；選擇的
+    // HP/ATK/DEF 只保留 +25 面板值，不再額外產生舊版 3% 被動。
     // 剋制效果寫在卡片資料上（不隨玩家選擇改變），星級會放大
     const slayer = getCardSlayerEffect(card);
     if (slayer) {

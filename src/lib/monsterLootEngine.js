@@ -1,5 +1,6 @@
 import { EXPANSION_MONSTER_BY_ID } from "./monsterExpansionCatalog";
 import { getNormalMaterialPool, TIER_BASE_MATERIAL } from "./monsterEconomyCatalog";
+import { resolveCardDropChance } from "./cardDropPolicy";
 
 export const BOSS_ROOM_ODDS = Object.freeze({ miniA: 0.35, miniB: 0.35, boss: 0.3 });
 const BOSS_MARKS = Object.freeze([0, 1, 1, 2, 3, 5, 8]);
@@ -24,13 +25,10 @@ export function selectBossRoomEncounter({ roll, consecutiveNonBoss = 0 }) {
   return { role, nextConsecutiveNonBoss: role === "boss" ? 0 : consecutiveNonBoss + 1, guaranteed: false };
 }
 
-export function resolveBossCardDrop({ encounter, firstDefeat = false, misses = 0, roll = 0 }) {
+export function resolveBossCardDrop({ encounter, roll = 0 }) {
   if (!["miniBoss", "boss"].includes(encounter)) throw new Error("boss_encounter_required");
-  if (firstDefeat) return { dropped: true, nextMisses: 0, guaranteed: true, reason: "firstDefeat" };
-  const threshold = encounter === "miniBoss" ? 5 : 8;
-  if (misses >= threshold - 1) return { dropped: true, nextMisses: 0, guaranteed: true, reason: "pity" };
-  const dropped = normalizeRoll(roll) < (encounter === "miniBoss" ? 0.2 : 0.1);
-  return { dropped, nextMisses: dropped ? 0 : misses + 1, guaranteed: false, reason: dropped ? "roll" : "miss" };
+  const dropped = normalizeRoll(roll) < resolveCardDropChance({ mode:"dungeon", encounter });
+  return { dropped, guaranteed:false, reason:dropped ? "roll" : "miss", chance:0.4 };
 }
 
 export function splitMaterialTotal({ materials, total, rotationKey }) {

@@ -5,6 +5,7 @@
 
 import { getSignatureEffect } from "./signatureEffectCatalog";
 import { FAMILY_STATUS, MONSTER_STATUSES, procCapFor } from "./monsterStatus";
+import { resolveWorldBossCardEffects } from "./worldBossCards";
 
 // ── 族系套裝（2張/4張兩階）────────────────────────────────
 export const FAMILY_SET_BONUSES = Object.freeze({
@@ -174,7 +175,7 @@ export function calcInflictFromViews(equippedViews = [], venomPct = 0) {
 }
 
 // 從 cardCollections 文件形狀直接彙總（戰鬥端便利入口）
-export function calcCardCombatEffectsFromCollection(collection = {}) {
+export function calcCardCombatEffectsFromCollection(collection = {}, context = {}) {
   const cards = collection.cards || {};
   const views = (collection.equipped || [])
     .map(item => (typeof item === "string" ? { key: item, source: "monster" } : item))
@@ -184,7 +185,18 @@ export function calcCardCombatEffectsFromCollection(collection = {}) {
       return card ? { monsterId: item.key, family: card.family, tier: card.tier, tierIndex: card.tierIndex || tierIndexFromTier(card.tier), source: "monster" } : null;
     })
     .filter(Boolean);
-  return calcCardCombatEffects(views);
+  const total = calcCardCombatEffects(views);
+  const wb = resolveWorldBossCardEffects({
+    equippedCardKeys:(collection.equipped || []).filter(item => item && typeof item !== "string" && item.source === "wb").map(item => item.key),
+    enemyFamily:context.enemyFamily,
+    enemyClass:context.enemyClass,
+  }).modifiers;
+  total.damagePct = (total.damagePct || 0) + wb.damagePct * 100;
+  total.damageReductionPct = (total.damageReductionPct || 0) + wb.damageReducePct * 100;
+  total.healPct = (total.healPct || 0) + wb.healPct * 100;
+  total.armorPiercePct = (total.armorPiercePct || 0) + wb.armorPiercePct;
+  if (wb.burn) total.inflict = { ...(total.inflict || {}), burn:{ chancePct:100, strength:wb.burn.strengthPct, duration:wb.burn.duration, uncapped:true } };
+  return total;
 }
 
 function tierIndexFromTier(tier) {

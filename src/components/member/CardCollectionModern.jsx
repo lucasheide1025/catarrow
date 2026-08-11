@@ -8,7 +8,6 @@ import {
 import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
 import { sfxBuff, sfxError, sfxLevelUp } from "../../lib/sound";
 import CardCollectionPrototype from "./cards/CardCollectionPrototype";
-import TalentEffectPanel from "./cards/TalentEffectPanel";
 
 const EMPTY_COLLECTION = { cards:{}, wbCards:{}, equipped:[] };
 
@@ -96,8 +95,6 @@ export default function CardCollectionModern({ guestProfile, cardCollection }) {
         <span style={pillStyle}>⚔️ ATK +{bonus.atk || 0}</span>
         <span style={pillStyle}>🛡️ DEF +{bonus.def || 0}</span>
       </div>
-      {/* 裝備總效果面板（天賦 bars＋貢獻小字＋主動建議＋族系套裝） */}
-      <TalentEffectPanel collection={collection} />
     </header>
     {notice && <div role="status" style={{margin:"0 12px 8px",padding:"9px 12px",borderRadius:10,textAlign:"center",background:"rgba(16,185,129,.12)",border:"1px solid rgba(52,211,153,.35)",color:"#6ee7b7",fontWeight:900,fontSize:12}}>{notice}</div>}
     <CardCollectionPrototype
