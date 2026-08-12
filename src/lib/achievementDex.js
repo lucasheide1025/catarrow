@@ -46,6 +46,7 @@ export const DEX_CATEGORIES = [
   { id: "duel",     label: "⚔️ 決鬥" },
   { id: "forge",    label: "🔮 煉製 & 藥水" },
   { id: "card",     label: "🃏 怪物卡" },
+  { id: "chest",    label: "🎁 寶箱" },
   { id: "guild",    label: "🏰 冒險者公會" },
   { id: "dungeon",  label: "🏚️ 地下城" },
   { id: "cat",      label: "🐈 貓咪" },
@@ -61,7 +62,7 @@ export const DEX_THEMES = [
   { id:"combat",     label:"⚔️ 戰鬥", categories:["monster","duel"] },
   { id:"worldboss",  label:"🐲 世界王", categories:["worldboss"] },
   { id:"adventure",  label:"🗺️ 冒險", categories:["guild","dungeon"] },
-  { id:"collection", label:"🃏 收藏", categories:["card"] },
+  { id:"collection", label:"🃏 收藏", categories:["card","chest"] },
   { id:"cat",        label:"🐈 貓小隊", categories:["cat"] },
   { id:"village",    label:"🏘️ 貓貓村", categories:["village"] },
   { id:"growth",     label:"🛡️ 養成", categories:["equip","forge"] },
@@ -685,23 +686,40 @@ for (const monster of MONSTERS) {
 }
 
 // ── 動態加入：開箱次數成就 ────────────────────────────────────────
-const CHEST_ACH_TYPES = [
-  { id:"wood",   icon:"📦", name:"木寶箱" },
-  { id:"iron",   icon:"🧰", name:"鐵寶箱" },
-  { id:"gold",   icon:"🎁", name:"黃金寶箱" },
-  { id:"epic",   icon:"💜", name:"史詩寶箱" },
+export const CHEST_DEX_TYPES = [
+  { id:"wood",          icon:"📦", name:"通用材料木箱" },
+  { id:"iron",          icon:"🧰", name:"通用材料鐵箱" },
+  { id:"gold",          icon:"🎁", name:"通用材料金箱" },
+  { id:"epic",          icon:"💜", name:"通用材料史詩箱" },
+  { id:"mythic",        icon:"🔮", name:"通用材料神話箱" },
+  { id:"potion",        icon:"🧪", name:"藥水箱" },
+  { id:"coin",          icon:"🪙", name:"金幣寶箱" },
+  { id:"cat_box",       icon:"🎐", name:"貓貓箱" },
+  { id:"mimi_box",      icon:"😺", name:"咪咪箱" },
+  { id:"wb_relic",      icon:"🗝️", name:"世界秘寶箱" },
+  { id:"family_mat",    icon:"📦", name:"族系素材箱" },
+  { id:"mini_boss_mat", icon:"🔶", name:"小王素材箱" },
+  { id:"boss_mat",      icon:"🔴", name:"大王素材箱" },
+];
+const LEGACY_CHEST_ACH_TYPES = [
+  { id:"wood", icon:"📦", name:"木寶箱" },
+  { id:"iron", icon:"🧰", name:"鐵寶箱" },
+  { id:"gold", icon:"🎁", name:"黃金寶箱" },
+  { id:"epic", icon:"💜", name:"史詩寶箱" },
   { id:"mythic", icon:"🔮", name:"神話寶箱" },
-  { id:"cat",    icon:"🐱", name:"貓貓箱" },
+  { id:"cat", icon:"🐱", name:"貓貓箱" },
   { id:"potion", icon:"🧪", name:"藥水箱" },
 ];
-const CHEST_OPEN_MILESTONES = [1, 5, 10, 20];
-const CHEST_OPEN_RARITIES   = { 1:"common", 5:"uncommon", 10:"rare", 20:"epic" };
+const LEGACY_CHEST_OPEN_MILESTONES = [1, 5, 10, 20];
+const CHEST_OPEN_MILESTONES = [1, 5, 10, 20, 50, 100];
+const CHEST_OPEN_RARITIES = { 1:"common", 5:"uncommon", 10:"rare", 20:"epic", 50:"legendary", 100:"mythic" };
 
-for (const ct of CHEST_ACH_TYPES) {
-  for (const n of CHEST_OPEN_MILESTONES) {
+for (const ct of LEGACY_CHEST_ACH_TYPES) {
+  for (const n of LEGACY_CHEST_OPEN_MILESTONES) {
     AUTO_ACHIEVEMENTS.push({
       id:     `chest_${ct.id}_open_${n}`,
       cat:    "monster",
+      retired: ct.id === "cat",
       icon:   ct.icon,
       name:   `${ct.name}開了 ${n} 次`,
       rarity: CHEST_OPEN_RARITIES[n],
@@ -1025,22 +1043,46 @@ for (const monster of MONSTERS) {
 }
 
 // 開箱次數（7 種箱各 1 格，取代 chest_{type}_open_{1,5,10,20}）
-for (const ct of CHEST_ACH_TYPES) {
+for (const ct of CHEST_DEX_TYPES) {
+  const legacyCompatible = ["wood","iron","gold","epic","mythic","potion"].includes(ct.id);
   TIERED_ACHIEVEMENTS.push({
-    id: `chest_${ct.id}`, cat: "monster", icon: ct.icon,
-    name: `${ct.name}開啟`,
+    id: `chest_${ct.id}`, cat: "chest", icon: ct.icon,
+    name: `${ct.name}開箱`,
     desc: `累積開啟${ct.name}的次數`,
-    replacesIds: CHEST_OPEN_MILESTONES.map(n => `chest_${ct.id}_open_${n}`),
+    replacesIds: legacyCompatible ? LEGACY_CHEST_OPEN_MILESTONES.map(n => `chest_${ct.id}_open_${n}`) : [],
     getValue: c => (c.chestStats?.[ct.id] || 0),
     tiers: CHEST_OPEN_MILESTONES.map(n => ({
       count: n, rarity: CHEST_OPEN_RARITIES[n], icon: ct.icon,
-      name: n === 1 ? `初開${ct.name}` : `${ct.name} ×${n}`,
+      name: n === 1 ? `初見${ct.name}` : `${ct.name} ×${n}`,
       desc: n === 1 ? `第一次開啟${ct.name}` : `累積開啟${ct.name} ${n} 次`,
     })),
   });
 }
 
 // 每種藥水使用次數（每藥水 1 格，取代 potion_{id}_{count}）
+TIERED_ACHIEVEMENTS.push({
+  id:"chest_cat", cat:"chest", icon:"🐱",
+  name:"舊版貓貓箱", desc:"舊版寶箱紀錄（已退役）",
+  replacesIds: LEGACY_CHEST_OPEN_MILESTONES.map(n => `chest_cat_open_${n}`),
+  getValue: c => Number(c.chestStats?.cat || 0),
+  tiers: LEGACY_CHEST_OPEN_MILESTONES.map(n => ({ count:n, rarity:CHEST_OPEN_RARITIES[n], icon:"🐱", name:`舊版貓貓箱 ×${n}`, desc:`舊版開箱紀錄 ${n} 次` })),
+  retired:true,
+});
+
+const CHEST_DEX_TYPE_IDS = new Set(CHEST_DEX_TYPES.map(type => type.id));
+const CHEST_CATALOG_MILESTONES = [1, 3, 5, 8, 10, CHEST_DEX_TYPES.length];
+const CHEST_CATALOG_RARITIES = ["common","uncommon","rare","epic","legendary","mythic"];
+TIERED_ACHIEVEMENTS.push({
+  id:"chest_catalog", cat:"chest", icon:"🗃️",
+  name:"寶箱收藏圖鑑", desc:"開啟不同種類的現行寶箱，永久記錄曾發現的箱型",
+  getValue: c => Object.entries(c.chestStats || {}).filter(([id, count]) => CHEST_DEX_TYPE_IDS.has(id) && Number(count) > 0).length,
+  tiers: CHEST_CATALOG_MILESTONES.map((count, index) => ({
+    count, rarity:CHEST_CATALOG_RARITIES[index], icon:"🗃️",
+    name: count === CHEST_DEX_TYPES.length ? `全收集 ${count} 種` : `發現 ${count} 種寶箱`,
+    desc: count === CHEST_DEX_TYPES.length ? "開啟過所有現行寶箱種類" : `累積開啟過 ${count} 種不同寶箱`,
+  })),
+});
+
 for (const potion of POTIONS.filter(item => !item.futureFeature)) {
   const milestones = POTION_RARITY_MILESTONES[potion.rarity] || POTION_RARITY_MILESTONES.common;
   TIERED_ACHIEVEMENTS.push({

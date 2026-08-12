@@ -1,5 +1,6 @@
 import {
   AUTO_ACHIEVEMENTS,
+  CHEST_DEX_TYPES,
   DEX_CATEGORIES,
   DEX_THEMES,
   MONSTER_CARD_FAMILIES,
@@ -17,6 +18,45 @@ test("V3 九大主題完整且只覆蓋每個 legacy 分類一次", () => {
   const mapped = DEX_THEMES.flatMap(theme => theme.categories);
   expect([...mapped].sort()).toEqual(DEX_CATEGORIES.map(cat => cat.id).sort());
   expect(new Set(mapped).size).toBe(mapped.length);
+});
+
+
+test("chest dex is a collection category with 13 active chest types", () => {
+  expect(DEX_CATEGORIES.some(cat => cat.id === "chest")).toBe(true);
+  expect(DEX_THEMES.find(theme => theme.id === "collection")?.categories).toContain("chest");
+  expect(CHEST_DEX_TYPES).toHaveLength(13);
+  const cards = TIERED_ACHIEVEMENTS.filter(item =>
+    item.cat === "chest" && isActiveAchievement(item) && item.id !== "chest_catalog"
+  );
+  expect(cards).toHaveLength(13);
+  cards.forEach(item => {
+    expect(item.tiers.map(tier => tier.count)).toEqual([1, 5, 10, 20, 50, 100]);
+  });
+});
+
+test("coin and current special chests are tracked while legacy cat and card_pack are not active chest types", () => {
+  const ids = CHEST_DEX_TYPES.map(type => type.id);
+  ["coin", "cat_box", "mimi_box", "wb_relic", "family_mat", "mini_boss_mat", "boss_mat"]
+    .forEach(id => expect(ids).toContain(id));
+  expect(ids).not.toContain("cat");
+  expect(ids).not.toContain("card_pack");
+  const oldCat = TIERED_ACHIEVEMENTS.find(item => item.id === "chest_cat");
+  expect(oldCat).toBeTruthy();
+  expect(isActiveAchievement(oldCat)).toBe(false);
+  AUTO_ACHIEVEMENTS.filter(item => item.id.startsWith("chest_cat_open_"))
+    .forEach(item => expect(isActiveAchievement(item)).toBe(false));
+});
+
+test("chest catalog counts only distinct current chest types that have been opened", () => {
+  const catalog = TIERED_ACHIEVEMENTS.find(item => item.id === "chest_catalog");
+  expect(catalog).toBeTruthy();
+  expect(catalog.tiers[catalog.tiers.length - 1].count).toBe(CHEST_DEX_TYPES.length);
+  expect(catalog.getValue({
+    chestStats: { wood: 2, coin: 1, family_mat: 3, cat: 999, unknown_box: 999 },
+  })).toBe(3);
+  const all = Object.fromEntries(CHEST_DEX_TYPES.map(type => [type.id, 1]));
+  expect(catalog.getValue({ chestStats: all })).toBe(CHEST_DEX_TYPES.length);
+  expect(computeTierProgress(catalog, { chestStats: all }).isComplete).toBe(true);
 });
 
 test("死掉寶、舊公會與舊 36 怪終局成就保留 id 但已退役", () => {

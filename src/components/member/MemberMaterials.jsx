@@ -2,7 +2,7 @@
 // v3：材料庫存 + 升級系統 + 章碎片 tab + 合成銀章
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-import { subscribeMaterials, upgradeMaterial, subscribeFragments, craftFragment, subscribeChests, openChest, openChestsBulk, migrateOldFragments, subscribePotions, updateChestOpenStats, refreshMaterials, refreshFragments, refreshPotions, useCoinShopSpecialTicket } from "../../lib/db";
+import { subscribeMaterials, upgradeMaterial, subscribeFragments, craftFragment, subscribeChests, openChest, openChestsBulk, migrateOldFragments, subscribePotions, refreshMaterials, refreshFragments, refreshPotions, useCoinShopSpecialTicket } from "../../lib/db";
 import { MATERIALS, RARITY_CONFIG } from "../../lib/monsterMaterials";
 import { FRAGMENTS, POTIONS, openChestContents, CHEST_TYPES } from "../../lib/itemData";
 import { useToast } from "../shared/UI";
@@ -188,7 +188,6 @@ export default function MemberMaterials({ onBack, onGoVillage, guestProfile }) {
       if (isCoin) setTimeout(sfxCoinDrop, 350);
       setOpenResult(isCoin ? { coins: res.coins } : { ...contents, catResult: res.catResult });
       setChests(res.chests);
-      if (!isCoin) updateChestOpenStats(profile.id, chest.type).catch(() => {});
       // 開箱後重新讀取材料/藥水/碎片
       refreshMaterials(profile.id, setInventory);
       refreshPotions(profile.id, setPotions);

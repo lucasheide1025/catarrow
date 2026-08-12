@@ -1,21 +1,45 @@
 import {
   createExpeditionKillLoot,
+  getExpeditionRewardPreview,
   normalizeExpeditionLootMultiplier,
   resolveExpeditionLootMultiplier,
+  summarizeExpeditionChests,
 } from "./expeditionRewards";
 
-describe("地下城地圖寶箱倍率", () => {
-  const monster = {
-    id: "ghost_boss",
-    name: "測試怪物",
-    family: "ghost",
-    tier: "boss",
-  };
+describe("expedition route kill loot",()=>{
+  const monster={id:"ghost_1",name:"test",family:"ghost",tier:"common"};
+  test.each([2,3,4,5])("keeps %i material and %i coin chests per kill",mult=>{
+    const loot=createExpeditionKillLoot(monster,mult);
+    expect(loot.chests.filter(chest=>chest.kind==="material")).toHaveLength(mult);
+    expect(loot.chests.filter(chest=>chest.kind==="coin")).toHaveLength(mult);
+  });
 
-  test("地圖顯示五倍時，實際產生五個素材箱與五個金幣箱", () => {
-    const loot = createExpeditionKillLoot(monster, 5);
-    expect(loot.chests.filter(chest => chest.kind === "material")).toHaveLength(5);
-    expect(loot.chests.filter(chest => chest.kind === "coin")).toHaveLength(5);
+  test.each([
+    ["ghost_t1_normal_a", "family_mat", "ghost", 1],
+    ["ghost_t1_mini_a", "mini_boss_mat", "ghost", 1],
+    ["ghost_t1_boss", "boss_mat", "ghost", 1],
+  ])("current monster %s creates family-bound %s", (id, type, family, tierIndex) => {
+    const loot = createExpeditionKillLoot({ id, name:id, family, tier:"common" }, 2);
+    const materialChests = loot.chests.filter(chest => chest.kind === "material");
+    expect(materialChests).toHaveLength(2);
+    expect(materialChests.every(chest => chest.type === type && chest.family === family && chest.tierIndex === tierIndex)).toBe(true);
+  });
+
+  test("current reward preview uses the real dynamic family chest instead of a wood-box fallback", () => {
+    const preview = getExpeditionRewardPreview({ id:"ghost_t1_boss", name:"boss", family:"ghost", tier:"common" });
+    expect(preview.materialChest.type).toBe("boss_mat");
+    expect(preview.materialChest.name).toContain("幽冥大王T1素材箱");
+    expect(preview.materialChest.family).toBe("ghost");
+    expect(preview.materialChest.tierIndex).toBe(1);
+  });
+
+  test("summary prefers each dynamic chest's authored name and icon", () => {
+    const loot = createExpeditionKillLoot({ id:"ghost_t1_mini_a", name:"mini", family:"ghost", tier:"common" }, 2);
+    const summary = summarizeExpeditionChests(loot.chests.filter(chest => chest.kind === "material"));
+    expect(summary).toHaveLength(1);
+    expect(summary[0].count).toBe(2);
+    expect(summary[0].name).toContain("幽冥小王T1素材箱");
+    expect(summary[0].icon).toBe("🔶");
   });
 
   test("倍率規則集中限制在有效範圍，舊資料仍可安全處理", () => {

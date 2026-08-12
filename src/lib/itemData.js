@@ -9,15 +9,15 @@ import { EXPANSION_MATERIALS, EXPANSION_MONSTER_BY_ID } from "./monsterExpansion
 // ── 寶箱類型 ─────────────────────────────────────────────
 export const CHEST_TYPES = {
   wood:   { id:"wood",   name:"通用材料木箱",   icon:"📦", color:"#a16207", potionChance:0,
-            desc:"通用箱：開出六大族該階普通材料（每族 ×1）。" },
+            desc:"通用箱：開出七大族該階普通材料（每族 ×1）。" },
   iron:   { id:"iron",   name:"通用材料鐵箱",   icon:"🧰", color:"#64748b", potionChance:0,
-            desc:"通用箱：開出六大族該階普通材料（每族 1~2 個）。" },
+            desc:"通用箱：開出七大族該階普通材料（每族 1~2 個）。" },
   gold:   { id:"gold",   name:"通用材料金箱", icon:"🎁", color:"#f59e0b", potionChance:0,
-            desc:"通用箱：開出六大族該階普通+小王材料（每族 1~3 個）。" },
+            desc:"通用箱：開出七大族該階普通+小王材料（每族 1~3 個）。" },
   epic:   { id:"epic",   name:"通用材料史詩箱", icon:"💜", color:"#a78bfa", potionChance:0,
-            desc:"通用箱：開出六大族該階普通+小王材料（每族 1~4 個）。" },
+            desc:"通用箱：開出七大族該階普通+小王材料（每族 1~4 個）。" },
   mythic: { id:"mythic", name:"通用材料神話箱", icon:"🔮", color:"#a855f7", potionChance:0,
-            desc:"通用箱：開出六大族該階全部材料（每族 1~5 個）。" },
+            desc:"通用箱：開出七大族該階全部材料（每族 1~5 個）。" },
   cat:    { id:"cat",    name:"貓貓箱",   icon:"🐱", color:"#ec4899", potionChance:0,
             desc:"神秘的貓貓箱！90% 機率隨機掉落一種章碎片×1，集10片可合成對應章！" },
   potion:   { id:"potion",   name:"藥水箱",   icon:"🧪", color:"#06b6d4", potionChance:1,
@@ -34,9 +34,9 @@ export const CHEST_TYPES = {
   family_mat: { id:"family_mat", name:"族系素材箱", icon:"📦", color:"#a16207", potionChance:0,
                  desc:"打開獲得指定家族與階級的普通素材。" },
   mini_boss_mat: { id:"mini_boss_mat", name:"小王素材箱", icon:"🔶", color:"#8b5cf6", potionChance:0,
-                    desc:"打開獲得小王階級的隨機素材（跨家族）。" },
+                    desc:"打開獲得指定家族與階級的全部現行素材。" },
   boss_mat: { id:"boss_mat", name:"大王素材箱", icon:"🔴", color:"#ef4444", potionChance:0,
-               desc:"打開獲得大王階級的隨機素材（跨家族）。" },
+               desc:"打開獲得指定家族與階級的全部現行素材，數量最多。" },
 };
 
 // 怪物階級 → 寶箱種類機率
@@ -293,8 +293,6 @@ const POTION_CHEST_TABLE = [
 ];
 
 const ALL_FAMILIES = ["ghost","mountain","insect","workplace","exam","temple","treasure"];
-// 六大族（不含 treasure 寶箱族）——通用材料寶箱開箱範圍
-const SIX_FAMILIES = ["ghost","mountain","insect","workplace","exam","temple"];
 
 // 家族中文名稱對照（新素材箱命名用）
 const FAMILY_NAMES = {
@@ -471,8 +469,8 @@ export function openChestContents(chest) {
     return { materials, potions: [], fragments: [] };
   }
 
-  // ══ 通用材料寶箱（原 wood/iron/gold/epic/mythic，2026-07-23 作者拍板改）══
-  // 依「來源怪階級」開出「六大族」該階材料（treasure 寶箱族不含）。
+  // ══ 通用材料寶箱（wood/iron/gold/epic/mythic）══════════════════════════
+  // 依「來源怪階級」開出現行七大族該階材料，包含 treasure 寶箱族。
   // kind 依箱等級放寬（EXPANSION_KINDS_BY_CHEST：木/鐵只普通、金/史詩加小王、神話含大王），
   // 每族數量 1~maxPerTier。取代舊的「單一家族分層」開箱。
   const tierCfg = CHEST_TIER_CFG[chest.type];
@@ -481,7 +479,7 @@ export function openChestContents(chest) {
   const uniTierIndex = Math.max(1, MONSTER_TIER_ORDER.indexOf(chest.tier) + 1);
   const uniKinds = EXPANSION_KINDS_BY_CHEST[chest.type] || new Set(["normal"]);
   const materials = [];
-  for (const fam of SIX_FAMILIES) {
+  for (const fam of ALL_FAMILIES) {
     const pool = EXPANSION_MATERIALS.filter(m =>
       m.family === fam && m.tierIndex === uniTierIndex && uniKinds.has(m.kind)
     );

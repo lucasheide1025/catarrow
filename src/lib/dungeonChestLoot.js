@@ -1,6 +1,6 @@
 import { FAMILY_COLLECTIBLES } from "./dungeonCollectibles";
 import { CARRY_POTIONS } from "./itemData";
-import { MATERIALS } from "./monsterMaterials";
+import { EXPANSION_MATERIALS } from "./monsterExpansionCatalog";
 
 const CHEST_MATERIAL_TIERS = ["common", "rare", "elite", "fierce", "boss", "mythic"];
 
@@ -17,8 +17,8 @@ export function createOrdinaryChestLoot({
 } = {}) {
   const tierNumber = Math.min(6, Math.max(1, Number(difficultyTier) || 1));
   const materialTier = CHEST_MATERIAL_TIERS[tierNumber - 1];
-  const materialPool = MATERIALS.filter(material =>
-    material.family === family && material.tier === materialTier
+  const materialPool = EXPANSION_MATERIALS.filter(material =>
+    material.family === family && material.tierIndex === tierNumber && material.kind === "normal"
   );
   const collectiblePool = FAMILY_COLLECTIBLES[family];
   const rarityKeys = tierNumber >= 5
@@ -43,6 +43,9 @@ export function createOrdinaryChestLoot({
       icon: material.icon,
       family: material.family,
       tier: material.tier,
+      tierIndex: material.tierIndex,
+      kind: material.kind,
+      monsterId: material.monsterId,
       quantity: materialQuantity,
     } : null,
     item: item ? { id: item.id, name: item.name, icon: item.icon, desc: item.desc } : null,

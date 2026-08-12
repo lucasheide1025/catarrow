@@ -1,5 +1,6 @@
-import { CHEST_TYPES } from "./itemData";
+import { CHEST_TYPES, makeBossChest, makeFamilyMaterialChest, makeMiniBossChest } from "./itemData";
 import { COIN_CHEST_TIERS } from "./lootTable";
+import { EXPANSION_MONSTER_BY_ID } from "./monsterExpansionCatalog";
 
 // 地圖建立時鎖定 ×2～×5；金幣寶箱與材料寶箱使用同一倍率。
 export const EXPEDITION_DROP_MULTIPLIER_MIN = 2;
@@ -34,6 +35,21 @@ const MATERIAL_CHEST_BY_TIER = {
 };
 
 function makeMaterialChest(monster, index) {
+  const canonical = EXPANSION_MONSTER_BY_ID[monster?.id] || null;
+  if (canonical) {
+    const source = `地下城：${canonical.name || monster?.name || "怪物"}`;
+    const chest = canonical.encounter === "boss"
+      ? makeBossChest(canonical.family, canonical.tierIndex, source)
+      : canonical.encounter === "miniBoss"
+        ? makeMiniBossChest(canonical.family, canonical.tierIndex, source)
+        : makeFamilyMaterialChest(canonical.family, canonical.tierIndex, source);
+    return {
+      ...chest,
+      id: `exp_mat_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 8)}`,
+      kind: "material",
+      ts: Date.now() + index,
+    };
+  }
   const type = MATERIAL_CHEST_BY_TIER[monster?.tier] || "wood";
   return {
     id: `exp_mat_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 8)}`,
@@ -146,8 +162,8 @@ export function summarizeExpeditionChests(chests) {
       summary.set(key, {
         key,
         count: 1,
-        icon: config.icon,
-        name: config.name,
+        icon: chest.icon || config.icon,
+        name: chest.name || config.name,
         family: chest.kind === "material" ? chest.family : null,
       });
     }
@@ -157,13 +173,23 @@ export function summarizeExpeditionChests(chests) {
 
 export function getExpeditionRewardPreview(boss) {
   if (!boss) return null;
-  const materialType = MATERIAL_CHEST_BY_TIER[boss.tier] || "wood";
-  const materialChest = CHEST_TYPES[materialType] || CHEST_TYPES.wood;
+  const canonical = EXPANSION_MONSTER_BY_ID[boss.id] || null;
+  const materialChest = canonical
+    ? canonical.encounter === "boss"
+      ? makeBossChest(canonical.family, canonical.tierIndex, `地下城：${canonical.name || boss.name || "怪物"}`)
+      : canonical.encounter === "miniBoss"
+        ? makeMiniBossChest(canonical.family, canonical.tierIndex, `地下城：${canonical.name || boss.name || "怪物"}`)
+        : makeFamilyMaterialChest(canonical.family, canonical.tierIndex, `地下城：${canonical.name || boss.name || "怪物"}`)
+    : CHEST_TYPES[MATERIAL_CHEST_BY_TIER[boss.tier] || "wood"] || CHEST_TYPES.wood;
   const coinChest = COIN_CHEST_TIERS[boss.tier] || COIN_CHEST_TIERS.common;
   return {
     multiplierMin: EXPEDITION_DROP_MULTIPLIER_MIN,
     multiplierMax: EXPEDITION_DROP_MULTIPLIER_MAX,
-    materialChest: { ...materialChest, family: boss.family },
+    materialChest: {
+      ...materialChest,
+      family: canonical?.family || boss.family,
+      ...(canonical ? { tierIndex: canonical.tierIndex } : {}),
+    },
     coinChest,
   };
 }
