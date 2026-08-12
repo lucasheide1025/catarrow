@@ -186,6 +186,16 @@ function computeUnlocked(arrows) {
   return set;
 }
 
+export function resolvePartySelectedAlly(allies, selectedAllyId) {
+  if (!selectedAllyId) return null;
+  return (allies || []).find(ally => ally.id === selectedAllyId) || null;
+}
+
+export function shouldSyncPartyPlayer({ partyMode, inBattle, partyResolutionKey, completedPartyResolutionKey }) {
+  if (!partyMode || !inBattle) return false;
+  return !(partyResolutionKey > 0) || completedPartyResolutionKey === partyResolutionKey;
+}
+
 function battleReducer(state, action) {
   switch(action.type){
     case"START_SCORING":return{...state,phase:PHASE.SCORING,arrowIdx:0,arrows:[],lastArrowDmg:0,lastArrowCrit:false,lastArrowPart:""};
@@ -195,8 +205,8 @@ function battleReducer(state, action) {
       // 飾品「營養」：開場加最大 HP（equipmentSpecializationEngine）
       const equipSpec=action.equipSpec||null;
       const nutritionHp=equipSpec?.accessory?.trackId==="nutrition"?getSpecializationEffect("nutrition",equipSpec.accessory.level).maxHpFlat:0;
-      const basePlayerMaxHp=(action.playerMaxHp||initBattle.playerMaxHp);
-      const basePlayerHp=action.playerHp||action.playerMaxHp||initBattle.playerHp;
+      const basePlayerMaxHp=(action.playerMaxHp??initBattle.playerMaxHp);
+      const basePlayerHp=action.playerHp??action.playerMaxHp??initBattle.playerHp;
       // 卡片天賦/套裝：威嚇/破防（常駐壓怪物面板）、開場護盾
       const cardFx=action.cardFx||null;
       const fxAtk=cardFx?.monsterAtkDownPct?Math.max(1,Math.round(mAtk*(1-cardFx.monsterAtkDownPct/100))):mAtk;
@@ -355,6 +365,9 @@ function battleReducer(state, action) {
       }
       return{...state,playerHp:n,phase:n<=0?PHASE.LOST:state.phase,messages:[...state.messages,`🏹 第${state.round}回合：${state.roundDmg} 傷害（${state.roundCrits} 爆擊）`,`💥 怪物反擊：${state.pendingCounter} 傷害`,...extraMsgs]};}
     case"PARTY_COUNTER_HIT":{const n=Math.max(0,state.playerHp-(action.dmg||0));return{...state,playerHp:n,messages:[...state.messages,`💥 怪物反擊：${action.dmg||0} 傷害`]};}
+    // 組隊/地下城的玩家 HP 由 Firestore 權威端結算。只同步玩家血量，
+    // 不碰 monsterHp，避免把逐段戰鬥動畫尚未播放完的怪物血量提前跳到結算值。
+    case"SYNC_PARTY_PLAYER":return{...state,playerHp:action.playerHp,playerMaxHp:action.playerMaxHp};
     // 權威端已把技能結果組成一行敘述（partyDb.buildAbilityMessage），這裡只負責推進訊息列
     case"PUSH_MESSAGE":{if(!action.text)return state;return{...state,messages:[...state.messages,action.text]};}
     case"CARRY_BUFF":{const{atkAdd,defAdd,heal,shieldHp,buffMsgs,name}=action;const boostedHeal=Math.round((heal||0)*(1+(state.cardFx?.healPct||0)/100));return{...state,playerAtk:state.playerAtk+(atkAdd||0),playerDef:state.playerDef+(defAdd||0),playerHp:Math.min(state.playerMaxHp,state.playerHp+boostedHeal),potionShield:Math.max(state.potionShield||0,shieldHp||0),messages:[...state.messages,...(buffMsgs||[`⚗️ ${name||"藥水"} 效果發動！`])]};}
@@ -461,7 +474,10 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
   const [catCurrentHP, setCatCurrentHP] = useState(0);
   const [catMsg, setCatMsg] = useState(null);
   const [catSkillActive, setCatSkillActive] = useState(null);
-  const [selectedAlly, setSelectedAlly] = useState(null);
+  // 只保存隊友 id；詳細卡每次 render 都從最新 allies props 解析。
+  // 否則 Firestore 更新 HP / role 後，已打開的詳細卡會一直顯示舊物件。
+  const [selectedAllyId, setSelectedAllyId] = useState(null);
+  const selectedAlly = useMemo(() => resolvePartySelectedAlly(allies, selectedAllyId), [allies, selectedAllyId]);
   const [partyAction, setPartyAction] = useState(null);
   const [partyMonsterHp, setPartyMonsterHp] = useState(null);
   const [partyPhase, setPartyPhase] = useState(null);
@@ -830,7 +846,7 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
   const catBattleCry=useMemo(()=>{if(!hasCat)return "";const cries=CAT_BATTLE_CRIES[skillGroup]||CAT_BATTLE_CRIES.heal;return cries[Math.floor(Math.random()*cries.length)];},[hasCat,skillGroup]);
 
   // ─── handleStartBattle（必須在 useImperativeHandle 之前，避免 TDZ）───
-  const handleStartBattle=useCallback(()=>{shootingEndsRef.current=[];currentShootingEndRef.current=[];resolvedSoloAbilityKeys.current.clear();setSoloAbilityTelegraph(null);dispatch({type:"START",monster,diff:difficulty,battleMode,hideMonsterStats,equipSpec,cardFx,playerHp:player?.hp||initBattle.playerHp,playerMaxHp:player?.maxHp||initBattle.playerMaxHp,playerAtk:player?.atk||initBattle.playerAtk,playerDef:player?.def||initBattle.playerDef});if(hasCat)setCatCurrentHP(catMaxHP);},[monster,difficulty,battleMode,hideMonsterStats,equipSpec,cardFx,player?.hp,player?.maxHp,player?.atk,player?.def,hasCat,catMaxHP]);
+  const handleStartBattle=useCallback(()=>{shootingEndsRef.current=[];currentShootingEndRef.current=[];resolvedSoloAbilityKeys.current.clear();setSoloAbilityTelegraph(null);dispatch({type:"START",monster,diff:difficulty,battleMode,hideMonsterStats,equipSpec,cardFx,playerHp:player?.hp??initBattle.playerHp,playerMaxHp:player?.maxHp??initBattle.playerMaxHp,playerAtk:player?.atk||initBattle.playerAtk,playerDef:player?.def||initBattle.playerDef});if(hasCat)setCatCurrentHP(catMaxHP);},[monster,difficulty,battleMode,hideMonsterStats,equipSpec,cardFx,player?.hp,player?.maxHp,player?.atk,player?.def,hasCat,catMaxHP]);
 
   // ─── 回呼 ───
   const handleScore=useCallback((input)=>{if(!isScoring)return;const landing=typeof input==="object"?input:null;const label=landing?.label??input;const normalized=scoreToValue(label,targetFormat);const score=label==="X"?"X":normalized===0?"M":String(normalized);sfxTap();currentShootingEndRef.current.push({label,landing});dispatch({type:"SCORE_ARROW",score,displayLabel:label,battleMode,arrowsPerRound,previewDamage:!partyMode});},[isScoring,battleMode,arrowsPerRound,partyMode,targetFormat]);
@@ -895,6 +911,12 @@ let abilityResolution=null;if(battleId&&monster?.signatureSkillId){const ability
     if(!externalBattle || !inBattle) return;
     dispatch({type:"SYNC_EXTERNAL",playerHp:player?.hp||0,playerMaxHp:player?.maxHp||0,playerAtk:player?.atk||0,playerDef:player?.def||0,monsterHp:monster?.hp||0,monsterMaxHp:monster?.maxHp||monster?.hp||0,monsterAtk:monster?.atk||0,monsterDef:monster?.def||0});
   },[externalBattle,inBattle,player?.hp,player?.maxHp,player?.atk,player?.def,monster?.hp,monster?.maxHp,monster?.atk,monster?.def]);
+  // 組隊 HP 由權威端結算；回合演出中保留逐段扣血，演出結束再套 Firestore 最終值。
+  // 這會同步後衛治療，以及前衛倒地轉後衛時恢復的 50% HP。
+  useEffect(()=>{
+    if(!shouldSyncPartyPlayer({partyMode,inBattle,partyResolutionKey,completedPartyResolutionKey})) return;
+    dispatch({type:"SYNC_PARTY_PLAYER",playerHp:player?.hp??0,playerMaxHp:player?.maxHp??0});
+  },[partyMode,inBattle,partyResolutionKey,completedPartyResolutionKey,player?.hp,player?.maxHp]);
   useEffect(()=>{
     if(!externalBattle || !externalDemo?.message) return;
     dispatch({type:"EXTERNAL_MESSAGE",message:externalDemo.message});
@@ -1161,7 +1183,7 @@ let abilityResolution=null;if(battleId&&monster?.signatureSkillId){const ability
     {/* 隊友 + 玩家 */}
     <div style={{position:"absolute",left:12,bottom:14,zIndex:4,display:"flex",flexDirection:"column",gap:8,alignItems:"flex-start"}}>
       {allies.length>0&&(<div style={{width:180,display:"flex",flexWrap:"wrap",gap:7,background:"rgba(9,14,25,.4)",border:"1px solid rgba(255,255,255,.08)",borderRadius:14,padding:7}}>
-        {allies.map((mate,i)=>{const fx=(isProcessing&&animStep>=1&&animStep<=6)?teamFx[i]:null;const partyAttacking=partyAction?.type==="attack"&&partyAction.attackerId===mate.id;const partyHit=partyCounterTargets.find(target=>target.id===mate.id);const actionFx=partyAttacking?(partyAction.critical?"crit":partyAction.dim?"miss":"normal"):fx;const wbFrame=mate.battleCosmetics?.wbFrame;const frameC=actionFx==="crit"?"#f5b942":actionFx==="miss"?"#555":partyHit?.crit?"#ef4444":(wbFrame?.color||(mate.isFront||mate.role==="front"?"#ffb454":"#7dd3fc"));const critGlow=actionFx==="crit"?", 0 0 14px rgba(245,185,66,.85)":partyHit?.crit?", 0 0 16px rgba(239,68,68,.85)":wbFrame?`, 0 0 13px ${wbFrame.color}cc`:"";const missDim=actionFx==="miss";const counterAnim=partyHit?.crit?"partyCritHurt .9s ease-out":partyAction?.type==="counter"?"partyTeamShake .85s ease-out":"none";return(<button key={mate.id||i} type="button" onClick={()=>setSelectedAlly(mate)} title={`查看 ${mate.name} 狀態`} style={{position:"relative",width:38,padding:0,border:0,background:"transparent",cursor:"pointer",animation:counterAnim}}>
+        {allies.map((mate,i)=>{const fx=(isProcessing&&animStep>=1&&animStep<=6)?teamFx[i]:null;const partyAttacking=partyAction?.type==="attack"&&partyAction.attackerId===mate.id;const partyHit=partyCounterTargets.find(target=>target.id===mate.id);const actionFx=partyAttacking?(partyAction.critical?"crit":partyAction.dim?"miss":"normal"):fx;const wbFrame=mate.battleCosmetics?.wbFrame;const frameC=actionFx==="crit"?"#f5b942":actionFx==="miss"?"#555":partyHit?.crit?"#ef4444":(wbFrame?.color||(mate.isFront||mate.role==="front"?"#ffb454":"#7dd3fc"));const critGlow=actionFx==="crit"?", 0 0 14px rgba(245,185,66,.85)":partyHit?.crit?", 0 0 16px rgba(239,68,68,.85)":wbFrame?`, 0 0 13px ${wbFrame.color}cc`:"";const missDim=actionFx==="miss";const counterAnim=partyHit?.crit?"partyCritHurt .9s ease-out":partyAction?.type==="counter"?"partyTeamShake .85s ease-out":"none";return(<button key={mate.id||i} type="button" onClick={()=>setSelectedAllyId(mate.id)} title={`查看 ${mate.name} 狀態`} style={{position:"relative",width:38,padding:0,border:0,background:"transparent",cursor:"pointer",animation:counterAnim}}>
           <div style={{width:38,height:38,borderRadius:11,overflow:"hidden",boxShadow:`0 4px 10px rgba(0,0,0,.55), inset 0 0 0 2px ${frameC}${critGlow}`,filter:missDim?"grayscale(1) brightness(.45)":"none",transition:"box-shadow .2s, filter .2s",animation:actionFx?"teamAttack 1.25s ease-out":wbFrame?"wbFramePulse 1.7s ease-in-out infinite":"none"}}>{mate.avatarId ? <PlayerAvatar avatarId={mate.avatarId} size={38}/> : <CatSVG catId={mate.catId} size={38}/>}</div>
           {mate.battleCosmetics?.legendaryCount>0&&<span title={`傳說以上裝備 ${mate.battleCosmetics.legendaryCount} 件`} style={{position:"absolute",right:-4,bottom:13,width:15,height:15,borderRadius:99,display:"grid",placeItems:"center",fontSize:9,lineHeight:1,background:mate.battleCosmetics.highestLegendary==="mythic"?"#ec4899":"#f59e0b",color:"#fff",boxShadow:`0 0 0 2px #0b1220, 0 0 8px ${mate.battleCosmetics.highestLegendary==="mythic"?"#ec4899":"#f59e0b"}`}}>{mate.battleCosmetics.highestLegendary==="mythic"?"✦":"★"}</span>}
           <div style={{height:4,borderRadius:99,background:"rgba(0,0,0,.6)",marginTop:3,overflow:"hidden",boxShadow:"inset 0 0 0 1px rgba(255,255,255,.14)"}}><div style={{width:`${(mate.hp/mate.maxHp)*100}%`,height:"100%",background:"linear-gradient(90deg,#5ff0a3,#22b866)"}}/></div>
@@ -1170,7 +1192,7 @@ let abilityResolution=null;if(battleId&&monster?.signatureSkillId){const ability
         </button>)})}
       </div>)}
       {selectedAlly&&<div style={{width:214,background:"rgba(7,12,22,.94)",border:`1px solid ${(selectedAlly.isFront||selectedAlly.role==="front")?"#ffb454":"#7dd3fc"}`,borderRadius:12,padding:"8px 10px",boxShadow:"0 8px 22px rgba(0,0,0,.55)",backdropFilter:"blur(8px)"}}>
-        <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"center"}}><b style={{fontSize:13,color:"#f3f7ff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{selectedAlly.name}</b><button type="button" onClick={()=>setSelectedAlly(null)} style={{border:0,background:"transparent",color:"#9fb0cf",cursor:"pointer",fontWeight:900}}>✕</button></div>
+        <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"center"}}><b style={{fontSize:13,color:"#f3f7ff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{selectedAlly.name}</b><button type="button" onClick={()=>setSelectedAllyId(null)} style={{border:0,background:"transparent",color:"#9fb0cf",cursor:"pointer",fontWeight:900}}>✕</button></div>
         <div style={{fontSize:10,color:"#c4b5fd",marginTop:2}}>🐱 {selectedAlly.catName||"攜帶貓貓"} · {(selectedAlly.isFront||selectedAlly.role==="front")?"前衛":"後衛"}</div>
         <div style={{display:"flex",gap:7,marginTop:6,fontSize:10,fontWeight:800,fontVariantNumeric:"tabular-nums"}}><span style={{color:"#5ff0a3"}}>HP {selectedAlly.hp||0}/{selectedAlly.maxHp||selectedAlly.maxHP||0}</span><span style={{color:"#f4a3a3"}}>ATK {selectedAlly.atk||0}</span><span style={{color:"#a3c4f4"}}>DEF {selectedAlly.def||0}</span></div>
         {selectedAlly.battleCosmetics?.wbFrame&&<div style={{marginTop:6,padding:"5px 7px",borderRadius:7,border:`1px solid ${selectedAlly.battleCosmetics.wbFrame.color}88`,background:`${selectedAlly.battleCosmetics.wbFrame.color}18`,fontSize:10,fontWeight:900,color:selectedAlly.battleCosmetics.wbFrame.color}}>👑 世界王稱號・{selectedAlly.battleCosmetics.wbFrame.title}</div>}

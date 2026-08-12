@@ -1,3 +1,30 @@
+## 2026-08-12（🛡️ 地下城組隊：隊友 HP／前衛轉後衛同步修復）
+
+- 權威結算確認：前衛倒地但仍有其他前衛存活時會轉為 `rear`、恢復約 50% Max HP 且 `alive` 保持 true；下一回合仍可送出後衛行動。後衛 `heal` 維持 `MaxHP × 15% × 命中分數%` 治療池，`dmg` 維持 `命中分數% × 25%` 前衛助攻增傷；本輪未改玩法公式。
+- 修正 `BattleScreen` 隊友詳細卡保存舊 ally object：改存 id，每次從最新 `allies` 解析，因此 Firestore 更新 HP／role／ready 後詳細卡不再停在舊值。
+- 修正組隊自身 HP 只有本機反擊動畫、權威結算後未同步：新增 party player HP 同步，等 mini-round 演出完成才套 Firestore 最終 HP，涵蓋後衛治療與前衛轉後衛的 50% 回血，不提前覆寫怪物血量動畫。
+- 修正 `DungeonBattleRoom` 的 `me?.hp || 100`：HP=0 不再誤顯示滿血；`partyMembers` 同步帶 hp/maxHp/atk/def。
+- 新增 `BattleScreen.partyState.test.js`，鎖住 stale ally、HP 同步時機、只同步玩家不覆蓋怪物動畫、0 HP fallback。
+- 驗證：3 個 targeted test suites 通過；focused JSX `no-undef` 通過；scoped `git diff --check` 通過（僅換行格式 warning）；`npm run build` 成功。
+- 狀態：僅本機完成，未 commit / push / deploy。
+
+## 2026-08-12（🏅 外賽後台改為教練名單直接核發）
+
+- 修正前一輪理解：外賽流程由外部主辦方決定，本系統不應要求射手在站內報名／射箭／結算；先前「建立後再結算」模型改為純後台登錄。
+- 後台「賽事管理」拆成「館內賽事／外賽圖鑑」；外賽建立名稱、日期、賽制後，由教練直接勾選正式射手。儲存名單即寫入 `members.competitionDex.<eventId>.participated=true`，自動取得該場參加圖鑑。
+- 名次可留空；賽後再把個別射手改成第 8～1 名，同一張動態外賽卡直接升級。刪除誤選射手時只移除該場 `competitionDex`，不碰會員自己申報的 `externalComps` 歷史／審核流程。
+- 外賽 catalog 標記為 admin-only，會員 `MemberComps` 會排除，不會出現在學生可報名／可射箭賽事；館內比賽原本的報名、成績、積分結算維持不變。
+- 沒有新增 Firestore listener、rules 或額外常駐讀取；射手名單只在外賽編輯視窗開啟時用一次性 `getMembers()`，儲存採 batch，並同步清除圖鑑 catalog local cache。
+- 驗證：`achievementDexV3.test.js` 34/34 PASS；focused `no-undef` PASS；scoped `git diff --check` PASS；CRA production build PASS。
+- 狀態：僅本機完成，尚未 commit / push / deploy。
+
+## 2026-08-12（🐛 外賽後台入口恢復）
+
+- 根因：`AdminCompetitions` 與 `game-events` preload 已存在，但後台導覽重整時漏掉 `eventsSub="comps"` 的可見按鈕與 render branch，因此正式站沒有入口。
+- 修正：恢復 `🎮 遊戲活動 → 🏆 賽事管理`，點入即渲染 `AdminCompetitions`；既有「加入外賽圖鑑」與資格賽／混雙／團體／對抗流程不變。
+- 沒有修改 Firestore schema、listener、讀寫契約或既有外賽結算邏輯。
+- 本輪僅本機修復，尚未 commit / push / deploy。
+
 ## 2026-08-12（🏆 成就圖鑑 V3：分類／收藏／外賽／生涯／年度檢定全面重整完成）
 
 - 寶箱圖鑑完成現行分類重建：通用／卡包最高 10,000 次、七族素材箱各自最高 10,000 次、貓貓箱與咪咪箱最高 100 次、小王／大王素材箱最高 500 次；世界秘寶箱退出現行寶箱圖鑑，只保留舊 ID 相容。

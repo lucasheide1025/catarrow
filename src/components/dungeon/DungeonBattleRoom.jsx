@@ -1596,8 +1596,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
           battleCosmetics: myBattleCosmetics,
           atk: displayedStats.atk || 10,
           def: displayedStats.def || 10,
-          hp: me?.hp || 100,
-          maxHp: me?.maxHP || 100,
+          hp: me?.hp ?? 100,
+          maxHp: me?.maxHP ?? 100,
           catId: battleCatId || "diandian",
           archerStyle: me?.archerStyle || profile?.archerStyle || "baobao",
         }}
@@ -1617,7 +1617,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
         partyRole={me.role || "front"}
         partyRearChoice={rearChoice}
         onPartyRearChoice={setRearChoice}
-        partyMembers={memberList.map(m => ({ id:m.id, name:m.name, avatarId:m.avatarId || null, catId:m.catId || "diandian", role:m.role || "front", alive:m.alive !== false, ready:!!m.ready, skipped:!!m.skipped, isSelf:m.id === myId, battleCosmetics:m.battleCosmetics || null }))}
+        partyMembers={memberList.map(m => ({ id:m.id, name:m.name, avatarId:m.avatarId || null, catId:m.catId || "diandian", role:m.role || "front", alive:m.alive !== false, ready:!!m.ready, skipped:!!m.skipped, isSelf:m.id === myId, hp:m.hp ?? 0, maxHp:m.maxHP ?? 1, maxHP:m.maxHP ?? 1, atk:m.atk ?? 0, def:m.def ?? 0, battleCosmetics:m.battleCosmetics || null }))}
         partyIsHost={isHost}
         partyProcessing={!!room.processing || submitting}
         partyAllReady={allReady}
