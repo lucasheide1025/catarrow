@@ -9,6 +9,7 @@ import {
 } from "../../lib/db";
 import { useAuth } from "../../hooks/useAuth";
 import { COMP_TYPES, COMP_TYPE_COLOR, today, fmtDT, getMonthRange, certLevelStyle } from "../../lib/constants";
+import { EXTERNAL_COMP_FORMATS } from "../../lib/achievementDex";
 import { Card, Btn, Inp, TA, Sel, Modal, ST, Spinner, Empty, Pill, useToast, ConfirmModal } from "../shared/UI";
 
 const STATUS_OPTIONS = [
@@ -147,6 +148,7 @@ function AddCompModal({ onClose, onDone, operatorId, toast }) {
     type: "積分賽", title: "", date: today(), endDate: "",
     targetName: "", arrowCount: 6, roundCount: 5, maxScore: 10,
     hasMiss: true, period: "single", status: "upcoming",
+    dexCatalog: false, externalFormat: "qualification",
     announcement: "", rewards: { fatCat: false, score: false, achievement: false },
   });
   const [saving, setSaving] = useState(false);
@@ -170,7 +172,8 @@ function AddCompModal({ onClose, onDone, operatorId, toast }) {
   async function save() {
     if (!form.title || !form.date) { toast("請填寫標題和日期", "error"); return; }
     setSaving(true);
-    await createCompetition({ ...form, target: targetImg }, operatorId);
+    const payload = { ...form, target: targetImg, ...(form.dexCatalog ? { dexKind:"external", externalFormat:form.externalFormat } : {}) };
+    await createCompetition(payload, operatorId);
     toast("比賽已建立 ✓");
     onDone(); onClose();
     setSaving(false);
@@ -193,6 +196,14 @@ function AddCompModal({ onClose, onDone, operatorId, toast }) {
             options={PERIOD_OPTIONS} />
         </div>
         {f("title", "比賽標題")}
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 flex flex-col gap-2">
+          <label className="flex items-center gap-2 text-sm font-bold text-amber-900 cursor-pointer">
+            <input type="checkbox" checked={form.dexCatalog} onChange={e => setForm(p => ({ ...p, dexCatalog:e.target.checked }))} className="accent-amber-600" />
+            加入外賽圖鑑
+          </label>
+          <div className="text-xs text-amber-700">建立後自動產生外賽圖鑑；結算名單後自動解鎖參賽與第 1～8 名。</div>
+          {form.dexCatalog && <Sel label="外賽賽制" value={form.externalFormat} onChange={e => setForm(p => ({ ...p, externalFormat:e.target.value }))} options={EXTERNAL_COMP_FORMATS.map(item => ({ value:item.id, label:item.label }))} />}
+        </div>
         <div className="grid grid-cols-2 gap-3">
           {f("date", "開始日期", "date")}
           {f("endDate", "結束日期（選填）", "date")}

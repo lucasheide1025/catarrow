@@ -3,13 +3,14 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useGuildRank } from "../../guild/useGuildRank";
-import { getCertRecords, getCertification, subscribeDexGrants, getDexConfig, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection, saveDexSummary } from "../../lib/db";
+import { getCertRecords, getCertification, getDexCompetitions, subscribeDexGrants, getDexConfig, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection, subscribeExternalComps, saveDexSummary } from "../../lib/db";
 import { getDuelStats } from "../../lib/duelDb";
 import { subscribeMyCats } from "../../lib/catDb";
 import {
   AUTO_ACHIEVEMENTS, SPECIAL_GRANTS, DEX_CATEGORIES, DEX_THEMES, RARITY_STYLE, RANK_STYLE,
   TIERED_ACHIEVEMENTS, computeTierProgress, getUnlockedKeys,
-  buildRoundAchievements, computeDexStats, buildCohortAchievement, isActiveAchievement,
+  buildRoundAchievements, computeDexStats, buildCohortAchievements, buildAnnualCertificationAchievements,
+  buildExternalCompetitionAchievements, buildArcherLevelAchievement, buildArcheryTenureAchievement, isActiveAchievement,
 } from "../../lib/achievementDex";
 import { seedSeenIfFirstRun, seedNotifiedIfFirstRun, getUnseenKeys, markSeen } from "../../lib/dexSeen";
 
@@ -75,6 +76,8 @@ export default function MemberDex({ onBack, onDexViewed, sharedData }) {
   const [cardData,   setCardData]         = useState({ cards: {}, equipped: [] });
   const [duelStats,  setDuelStats]        = useState({});
   const [cats,       setCats]             = useState([]);
+  const [externalComps, setExternalComps] = useState([]);
+  const [dexCompetitions, setDexCompetitions] = useState([]);
   const [theme, setTheme]               = useState("career");
   const [cat, setCat]                   = useState("start");
   const [detail, setDetail]             = useState(null);
@@ -96,6 +99,8 @@ export default function MemberDex({ onBack, onDexViewed, sharedData }) {
     if (sharedData.cardData !== undefined) setCardData(sharedData.cardData);
     if (sharedData.duelStats !== undefined) setDuelStats(sharedData.duelStats);
     if (sharedData.cats !== undefined) setCats(sharedData.cats);
+    if (sharedData.externalComps !== undefined) setExternalComps(sharedData.externalComps);
+    if (sharedData.dexCompetitions !== undefined) setDexCompetitions(sharedData.dexCompetitions);
   }, [sharedData]);
 
   useEffect(() => {
@@ -104,6 +109,7 @@ export default function MemberDex({ onBack, onDexViewed, sharedData }) {
     if (sharedData?.certification === undefined) getCertification(profile.id).then(setCertification).catch(() => {});
     if (sharedData?.dexConfig === undefined) getDexConfig().then(setConfig).catch(() => {});
     if (sharedData?.duelStats === undefined) getDuelStats(profile.id).then(setDuelStats).catch(() => {});
+    if (sharedData?.dexCompetitions === undefined) getDexCompetitions().then(setDexCompetitions).catch(() => {});
     const unsubs = [
       sharedData?.dexGrants === undefined ? subscribeDexGrants(profile.id, setGranted) : null,
       sharedData?.monsterDex === undefined ? subscribeMonsterDex(profile.id, setMonsterDex) : null,
@@ -112,11 +118,12 @@ export default function MemberDex({ onBack, onDexViewed, sharedData }) {
       sharedData?.potionDex === undefined ? subscribePotionDex(profile.id, setPotionDex) : null,
       sharedData?.cardData === undefined ? subscribeCardCollection(profile.id, setCardData) : null,
       sharedData?.cats === undefined ? subscribeMyCats(profile.id, obj => setCats(Object.values(obj || {}))) : null,
+      sharedData?.externalComps === undefined ? subscribeExternalComps(profile.id, setExternalComps) : null,
     ];
     return () => unsubs.forEach(unsub => unsub?.());
   }, [profile?.id, sharedData?.certRecords, sharedData?.certification, sharedData?.dexConfig,
     sharedData?.duelStats, sharedData?.dexGrants, sharedData?.monsterDex, sharedData?.craftStats,
-    sharedData?.chestStats, sharedData?.potionDex, sharedData?.cardData, sharedData?.cats]);
+    sharedData?.chestStats, sharedData?.potionDex, sharedData?.cardData, sharedData?.cats, sharedData?.externalComps, sharedData?.dexCompetitions]);
 
   // 卡片相關成就（card_collect / card_mythic / card_all6fam）的 check/getValue 讀的是
   // cardCount / mythicCards / cardFamilies，這裡要從 cardData 推導出來，否則卡片格恆為 0
@@ -127,7 +134,7 @@ export default function MemberDex({ onBack, onDexViewed, sharedData }) {
   const cardFamilies  = [...new Set(Object.values(_cards).map(c => c.family).filter(Boolean))];
   const guildRep      = sharedData?.guildRep ?? guildRankInfo.rep;
   const guildExpeditionStats = sharedData?.guildExpeditionStats ?? guildRankInfo.expeditionStats;
-  const ctx   = { member: profile, certification, certRecords, checkinCount: profile?.dailyQuestCount || 0, monsterDex, craftStats, chestStats, potionDex, cardData, cardCount, mythicCards, cardFamilies, duelStats, cats, guildRep, guildExpeditionStats };
+  const ctx   = { member: profile, certification, certRecords, checkinCount: profile?.dailyQuestCount || 0, monsterDex, craftStats, chestStats, potionDex, cardData, cardCount, mythicCards, cardFamilies, duelStats, cats, guildRep, guildExpeditionStats, externalComps, dexCompetitions };
   const stats = computeDexStats({ ...ctx, granted, physicalMax: config.physicalMax, pointMax: config.pointMax });
   // 快取給首頁/我的頁面使用，避免重複讀取
   if (profile?.id) { try { sessionStorage.setItem(`dex_stats_${profile.id}`, JSON.stringify({ totalUnlocked: stats.totalUnlocked, totalAll: stats.totalAll, gold: stats.gold, silver: stats.silver, bronze: stats.bronze })); } catch {} }
@@ -154,7 +161,7 @@ export default function MemberDex({ onBack, onDexViewed, sharedData }) {
     }
     markSeen(profile.id, keys);               // 看過了 → 清紅點
     onDexViewed && onDexViewed();             // 通知 App 層重算 nav 紅點
-  }, [profile?.id, certification, certRecords, granted, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats, cats, guildRep, guildExpeditionStats]); // eslint-disable-line
+  }, [profile?.id, certification, certRecords, granted, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats, cats, guildRep, guildExpeditionStats, externalComps, dexCompetitions]); // eslint-disable-line
 
   // 某個格子是否為「新」（unlocked 且其 key 在快照內）。tiered 格子 id 對應 `${id}#*`
   function isCellNew(a) {
@@ -166,9 +173,17 @@ export default function MemberDex({ onBack, onDexViewed, sharedData }) {
   }
   // 哪些分類含有「新」成就（給分類頁籤紅點）
   const newCatSet = new Set();
+  const annualTiered = buildAnnualCertificationAchievements(certRecords, new Date().getFullYear(), dexCompetitions);
+  const dynamicTiered = [
+    buildArcherLevelAchievement(),
+    buildArcheryTenureAchievement(profile?.joinDate),
+    ...annualTiered,
+    ...buildExternalCompetitionAchievements(dexCompetitions),
+  ];
   newKeys.forEach(k => {
     const id = k.includes("#") ? k.split("#")[0] : k;
-    const t = TIERED_ACHIEVEMENTS.find(x => x.id === id && isActiveAchievement(x));
+    const t = TIERED_ACHIEVEMENTS.find(x => x.id === id && isActiveAchievement(x))
+      || dynamicTiered.find(x => x.id === id && isActiveAchievement(x));
     const catId = t ? t.cat : AUTO_ACHIEVEMENTS.find(x => x.id === id && isActiveAchievement(x))?.cat;
     if (catId) newCatSet.add(catId);
   });
@@ -184,7 +199,7 @@ export default function MemberDex({ onBack, onDexViewed, sharedData }) {
   }
 
   function cellsFor(catId) {
-    if (catId === "cohort")   { const c = buildCohortAchievement(profile?.joinDate); return c ? [c] : []; }
+    if (catId === "cohort") return buildCohortAchievements(profile?.joinDate, 20);
     if (catId === "physical" || catId === "point") {
       const max = catId === "physical" ? config.physicalMax : config.pointMax;
       return buildRoundAchievements(catId, max, granted);
@@ -194,7 +209,10 @@ export default function MemberDex({ onBack, onDexViewed, sharedData }) {
       return SPECIAL_GRANTS.map(a => ({ ...a, unlocked: ids.has(a.id) }));
     }
     // 階段式成就：從 TIERED_ACHIEVEMENTS 過濾
-    const tieredForCat = TIERED_ACHIEVEMENTS.filter(t => t.cat === catId && isActiveAchievement(t));
+    const tieredForCat = [
+      ...TIERED_ACHIEVEMENTS.filter(t => t.cat === catId && isActiveAchievement(t)),
+      ...dynamicTiered.filter(t => t.cat === catId && isActiveAchievement(t)),
+    ];
     // 收集被階段式成就取代的舊成就 id
     const replacedIds = new Set();
     tieredForCat.forEach(t => (t.replacesIds || []).forEach(id => replacedIds.add(id)));
@@ -205,10 +223,22 @@ export default function MemberDex({ onBack, onDexViewed, sharedData }) {
       .map(a => ({ ...a, unlocked: a.check(ctx) }));
 
     // 階段式成就：加上 tierProgress
-    const tiered = tieredForCat.map(t => {
+    const tiered = tieredForCat.flatMap(t => {
       const prog = computeTierProgress(t, ctx);
+      if (t.directDisplay) {
+        return t.tiers.map((tier, index) => ({
+          id: `${t.id}#${index}`,
+          cat: t.cat,
+          icon: tier.icon,
+          name: tier.name,
+          rarity: tier.rarity,
+          desc: tier.desc,
+          unlocked: prog.currentValue >= tier.count,
+          directMilestone: true,
+        }));
+      }
       const curTier = prog.currentTier || t.tiers[0];
-      return {
+      return [{
         id: t.id,
         cat: t.cat,
         icon: curTier ? curTier.icon : t.icon,
@@ -218,7 +248,7 @@ export default function MemberDex({ onBack, onDexViewed, sharedData }) {
         unlocked: prog.currentTierIndex >= 0,
         // 附加 tierProgress 供彈窗使用
         tierProgress: prog,
-      };
+      }];
     });
 
     return [...tiered, ...flat];

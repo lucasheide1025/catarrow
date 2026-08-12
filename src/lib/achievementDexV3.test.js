@@ -3,11 +3,17 @@ import {
   CHEST_DEX_TYPES,
   DEX_CATEGORIES,
   DEX_THEMES,
+  EXTERNAL_COMP_FORMATS,
   MONSTER_CARD_FAMILIES,
   MONSTER_CARD_PACK,
   MONSTER_DEX_CATALOG,
   MONSTER_DEX_FAMILIES,
   TIERED_ACHIEVEMENTS,
+  buildAnnualCertificationAchievements,
+  buildExternalCompetitionAchievements,
+  buildArcherLevelAchievement,
+  buildArcheryTenureAchievement,
+  buildCohortAchievements,
   computeTierProgress,
   isActiveAchievement,
 } from "./achievementDex";
@@ -25,29 +31,52 @@ test("V3 九大主題完整且只覆蓋每個 legacy 分類一次", () => {
 });
 
 
-test("chest dex is a combat category with 13 active chest types and stacks to 1000", () => {
+test("chest dex has 19 logical active cards with per-type caps and legendary only at each cap", () => {
   expect(DEX_CATEGORIES.some(cat => cat.id === "chest")).toBe(true);
   expect(DEX_THEMES.find(theme => theme.id === "combat")?.categories).toContain("chest");
   expect(DEX_THEMES.find(theme => theme.id === "collection")?.categories).not.toContain("chest");
-  expect(CHEST_DEX_TYPES).toHaveLength(13);
+  expect(CHEST_DEX_TYPES).toHaveLength(19);
   const cards = TIERED_ACHIEVEMENTS.filter(item =>
     item.cat === "chest" && isActiveAchievement(item) && item.id !== "chest_catalog"
   );
-  expect(cards).toHaveLength(13);
+  expect(cards).toHaveLength(19);
   cards.forEach(item => {
-    expect(item.tiers.map(tier => tier.count)).toEqual([1, 5, 10, 20, 50, 100, 250, 500, 1000]);
+    expect([100,500,10000]).toContain(item.tiers[item.tiers.length - 1].count);
+    expect(item.tiers[item.tiers.length - 1]).toMatchObject({ rarity:"legendary" });
+    expect(item.tiers.slice(0, -1).some(tier => tier.rarity === "legendary" || tier.rarity === "mythic")).toBe(false);
   });
+  expect(TIERED_ACHIEVEMENTS.find(item => item.id === "chest_cat_box")?.tiers.at(-1)?.count).toBe(100);
+  expect(TIERED_ACHIEVEMENTS.find(item => item.id === "chest_mimi_box")?.tiers.at(-1)?.count).toBe(100);
+  expect(TIERED_ACHIEVEMENTS.find(item => item.id === "chest_mini_boss_mat")?.tiers.at(-1)?.count).toBe(500);
+  expect(TIERED_ACHIEVEMENTS.find(item => item.id === "chest_boss_mat")?.tiers.at(-1)?.count).toBe(500);
 });
 
-test("coin and current special chests are tracked while legacy cat and card_pack are not active chest types", () => {
+test("legacy chest AUTO ids are retained but retired and never leak into the monster category", () => {
+  const legacyChestAutos = AUTO_ACHIEVEMENTS.filter(item => /^chest_.+_open_(1|5|10|20)$/.test(item.id));
+  expect(legacyChestAutos.length).toBeGreaterThan(0);
+  legacyChestAutos.forEach(item => expect(isActiveAchievement(item)).toBe(false));
+  expect(AUTO_ACHIEVEMENTS.filter(item =>
+    item.cat === "monster" && isActiveAchievement(item) && item.id.startsWith("chest_")
+  )).toHaveLength(0);
+  expect(TIERED_ACHIEVEMENTS.filter(item =>
+    isActiveAchievement(item) && item.id.startsWith("chest_") && item.cat !== "chest"
+  )).toHaveLength(0);
+});
+
+test("card pack and seven family material chest tracks are active while special relic and aggregate family ids are retired", () => {
   const ids = CHEST_DEX_TYPES.map(type => type.id);
-  ["coin", "cat_box", "mimi_box", "wb_relic", "family_mat", "mini_boss_mat", "boss_mat"]
+  ["coin", "cat_box", "mimi_box", "card_pack", "mini_boss_mat", "boss_mat",
+    "family_mat_ghost", "family_mat_mountain", "family_mat_insect", "family_mat_workplace",
+    "family_mat_exam", "family_mat_temple", "family_mat_treasure"]
     .forEach(id => expect(ids).toContain(id));
   expect(ids).not.toContain("cat");
-  expect(ids).not.toContain("card_pack");
+  expect(ids).not.toContain("wb_relic");
+  expect(ids).not.toContain("family_mat");
   const oldCat = TIERED_ACHIEVEMENTS.find(item => item.id === "chest_cat");
   expect(oldCat).toBeTruthy();
   expect(isActiveAchievement(oldCat)).toBe(false);
+  expect(isActiveAchievement(TIERED_ACHIEVEMENTS.find(item => item.id === "chest_family_mat"))).toBe(false);
+  expect(isActiveAchievement(TIERED_ACHIEVEMENTS.find(item => item.id === "chest_wb_relic"))).toBe(false);
   AUTO_ACHIEVEMENTS.filter(item => item.id.startsWith("chest_cat_open_"))
     .forEach(item => expect(isActiveAchievement(item)).toBe(false));
 });
@@ -57,9 +86,9 @@ test("chest catalog counts only distinct current chest types that have been open
   expect(catalog).toBeTruthy();
   expect(catalog.tiers[catalog.tiers.length - 1].count).toBe(CHEST_DEX_TYPES.length);
   expect(catalog.getValue({
-    chestStats: { wood: 2, coin: 1, family_mat: 3, cat: 999, unknown_box: 999 },
+    chestStats: { wood: 2, coin: 1, family_mat: 999, family_mat_ghost:3, wb_relic:999, cat:999, unknown_box:999 },
   })).toBe(3);
-  const all = Object.fromEntries(CHEST_DEX_TYPES.map(type => [type.id, 1]));
+  const all = Object.fromEntries(CHEST_DEX_TYPES.map(type => [type.statKey || type.id, 1]));
   expect(catalog.getValue({ chestStats: all })).toBe(CHEST_DEX_TYPES.length);
   expect(computeTierProgress(catalog, { chestStats: all }).isComplete).toBe(true);
 });
@@ -67,8 +96,12 @@ test("chest catalog counts only distinct current chest types that have been open
 test("world boss has permanent participation and kill achievement tracks", () => {
   const participation = TIERED_ACHIEVEMENTS.find(item => item.id === "worldboss_participations");
   const kills = TIERED_ACHIEVEMENTS.find(item => item.id === "worldboss_kills");
-  expect(participation?.cat).toBe("worldboss");
-  expect(kills?.cat).toBe("worldboss");
+  expect(DEX_THEMES.find(theme => theme.id === "worldboss")?.categories)
+    .toEqual(["worldboss_participation", "worldboss_kill", "worldboss_rank"]);
+  expect(participation?.cat).toBe("worldboss_participation");
+  expect(kills?.cat).toBe("worldboss_kill");
+  AUTO_ACHIEVEMENTS.filter(item => item.id.startsWith("wb_trophy_"))
+    .forEach(item => expect(item.cat).toBe("worldboss_rank"));
   expect(participation?.getValue({ member:{ worldBossParticipations:37 } })).toBe(37);
   expect(kills?.getValue({ member:{ worldBossKills:12 } })).toBe(12);
   expect(participation?.tiers[participation.tiers.length - 1]?.count).toBe(1000);
@@ -272,7 +305,10 @@ test("新版公會遠征統計由永久 total/won/byDanger 正規化，高危與
     won: 9,
     byDanger: { 1: 2, 3: 3, 5: 2, 6: 2 },
   });
-  expect(stats).toEqual({ total: 12, won: 9, hardWon: 7, deadlyWon: 4, mythicWon: 2 });
+  expect(stats).toEqual({
+    total: 12, won: 9, hardWon: 7, deadlyWon: 4, mythicWon: 2,
+    byDanger: { 1:2, 2:0, 3:3, 4:0, 5:2, 6:2 },
+  });
 
   const total = TIERED_ACHIEVEMENTS.find(item => item.id === "guild_expeditions");
   const wins = TIERED_ACHIEVEMENTS.find(item => item.id === "guild_wins");
@@ -372,4 +408,110 @@ test("貓裝成就以七槽整套平均強化計算，缺裝算 +0，單件 +50 
   );
   expect(equipment.getValue({ cats:[{ catId, equip:fullMax }] })).toBe(50);
   expect(computeTierProgress(equipment, { cats:[{ catId, equip:fullMax }] }).isComplete).toBe(true);
+});
+
+test("legacy format-only external competition dex ids are retained but retired", () => {
+  expect(EXTERNAL_COMP_FORMATS.map(item => item.id)).toEqual(["qualification", "mixed", "team", "head_to_head"]);
+  const tracks = EXTERNAL_COMP_FORMATS.map(format =>
+    TIERED_ACHIEVEMENTS.find(item => item.id === `external_${format.id}`)
+  );
+  tracks.forEach(track => {
+    expect(track).toBeTruthy();
+    expect(track.cat).toBe("external");
+    expect(isActiveAchievement(track)).toBe(false);
+    expect(track.tiers.map(tier => tier.count)).toEqual([1,2,3,4,5,6,7,8,9]);
+  });
+  const mixed = tracks.find(item => item.id === "external_mixed");
+  expect(mixed.getValue({ externalComps:[
+    { status:"pending_review", format:"mixed", rank:"第1名" },
+    { status:"approved", format:"mixed", rank:"參賽" },
+    { status:"approved", format:"mixed", rank:"第3名" },
+  ] })).toBe(7);
+  expect(mixed.getValue({ externalComps:[{ status:"approved", format:"mixed", rank:"前8名" }] })).toBe(2);
+  expect(mixed.getValue({ externalComps:[{ status:"approved", category:"裸弓 - 室內18米", rank:"第1名" }] })).toBe(0);
+  const qualification = tracks.find(item => item.id === "external_qualification");
+  expect(qualification.getValue({ externalComps:[{ status:"approved", category:"資格賽", rank:"第8名" }] })).toBe(2);
+});
+
+test("cohort dex lists cohort 0 through 20 and cohort 0 can unlock", () => {
+  const cohorts = buildCohortAchievements(null, 20);
+  expect(cohorts).toHaveLength(21);
+  expect(cohorts[0].id).toBe("cohort_0");
+  expect(cohorts[20].id).toBe("cohort_20");
+  expect(cohorts.filter(item => item.unlocked)).toHaveLength(0);
+  const founders = buildCohortAchievements("2022-01-01", 20);
+  expect(founders.find(item => item.id === "cohort_0")?.unlocked).toBe(true);
+});
+
+test("annual certification isolates year half and bow", () => {
+  const records = [
+    { year:2025, half:"first", bowType:"recurve_full", level:"中級", score:0 },
+    { year:2025, half:"second", bowType:"recurve_bare", level:"精英", score:0 },
+    { year:2025, half:"second", bowType:"traditional", level:"菁英", score:0 },
+  ];
+  const defs = buildAnnualCertificationAchievements(records, 2026);
+  expect(defs).toHaveLength(12);
+  const ctx = { certRecords:records };
+  expect(defs.find(item => item.id === "annual_cert_2025_first_recurve_bare").getValue(ctx)).toBe(3);
+  expect(defs.find(item => item.id === "annual_cert_2025_second_recurve_bare").getValue(ctx)).toBe(5);
+  expect(defs.find(item => item.id === "annual_cert_2025_second_traditional").getValue(ctx)).toBe(5);
+  expect(defs.find(item => item.id === "annual_cert_2025_first_traditional").getValue(ctx)).toBe(0);
+  expect(defs.find(item => item.id === "annual_cert_2025_first_recurve_bare").tiers.map(t => t.name)).toEqual(["入門","初級","中級","進階","精英"]);
+});
+
+test("career direct milestones legacy card retirement and Practice battle tracks", () => {
+  expect(TIERED_ACHIEVEMENTS.find(item => item.id === "checkin")?.directDisplay).toBe(true);
+  expect(TIERED_ACHIEVEMENTS.find(item => item.id === "arrows_total")?.directDisplay).toBe(true);
+  ["card_1","card_5","card_10","card_15","card_20"].forEach(id => {
+    expect(isActiveAchievement(AUTO_ACHIEVEMENTS.find(item => item.id === id))).toBe(false);
+  });
+  ["mode_monster","mode_duel","mode_dungeon","mode_worldboss","mode_guild"].forEach(id => {
+    const item = TIERED_ACHIEVEMENTS.find(track => track.id === id);
+    expect(item).toBeTruthy();
+    expect(item.cat).toBe("practice");
+  });
+});
+
+test("backend certification catalog creates exact competition cards while legacy records still backfill", () => {
+  const catalog = [{ id:"cert-2026-h1", dexCatalog:true, dexKind:"cert", type:"年度檢定", title:"2026 上半年檢定", year:2026, half:"first", date:"2026-01-01" }];
+  const defs = buildAnnualCertificationAchievements([], 2026, catalog);
+  expect(defs).toHaveLength(3);
+  const bare = defs.find(item => item.id === "annual_cert_cert-2026-h1_recurve_bare");
+  expect(bare?.competitionId).toBe("cert-2026-h1");
+  expect(bare.getValue({ certRecords:[{ compId:"other", year:2026, half:"first", bowType:"recurve_bare", level:"精英" }] })).toBe(0);
+  expect(bare.getValue({ certRecords:[{ compId:"cert-2026-h1", year:2026, half:"first", bowType:"recurve_bare", level:"精英" }] })).toBe(5);
+  expect(bare.getValue({ certRecords:[{ year:2026, half:"first", bowType:"recurve_bare", level:"精英" }] })).toBe(5);
+});
+
+test("backend external competition catalog creates one card per event from compact member result", () => {
+  const catalog = [{ id:"outside-1", dexCatalog:true, dexKind:"external", externalFormat:"team", title:"全國邀請賽" }];
+  const defs = buildExternalCompetitionAchievements(catalog);
+  expect(defs).toHaveLength(1);
+  expect(defs[0].id).toBe("external_comp_outside-1");
+  expect(defs[0].getValue({ member:{ competitionDex:{ "outside-1":{ participated:true, rank:3 } } } })).toBe(7);
+  expect(defs[0].getValue({ member:{ competitionDex:{ "outside-1":{ participated:true, rank:12 } } } })).toBe(1);
+});
+
+test("combat separates normal monsters mini bosses and bosses", () => {
+  expect(DEX_THEMES.find(theme => theme.id === "combat")?.categories).toEqual(expect.arrayContaining(["monster","monster_miniboss","monster_boss"]));
+  const mini = TIERED_ACHIEVEMENTS.filter(item => item.monsterAchievementKind === "miniBoss" && isActiveAchievement(item));
+  const boss = TIERED_ACHIEVEMENTS.filter(item => item.monsterAchievementKind === "boss" && isActiveAchievement(item));
+  expect(mini).toHaveLength(84);
+  expect(boss).toHaveLength(42);
+  expect(mini.every(item => item.cat === "monster_miniboss")).toBe(true);
+  expect(boss.every(item => item.cat === "monster_boss")).toBe(true);
+  expect(AUTO_ACHIEVEMENTS.find(item => item.id === "monster_mvp1")?.cat).toBe("monster_boss");
+  expect(AUTO_ACHIEVEMENTS.find(item => item.id === "monster_mvp10")?.cat).toBe("monster_boss");
+});
+
+test("archer level reaches 500 and tenure exposes 20 full-year milestones", () => {
+  const level = buildArcherLevelAchievement();
+  expect(level.cat).toBe("archer_level");
+  expect(level.tiers).toHaveLength(500);
+  expect(level.tiers[level.tiers.length - 1].count).toBe(500);
+  const tenure = buildArcheryTenureAchievement({ toDate:() => new Date("2000-01-01T00:00:00Z") }, new Date("2026-08-12T00:00:00Z"));
+  expect(tenure.cat).toBe("archery_tenure");
+  expect(tenure.tiers).toHaveLength(20);
+  expect(tenure.tiers[tenure.tiers.length - 1].count).toBe(20);
+  expect(tenure.getValue({})).toBe(20);
 });

@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import {
   subscribePendingMonthlyRequests,
   approveMonthlyCardRequest, rejectMonthlyCardRequest,
-  grantMonthlyCard, giftMonthlyCardSessions,
+  grantMonthlyCard, giftMonthlyCardSessions, repairMonthlyCardRenewCounts,
   getMonthlyCardConfig, saveMonthlyCardConfig,
   subscribeMonthlyCardLogs, getMembers,
 } from "../../lib/db";
@@ -142,11 +142,29 @@ export default function AdminMonthlyCard({ adminProfile, pendingRequests }) {
     if (res.ok) {
       setMsg(`✅ 已為「${member.nickname || member.name}」${member.monthlyCard?.active ? "續約" : "購買"}月卡（${res.sessions} 次）`);
       setMembers(prev => prev.map(m => m.id !== member.id ? m : {
-        ...m, monthlyCard: { active: true, sessions: res.sessions,
+        ...m, monthlyCard: { ...(m.monthlyCard || {}), active: true, sessions: res.sessions,
+          purchaseCount: res.purchaseCount, renewCount: res.renewCount,
           expiresAt: { toDate: () => { const d = new Date(); d.setDate(d.getDate() + cfg.validDays); return d; } }
         }
       }));
     } else { setMsg(`❌ ${res.reason}`); }
+    setBusy(b => ({ ...b, [member.id]: null }));
+  }
+
+  async function doRepairRenew(member) {
+    if (!window.confirm(`從既有月卡紀錄重新計算「${member.nickname || member.name}」的購買／續射次數？\n只會讀取這位會員的月卡紀錄。`)) return;
+    setBusy(b => ({ ...b, [member.id]: "repair" }));
+    setMsg("");
+    const res = await repairMonthlyCardRenewCounts(member.id);
+    if (res.ok) {
+      setMembers(prev => prev.map(m => m.id !== member.id ? m : ({
+        ...m,
+        monthlyCard: { ...(m.monthlyCard || {}), purchaseCount: res.purchaseCount, renewCount: res.renewCount },
+      })));
+      setMsg(`✓ 已修復「${member.nickname || member.name}」：購買 ${res.purchaseCount} 次／續射 ${res.renewCount} 次`);
+    } else {
+      setMsg(`✕ ${res.reason}`);
+    }
     setBusy(b => ({ ...b, [member.id]: null }));
   }
 
@@ -288,6 +306,10 @@ export default function AdminMonthlyCard({ adminProfile, pendingRequests }) {
                     className="flex-1 min-w-[80px]">
                     🎁 贈次數
                   </Btn>
+                  <button disabled={!!busy[m.id]} onClick={() => doRepairRenew(m)}
+                    className="text-xs text-amber-400 underline px-2 disabled:opacity-50">
+                    {busy[m.id] === "repair" ? "修復中…" : "修復續射"}
+                  </button>
                   <button
                     onClick={() => setExpandLog(prev => ({ ...prev, [m.id]: !prev[m.id] }))}
                     className="text-xs text-blue-400 underline px-2">

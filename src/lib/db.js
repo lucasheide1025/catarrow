@@ -27,6 +27,7 @@ import { planPracticeLogRepair } from "./practiceLogRepair";
 import { SHOOTING_SCHEMA_VERSION, buildMonsterShootingRecord, buildPracticeShootingRecord, buildShootingEnds, calculateSessionMetrics } from "./shootingPerformance";
 import { assertCostCapability, COST_CAPABILITIES, isCostCapabilityAllowed } from "./costControl";
 import { completeClassEndRushFlow, settleClassEndRushAward } from "./classEndRush";
+import { existingMonthlyCardPurchaseCount, nextMonthlyCardPurchaseCounters, purchaseCountFromMonthlyCardLogs } from "./monthlyCardStats";
 import {
   createRoundArrowRecorder, dailyArrowStorageKey, getLocalTodayArrows,
   setLocalTodayArrows, subscribeLocalTodayArrows, taipeiDateKey,
@@ -1082,9 +1083,41 @@ export async function getCompetitions() {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
+// 圖鑑只讀少量活動目錄，不逐格查 Firestore；另加模組級 TTL / inflight 去重。
+const DEX_COMPETITION_TTL_MS = 30 * 60 * 1000;
+let dexCompetitionCache = { at: 0, value: [] };
+let dexCompetitionInflight = null;
+function invalidateDexCompetitionCache() { dexCompetitionCache = { at: 0, value: [] }; dexCompetitionInflight = null; }
+
+export async function getDexCompetitions({ fresh = false } = {}) {
+  if (!fresh && dexCompetitionCache.at && Date.now() - dexCompetitionCache.at < DEX_COMPETITION_TTL_MS) return dexCompetitionCache.value;
+  if (!fresh && dexCompetitionInflight) return dexCompetitionInflight;
+  dexCompetitionInflight = (async () => {
+    const [certSnap, dexSnap] = await Promise.all([
+      getDocs(query(collection(db, C.competitions), where("type", "==", "年度檢定"))),
+      getDocs(query(collection(db, C.competitions), where("dexCatalog", "==", true))),
+    ]);
+    const map = new Map();
+    [...certSnap.docs, ...dexSnap.docs].forEach(d => map.set(d.id, { id:d.id, ...d.data() }));
+    const value = [...map.values()].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+    dexCompetitionCache = { at: Date.now(), value };
+    return value;
+  })();
+  try { return await dexCompetitionInflight; }
+  finally { dexCompetitionInflight = null; }
+}
+
 export async function createCompetition(data, operatorId) {
-  const ref = await addDoc(collection(db, C.competitions), { ...data, status: "upcoming", participants: [], createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  const isCert = data?.type === "年度檢定";
+  const ref = await addDoc(collection(db, C.competitions), {
+    ...data,
+    ...(isCert ? { dexCatalog:true, dexKind:"cert" } : {}),
+    status: data?.status || "upcoming",
+    participants: Array.isArray(data?.participants) ? data.participants : [],
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+  });
   await writeAuditLog("CREATE", ref.id, "competition", null, data, operatorId);
+  invalidateDexCompetitionCache();
   return ref.id;
 }
 
@@ -1092,6 +1125,7 @@ export async function updateCompetition(id, data, operatorId) {
   const before = (await getDoc(doc(db, C.competitions, id))).data();
   await updateDoc(doc(db, C.competitions, id), { ...data, updatedAt: serverTimestamp() });
   await writeAuditLog("UPDATE", id, "competition", before, data, operatorId);
+  invalidateDexCompetitionCache();
 }
 
 // ─── Results ───────────────────────────────────────────────
@@ -1148,6 +1182,9 @@ export async function submitResult(compId, memberId, data) {
 
 // ─── 結算與其它功能 ────────────────────────────────────────
 export async function settleCompetition(compId, operatorId) {
+  const compSnap = await getDoc(doc(db, C.competitions, compId));
+  const comp = compSnap.exists() ? compSnap.data() : {};
+  const isExternalDex = comp?.dexCatalog === true && comp?.dexKind === "external";
   const results = await getResults(compId);
   const sorted = [...results].sort((a, b) => (b.total || 0) - (a.total || 0));
   const pointMap = { 0: 3, 1: 2, 2: 1 };
@@ -1157,8 +1194,19 @@ export async function settleCompetition(compId, operatorId) {
     try {
       await updateDoc(doc(db, C.results, sorted[i].id), { rank: i + 1 });
     } catch (e) { console.warn("write rank failed:", e?.message); }
-    if (pts > 0) {
-      await updateDoc(doc(db, C.members, sorted[i].memberId), { eventPoints: increment(pts) });
+    const memberPatch = {};
+    if (pts > 0) memberPatch.eventPoints = increment(pts);
+    if (isExternalDex) {
+      memberPatch[`competitionDex.${compId}`] = {
+        participated: true,
+        rank: i + 1,
+        format: comp.externalFormat || null,
+        title: comp.title || "",
+        settledAt: serverTimestamp(),
+      };
+    }
+    if (Object.keys(memberPatch).length) {
+      await updateDoc(doc(db, C.members, sorted[i].memberId), memberPatch);
     }
   }
   invalidateMembersCache();
@@ -1225,7 +1273,7 @@ export function subscribeLearnLogs(memberId, callback, maxCount = 100) {
   return onSnapshot(query(collection(db, C.learnLogs), where("memberId", "==", memberId), orderBy("date", "desc"), limit(maxCount)), snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 }
 
-export async function upsertCertRecord(memberId, year, half, bowType, score, operatorId, level = null) {
+export async function upsertCertRecord(memberId, year, half, bowType, score, operatorId, level = null, compId = null) {
   const id = `${memberId}_${year}_${half}_${bowType}`;
   // ⚠️ level 一定要存：calcArcherStats 的檢定加成讀的就是 r.level，
   //    以前只存 score、不存 level，造成「考了檢定但三圍完全沒變」的隱形 bug
@@ -1233,6 +1281,7 @@ export async function upsertCertRecord(memberId, year, half, bowType, score, ope
   const resolvedLevel = level || getCertLevelByScores(bowType, score) || null;
   await setDoc(doc(db, C.certRecords, id), {
     memberId, year, half, bowType, score, level: resolvedLevel,
+    ...(compId ? { compId } : {}),
     updatedAt: serverTimestamp(), operatorId
   }, { merge: true });
 }
@@ -1335,7 +1384,7 @@ export async function approveCertResult(resultId, operatorId, finalTotal, certLe
     // 審核時用該場檢定賽的 certScores 換算的級別優先（跟 UI 顯示一致），
     // 免得 upsertCertRecord 用預設門檻重算，教練調過門檻就對不上。
     const levelForRecord = certLevel && certLevel !== "未達標" ? certLevel : (getCertLevelByScores(r.certBowType, Number(finalTotal), r.compCertScores || null) || null);
-    await upsertCertRecord(r.memberId, Number(r.certYear), r.certHalf, r.certBowType, best, operatorId, levelForRecord);
+    await upsertCertRecord(r.memberId, Number(r.certYear), r.certHalf, r.certBowType, best, operatorId, levelForRecord, r.compId || null);
  
     // ── 直接內嵌「分數→級別」邏輯，不依賴外部函式 ──
     const TH = {
@@ -2809,7 +2858,11 @@ export async function openChestsBulk(memberId, chests, contentsOf) {
       fragments.push(...(contents?.fragments || []));
       cards.push(...(contents?.cards || []));
       coins += contents?.coins || 0;
-      if (chest.type) openStats[chest.type] = (openStats[chest.type] || 0) + 1;
+      if (chest.type) {
+        for (const statKey of chestOpenStatKeys(chest.type, chest.family)) {
+          openStats[statKey] = (openStats[statKey] || 0) + 1;
+        }
+      }
       openedIds.add(chest.id);
     }
 
@@ -2895,7 +2948,7 @@ export async function openChest(memberId, chestId, contents) {
     if (contents?.isMimiBox) {
       const { openCatBox } = await import("./catDb").catch(() => ({}));
       const catRes = openCatBox ? await openCatBox(memberId, { bondOnDuplicate: 50 }) : { ok: false };
-      if (chest.type) await updateChestOpenStats(memberId, chest.type);
+      if (chest.type) await updateChestOpenStats(memberId, chest.type, chest.family);
       return { ok: true, catResult: catRes, chests: updatedChests };
     }
 
@@ -2908,7 +2961,7 @@ export async function openChest(memberId, chestId, contents) {
     }
     if (contents?.coins) await addCoins(memberId, contents.coins);
 
-    if (chest.type) await updateChestOpenStats(memberId, chest.type);
+    if (chest.type) await updateChestOpenStats(memberId, chest.type, chest.family);
     return { ok: true, coins: contents?.coins, chests: updatedChests };
   } catch (e) {
     console.warn("openChest:", e?.message);
@@ -3262,13 +3315,23 @@ export function subscribeCraftStats(memberId, callback) {
 // ─── 開箱統計 ──────────────────────────────────────────────
 const C_CHEST_STATS = "chestStats";
 
-export async function updateChestOpenStats(memberId, chestType) {
+const CHEST_STAT_FAMILIES = new Set(["ghost","mountain","insect","workplace","exam","temple","treasure"]);
+export function chestOpenStatKeys(chestType, family) {
+  if (!chestType) return [];
+  const keys = [chestType];
+  if (chestType === "family_mat" && CHEST_STAT_FAMILIES.has(family)) keys.push(`family_mat_${family}`);
+  return keys;
+}
+
+export async function updateChestOpenStats(memberId, chestType, family = null) {
   if (!memberId || !chestType) return;
   try {
     const ref = doc(db, C_CHEST_STATS, memberId);
+    const keys = chestOpenStatKeys(chestType, family);
+    const increments = Object.fromEntries(keys.map(key => [`opens.${key}`, increment(1)]));
     // updateDoc 才能正確解析 dot-notation 為 nested field；setDoc+merge 會建立字面欄位名稱
-    await updateDoc(ref, { [`opens.${chestType}`]: increment(1), updatedAt: serverTimestamp() })
-      .catch(() => setDoc(ref, { opens: { [chestType]: 1 }, updatedAt: serverTimestamp() }));
+    await updateDoc(ref, { ...increments, updatedAt: serverTimestamp() })
+      .catch(() => setDoc(ref, { opens: Object.fromEntries(keys.map(key => [key, 1])), updatedAt: serverTimestamp() }, { merge:true }));
   } catch (e) { console.warn("updateChestOpenStats:", e?.message); }
 }
 
@@ -3854,20 +3917,38 @@ export async function grantMonthlyCard(memberId, memberName, operatorId) {
     const cfg = await getMonthlyCardConfig();
     const sessions  = cfg.sessions  || 16;
     const validDays = cfg.validDays || 60;
-    const memSnap = await getDoc(doc(db, C.members, memberId));
-    const prevCard = memSnap.exists() ? (memSnap.data().monthlyCard || null) : null;
-    const isRenew  = prevCard?.active && prevCard?.sessions > 0;
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + validDays);
-    await updateDoc(doc(db, C.members, memberId), {
-      monthlyCard: { active: true, sessions, expiresAt: Timestamp.fromDate(expiresAt), startedAt: serverTimestamp(), bonusSessions: 0 }
+    let counters = null;
+    await runTransaction(db, async tx => {
+      const memberRef = doc(db, C.members, memberId);
+      const memSnap = await tx.get(memberRef);
+      if (!memSnap.exists()) throw new Error("找不到會員");
+      counters = nextMonthlyCardPurchaseCounters(memSnap.data().monthlyCard || null);
+      tx.update(memberRef, { monthlyCard: { active:true, sessions, expiresAt:Timestamp.fromDate(expiresAt), startedAt:serverTimestamp(), bonusSessions:0, purchaseCount:counters.purchaseCount, renewCount:counters.renewCount } });
     });
     invalidateMembersCache();
-    const action = isRenew ? "renew" : "purchase";
-    const note   = `${isRenew ? "續約" : "購買"}月卡 ${sessions} 次，有效 ${validDays} 天`;
+    const action = counters.isRenew ? "renew" : "purchase";
+    const note = (counters.isRenew ? "續購" : "購買") + "月卡 " + sessions + " 次，有效 " + validDays + " 天";
     await _logMonthlyCard(memberId, memberName || memberId, action, sessions, note, operatorId);
-    return { ok: true, sessions };
-  } catch (e) { return { ok: false, reason: e?.message }; }
+    return { ok:true, sessions, purchaseCount:counters.purchaseCount, renewCount:counters.renewCount };
+  } catch (e) { return { ok:false, reason:e?.message }; }
+}
+
+// 僅供後台明確操作的歷史修復；不在玩家登入或圖鑑載入時呼叫。
+export async function repairMonthlyCardRenewCounts(memberId) {
+  if (!memberId) return { ok:false, reason:"缺少會員 ID" };
+  try {
+    const [logSnap, memSnap] = await Promise.all([ getDocs(query(collection(db, C_MONTHLY_LOGS), where("memberId", "==", memberId))), getDoc(doc(db, C.members, memberId)) ]);
+    if (!memSnap.exists()) return { ok:false, reason:"找不到會員" };
+    const provablePurchaseCount = purchaseCountFromMonthlyCardLogs(logSnap.docs.map(item => item.data()));
+    const currentPurchaseCount = existingMonthlyCardPurchaseCount(memSnap.data().monthlyCard || null);
+    const purchaseCount = Math.max(currentPurchaseCount, provablePurchaseCount);
+    const renewCount = Math.max(0, purchaseCount - 1);
+    await updateDoc(doc(db, C.members, memberId), { "monthlyCard.purchaseCount":purchaseCount, "monthlyCard.renewCount":renewCount });
+    invalidateMembersCache();
+    return { ok:true, purchaseCount, renewCount, logPurchaseCount:provablePurchaseCount };
+  } catch (e) { return { ok:false, reason:e?.message }; }
 }
 
 // 後台贈送免費次數（無論有無月卡皆可）

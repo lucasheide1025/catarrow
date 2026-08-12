@@ -11,7 +11,7 @@ import { subscribeResults, subscribeNotifications, subscribeAppVersion, isMember
   subscribeMyCheckin, submitCheckin, flushPendingShootingSessions, flushPendingArrowProgress,
   subscribeLocalTodayArrows, initializeTodayArrows,
   subscribeMaintenanceConfig, subscribeTierPermissions,
-  getCompetitions } from "../lib/db";
+  getCompetitions, getDexCompetitions } from "../lib/db";
 import { subscribeMyCats, repairNegativeVillageResources } from "../lib/catDb";
 import { getUnlockedKeys, describeKey } from "../lib/achievementDex";
 import { useGuildRank } from "../guild/useGuildRank";
@@ -222,6 +222,7 @@ export default function MemberApp() {
   const [cats,          setCats]          = useState([]);   // 貓咪子集合（成就偵測用）
   const [catsReady,     setCatsReady]     = useState(false);
   const [certRecords,   setCertRecords]   = useState([]);   // 年度檢定紀錄（成就偵測用）
+  const [dexCompetitions, setDexCompetitions] = useState([]);
   // 年度檢定紅點：用已載入的 certActive＋certRecords 計算（成就偵測本來就要載），不加讀取。
   const [certActive,    setCertActive]    = useState(null);
   const [dexUnlockToast, setDexUnlockToast] = useState(null); // App 層成就解鎖提示
@@ -232,14 +233,14 @@ export default function MemberApp() {
   const [badgePopup,   setBadgePopup]   = useState(null);  // 徽章獲得彈窗
   const [todayArrowsGlobal, setTodayArrowsGlobal] = useState(0); // 今日全域練箭數（含所有來源）
   const sharedPlayerData = useMemo(() => ({
-    certification, certRecords, dexConfig, dexGrants, duelStats,
+    certification, certRecords, dexCompetitions, dexConfig, dexGrants, duelStats,
     monsterDex, craftStats, chestStats, potionDex,
     cardData: cardDataReady ? cardData : undefined,
     cats,
     guildRep: guildRankInfo.rep,
     guildExpeditionStats: guildRankInfo.expeditionStats,
     todayArrows: todayArrowsGlobal,
-  }), [certification, certRecords, dexConfig, dexGrants, duelStats, monsterDex, craftStats, chestStats, potionDex, cardData, cardDataReady, cats, guildRankInfo.rep, guildRankInfo.expeditionStats, todayArrowsGlobal]);
+  }), [certification, certRecords, dexCompetitions, dexConfig, dexGrants, duelStats, monsterDex, craftStats, chestStats, potionDex, cardData, cardDataReady, cats, guildRankInfo.rep, guildRankInfo.expeditionStats, todayArrowsGlobal]);
   const [todayCheckin, setTodayCheckin] = useState(undefined);  // 今日報到狀態
   const [showCheckinPopup, setShowCheckinPopup] = useState(false);
   const [checkinBusy, setCheckinBusy] = useState(false);
@@ -479,8 +480,9 @@ export default function MemberApp() {
       cardFamilies: [...new Set(Object.values(cards).map(c => c.family).filter(Boolean))],
       duelStats: duelStats || {}, cats, guildRep: guildRankInfo.rep,
       guildExpeditionStats: guildRankInfo.expeditionStats,
+      dexCompetitions,
     };
-  }, [profile, certification, certRecords, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats, cats, guildRankInfo.rep, guildRankInfo.expeditionStats]);
+  }, [profile, certification, certRecords, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats, cats, guildRankInfo.rep, guildRankInfo.expeditionStats, dexCompetitions]);
 
   const unlockedKeys = useMemo(() => (profile?.id ? getUnlockedKeys(achCtx) : []), [achCtx, profile?.id]);
 
@@ -519,6 +521,13 @@ export default function MemberApp() {
     if (!profile?.id) return;
     cachedFetch("cert_active_comp", 10 * 60 * 1000, () => getCompetitions().then(list => activeCertComp(list)))
       .then(r => setCertActive(r.value || null)).catch(() => {});
+  }, [profile?.id]);
+
+  // 少量動態檢定／外賽目錄：localStorage + DB module 雙層 30 分鐘快取，不做 listener。
+  useEffect(() => {
+    if (!profile?.id) return;
+    cachedFetch("dex_competition_catalog_v1", 30 * 60 * 1000, () => getDexCompetitions())
+      .then(r => setDexCompetitions(r.value || [])).catch(() => {});
   }, [profile?.id]);
 
   // 練箭 nav 紅點＝有進行中檢定且我這期還沒考完（尚未報名也會亮，提醒去考）

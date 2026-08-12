@@ -8,13 +8,16 @@ import { POTIONS } from "./itemData";
 import { EXPANSION_MONSTERS } from "./monsterExpansionCatalog";
 import { levelFromXP } from "./adventurerSystem";
 import { FAMILY_COLLECTIBLES, COLLECTIBLE_MAP } from "./dungeonCollectibles";
-import { WB_TROPHY_MAP } from "./worldBossData";
+import { WB_TROPHY_MAP, WORLD_BOSSES, getDropCategory } from "./worldBossData";
 import { BUILDING_LIST, BUILDINGS } from "./villageData";
 import { getShopLevel, MAX_SHOP_LEVEL, SHOP_CUSTOMERS } from "./villageShop";
 import { WB_CARDS, WB_CARD_KEYS } from "./worldBossCards";
 import { CATS, CAT_EQUIP_SLOTS, catEquipEnhancement, getBondLevel } from "./catData";
 import { catLevelFromXP } from "./catLevel";
+import { CAT_CARDS } from "./catCardData";
+import { JOURNEY_MAP_IDS, JOURNEY_MAP_META } from "./boardJourney";
 import { GUILD_RANKS } from "../guild/domain/guildRank";
+import { MAX_ARCHER_LEVEL, archerLevelFromXP } from "./archerLevel";
 
 // 裝備品階順序（equipData.js：common→mythic），供裝備成就取「最高品階」用
 const EQUIP_GRADE_ORDER = ["common", "rare", "elite", "epic", "legend", "mythic"];
@@ -64,17 +67,25 @@ export const DEX_CATEGORIES = [
   { id: "start",    label: "🌱 啟程" },
   { id: "practice", label: "🎯 練習" },
   { id: "cohort",   label: "🎓 期數" },
+  { id: "archer_level", label: "\u{1F4C8} \u5c04\u624b\u7b49\u7d1a" },
+  { id: "archery_tenure", label: "\u{1F3F9} \u7d2f\u7a4d\u5c04\u9f61" },
   { id: "cert",     label: "🎖️ 射手證" },
   { id: "level",    label: "🏹 檢定" },
   { id: "collect",  label: "🐱 收藏" },
   { id: "physical", label: "🏆 實體賽" },
   { id: "point",    label: "⭐ 積分賽" },
+  { id: "external", label: "🏅 外賽" },
   { id: "special",  label: "✨ 特殊" },
   { id: "monster",  label: "👹 打怪" },
-  { id: "worldboss",label: "🐲 世界王" },
+  { id: "monster_miniboss", label: "\u{1F536} \u5c0f\u738b" },
+  { id: "monster_boss", label: "\u{1F534} \u5927\u738b" },
+  { id: "worldboss_participation", label: "⚔️ 參與戰鬥" },
+  { id: "worldboss_kill",          label: "💀 擊殺" },
+  { id: "worldboss_rank",          label: "🏆 名次" },
   { id: "duel",     label: "⚔️ 決鬥" },
   { id: "forge",    label: "🔮 煉製 & 藥水" },
   { id: "card",     label: "🃏 怪物卡" },
+  { id: "wbcard",   label: "🐲 世界王卡" },
   { id: "chest",    label: "🎁 寶箱" },
   { id: "shop",     label: "🏪 商店" },
   { id: "guild",    label: "🏰 冒險者公會" },
@@ -87,12 +98,12 @@ export const DEX_CATEGORIES = [
 // V3：頂層先收斂成 9 個玩家主題，再顯示既有分類。
 // legacy cat id 完全不改，避免 seen key、授予紀錄與歷史資料失效。
 export const DEX_THEMES = [
-  { id:"career",     label:"🎯 射手生涯", categories:["start","practice","cohort","cert","level"] },
-  { id:"honor",      label:"🏆 榮耀紀錄", categories:["collect","physical","point","special"] },
-  { id:"combat",     label:"⚔️ 戰鬥", categories:["monster","duel","chest"] },
-  { id:"worldboss",  label:"🐲 世界王", categories:["worldboss"] },
+  { id:"career",     label:"🎯 射手生涯", categories:["start","practice","cohort","archer_level","archery_tenure","cert","level"] },
+  { id:"honor",      label:"🏆 榮耀紀錄", categories:["collect","physical","point","external","special"] },
+  { id:"combat",     label:"⚔️ 戰鬥", categories:["monster","monster_miniboss","monster_boss","duel","chest"] },
+  { id:"worldboss",  label:"🐲 世界王", categories:["worldboss_participation","worldboss_kill","worldboss_rank"] },
   { id:"adventure",  label:"🗺️ 冒險", categories:["guild","dungeon"] },
-  { id:"collection", label:"🃏 收藏", categories:["card"] },
+  { id:"collection", label:"🃏 收藏", categories:["card","wbcard"] },
   { id:"cat",        label:"🐈 貓小隊", categories:["cat"] },
   { id:"village",    label:"🏘️ 貓貓村", categories:["village","shop"] },
   { id:"growth",     label:"🛡️ 養成", categories:["equip","forge"] },
@@ -101,6 +112,45 @@ export const DEX_THEMES = [
 export const DEX_CATEGORY_THEME = Object.freeze(Object.fromEntries(
   DEX_THEMES.flatMap(theme => theme.categories.map(cat => [cat, theme.id]))
 ));
+
+export const EXTERNAL_COMP_FORMATS = Object.freeze([
+  Object.freeze({ id:"qualification", label:"資格賽" }),
+  Object.freeze({ id:"mixed", label:"混雙" }),
+  Object.freeze({ id:"team", label:"團體" }),
+  Object.freeze({ id:"head_to_head", label:"對抗" }),
+]);
+const EXTERNAL_COMP_FORMAT_MAP = Object.freeze(Object.fromEntries(
+  EXTERNAL_COMP_FORMATS.map(item => [item.id, item])
+));
+
+function normalizeExternalFormat(record) {
+  const raw = String(record?.format || "").trim();
+  if (EXTERNAL_COMP_FORMAT_MAP[raw]) return raw;
+  const byLabel = EXTERNAL_COMP_FORMATS.find(item => item.label === raw);
+  if (byLabel) return byLabel.id;
+  const legacy = String(record?.category || "").trim();
+  if (legacy.includes("資格")) return "qualification";
+  if (legacy.includes("混雙")) return "mixed";
+  if (legacy.includes("團體")) return "team";
+  if (legacy.includes("對抗")) return "head_to_head";
+  return null;
+}
+
+function externalRankScore(record) {
+  if (record?.status !== "approved") return 0;
+  const raw = String(record?.rank || "").trim();
+  const exact = raw.match(/^第([1-8])名$/);
+  if (exact) return 10 - Number(exact[1]);
+  if (raw === "前8名") return 2;
+  return 1;
+}
+
+function externalBestScore(records, formatId) {
+  return (records || []).reduce((best, record) => {
+    if (normalizeExternalFormat(record) !== formatId) return best;
+    return Math.max(best, externalRankScore(record));
+  }, 0);
+}
 
 export function isActiveAchievement(achievement) {
   return !!achievement && achievement.retired !== true && achievement.futureData !== true;
@@ -122,6 +172,33 @@ export const WORLD_BOSS_CARD_DEX_FAMILIES = Object.freeze(
     groups[family].push(key);
     return groups;
   }, {})).map(([family, cardKeys]) => Object.freeze({ family, cardKeys:Object.freeze(cardKeys) }))
+);
+
+const WORLD_BOSS_CARD_GROUP_META = Object.freeze({
+  coach:        { label:"教練系", icon:"👑" },
+  cat:          { label:"貓王系", icon:"🐱" },
+  family_small: { label:"小王系", icon:"🔹" },
+  family_big:   { label:"大王系", icon:"🔸" },
+});
+export const WORLD_BOSS_CARD_DEX_GROUPS = Object.freeze(
+  Object.entries(WORLD_BOSS_CARD_GROUP_META).map(([id, meta]) => Object.freeze({
+    id,
+    ...meta,
+    cardKeys:Object.freeze(WB_CARD_KEYS.filter(key => getDropCategory(WORLD_BOSSES[key]) === id)),
+  }))
+);
+
+export const MONSTER_CARD_DEX_GROUPS = Object.freeze(
+  MONSTER_CARD_FAMILIES.flatMap(family => [1,2,3,4,5,6].map(tierIndex => {
+    const cards = MONSTER_CARD_PACK.filter(card => card.family === family && Number(card.tierIndex) === tierIndex);
+    return Object.freeze({
+      id:`${family}_t${tierIndex}`,
+      family,
+      tierIndex,
+      cardIds:Object.freeze(cards.map(card => card.id)),
+      cardNames:Object.freeze(cards.map(card => card.name || card.id)),
+    });
+  }))
 );
 
 function canonicalVillageBuildingLevel(buildings, buildingId) {
@@ -426,10 +503,10 @@ export const AUTO_ACHIEVEMENTS = [
   { id: "monster_30",      cat: "monster", icon: "🔱", name: "百戰老將",   rarity: "epic",
     desc: "累積擊敗怪物 30 次",
     check: c => Object.values(c.monsterDex || {}).reduce((s, m) => s + (m.wins || 0), 0) >= 30 },
-  { id: "monster_mvp1",    cat: "monster", icon: "🌟", name: "首殺頭目",   rarity: "rare",
+  { id: "monster_mvp1",    cat: "monster_boss", icon: "🌟", name: "首殺頭目",   rarity: "rare",
     desc: "擊敗任意一隻頭目（boss）",
     check: c => monsterWinsByTier(c.monsterDex, "boss") >= 1 },
-  { id: "monster_mvp10",   cat: "monster", icon: "💥", name: "頭目獵人",   rarity: "legendary",
+  { id: "monster_mvp10",   cat: "monster_boss", icon: "💥", name: "頭目獵人",   rarity: "legendary",
     desc: "累積擊敗頭目（boss）10 次以上",
     check: c => monsterWinsByTier(c.monsterDex, "boss") >= 10 },
   // 神話成就
@@ -732,7 +809,7 @@ for (const item of Object.values(COLLECTIBLE_MAP)) {
 // ── 動態加入：世界王專屬收藏獎盃成就（尾刀+前三名，24隻×2=48個）────
 for (const t of Object.values(WB_TROPHY_MAP)) {
   AUTO_ACHIEVEMENTS.push({
-    id: `wb_trophy_${t.id}`, cat: "worldboss", icon: t.icon,
+    id: `wb_trophy_${t.id}`, cat: "worldboss_rank", icon: t.icon,
     name: t.name, rarity: t.kind === "lastHit" ? "mythic" : "legendary",
     desc: t.desc, hidden: true,
     riddle: t.kind === "lastHit" ? "終結牠的人，只有一個…" : "傷害的證明，刻在勳章上…",
@@ -773,20 +850,31 @@ for (const monster of MONSTERS) {
 }
 
 // ── 動態加入：開箱次數成就 ────────────────────────────────────────
+const CHEST_10000_MILESTONES = [1, 5, 10, 20, 50, 100, 250, 500, 1000, 2500, 5000, 10000];
+const CHEST_500_MILESTONES = [1, 5, 10, 20, 50, 100, 250, 500];
+const CHEST_100_MILESTONES = [1, 5, 10, 20, 50, 100];
+const CHEST_FAMILY_DEX = [
+  ["ghost", "👻", "鬼怪族"], ["mountain", "🏔️", "山林族"], ["insect", "🦂", "毒蟲族"],
+  ["workplace", "💼", "職場族"], ["exam", "📝", "考試族"], ["temple", "🏰", "西方怪物族"],
+  ["treasure", "📦", "寶箱族"],
+];
 export const CHEST_DEX_TYPES = [
-  { id:"wood",          icon:"📦", name:"通用材料木箱" },
-  { id:"iron",          icon:"🧰", name:"通用材料鐵箱" },
-  { id:"gold",          icon:"🎁", name:"通用材料金箱" },
-  { id:"epic",          icon:"💜", name:"通用材料史詩箱" },
-  { id:"mythic",        icon:"🔮", name:"通用材料神話箱" },
-  { id:"potion",        icon:"🧪", name:"藥水箱" },
-  { id:"coin",          icon:"🪙", name:"金幣寶箱" },
-  { id:"cat_box",       icon:"🎐", name:"貓貓箱" },
-  { id:"mimi_box",      icon:"😺", name:"咪咪箱" },
-  { id:"wb_relic",      icon:"🗝️", name:"世界秘寶箱" },
-  { id:"family_mat",    icon:"📦", name:"族系素材箱" },
-  { id:"mini_boss_mat", icon:"🔶", name:"小王素材箱" },
-  { id:"boss_mat",      icon:"🔴", name:"大王素材箱" },
+  { id:"wood",          statKey:"wood",          icon:"📦", name:"通用材料木箱", milestones:CHEST_10000_MILESTONES },
+  { id:"iron",          statKey:"iron",          icon:"🧰", name:"通用材料鐵箱", milestones:CHEST_10000_MILESTONES },
+  { id:"gold",          statKey:"gold",          icon:"🎁", name:"通用材料金箱", milestones:CHEST_10000_MILESTONES },
+  { id:"epic",          statKey:"epic",          icon:"💜", name:"通用材料史詩箱", milestones:CHEST_10000_MILESTONES },
+  { id:"mythic",        statKey:"mythic",        icon:"🔮", name:"通用材料神話箱", milestones:CHEST_10000_MILESTONES },
+  { id:"potion",        statKey:"potion",        icon:"🧪", name:"藥水箱", milestones:CHEST_10000_MILESTONES },
+  { id:"coin",          statKey:"coin",          icon:"🪙", name:"金幣寶箱", milestones:CHEST_10000_MILESTONES },
+  { id:"card_pack",     statKey:"card_pack",     icon:"🃏", name:"怪物卡包", milestones:CHEST_10000_MILESTONES },
+  { id:"cat_box",       statKey:"cat_box",       icon:"🎐", name:"貓貓箱", milestones:CHEST_100_MILESTONES },
+  { id:"mimi_box",      statKey:"mimi_box",      icon:"😺", name:"咪咪箱", milestones:CHEST_100_MILESTONES },
+  ...CHEST_FAMILY_DEX.map(([family, icon, label]) => ({
+    id:`family_mat_${family}`, statKey:`family_mat_${family}`, family, icon,
+    name:`${label}素材箱`, milestones:CHEST_10000_MILESTONES,
+  })),
+  { id:"mini_boss_mat", statKey:"mini_boss_mat", icon:"🔶", name:"小王素材箱", milestones:CHEST_500_MILESTONES },
+  { id:"boss_mat",      statKey:"boss_mat",      icon:"🔴", name:"大王素材箱", milestones:CHEST_500_MILESTONES },
 ];
 const LEGACY_CHEST_ACH_TYPES = [
   { id:"wood", icon:"📦", name:"木寶箱" },
@@ -798,15 +886,26 @@ const LEGACY_CHEST_ACH_TYPES = [
   { id:"potion", icon:"🧪", name:"藥水箱" },
 ];
 const LEGACY_CHEST_OPEN_MILESTONES = [1, 5, 10, 20];
-const CHEST_OPEN_MILESTONES = [1, 5, 10, 20, 50, 100, 250, 500, 1000];
-const CHEST_OPEN_RARITIES = { 1:"common", 5:"uncommon", 10:"rare", 20:"epic", 50:"legendary", 100:"mythic", 250:"mythic", 500:"mythic", 1000:"mythic" };
+function chestMilestoneRarity(count, max) {
+  if (count >= max) return "legendary";
+  if (count >= Math.max(20, Math.floor(max * 0.05))) return "epic";
+  if (count >= Math.max(10, Math.floor(max * 0.01))) return "rare";
+  if (count >= 10) return "uncommon";
+  return "common";
+}
+const CHEST_OPEN_RARITIES = Object.fromEntries(
+  CHEST_10000_MILESTONES.map(count => [count, chestMilestoneRarity(count, 10000)])
+);
 
 for (const ct of LEGACY_CHEST_ACH_TYPES) {
   for (const n of LEGACY_CHEST_OPEN_MILESTONES) {
     AUTO_ACHIEVEMENTS.push({
       id:     `chest_${ct.id}_open_${n}`,
       cat:    "monster",
-      retired: ct.id === "cat",
+      // 舊版開箱 AUTO 曾掛在「打怪」；現行 13 種寶箱已改由 cat=chest 的單張 tiered 圖鑑承接。
+      // ID 留著只為歷史 seen/notified 相容，全部退役避免再次混進「戰鬥 > 打怪」。
+      retired: true,
+      retiredReason: "舊版開箱 AUTO 已由戰鬥／寶箱分類的現行階段式寶箱圖鑑取代",
       icon:   ct.icon,
       name:   `${ct.name}開了 ${n} 次`,
       rarity: CHEST_OPEN_RARITIES[n],
@@ -922,6 +1021,199 @@ export function buildCohortAchievement(joinDate) {
   };
 }
 
+export function buildCohortAchievements(joinDate, max = 20) {
+  const parsedJoinDate = joinDate ? new Date(joinDate) : null;
+  const hasValidJoinDate = !!parsedJoinDate && !Number.isNaN(parsedJoinDate.getTime());
+  const current = getCohort(joinDate);
+  return Array.from({ length: Math.max(0, Number(max) || 0) + 1 }, (_, index) => {
+    const n = index;
+    return {
+      id: `cohort_${n}`,
+      cat: "cohort",
+      icon: n === 0 ? "🌱" : n === 1 ? "👑" : "🎓",
+      name: n === 0 ? "0期生" : cohortLabel(n),
+      rarity: cohortRarity(n),
+      title: n === 0 ? "創始期射手" : cohortTitle(n),
+      desc: n === 0 ? "2022/07/16 前加入貓小隊的 0 期生" : `${cohortLabel(n)}（${cohortTitle(n)}）`,
+      unlocked: hasValidJoinDate && current === n,
+    };
+  });
+}
+
+export function buildArcherLevelAchievement() {
+  return {
+    id: "archer_level_progress",
+    cat: "archer_level",
+    icon: "📈",
+    name: "射手等級",
+    desc: `射手等級 Lv.1～Lv.${MAX_ARCHER_LEVEL}`,
+    directDisplay: true,
+    getValue: c => archerLevelFromXP(c.member?.archerXP || 0),
+    tiers: Array.from({ length: MAX_ARCHER_LEVEL }, (_, index) => {
+      const level = index + 1;
+      return {
+        count: level,
+        rarity: level >= 500 ? "mythic" : level >= 300 ? "legendary" : level >= 200 ? "epic" : level >= 100 ? "rare" : level >= 50 ? "uncommon" : "common",
+        icon: level >= 500 ? "👑" : "📈",
+        name: `Lv.${level}`,
+        desc: `射手等級達到 Lv.${level}`,
+      };
+    }),
+  };
+}
+
+function completedArcheryYears(joinDate, now = new Date()) {
+  if (!joinDate) return 0;
+  const raw = joinDate?.toDate ? joinDate.toDate() : joinDate?.seconds ? new Date(joinDate.seconds * 1000) : joinDate;
+  const start = raw instanceof Date ? raw : new Date(raw);
+  const end = now instanceof Date ? now : new Date(now);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return 0;
+  let years = end.getFullYear() - start.getFullYear();
+  const anniversary = new Date(end.getFullYear(), start.getMonth(), start.getDate());
+  if (end < anniversary) years -= 1;
+  return Math.max(0, Math.min(20, years));
+}
+
+export function buildArcheryTenureAchievement(joinDate, now = new Date()) {
+  return {
+    id: "archery_tenure_progress",
+    cat: "archery_tenure",
+    icon: "🏹",
+    name: "累積射齡",
+    desc: "以加入箭場日期計算完整射箭年資，最多 20 年",
+    directDisplay: true,
+    getValue: () => completedArcheryYears(joinDate, now),
+    tiers: Array.from({ length: 20 }, (_, index) => {
+      const year = index + 1;
+      return {
+        count: year,
+        rarity: year >= 20 ? "mythic" : year >= 15 ? "legendary" : year >= 10 ? "epic" : year >= 5 ? "rare" : year >= 3 ? "uncommon" : "common",
+        icon: year >= 20 ? "👑" : "🏹",
+        name: `${year} 年射齡`,
+        desc: `完整累積 ${year} 年射箭年資`,
+      };
+    }),
+  };
+}
+
+const ANNUAL_CERT_BOWS = Object.freeze([
+  Object.freeze({ id: "recurve_bare", label: "裸弓", icon: "🏹" }),
+  Object.freeze({ id: "compound", label: "獵弓", icon: "🦅" }),
+  Object.freeze({ id: "traditional", label: "傳統弓", icon: "🌿" }),
+]);
+const ANNUAL_CERT_TIERS = Object.freeze([
+  [1, "common", "入門"],
+  [2, "uncommon", "初級"],
+  [3, "rare", "中級"],
+  [4, "epic", "進階"],
+  [5, "legendary", "精英"],
+]);
+const normalizeAnnualBowType = bowType => bowType === "recurve_full" ? "recurve_bare" : bowType;
+const normalizeAnnualHalf = half => ["second", "下", "lower", "2", 2].includes(half) ? "second" : "first";
+const annualLevelValue = level => ({ 入門:1, 初級:2, 中級:3, 進階:4, 精英:5, 菁英:5 })[level] || 0;
+
+function annualRecordValue(record, bowType) {
+  const stored = annualLevelValue(record?.level);
+  if (stored) return stored;
+  return annualLevelValue(getCertLevel(bowType, Number(record?.score) || 0));
+}
+
+function certCompetitionYear(comp) {
+  const explicit = Number(comp?.year || comp?.certYear);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+  const date = comp?.date ? new Date(comp.date) : null;
+  return date && !Number.isNaN(date.getTime()) ? date.getFullYear() : null;
+}
+
+function certCompetitionHalf(comp) {
+  if (comp?.half != null) return normalizeAnnualHalf(comp.half);
+  const date = comp?.date ? new Date(comp.date) : null;
+  return date && !Number.isNaN(date.getTime()) && date.getMonth() >= 6 ? "second" : "first";
+}
+
+function buildCertCard({ year, half, bow, competition = null }) {
+  const compId = competition?.id || null;
+  const stableId = compId ? `annual_cert_${compId}_${bow.id}` : `annual_cert_${year}_${half}_${bow.id}`;
+  return {
+    id: stableId,
+    cat: "level",
+    icon: bow.icon,
+    name: competition?.title ? `${competition.title}・${bow.label}` : `${year} ${half === "first" ? "上半年" : "下半年"}・${bow.label}`,
+    desc: `${year} ${half === "first" ? "上半年" : "下半年"}${bow.label}年度檢定`,
+    annualCert: true,
+    competitionId: compId,
+    year,
+    half,
+    bowType: bow.id,
+    getValue: c => (c.certRecords || []).reduce((best, record) => {
+      if (compId && record?.compId && record.compId !== compId) return best;
+      if (Number(record?.year) !== year) return best;
+      if (normalizeAnnualHalf(record?.half) !== half) return best;
+      if (normalizeAnnualBowType(record?.bowType) !== bow.id) return best;
+      return Math.max(best, annualRecordValue(record, bow.id));
+    }, 0),
+    tiers: ANNUAL_CERT_TIERS.map(([count, rarity, level]) => ({
+      count,
+      rarity,
+      icon: bow.icon,
+      name: level,
+      desc: `${year} ${half === "first" ? "上半年" : "下半年"}${bow.label}達到${level}`,
+    })),
+  };
+}
+
+export function buildAnnualCertificationAchievements(certRecords = [], currentYear = new Date().getFullYear(), dexCompetitions = []) {
+  const catalog = (dexCompetitions || []).filter(comp => comp?.dexKind === "cert" || comp?.type === "年度檢定");
+  if (catalog.length) {
+    return catalog.flatMap(comp => {
+      const year = certCompetitionYear(comp);
+      if (!year) return [];
+      const half = certCompetitionHalf(comp);
+      return ANNUAL_CERT_BOWS.map(bow => buildCertCard({ year, half, bow, competition: comp }));
+    });
+  }
+  const years = new Set([Number(currentYear)]);
+  (certRecords || []).forEach(record => {
+    const year = Number(record?.year);
+    if (Number.isFinite(year) && year > 0) years.add(year);
+  });
+  return [...years].sort((a, b) => b - a).flatMap(year =>
+    ["first", "second"].flatMap(half => ANNUAL_CERT_BOWS.map(bow => buildCertCard({ year, half, bow })))
+  );
+}
+
+const DYNAMIC_EXTERNAL_RESULT_TIERS = Object.freeze([
+  { count:1, rarity:"common", icon:"🎖️", name:"參加紀念章", desc:"完成一次正式對外比賽" },
+  ...[8,7,6,5,4,3,2,1].map(rank => ({
+    count:10-rank,
+    rarity:rank === 1 ? "legendary" : rank === 2 ? "epic" : rank === 3 ? "rare" : "uncommon",
+    icon:rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : "🏅",
+    name:`第 ${rank} 名`,
+    desc:`正式對外比賽取得第 ${rank} 名或更佳成績`,
+  })),
+]);
+
+export function buildExternalCompetitionAchievements(dexCompetitions = []) {
+  return (dexCompetitions || [])
+    .filter(comp => comp?.dexCatalog === true && comp?.dexKind === "external" && comp?.id)
+    .map(comp => ({
+      id:`external_comp_${comp.id}`,
+      cat:"external",
+      icon:"🏅",
+      name:comp.title || "對外比賽",
+      desc:`${EXTERNAL_COMP_FORMAT_MAP[comp.externalFormat]?.label || "外賽"}・參賽與名次紀錄`,
+      dynamicExternal:true,
+      competitionId:comp.id,
+      getValue:c => {
+        const result = c.member?.competitionDex?.[comp.id];
+        if (!result?.participated) return 0;
+        const rank = Number(result.rank);
+        return Number.isFinite(rank) && rank >= 1 && rank <= 8 ? 10-rank : 1;
+      },
+      tiers:DYNAMIC_EXTERNAL_RESULT_TIERS,
+    }));
+}
+
 // ── 階段式成就（TIERED） — 里程碑系統 ─────────────────────────
 // 每個階段式成就只佔 1 格，隨數值成長自動替換圖示、稀有度、名稱
 // 點擊後顯示進度條 + 里程碑列表
@@ -931,6 +1223,7 @@ export const TIERED_ACHIEVEMENTS = [
   {
     id: "checkin", cat: "start", icon: "📍", name: "累積報到",
     desc: "完成今日任務報到，累積次數",
+    directDisplay: true,
     replacesIds: ["checkin_1","checkin_5","checkin_10","checkin_15","checkin_20","checkin_25","checkin_30"],
     getValue: c => c.checkinCount || 0,
     tiers: [
@@ -976,7 +1269,7 @@ export const TIERED_ACHIEVEMENTS = [
 
   // ══ 打怪 — 頭目擊殺 ══
   {
-    id: "monster_boss", cat: "monster", icon: "🌟", name: "頭目擊殺",
+    id: "monster_boss", cat: "monster_boss", icon: "🌟", name: "頭目擊殺",
     desc: "擊敗頭目（boss）級怪物的次數",
     replacesIds: ["monster_mvp1","monster_mvp10"],
     getValue: c => monsterWinsByTier(c.monsterDex, "boss"),
@@ -1020,6 +1313,8 @@ export const TIERED_ACHIEVEMENTS = [
     replacesIds: ["card_1","card_5","card_10","card_15","card_20"],
     getValue: c => (c.cardCount || 0),
     tiers: buildCardCollectTiers(MONSTER_CARD_PACK.length),
+    retired: true,
+    retiredReason: "怪物卡收藏已改為七族 × T1～T6 各自收集",
   },
 
   {
@@ -1189,7 +1484,7 @@ for (const monster of MONSTER_DEX_CATALOG.filter(item => item.encounter === "min
   const label = `小王「${monster.name}」`;
   TIERED_ACHIEVEMENTS.push({
     id: `monster_miniboss_${monster.id}`,
-    cat: "monster",
+    cat: "monster_miniboss",
     icon: "🔱",
     name: `小王・${monster.name}`,
     desc: `累積擊敗${label}的次數`,
@@ -1206,7 +1501,7 @@ for (const monster of MONSTER_DEX_CATALOG.filter(item => item.encounter === "bos
   const label = `大王「${monster.name}」`;
   TIERED_ACHIEVEMENTS.push({
     id: `monster_boss_${monster.id}`,
-    cat: "monster",
+    cat: "monster_boss",
     icon: "👑",
     name: `大王・${monster.name}`,
     desc: `累積擊敗${label}的次數`,
@@ -1222,14 +1517,16 @@ for (const monster of MONSTER_DEX_CATALOG.filter(item => item.encounter === "bos
 // 開箱次數（7 種箱各 1 格，取代 chest_{type}_open_{1,5,10,20}）
 for (const ct of CHEST_DEX_TYPES) {
   const legacyCompatible = ["wood","iron","gold","epic","mythic","potion"].includes(ct.id);
+  const milestones = ct.milestones || CHEST_10000_MILESTONES;
+  const max = milestones[milestones.length - 1];
   TIERED_ACHIEVEMENTS.push({
     id: `chest_${ct.id}`, cat: "chest", icon: ct.icon,
     name: `${ct.name}開箱`,
     desc: `累積開啟${ct.name}的次數`,
     replacesIds: legacyCompatible ? LEGACY_CHEST_OPEN_MILESTONES.map(n => `chest_${ct.id}_open_${n}`) : [],
-    getValue: c => (c.chestStats?.[ct.id] || 0),
-    tiers: CHEST_OPEN_MILESTONES.map(n => ({
-      count: n, rarity: CHEST_OPEN_RARITIES[n], icon: ct.icon,
+    getValue: c => (c.chestStats?.[ct.statKey || ct.id] || 0),
+    tiers: milestones.map(n => ({
+      count: n, rarity: chestMilestoneRarity(n, max), icon: ct.icon,
       name: n === 1 ? `初見${ct.name}` : `${ct.name} ×${n}`,
       desc: n === 1 ? `第一次開啟${ct.name}` : `累積開啟${ct.name} ${n} 次`,
     })),
@@ -1245,7 +1542,28 @@ TIERED_ACHIEVEMENTS.push({
   retired:true,
 });
 
-const CHEST_DEX_TYPE_IDS = new Set(CHEST_DEX_TYPES.map(type => type.id));
+// 2026-08-12 前的舊圖鑑 ID：現行 family_mat 已拆成七族、wb_relic 改列特殊道具。
+// ID 留著給 seen/notified 與歷史資料相容，但不再顯示／觸發。
+for (const legacy of [
+  { id:"chest_family_mat", statKey:"family_mat", icon:"📦", name:"舊版族系素材箱" },
+  { id:"chest_wb_relic", statKey:"wb_relic", icon:"🗝️", name:"世界秘寶箱" },
+]) {
+  TIERED_ACHIEVEMENTS.push({
+    id:legacy.id, cat:"chest", icon:legacy.icon,
+    name:legacy.name, desc:"舊版寶箱圖鑑紀錄（已退役）",
+    getValue:c => Number(c.chestStats?.[legacy.statKey] || 0),
+    tiers:CHEST_10000_MILESTONES.map(n => ({
+      count:n, rarity:chestMilestoneRarity(n, 10000), icon:legacy.icon,
+      name:`${legacy.name} ×${n}`, desc:`歷史累積開啟 ${n} 次`,
+    })),
+    retired:true,
+    retiredReason: legacy.id === "chest_family_mat"
+      ? "族系素材箱已拆為七族各自統計"
+      : "世界秘寶箱屬特殊道具，不列入現行寶箱圖鑑",
+  });
+}
+
+const CHEST_DEX_TYPE_IDS = new Set(CHEST_DEX_TYPES.map(type => type.statKey || type.id));
 const CHEST_CATALOG_MILESTONES = [1, 3, 5, 8, 10, CHEST_DEX_TYPES.length];
 const CHEST_CATALOG_RARITIES = ["common","uncommon","rare","epic","legendary","mythic"];
 TIERED_ACHIEVEMENTS.push({
@@ -1264,15 +1582,24 @@ const WORLD_BOSS_PARTICIPATION_MILESTONES = [1, 5, 10, 25, 50, 100, 250, 500, 10
 const WORLD_BOSS_KILL_MILESTONES = [1, 3, 5, 10, 25, 50, 100, 250, 500, 1000];
 const longTermRarity = count => count >= 100 ? "mythic" : count >= 50 ? "legendary" : count >= 25 ? "epic" : count >= 10 ? "rare" : count >= 5 ? "uncommon" : "common";
 
+for (let danger = 1; danger <= 6; danger++) {
+  TIERED_ACHIEVEMENTS.push({
+    id:`guild_danger_${danger}_wins`, cat:"guild", icon:"⚔️", name:`公會 T${danger} 遠征勝場`,
+    desc:`累積贏得危險度 ${danger}（T${danger}）公會遠征`, guildDanger:danger,
+    getValue:c => Math.max(0, Number(c.guildExpeditionStats?.byDanger?.[danger]) || 0),
+    tiers:[1,5,10,25,50,100].map(count => ({ count, rarity:longTermRarity(count), icon:"⚔️", name:`T${danger} 勝場 ×${count}`, desc:`累積贏得 T${danger} 公會遠征 ${count} 次` })),
+  });
+}
+
 TIERED_ACHIEVEMENTS.push(
   {
-    id:"worldboss_participations", cat:"worldboss", icon:"⚔️", name:"世界王參戰",
+    id:"worldboss_participations", cat:"worldboss_participation", icon:"⚔️", name:"世界王參戰",
     desc:"累積參與世界王並完成參戰獎勵領取的次數",
     getValue:c => Number(c.member?.worldBossParticipations || 0),
     tiers:WORLD_BOSS_PARTICIPATION_MILESTONES.map(count => ({ count, rarity:longTermRarity(count), icon:"⚔️", name:`參戰 ${count} 次`, desc:`累積參戰世界王 ${count} 次` })),
   },
   {
-    id:"worldboss_kills", cat:"worldboss", icon:"💀", name:"世界王擊殺",
+    id:"worldboss_kills", cat:"worldboss_kill", icon:"💀", name:"世界王擊殺",
     desc:"累積參與並成功擊倒世界王的次數",
     getValue:c => Number(c.member?.worldBossKills || 0),
     tiers:WORLD_BOSS_KILL_MILESTONES.map(count => ({ count, rarity:longTermRarity(count), icon:"💀", name:`擊殺 ${count} 次`, desc:`累積擊倒世界王 ${count} 次` })),
@@ -1288,6 +1615,46 @@ for (const group of WORLD_BOSS_CARD_DEX_FAMILIES) {
     worldBossCardKeys:group.cardKeys,
     getValue:c => group.cardKeys.filter(key => Boolean(c.cardData?.wbCards?.[key])).length,
     tiers:group.cardKeys.map((_, index) => ({ count:index + 1, rarity:longTermRarity(index + 1), icon:"🃏", name:`${familyName} ${index + 1}/${group.cardKeys.length}`, desc:`收集 ${index + 1} 張不同的 ${familyName} 世界王卡` })),
+    retired:true,
+    retiredReason:"世界王卡已改為教練系／貓王系／小王系／大王系",
+  });
+}
+
+for (const group of WORLD_BOSS_CARD_DEX_GROUPS) {
+  TIERED_ACHIEVEMENTS.push({
+    id:`worldboss_card_group_${group.id}`, cat:"wbcard", icon:group.icon, name:`世界王卡・${group.label}`,
+    desc:`收集不同的${group.label}世界王卡`,
+    worldBossCardGroup:group.id,
+    worldBossCardKeys:group.cardKeys,
+    getValue:c => group.cardKeys.filter(key => Boolean(c.cardData?.wbCards?.[key])).length,
+    tiers:group.cardKeys.map((_, index) => ({
+      count:index + 1, rarity:longTermRarity(index + 1), icon:group.icon,
+      name:`${group.label} ${index + 1}/${group.cardKeys.length}`,
+      desc:`收集 ${index + 1} 張不同的${group.label}世界王卡`,
+    })),
+  });
+}
+
+const MONSTER_CARD_FAMILY_LABELS = {
+  ghost:"鬼怪族", mountain:"山林族", insect:"毒蟲族", workplace:"職場族",
+  exam:"考試族", temple:"西方怪物族", treasure:"寶箱族",
+};
+for (const group of MONSTER_CARD_DEX_GROUPS) {
+  const label = MONSTER_CARD_FAMILY_LABELS[group.family] || group.family;
+  TIERED_ACHIEVEMENTS.push({
+    id:`monster_cards_${group.id}`, cat:"card", icon:"🃏", name:`${label} T${group.tierIndex}`,
+    desc:`收集 ${label} T${group.tierIndex} 的一般怪物卡`,
+    monsterCardFamily:group.family,
+    monsterCardTier:group.tierIndex,
+    monsterCardIds:group.cardIds,
+    getValue:c => group.cardIds.filter(id => Boolean(c.cardData?.cards?.[id])).length,
+    tiers:group.cardIds.map((id, index) => ({
+      count:index + 1,
+      rarity:index === group.cardIds.length - 1 ? "epic" : index === 1 ? "rare" : "uncommon",
+      icon:"🃏",
+      name:index === group.cardIds.length - 1 ? `${label} T${group.tierIndex} 全收集` : `${label} T${group.tierIndex} ${index + 1}/${group.cardIds.length}`,
+      desc:`收集 ${index + 1}/${group.cardIds.length} 張 ${label} T${group.tierIndex} 怪物卡`,
+    })),
   });
 }
 
@@ -1298,6 +1665,31 @@ for (const building of VILLAGE_BUILDING_DEX) {
     villageBuildingId:building.id,
     getValue:c => canonicalVillageBuildingLevel(c.member?.village?.buildings || {}, building.id),
     tiers:[1,5,10,15,20].map(count => ({ count, rarity:longTermRarity(count), icon:building.icon, name:`${building.name} Lv.${count}`, desc:`${building.name}達到 Lv.${count}` })),
+  });
+}
+
+TIERED_ACHIEVEMENTS.push({
+  id:"village_cat_cards", cat:"village", icon:"🎴", name:"貓貓卡片收藏",
+  desc:`收集貓貓卡片（目前共 ${CAT_CARDS.length} 張）`,
+  getValue:c => Object.keys(c.member?.catCards || {}).filter(id => Boolean(c.member?.catCards?.[id])).length,
+  tiers:[1,10,25,50,100,150,CAT_CARDS.length]
+    .filter((count, index, all) => count <= CAT_CARDS.length && all.indexOf(count) === index)
+    .map(count => ({
+      count, rarity:count === CAT_CARDS.length ? "legendary" : longTermRarity(count), icon:"🎴",
+      name:count === CAT_CARDS.length ? `全收集 ${CAT_CARDS.length} 張` : `收集 ${count} 張`,
+      desc:count === CAT_CARDS.length ? `收集全部 ${CAT_CARDS.length} 張貓貓卡片` : `累積收集 ${count} 張不同貓貓卡片`,
+    })),
+});
+
+for (const mapId of JOURNEY_MAP_IDS) {
+  const meta = JOURNEY_MAP_META[mapId] || {};
+  const label = meta.name || mapId;
+  const icon = meta.icon || "🗺️";
+  TIERED_ACHIEVEMENTS.push({
+    id:`village_journey_${mapId}`, cat:"village", icon, name:`探索地圖・${label}`,
+    desc:`完成${label}的旅程次數`, villageJourneyMapId:mapId,
+    getValue:c => Math.max(0, Number(c.member?.villageBoard?.maps?.[mapId]?.clears) || 0),
+    tiers:[1,5,10,25,50,100].map(count => ({ count, rarity:longTermRarity(count), icon, name:`${label} ×${count}`, desc:`累積完成${label} ${count} 次` })),
   });
 }
 
@@ -1368,6 +1760,7 @@ TIERED_ACHIEVEMENTS.push(
   {
     id: "arrows_total", cat: "practice", icon: "🎯", name: "累積練習箭數",
     desc: "終身在系統內累積射出的箭數",
+    directDisplay: true,
     getValue: c => c.member?.totalArrowsAllTime || 0,
     tiers: [
       { count: 100,   rarity: "common",    icon: "🎯", name: "起手式",   desc: "累積射出 100 箭" },
@@ -1533,9 +1926,9 @@ TIERED_ACHIEVEMENTS.push(
     ],
   },
 
-  // ⚔️ 決鬥歷練 — 總參與場次（與勝場成就互補）
+  // ⚔️ 決鬥參與 — 總參與場次
   {
-    id: "mode_duel", cat: "duel", icon: "🎮", name: "決鬥歷練",
+    id: "mode_duel", cat: "practice", icon: "🎮", name: "決鬥參與",
     desc: "累積參與決鬥的總場次（勝負不拘）",
     getValue: c => (c.duelStats?.wins || 0) + (c.duelStats?.losses || 0) + (c.duelStats?.draws || 0),
     tiers: [
@@ -1546,6 +1939,68 @@ TIERED_ACHIEVEMENTS.push(
     ],
   },
 );
+
+const PRACTICE_BATTLE_MILESTONES = [1, 5, 10, 25, 50, 100, 250, 500, 1000];
+const practiceBattleTiers = (icon, label) => PRACTICE_BATTLE_MILESTONES.map(count => ({
+  count,
+  rarity: longTermRarity(count),
+  icon,
+  name: `${label} ×${count}`,
+  desc: `累積${label} ${count} 次`,
+}));
+
+TIERED_ACHIEVEMENTS.push(
+  {
+    id: "mode_monster", cat: "practice", icon: "👹", name: "打怪完成場次",
+    desc: "以永久怪物圖鑑勝場統計完成的打怪場次",
+    getValue: c => Object.values(c.monsterDex || {}).reduce((sum, item) => sum + (Number(item?.wins) || 0), 0),
+    tiers: practiceBattleTiers("👹", "完成打怪"),
+  },
+  {
+    id: "mode_dungeon", cat: "practice", icon: "🏚️", name: "地下城完成場次",
+    desc: "累積完成地下城的次數",
+    getValue: c => dungeonClearTotal(c.member),
+    tiers: practiceBattleTiers("🏚️", "完成地下城"),
+  },
+  {
+    id: "mode_worldboss", cat: "practice", icon: "🐲", name: "世界王參與",
+    desc: "累積取得世界王參戰紀錄的次數",
+    getValue: c => Number(c.member?.worldBossParticipations || 0),
+    tiers: practiceBattleTiers("🐲", "參與世界王"),
+  },
+  {
+    id: "mode_guild", cat: "practice", icon: "🏰", name: "公會遠征參與",
+    desc: "累積完成冒險者公會遠征的次數（勝負皆計）",
+    getValue: c => Number(c.guildExpeditionStats?.total || 0),
+    tiers: practiceBattleTiers("🏰", "完成公會遠征"),
+  },
+);
+
+const EXTERNAL_RESULT_TIERS = Object.freeze([
+  { count:1, rarity:"common", icon:"🎟️", name:"參加紀念章", desc:"完成一次通過審核的對外比賽" },
+  ...[8, 7, 6, 5, 4, 3, 2, 1].map(rank => ({
+    count: 10 - rank,
+    rarity: rank === 1 ? "legendary" : rank === 2 ? "epic" : rank === 3 ? "rare" : "uncommon",
+    icon: rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : "🏅",
+    name: `第${rank}名`,
+    desc: `對外比賽取得第${rank}名或更佳成績`,
+  })),
+]);
+
+for (const format of EXTERNAL_COMP_FORMATS) {
+  TIERED_ACHIEVEMENTS.push({
+    id: `external_${format.id}`,
+    cat: "external",
+    icon: "🏅",
+    name: format.label,
+    desc: `對外比賽・${format.label}最佳榮耀紀錄`,
+    externalFormat: format.id,
+    retired: true,
+    retiredReason: "外賽圖鑑已改由後台每一場正式比賽自動建立並於結算名單後解鎖",
+    getValue: c => externalBestScore(c.externalComps, format.id),
+    tiers: EXTERNAL_RESULT_TIERS,
+  });
+}
 
 // 🐈 九隻貓各自獨立養成：等級／羈絆等級／七件裝備平均強化。
 // 裝備採整套平均，缺少的槽位視為普通 +0，避免只衝一件裝備就完成整套養成成就。
@@ -1603,7 +2058,7 @@ for (const [catId, cat] of Object.entries(CATS)) {
 
 // ── Phase 3：跨系統的一次性（單次）成就（終局/收集完成）──────────
 AUTO_ACHIEVEMENTS.push(
-  { id: "cat_all9", cat: "cat", icon: "👑", name: "貓咪全收", rarity: "legendary", hidden: true,
+  { id: "cat_all9", cat: "village", icon: "👑", name: "九貓齊聚", rarity: "legendary", hidden: true,
     riddle: "九條貓命，一個都不能少…", desc: "收服全部 9 隻貓咪",
     check: c => (c.cats || []).length >= 9 },
   { id: "village_allbuilt", cat: "village", icon: "🏰", name: "極盛之城", rarity: "mythic", hidden: true,
@@ -1689,6 +2144,18 @@ export const REPLACED_BY_TIERED = new Set();
 TIERED_ACHIEVEMENTS.filter(isActiveAchievement)
   .forEach(t => (t.replacesIds || []).forEach(id => REPLACED_BY_TIERED.add(id)));
 
+// 舊版終身最高檢定與早期怪物卡總數 ID 留作 seen/notified 相容；新版改由期間檢定與七族分階收藏承接。
+for (const achievement of AUTO_ACHIEVEMENTS) {
+  if (achievement.cat === "level") {
+    achievement.retired = true;
+    achievement.retiredReason = "年度檢定已改為年份 × 上下半年 × 弓種折疊紀錄";
+  }
+  if (["card_1", "card_5", "card_10", "card_15", "card_20"].includes(achievement.id)) {
+    achievement.retired = true;
+    achievement.retiredReason = "怪物卡收藏已改為七族 × T1～T6 分組圖鑑";
+  }
+}
+
 // ── getUnlockedKeys：回傳「目前已解鎖的成就 key」陣列 ────────────
 // 供 App 層即時偵測 + 紅點/NEW 高亮共用。
 //   單次成就 → key = id
@@ -1702,7 +2169,13 @@ export function getUnlockedKeys(ctx) {
     if (REPLACED_BY_TIERED.has(a.id)) return;
     try { if (a.check(ctx)) keys.push(a.id); } catch { /* 資料未就緒時忽略 */ }
   });
-  TIERED_ACHIEVEMENTS.forEach(t => {
+  const dynamicTiered = [
+    buildArcherLevelAchievement(),
+    buildArcheryTenureAchievement(ctx.member?.joinDate),
+    ...buildAnnualCertificationAchievements(ctx.certRecords, new Date().getFullYear(), ctx.dexCompetitions),
+    ...buildExternalCompetitionAchievements(ctx.dexCompetitions),
+  ];
+  [...TIERED_ACHIEVEMENTS, ...dynamicTiered].forEach(t => {
     if (!isActiveAchievement(t)) return;
     const prog = computeTierProgress(t, ctx);
     if (!prog) return;
@@ -1715,7 +2188,11 @@ export function getUnlockedKeys(ctx) {
 export function describeKey(key) {
   if (typeof key === "string" && key.includes("#")) {
     const [id, idxStr] = key.split("#");
-    const t = TIERED_ACHIEVEMENTS.find(x => x.id === id);
+    let t = TIERED_ACHIEVEMENTS.find(x => x.id === id);
+    if (!t && id.startsWith("annual_cert_")) {
+      const match = id.match(/^annual_cert_(\d{4})_/);
+      if (match) t = buildAnnualCertificationAchievements([], Number(match[1])).find(x => x.id === id);
+    }
     const tier = t?.tiers?.[Number(idxStr)];
     if (t && tier) return { id: key, name: `${t.name}・${tier.name}`, desc: tier.desc, icon: tier.icon, rarity: tier.rarity };
     return null;
@@ -1725,12 +2202,12 @@ export function describeKey(key) {
 }
 
 // ── 統計 ───────────────────────────────────────────────────
-export function computeDexStats({ member, certification, certRecords, checkinCount, granted, physicalMax, pointMax, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats, cats, guildRep, guildExpeditionStats }) {
+export function computeDexStats({ member, certification, certRecords, checkinCount, granted, physicalMax, pointMax, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats, cats, guildRep, guildExpeditionStats, externalComps, dexCompetitions }) {
   const cards       = cardData?.cards || {};
   const cardCount   = Object.keys(cards).length;
   const mythicCards = Object.values(cards).filter(c => c.tier === "mythic").length;
   const cardFamilies = [...new Set(Object.values(cards).map(c => c.family).filter(Boolean))];
-  const ctx = { member, certification, certRecords, checkinCount, monsterDex: monsterDex || {}, craftStats: craftStats || {}, chestStats: chestStats || {}, potionDex: potionDex || {}, cardData: cardData || {}, cardCount, mythicCards, cardFamilies, duelStats: duelStats || {}, cats: cats || [], guildRep: Math.max(0, Number(guildRep) || 0), guildExpeditionStats: guildExpeditionStats || {} };
+  const ctx = { member, certification, certRecords, checkinCount, monsterDex: monsterDex || {}, craftStats: craftStats || {}, chestStats: chestStats || {}, potionDex: potionDex || {}, cardData: cardData || {}, cardCount, mythicCards, cardFamilies, duelStats: duelStats || {}, cats: cats || [], guildRep: Math.max(0, Number(guildRep) || 0), guildExpeditionStats: guildExpeditionStats || {}, externalComps: externalComps || [], dexCompetitions: dexCompetitions || [] };
 
   let autoUnlocked = 0, autoTotal = 0;
   AUTO_ACHIEVEMENTS.forEach(a => {
@@ -1742,7 +2219,13 @@ export function computeDexStats({ member, certification, certRecords, checkinCou
 
   // 階段式成就：每個里程碑各算一格（totalTiers=總格、unlockedCount=已解鎖）
   let tieredUnlocked = 0, tieredTotal = 0;
-  TIERED_ACHIEVEMENTS.forEach(t => {
+  const dynamicTiered = [
+    buildArcherLevelAchievement(),
+    buildArcheryTenureAchievement(member?.joinDate),
+    ...buildAnnualCertificationAchievements(certRecords, new Date().getFullYear(), dexCompetitions),
+    ...buildExternalCompetitionAchievements(dexCompetitions),
+  ];
+  [...TIERED_ACHIEVEMENTS, ...dynamicTiered].forEach(t => {
     if (!isActiveAchievement(t)) return;
     const prog = computeTierProgress(t, ctx);
     if (!prog) return;
