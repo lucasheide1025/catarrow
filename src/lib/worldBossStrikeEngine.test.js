@@ -1,6 +1,7 @@
 // src/lib/worldBossStrikeEngine.test.js — 世界王強攻切片測試（spec 測試矩陣 1-7）
 import {
   WB_STRIKE_MULTIPLIER, WB_FINISHER_MULTIPLIER,
+  WB_COACH_STRIKE_MULTIPLIER, WB_COACH_FINISHER_MULTIPLIER,
   getWorldBossScheduledStrike, getWorldBossTelegraph,
   resolveWorldBossStrike, validateWorldBossSkillConfig,
 } from "./worldBossStrikeEngine";
@@ -8,16 +9,16 @@ import {
 // 切片 fixture：1 隻教練王（射箭系強攻,PRD 21）
 const COACH_BOSS = {
   r2Strike: {
-    skillId: "wb_coach1_strike", name: "百步穿楊", color: "#38bdf8",
+    skillId: "wb_head_coach_strike", name: "百步穿楊", color: "#38bdf8",
     counterText: "本回合射出高分即可削弱或完全破解！",
-    baseMultiplier: WB_STRIKE_MULTIPLIER,
+    baseMultiplier: WB_COACH_STRIKE_MULTIPLIER,
     status: { id: "atkDown", strength: 10, duration: 2 },
     canKnockOut: false,
   },
   r4Finisher: {
-    skillId: "wb_coach1_finisher", name: "萬箭齊發", color: "#f43f5e",
+    skillId: "wb_head_coach_finisher", name: "萬箭齊發", color: "#f43f5e",
     counterText: "全力以赴！85% 以上得分可完全破解。",
-    baseMultiplier: WB_FINISHER_MULTIPLIER,
+    baseMultiplier: WB_COACH_FINISHER_MULTIPLIER,
     status: null,
     canKnockOut: true,
   },
@@ -32,8 +33,8 @@ test("R2/R4 排程與 R1/R3 末預告一致,其餘回合無", () => {
   expect(getWorldBossScheduledStrike(COACH_BOSS, 2)).toBe(COACH_BOSS.r2Strike);
   expect(getWorldBossScheduledStrike(COACH_BOSS, 4)).toBe(COACH_BOSS.r4Finisher);
   expect(getWorldBossScheduledStrike(COACH_BOSS, 3)).toBeNull();
-  expect(getWorldBossTelegraph(COACH_BOSS, 1)).toMatchObject({ round: 2, skillId: "wb_coach1_strike", isFinisher: false });
-  expect(getWorldBossTelegraph(COACH_BOSS, 3)).toMatchObject({ round: 4, skillId: "wb_coach1_finisher", isFinisher: true });
+  expect(getWorldBossTelegraph(COACH_BOSS, 1)).toMatchObject({ round: 2, skillId: "wb_head_coach_strike", isFinisher: false });
+  expect(getWorldBossTelegraph(COACH_BOSS, 3)).toMatchObject({ round: 4, skillId: "wb_head_coach_finisher", isFinisher: true });
   expect(getWorldBossTelegraph(COACH_BOSS, 2)).toBeNull();
 });
 
@@ -50,12 +51,12 @@ describe("R2 破解級距（worldBoss ruleset）", () => {
   test("full_110：70-84% → ×0.4（PRD14 降低60%）且異常降級不取消", () => {
     const r = r2([10, 9, 7], "full_110"); // (1+0.9+0.55)/3 ≈ .817
     expect(r.outcome.level).toBe("major");
-    expect(r.damage).toBe(Math.round(100 * 1.6 * 0.4));
+    expect(r.damage).toBe(Math.round(100 * COACH_BOSS.r2Strike.baseMultiplier * 0.4));
     expect(r.status).toBeNull(); // 引擎現行 MAJOR 取消異常;若 Codex 依 PRD20 拍板改級距,此案例需同步
   });
   test("full_110：50-69% → ×0.7;<50% 全額", () => {
-    expect(r2([8, 7, 6], "full_110").damage).toBe(Math.round(100 * 1.6 * 0.7));   // ≈.533 partial
-    expect(r2([6, 6, "M"], "full_110").damage).toBe(Math.round(100 * 1.6 * 1));   // .2 none
+    expect(r2([8, 7, 6], "full_110").damage).toBe(Math.round(100 * COACH_BOSS.r2Strike.baseMultiplier * 0.7));   // ≈.533 partial
+    expect(r2([6, 6, "M"], "full_110").damage).toBe(Math.round(100 * COACH_BOSS.r2Strike.baseMultiplier));   // .2 none
   });
   test("field_16 正規化：滿環(5,5,X)＝完全破解（靶紙不寫死10分）", () => {
     const r = r2([5, 5, "X"], "field_16");
@@ -92,9 +93,10 @@ test("結算順序可組合驗證（×0.7 → -20% 抗性 → 護盾吸收 → H
     arrows: [8, 7, 6], // partial ×0.7
     damageReductionPct: 20, shield: 30, playerHp: 200,
   });
-  // 100×1.6=160 → ×0.7=112 → ×0.8=89.6 → 護盾30 → 59.6 → round=60（先扣盾再入整）
+  // 依教練王 R2 倍率 → ×0.7 → ×0.8 抗性 → 護盾30 → HP（先扣盾再入整）
   expect(r.shieldRemaining).toBe(0);
-  expect(r.playerHp).toBe(200 - Math.round(89.6 - 30));
+  const afterResist = 100 * COACH_BOSS.r2Strike.baseMultiplier * 0.7 * 0.8;
+  expect(r.playerHp).toBe(200 - Math.round(afterResist - 30));
 });
 
 // 5b. 穿甲/破盾副效果（PRD 23-26）與部分破解縮放（PRD 24）
@@ -102,21 +104,22 @@ describe("穿甲/破盾副效果", () => {
   test("破盾：<50% 未破解時全額生效（護盾只擋 70%）", () => {
     const skill = { ...COACH_BOSS.r2Strike, skillId: "wb_test_sp", shieldPiercePct: 30 };
     const r = resolveWorldBossStrike({ ...base, round: 2, skill, arrows: ["M", "M", "M"], shield: 200 });
-    // 160 全額 → 護盾最多吸 160×0.7=112 → HP 扣 48
-    expect(r.playerHp).toBe(200 - 48);
-    expect(r.shieldRemaining).toBe(200 - 112);
+    const raw = 100 * COACH_BOSS.r2Strike.baseMultiplier;
+    const shieldAbsorbed = raw * 0.7;
+    expect(r.playerHp).toBe(200 - Math.round(raw - shieldAbsorbed));
+    expect(r.shieldRemaining).toBe(200 - shieldAbsorbed);
   });
   test("穿甲：50-69% 部分破解 → 穿甲強度同步減半（PRD 24）", () => {
     const skill = { ...COACH_BOSS.r2Strike, skillId: "wb_test_ap", status: null, armorPiercePct: 20 };
     const r = resolveWorldBossStrike({ ...base, round: 2, skill, arrows: [8, 7, 6], damageReductionPct: 50 });
-    // 160×0.7=112;穿甲 20%×0.5=10% → 減傷 50%→45% → 112×0.55=61.6 → round 62
-    expect(r.playerHp).toBe(200 - 62);
+    const expected = Math.round(100 * COACH_BOSS.r2Strike.baseMultiplier * 0.7 * 0.55);
+    expect(r.playerHp).toBe(200 - expected);
   });
   test("70-84% 破解 → 穿甲/破盾歸零（statusMultiplier=0）", () => {
     const skill = { ...COACH_BOSS.r2Strike, skillId: "wb_test_ap2", status: null, armorPiercePct: 100 };
     const r = resolveWorldBossStrike({ ...base, round: 2, skill, arrows: [10, 9, 7], damageReductionPct: 50 });
-    // 160×0.4=64 → 減傷 50% 完整生效 → 32
-    expect(r.playerHp).toBe(200 - 32);
+    const expected = Math.round(100 * COACH_BOSS.r2Strike.baseMultiplier * 0.4 * 0.5);
+    expect(r.playerHp).toBe(200 - expected);
   });
 });
 

@@ -7,7 +7,6 @@ import {
 } from "firebase/firestore";
 import { grantWorldBossDungeon } from "./dungeonExcavation";
 import { db } from "./firebase";
-import app from "./firebase";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { assertCostCapability, COST_CAPABILITIES } from "./costControl";
 import { addCoins, addMaterials, addChests, addCardPack, addWorldBossCard, addArrowdew, addArcherXP, createNotification } from "./db";
@@ -28,12 +27,20 @@ import { findPendingWorldBossEvents, normalizeWorldBossState } from "./worldBoss
 const MONSTER_TIER_ORDER = ["common", "rare", "elite", "fierce", "boss", "mythic"];
 // 材料寶箱型別對照（itemData.js CHEST_TYPES 只有5階，T5/T6 都對到 mythic）
 const MATERIAL_CHEST_TYPE_BY_TIER = ["wood", "iron", "gold", "epic", "mythic", "mythic"];
-const ALL_DUNGEON_FAMILIES = ["ghost", "mountain", "insect", "workplace", "exam", "temple"];
+const ALL_DUNGEON_FAMILIES = ["ghost", "mountain", "insect", "workplace", "exam", "temple", "treasure"];
 
 function randTierNameInRange([min, max]) {
   const idx = (min - 1) + Math.floor(Math.random() * (max - min + 1));
   return MONSTER_TIER_ORDER[idx];
 }
+
+function stableUnit(seed) {
+  let h=2166136261;
+  for(let i=0;i<seed.length;i+=1){h^=seed.charCodeAt(i);h=Math.imul(h,16777619);}
+  return (h>>>0)/4294967296;
+}
+function stableTierName(range,seed){const[min,max]=range;return MONSTER_TIER_ORDER[(min-1)+Math.floor(stableUnit(seed)*(max-min+1))];}
+function stableFamily(seed,fallback){return fallback||ALL_DUNGEON_FAMILIES[Math.floor(stableUnit(seed)*ALL_DUNGEON_FAMILIES.length)];}
 
 const WB  = "worldBossEvents";
 const WBH = "worldBossHistory";
@@ -55,32 +62,11 @@ export function subscribeWorldBossSpawnCycle(cb) {
 //
 //    現在改成擊倒後直接請雲端建週期（它會讀教練的設定），權威只有一套。
 
-export async function contributeWorldBossSpawnProgress({ memberId, type, amount = 1, operationId }) {
-  memberId = String(memberId || "");
-  if (!memberId || !operationId || !["arrows", "dungeonClears", "monsterKills", "villageDice"].includes(type)) {
-    return { ok:false, reason:"invalid_spawn_contribution" };
-  }
-  try {
-    const result = await httpsCallable(getFunctions(app, "asia-east1"), "contributeWorldBossSpawnProgress")({
-      memberId, type, amount, operationId,
-    });
-    return result.data;
-  } catch (e) { return { ok:false, reason:e.message }; }
-}
-
-export async function ensureWorldBossLifecycle() {
-  try {
-    const result = await httpsCallable(getFunctions(app, "asia-east1"), "ensureWorldBossLifecycle")({});
-    return result.data;
-  } catch (e) { return { ok:false, reason:e.message }; }
-}
-
-export async function forceSpawnWorldBossFromCycle() {
-  try {
-    const result = await httpsCallable(getFunctions(app, "asia-east1"), "forceSpawnWorldBossFromCycle")({});
-    return result.data;
-  } catch (e) { return { ok:false, reason:e.message }; }
-}
+export {
+  contributeWorldBossSpawnProgress,
+  ensureWorldBossLifecycle,
+  forceSpawnWorldBossFromCycle,
+} from "./worldBossLifecycleClient";
 
 // ⚠️ 客戶端的 trySpawnWorldBossFromCycle 已於 2026-08-03 刪除（本來就沒有人呼叫）。
 //    生成的權威在 functions/worldBossLifecycle.js::trySpawn，由三個地方觸發：
@@ -99,6 +85,13 @@ function taipeiDateKey(date = new Date()) {
 // offered a second entry while the migration naturally replaces their record.
 export function getWorldBossAttackDateKeys(date = new Date()) {
   return [...new Set([taipeiDateKey(date), date.toISOString().slice(0, 10)])];
+}
+
+export async function recoverWorldBossParticipation(memberId,event){
+  const participant=event?.participants?.[memberId],attemptId=participant?.participationClaimId;
+  if(!memberId||!event?.id||event.rewardSnapshot?.version!==2||!attemptId||participant.participationRewardClaimedAt)return null;
+  const result=await httpsCallable(getFunctions(undefined,"asia-east1"),"claimWorldBossParticipationV2")({eventId:event.id,memberId,attemptId});
+  return result.data;
 }
 
 // ── 即時訂閱當前活躍大 Boss ───────────────────────────────────
@@ -186,43 +179,12 @@ export function subscribeWorldBoss(eventId, cb) {
 }
 
 // ── 後台建立活動 ──────────────────────────────────────────────
-export async function createWorldBossEvent({ adminId, bossKey, durationDays, reward }) {
+export async function createWorldBossEvent({ bossKey, durationDays }) {
   try {
     const boss = WORLD_BOSSES[bossKey];
     if (!boss) return { ok: false, reason: "無效的 Boss" };
-
-    const days    = Math.min(durationDays || 7, BOSS_DURATION_MAX_DAYS);
-    const startAt = new Date();
-    const endAt   = new Date(startAt.getTime() + days * 86400000);
-
-    const ref = await addDoc(collection(db, WB), {
-      bossKey,
-      bossData: {
-        name: boss.name, title: boss.title, desc: boss.desc,
-        hp: boss.hp, atk: boss.atk, def: boss.def,
-        pixelKey: boss.pixelKey, bg: boss.bg, accent: boss.accent,
-        family: boss.family,
-      },
-      bossMaxHP:     boss.hp,
-      bossCurrentHP: boss.hp,
-      status:        "active",
-      startAt:       serverTimestamp(),
-      endAt:         endAt,
-      durationDays:  days,
-      reward:        reward || getRewardByBossKey(bossKey),
-      lastHitBy:     null,
-      announcement:  null,
-      totalParticipants: 0,
-      participants:  {},
-      createdBy:     adminId,
-      createdAt:     serverTimestamp(),
-      autoSpawned:   !reward, // 標記是否為系統自動刷新
-    });
-    // ⚠️ bossKey 一定要寫進小狀態文件：登場動畫 WorldBossIntro 是靠 WORLD_BOSSES[event.bossKey]
-    //    取王的外觀／配色／pixelKey／族群音效。漏了它 → 名字顯示「???」、配色退回預設橘、
-    //    畫錯的王、連登場音都挑錯族群（作者 2026-08-06 回報悠悠變成 ???）。
-    await writeWorldBossStatus({ eventId: ref.id, status: "active", bossKey, bossName: boss.name, announcement: null, killReplay: null });
-    return { ok: true, eventId: ref.id };
+    const result=await httpsCallable(getFunctions(undefined,"asia-east1"),"createWorldBossEventV2")({bossKey,durationDays:Math.min(durationDays||7,BOSS_DURATION_MAX_DAYS)});
+    return result.data;
   } catch (e) { return { ok: false, reason: e.message }; }
 }
 
@@ -369,7 +331,13 @@ export async function attackWorldBoss({ eventId, memberId, memberName, weapon, r
     // 每日限一次
     const [today, ...legacyTodayKeys] = getWorldBossAttackDateKeys();
     const myPrev  = ev.participants?.[memberId];
-    if ([today, ...legacyTodayKeys].includes(myPrev?.lastAttackedDate)) return { ok: false, reason: "今天已經攻擊過了" };
+    if ([today, ...legacyTodayKeys].includes(myPrev?.lastAttackedDate)) {
+      if(ev.rewardSnapshot?.version===2&&myPrev?.participationClaimId&&!myPrev?.participationRewardClaimedAt){
+        const recovered=await recoverWorldBossParticipation(memberId,{id:eventId,...ev});
+        return {ok:true,recoveredParticipation:true,dmg:0,defeated:false,isLastHit:false,newHP:ev.bossCurrentHP,dailyReward:{...(recovered?.reward||ev.rewardSnapshot.participation),claimId:`${eventId}:${memberId}:${myPrev.participationClaimId}`}};
+      }
+      return { ok: false, reason: "今天已經攻擊過了" };
+    }
 
     // 計算玩家本次總傷害
     const totalDmg = roundResults.reduce((s, r) => s + (r.dmg || 0), 0) * potionDmgMult;
@@ -390,6 +358,7 @@ export async function attackWorldBoss({ eventId, memberId, memberName, weapon, r
     }
 
     const combinedDmg = Math.round(totalDmg + botTotalDmg);
+    let attemptId=`${today}:${String(sessionSourceId||"daily")}`;
     const committed = await runTransaction(db, async tx => {
       const freshSnap = await tx.get(eventRef);
       if (!freshSnap.exists()) throw new Error("活動不存在");
@@ -400,6 +369,7 @@ export async function attackWorldBoss({ eventId, memberId, memberName, weapon, r
       const wasDefeated = fresh.status === "defeated";
       const nextHP = wasDefeated ? 0 : Math.max(0, (Number(fresh.bossCurrentHP) || 0) - combinedDmg);
       const didDefeat = !wasDefeated && nextHP <= 0;
+      attemptId=`${today}:${String(sessionSourceId||"daily")}:${Array.isArray(freshPrev?.sessions)?freshPrev.sessions.length:0}`;
       const update = {
         [`participants.${memberId}`]: {
           name: memberName,
@@ -413,6 +383,7 @@ export async function attackWorldBoss({ eventId, memberId, memberName, weapon, r
           isGuest: !!isGuest,
           accountType: accountType || (isGuest ? "guest" : "official"),
           sessionSourceId: sessionSourceId || null,
+          participationClaimId:attemptId,
           atk: memberAtk,
           def: memberDef || Math.round(memberAtk * 0.5),
           hp: memberHP || memberAtk * 5,
@@ -457,14 +428,27 @@ export async function attackWorldBoss({ eventId, memberId, memberName, weapon, r
         lastHitBy: upd.lastHitBy, announcement: upd.announcement,
         participants: { ...(ev.participants || {}), [memberId]: upd[`participants.${memberId}`] },
         totalParticipants: ev.totalParticipants,
+        rewardSnapshot:ev.rewardSnapshot||null,
       }).catch(() => {});
     }
 
     // ── 每日出戰獎勵（非訪客）──────────────────────────────
     let dailyReward = null;
-    if (!isGuest && memberId) {
-      const rewardCoins = 60;
+    if (!isGuest && memberId && ev.rewardSnapshot?.version===2) {
+      const claimed=await httpsCallable(getFunctions(undefined,"asia-east1"),"claimWorldBossParticipationV2")({eventId,memberId,attemptId});
+      dailyReward={...(claimed.data?.reward||ev.rewardSnapshot.participation),claimId:`${eventId}:${memberId}:${attemptId}`,pct:Math.round(combinedDmg/(ev.bossMaxHP||1)*1000)/10};
+      await updateDoc(doc(db, "members", memberId), { worldBossDmgTotal: increment(Math.round(combinedDmg) || 0) }).catch(() => {});
+    } else if (!isGuest && memberId) {
+      const participation=ev.rewardSnapshot?.version===2?ev.rewardSnapshot.participation:null;
+      const rewardCoins = participation?.coins ?? 60;
       await addCoins(memberId, rewardCoins).catch(() => {});
+      if(participation?.arrowDew)await addArrowdew(memberId,participation.arrowDew).catch(()=>{});
+      if(participation?.archerXP)await addArcherXP(memberId,participation.archerXP).catch(()=>{});
+      if(participation&&(participation.catXP||participation.bond)){
+        const memberSnap=await getDoc(doc(db,"members",memberId));const catId=memberSnap.data()?.equippedCat?.catId;
+        if(catId){if(participation.catXP)await addCatXP(memberId,catId,participation.catXP).catch(()=>{});if(participation.bond)await addCatBond(memberId,catId,"worldboss",participation.bond).catch(()=>{});}
+        else if((participation.catXP||0)+(participation.bond||0)>0)await addCoins(memberId,(participation.catXP||0)+(participation.bond||0)).catch(()=>{});
+      }
       // 排行榜：世界王個人累計傷害
       await updateDoc(doc(db, "members", memberId), { worldBossDmgTotal: increment(Math.round(combinedDmg) || 0) }).catch(() => {});
 
@@ -484,7 +468,14 @@ export async function attackWorldBoss({ eventId, memberId, memberName, weapon, r
         }]).catch(() => {});
       }
 
-      dailyReward = { coins: rewardCoins, chest: chestType, pct: Math.round(pct * 1000) / 10 };
+      if(participation?.materialChests){
+        const category=getDropCategory(WORLD_BOSSES[ev.bossKey]||{}),range=category==='family_small'?[1,3]:category==='family_big'?[4,6]:category==='cat'?[3,5]:[4,6];
+        const family=(category==='family_small'||category==='family_big')?WB_FAMILY_TO_DUNGEON_FAMILY[WORLD_BOSSES[ev.bossKey]?.family]:null;
+        const boxes=[];for(let i=0;i<participation.materialChests;i+=1){const tier=stableTierName(range,`${eventId}:${memberId}:${attemptId}:participation:${i}`);boxes.push({id:`wb_part_${eventId}_${memberId}_${attemptId}_${i}`,type:MATERIAL_CHEST_TYPE_BY_TIER[MONSTER_TIER_ORDER.indexOf(tier)],family:stableFamily(`${eventId}:${memberId}:${attemptId}:family:${i}`,family),tier,from:"世界王參戰獎勵",ts:Date.now()});}
+        await addChests(memberId,boxes).catch(()=>{});
+      }
+
+      dailyReward = participation?{...participation,pct:Math.round(pct*1000)/10,claimId:`${eventId}:${memberId}:${attemptId}`}:{ coins: rewardCoins, chest: chestType, pct: Math.round(pct * 1000) / 10 };
     }
 
     // 寫入練習日誌（非訪客，且呼叫端沒有自己寫）
@@ -553,6 +544,7 @@ export async function distributeWorldBossRewards(eventId) {
       participants: ev.participants,
       totalParticipants: ev.totalParticipants,
       top3Ids,
+      rewardSnapshot:ev.rewardSnapshot||null,
     });
 
     return { ok: true };
@@ -568,6 +560,10 @@ export async function claimWorldBossKillReward(memberId, eventId) {
     const snap = await getDoc(doc(db, WB, eventId));
     if (!snap.exists()) return { ok: false, reason: "活動不存在" };
     const ev = snap.data();
+    if(ev.rewardSnapshot?.version===2){
+      const result=await httpsCallable(getFunctions(undefined,"asia-east1"),"claimWorldBossKillRewardV2")({eventId,memberId});
+      return result.data;
+    }
     if (!ev.rewardDistributed) {
       if (ev.status !== "defeated") return { ok: false, reason: "尚未結算" };
       const top3Ids = Object.entries(ev.participants || {})
@@ -592,15 +588,38 @@ export async function claimWorldBossKillReward(memberId, eventId) {
         participants: ev.participants || {},
         totalParticipants: ev.totalParticipants || Object.keys(ev.participants || {}).length,
         top3Ids,
+        rewardSnapshot:ev.rewardSnapshot||null,
       }).catch(() => {});
     }
     const mine = ev.participants?.[memberId];
     if (!mine || (mine.isGuest === true && mine.accountType !== "official")) return { ok: false, reason: "此帳號沒有世界王結算資格" };
     if (mine.claimed) return { ok: false, reason: "already_claimed" };
 
+    // 發獎前先用 transaction 搶占領獎權。舊版在所有獎勵寫完後才設 claimed，
+    // 兩個同時進來的請求會一起通過上面的快照檢查，造成同場重複領獎。
+    const claimReserved = await runTransaction(db, async tx => {
+      const eventRef = doc(db, WB, eventId);
+      const memberRef = doc(db, members, memberId);
+      const latestSnap = await tx.get(eventRef);
+      const latestMine = latestSnap.data()?.participants?.[memberId];
+      if (!latestSnap.exists() || !latestMine || latestMine.claimed === true) return false;
+      tx.update(eventRef, {
+        [`participants.${memberId}.claimed`]:true,
+        [`participants.${memberId}.claimStartedAt`]:serverTimestamp(),
+      });
+      return true;
+    });
+    if (!claimReserved) return { ok:false, reason:"already_claimed" };
+
     const boss = WORLD_BOSSES[ev.bossKey] || {};
     const category = getDropCategory(boss);
-    const dropCfg = DROP_TABLE_BY_CATEGORY[category] || DROP_TABLE_BY_CATEGORY.family_big;
+    const snapKill=ev.rewardSnapshot?.version===2?ev.rewardSnapshot.kill:null;
+    const dropCfg = snapKill?{
+      chestTierRange:snapKill.materialTierRange,materialChestCount:snapKill.materialChests,
+      coinChests:{count:snapKill.coinChests,tierRange:snapKill.materialTierRange},mimiBoxes:snapKill.mimiBoxes,
+      cardPacks:snapKill.cardPacks,wbCardChance:snapKill.wbCardChance,scrolls:snapKill.scrolls,
+      materialFamily:snapKill.materialFamily,
+    }:(DROP_TABLE_BY_CATEGORY[category] || DROP_TABLE_BY_CATEGORY.family_big);
     const isFamilyBoss = category === "family_small" || category === "family_big";
     const dungeonFamily = isFamilyBoss ? WB_FAMILY_TO_DUNGEON_FAMILY[boss.family] : null;
 
@@ -618,6 +637,7 @@ export async function claimWorldBossKillReward(memberId, eventId) {
     const allRewards = calcWorldBossRewards(ev.participants || {}, category, {
       top3Ids: ev.top3Ids || [],
       lastHitBy: ev.lastHitBy?.memberId || null,
+      rewardSnapshot: ev.rewardSnapshot,
     });
     const myReward = allRewards[memberId];
     if (!myReward) return { ok: false, reason: "此帳號沒有世界王結算資格" };
@@ -646,20 +666,22 @@ export async function claimWorldBossKillReward(memberId, eventId) {
 
     // ── 寶箱組裝 ─────────────────────────────────────────────
     const chests = [];
-    if (isFamilyBoss) {
-      // 六族小王/大王：該族 T1~T3 或 T4~T6 材料寶箱，不掉金幣寶箱（比例貨幣已含金幣）
-      const tierName = randTierNameInRange(dropCfg.chestTierRange);
+    if (snapKill || isFamilyBoss) {
+      const materialCount=snapKill?dropCfg.materialChestCount:1;
+      for(let i=0;i<materialCount;i+=1){
+      const tierName = snapKill?stableTierName(dropCfg.chestTierRange,`${eventId}:${memberId}:kill:mat:${i}`):randTierNameInRange(dropCfg.chestTierRange);
       const chestType = MATERIAL_CHEST_TYPE_BY_TIER[MONSTER_TIER_ORDER.indexOf(tierName)];
       chests.push({
-        id: `wb_mat_${memberId}_${Date.now()}`, type: chestType, family: dungeonFamily, tier: tierName,
+        id: `wb_mat_${eventId}_${memberId}_${i}`, type: chestType, family: stableFamily(`${eventId}:${memberId}:family:${i}`,dropCfg.materialFamily||dungeonFamily), tier: tierName,
         from: `世界王均分獎勵（${boss.name || "?"}）`, ts: Date.now(),
       });
-      summary.materialChests += 1;
-    } else {
+      }summary.materialChests += materialCount;
+    }
+    if (!isFamilyBoss || snapKill) {
       // 貓貓/教練：T?~T6 金幣寶箱 × count（隨機階級）
       const { count, tierRange } = dropCfg.coinChests;
       for (let i = 0; i < count; i++) {
-        const tierName = randTierNameInRange(tierRange);
+        const tierName = snapKill?stableTierName(tierRange,`${eventId}:${memberId}:kill:coin:${i}`):randTierNameInRange(tierRange);
         const info = COIN_CHEST_TIERS[tierName] || COIN_CHEST_TIERS.common;
         chests.push({
           id: `wb_coin_${memberId}_${Date.now()}_${i}`, type: "coin", family: "worldboss", tier: tierName,
@@ -667,7 +689,7 @@ export async function claimWorldBossKillReward(memberId, eventId) {
         });
       }
       summary.coinChests += count;
-      if (category === "coach") {
+      if (!snapKill && category === "coach") {
         // 教練限定：六族材料寶箱 T1~T6 隨機10個，族別隨機
         const { count: matCount, tierRange: matRange } = dropCfg.materialChests;
         for (let i = 0; i < matCount; i++) {
@@ -695,15 +717,14 @@ export async function claimWorldBossKillReward(memberId, eventId) {
     if (chests.length > 0) await addChests(memberId, chests).catch(() => {});
 
     // 一般怪物卡包（貓貓/教練限定，1~3隨機）
-    if (dropCfg.cardPacksRange) {
-      const [min, max] = dropCfg.cardPacksRange;
-      const n = min + Math.floor(Math.random() * (max - min + 1));
+    if (dropCfg.cardPacksRange || dropCfg.cardPacks) {
+      const n = dropCfg.cardPacks ?? (()=>{const[min,max]=dropCfg.cardPacksRange;return min+Math.floor(Math.random()*(max-min+1));})();
       await addCardPack(memberId, n).catch(() => {});
       summary.cardPacks += n;
     }
 
     // ── 世界王卡：擊殺結算當下直接判定，重複已擁有則改發金幣 ──
-    if (ev.bossKey && Math.random() < (dropCfg.wbCardChance || 0)) {
+    if (ev.bossKey && (snapKill?stableUnit(`${eventId}:${memberId}:wbcard`):Math.random()) < (dropCfg.wbCardChance || 0)) {
       const res = await addWorldBossCard(memberId, ev.bossKey, null).catch(() => ({ ok: false }));
       if (res?.ok) summary.wbCard = ev.bossKey;
       else if (res?.reason === "已擁有此王卡") {
@@ -737,6 +758,12 @@ export async function claimWorldBossKillReward(memberId, eventId) {
       summary.catBoxes  += honor.catBoxes  || 0;
       summary.mimiBoxes += honor.mimiBoxes || 0;
     }
+    if((honor.materialChests||0)>0||(honor.coinChests||0)>0){
+      const honorChests=[];
+      for(let i=0;i<(honor.materialChests||0);i+=1){const tier=stableTierName(honor.materialTierRange,`${eventId}:${memberId}:honor:mat:${i}`);honorChests.push({id:`wb_honor_mat_${eventId}_${memberId}_${i}`,type:MATERIAL_CHEST_TYPE_BY_TIER[MONSTER_TIER_ORDER.indexOf(tier)],family:stableFamily(`${eventId}:${memberId}:honor:family:${i}`,honor.materialFamily||dungeonFamily),tier,from:"世界王榮譽獎勵",ts:Date.now()});}
+      for(let i=0;i<(honor.coinChests||0);i+=1){const tier=stableTierName(honor.coinTierRange,`${eventId}:${memberId}:honor:coin:${i}`),info=COIN_CHEST_TIERS[tier]||COIN_CHEST_TIERS.common;honorChests.push({id:`wb_honor_coin_${eventId}_${memberId}_${i}`,type:"coin",family:"worldboss",tier,min:info.min,max:info.max,from:"世界王榮譽獎勵",ts:Date.now()});}
+      await addChests(memberId,honorChests).catch(()=>{});summary.materialChests+=honor.materialChests||0;summary.coinChests+=honor.coinChests||0;
+    }
 
     // ── 專屬收藏獎盃（跟排名加成疊加，純收藏+成就用）───────────
     if (isLastHit) {
@@ -769,6 +796,13 @@ export async function previewWorldBossKillReward(memberId, eventId) {
     const mine = ev.participants?.[memberId];
     if (!mine || (mine.isGuest === true && mine.accountType !== "official") || mine.claimed) return { ok: false, reason: "無可領取獎勵" };
     const boss = WORLD_BOSSES[ev.bossKey] || {};
+    if(ev.rewardSnapshot?.version===2){
+      const category=getDropCategory(boss);
+      const top3Ids=ev.top3Ids?.length?ev.top3Ids:Object.entries(ev.participants||{}).filter(([,p])=>p.accountType==='official'||p.isGuest!==true).sort(([,a],[,b])=>(b.totalDmg||0)-(a.totalDmg||0)).slice(0,3).map(([id])=>id);
+      const mineReward=calcWorldBossRewards(ev.participants||{},category,{top3Ids,lastHitBy:ev.lastHitBy?.memberId||null,rewardSnapshot:ev.rewardSnapshot})[memberId];
+      if(!mineReward)return {ok:false,reason:"此帳號沒有世界王結算資格"};
+      return {ok:true,preview:true,reward:{...mineReward.total,wbCardChance:ev.rewardSnapshot.kill.wbCardChance,rank:top3Ids.indexOf(memberId)>=0?top3Ids.indexOf(memberId)+1:null}};
+    }
     const cfg = DROP_TABLE_BY_CATEGORY[getDropCategory(boss)] || DROP_TABLE_BY_CATEGORY.family_big;
     const totalDamage = Object.values(ev.participants || {}).reduce((s, p) => s + (p.totalDmg || 0), 0) || 1;
     const share = pool => Math.max(1, Math.round((pool || 0) * ((mine.totalDmg || 0) / totalDamage)));
@@ -819,6 +853,10 @@ export async function forceEndWorldBossEvent(eventId) {
   try {
     await updateDoc(doc(db, WB, eventId), { status: "cancelled", cancelledAt: serverTimestamp() });
     await writeWorldBossStatus({ eventId: null, status: "cancelled" });
+    // 強制移除也是一輪世界王的正式結束。交給雲端權威建立下一輪冷卻／召喚條件，
+    // 否則舊週期會永久卡在 spawned，首頁與大廳都沒有可顯示、可累積的狀態。
+    const lifecycle = await ensureWorldBossLifecycle();
+    if (lifecycle?.ok === false) return { ok:false, reason:lifecycle.reason || "cycle_reset_failed" };
     return { ok: true };
   } catch (e) { return { ok: false, reason: e.message }; }
 }

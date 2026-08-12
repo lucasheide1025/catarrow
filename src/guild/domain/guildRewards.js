@@ -62,6 +62,7 @@ export function emptyGuildProfile() {
     junkStock: {},         // 雜貨倉庫 { [junkId]: qty }——**不自動賣**，玩家自己決定何時賣
     autoSalvage: { ...DEFAULT_AUTO_SALVAGE },  // 撿取過濾器（掉落當下自動分解）
     contracts: null,      // 今日委託完成紀錄 { dateKey, done:[contractId] }；跨日自動換板（見 guildContracts）
+    cardRewardClaims: {},
     junkSeen: {},
     expeditions: { total: 0, won: 0, byDanger: { 1: 0, 2: 0, 3: 0 } },
   };
@@ -101,6 +102,7 @@ export function normalizeGuildProfile(raw) {
     catEarned: Math.max(0, Math.floor(Number(raw.catEarned) || 0)),
     partyCats: Array.isArray(raw.partyCats) ? raw.partyCats.filter(id => typeof id === "string") : null,
     arrowsPerRound: Number(raw.arrowsPerRound) === 6 ? 6 : 3,
+    cardRewardClaims: raw.cardRewardClaims && typeof raw.cardRewardClaims === "object" ? raw.cardRewardClaims : {},
     appearanceId: ["tabby_ranger", "black_scout", "white_medic", "calico_hunter", "gray_guard", "cream_wanderer"].includes(raw.appearanceId)
       ? raw.appearanceId : "tabby_ranger",
     supplyStock: {

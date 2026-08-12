@@ -3,8 +3,7 @@
 // 藥水分兩大類：攜帶型(carry, 9種) / 投擲型(throw, 7種)
 
 import { drawMaterial, MATERIALS } from "./monsterMaterials";
-import { MONSTERS } from "./monsterData";
-import { EXPANSION_MATERIALS, EXPANSION_MONSTER_BY_ID } from "./monsterExpansionCatalog";
+import { EXPANSION_MATERIALS, EXPANSION_MONSTERS, EXPANSION_MONSTER_BY_ID } from "./monsterExpansionCatalog";
 
 // ── 寶箱類型 ─────────────────────────────────────────────
 export const CHEST_TYPES = {
@@ -23,7 +22,7 @@ export const CHEST_TYPES = {
   potion:   { id:"potion",   name:"藥水箱",   icon:"🧪", color:"#06b6d4", potionChance:1,
               desc:"專屬藥水箱！必定開出一瓶藥水，機率依實用度調整。" },
   card_pack: { id:"card_pack", name:"圖片收集卡包", icon:"🃏", color:"#6366f1", potionChance:0,
-               desc:"開啟獲得 3 張怪物卡片！36 種怪物都有機率，越稀有越難抽！" },
+               desc:"開啟獲得 3 張一般怪物卡片！全部 126 種一般怪物都有機率，越高階越難抽。" },
   cat_box:   { id:"cat_box",   name:"貓貓箱", icon:"🎐", color:"#ec4899", potionChance:0,
                desc:"神秘貓貓箱！90% 機率隨機掉落一種章碎片×1。" },
   wb_relic:  { id:"wb_relic",  name:"世界秘寶箱", icon:"🗝️", color:"#facc15", potionChance:0,
@@ -359,9 +358,31 @@ export function makeBossChest(family, tierIndex, source = "掉落") {
   };
 }
 
-// ── 卡包抽卡（36 隻怪，按稀有度加權）─────────────────────
+// ── 卡包抽卡（全部一般怪，按階級加權）────────────────────
 const CARD_TIER_WEIGHT = { common:50, rare:25, elite:15, fierce:7, boss:2.5, mythic:0.5 };
 const CARD_TIER_TOTAL  = Object.values(CARD_TIER_WEIGHT).reduce((a,b) => a+b, 0);
+const CARD_FAMILY_ICON = {
+  ghost:"👻", mountain:"🏔️", insect:"🦂", workplace:"💼",
+  exam:"📝", temple:"🏰", treasure:"📦",
+};
+
+// 卡包只收正式目錄的 encounter=normal；小王、大王及獨立的世界王卡都不會進池。
+export function getMonsterCardPackPool() {
+  return EXPANSION_MONSTERS
+    .filter(monster => monster.encounter === "normal")
+    .map(monster => ({
+      monsterId:monster.id,
+      name:monster.name,
+      icon:CARD_FAMILY_ICON[monster.family] || "🃏",
+      tier:monster.tier,
+      family:monster.family,
+      artKey:monster.card?.artKey || monster.artKey || monster.id,
+      tierIndex:monster.tierIndex,
+      encounter:monster.encounter,
+    }));
+}
+
+const MONSTER_CARD_PACK_POOL = getMonsterCardPackPool();
 
 function drawRandomCards(count = 3) {
   const drawn = [];
@@ -369,10 +390,9 @@ function drawRandomCards(count = 3) {
     let r = Math.random() * CARD_TIER_TOTAL;
     let tier = "common";
     for (const [t, w] of Object.entries(CARD_TIER_WEIGHT)) { r -= w; if (r <= 0) { tier = t; break; } }
-    const pool = MONSTERS.filter(m => m.tier === tier);
+    const pool = MONSTER_CARD_PACK_POOL.filter(card => card.tier === tier);
     if (!pool.length) continue;
-    const m = pool[Math.floor(Math.random() * pool.length)];
-    drawn.push({ monsterId: m.id, name: m.name, icon: m.icon, tier: m.tier, family: m.family });
+    drawn.push(pool[Math.floor(Math.random() * pool.length)]);
   }
   return drawn;
 }

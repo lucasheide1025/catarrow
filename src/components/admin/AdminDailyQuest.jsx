@@ -28,13 +28,14 @@ const PLANS_NO_EQUIP = CHECKIN_PLANS_NO_EQUIP;
 // 這條路徑的「月卡」是方案而不是付款方式，所以付款方式不含月卡（與 BillingSystem 不同）
 const PAY_METHODS = ["現金", "轉帳"];
 
-export default function AdminDailyQuest({ mode = "all" }) {
+export default function AdminDailyQuest({ mode = "all", pendingCheckins }) {
   const { profile } = useAuth();
   const { toast, ToastContainer } = useToast();
   const [config,     setConfig]     = useState(null);
   const [monsterCfg, setMonsterCfg] = useState(null);
   const [eventCfg,   setEventCfg]   = useState(null);
-  const [pending,    setPending]    = useState([]);
+  const hasProvidedPending = Array.isArray(pendingCheckins);
+  const [subscribedPending, setSubscribedPending] = useState([]);
   const [saving,     setSaving]     = useState(false);
   const [savingMon,  setSavingMon]  = useState(false);
   const [savingEvt,  setSavingEvt]  = useState(false);
@@ -43,16 +44,23 @@ export default function AdminDailyQuest({ mode = "all" }) {
   const [showEvent,   setShowEvent]   = useState(false);
   const [approveState, setApproveState] = useState({}); // { checkinId: { busy } }
   const [billState,   setBillState]   = useState({}); // { checkinId: { plan, payMethod, busy } }
+  const showConfigSection = mode === "config" || mode === "all";
+  const showListSection   = mode === "list"   || mode === "all";
 
   useEffect(() => {
-    getDailyQuestConfig().then(setConfig);
-    getMonsterDailyConfig().then(setMonsterCfg);
-    getMonsterEventConfig().then(cfg => setEventCfg(cfg || { active: false, name: "", desc: "", battleMode: "score", mode: "student", distanceMode: "fixed", fixedDistance: 15, dynamicStart: 15 }));
-    const unsub = subscribePendingCheckins(setPending);
+    if (showConfigSection) {
+      getDailyQuestConfig().then(setConfig);
+      getMonsterDailyConfig().then(setMonsterCfg);
+      getMonsterEventConfig().then(cfg => setEventCfg(cfg || { active: false, name: "", desc: "", battleMode: "score", mode: "student", distanceMode: "fixed", fixedDistance: 15, dynamicStart: 15 }));
+    }
+    if (hasProvidedPending) return undefined;
+    const unsub = subscribePendingCheckins(setSubscribedPending);
     return () => unsub && unsub();
-  }, []);
+  }, [hasProvidedPending, showConfigSection]);
 
-  if (!config) return null;
+  if (showConfigSection && !config) return null;
+
+  const pending = hasProvidedPending ? pendingCheckins : subscribedPending;
 
   const toApprove  = pending.filter(c => c.status === "pending");
   const inProgress = pending.filter(c => c.status === "active" && !c.classEnded);
@@ -200,8 +208,6 @@ export default function AdminDailyQuest({ mode = "all" }) {
 
   function num(val) { return isNaN(Number(val)) ? 0 : Number(val); }
 
-  const showConfigSection = mode === "config" || mode === "all";
-  const showListSection   = mode === "list"   || mode === "all";
 
   return (
     <div className="flex flex-col gap-4">

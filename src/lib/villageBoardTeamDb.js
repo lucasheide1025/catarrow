@@ -9,12 +9,15 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { BOARD_MODE_MAP, getModeTierCap, rollTileReward, rollTrapEvent, trapEffectOf } from "./boardData";
+import { drawBoardEvent, describeEventEffect } from "./boardEvents";
+import { getNormalMaterialPool } from "./monsterEconomyCatalog";
 import {
   JOURNEY_SHOOTING_TILES, JOURNEY_MAP_META, generateJourney, randomSeed, nextPos,
   applyTrapPos, applyShortcutPos, findNextTile, mergeBuffs, applyJourneyMultipliers, normalizeVillageBoard,
   rollJourneyDice,
 } from "./boardJourney";
 import { applyBoardReward, claimCardGachaTeamFree } from "./villageBoardDb";
+import { teamRoomStepPassed } from "./villageBoardTeamState";
 
 const R = "villageBoardRooms";
 const genCode = () => Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -94,6 +97,7 @@ export async function startBoardRoom(roomId, hostId) {
       tx.update(hostRef, { [`villageBoard.maps.${room.mode}`]: { seed, pos, length: j.length, clears, tier, buffs } });
       tx.update(roomRef, {
         status: "active",
+        hostDiceLeft: norm.dice,
         journeySeed: seed,
         boardPos: pos,
         tier,            // ⚠️ 沿用旅程鎖定階級：進行中→房主鎖定的 T；新旅程→房主選的 T。
@@ -140,6 +144,11 @@ function landingPatch(room, j, finalTo, seq, partyMult, memberIds) {
     const reward = rollTileReward(tile, { mode: JOURNEY_MAP_META[room.mode], tierCap: room.tier || 1, tier: room.tier || 1, partyMult });
     patch.buffs = mergeBuffs(room.buffs || {}, reward);
     patch.pendingSettle = { seq, tileType: tile, partyMult, campMult };
+  } else if (tile === "fate" || tile === "opp") {
+    // 🎴 命運/機會（08-08 恢復）：房主抽一張事件卡全隊共用（組隊只抽資源類——
+    //    排除 move/teleport/trigger/multiplier，共享棋不動）。每人 claim 各自套用。
+    const ev = drawBoardEvent(tile, { movement: false });
+    patch.pendingSettle = { seq, tileType: tile, partyMult, campMult, event: ev };
   } else {
     patch.pendingSettle = { seq, tileType: tile, partyMult, campMult };
   }
@@ -157,11 +166,20 @@ export function subscribeBoardRoom(roomId, cb) {
 }
 
 // 全員領完當前這步後，房主清空 pending（否則殘留在房間文件，離開再回來會重複看到同一張卡/結算）
-export async function clearRoomPending(roomId, hostId) {
+export async function clearRoomPending(roomId, hostId, expectedSeq) {
   try {
-    const s = await getDoc(doc(db, R, roomId));
-    if (!s.exists() || s.data().hostId !== hostId) return { ok: false };
-    await updateDoc(doc(db, R, roomId), { pendingEvent: null, pendingSettle: null, pendingFork: null, updatedAt: serverTimestamp() });
+    await runTransaction(db, async tx => {
+      const ref = doc(db, R, roomId);
+      const s = await tx.get(ref);
+      if (!s.exists() || s.data().hostId !== hostId) throw new Error("只有房主可清除");
+      const room = s.data();
+      const seq = Math.max(0, Math.floor(Number(expectedSeq) || 0));
+      if (!seq || (room.seq || 0) !== seq) throw new Error("步驟已變更");
+      const matches = [room.pendingEvent, room.pendingSettle, room.pendingFork].some(p => p?.seq === seq);
+      if (!matches) return;
+      if (!teamRoomStepPassed(room, seq)) throw new Error("尚有隊員未完成領取或確認");
+      tx.update(ref, { pendingEvent: null, pendingSettle: null, pendingFork: null, updatedAt: serverTimestamp() });
+    });
     return { ok: true };
   } catch (e) { return { ok: false, reason: e?.message }; }
 }
@@ -287,9 +305,9 @@ export async function findReconnectableBoardRoom(memberId) {
     const rooms = snap.docs.map(d => ({ id: d.id, ...d.data() }))
       .filter(r => r.members?.[memberId])
       .sort((a, b) => {
-        // 以 createdAt 排序，最新的在前
-        const ta = a.createdAt?.toMillis?.() || a.createdAt || 0;
-        const tb = b.createdAt?.toMillis?.() || b.createdAt || 0;
+        // 活躍度優先，避免重連到較早建立但已停用的殘房。
+        const ta = a.updatedAt?.toMillis?.() || a.updatedAt || a.createdAt?.toMillis?.() || a.createdAt || 0;
+        const tb = b.updatedAt?.toMillis?.() || b.updatedAt || b.createdAt?.toMillis?.() || b.createdAt || 0;
         return tb - ta;
       });
     return { ok: true, room: rooms[0] || null };
@@ -328,12 +346,11 @@ export async function roomRollAndMove(roomId, hostId) {
       const memberIds = Object.keys(room.members || {}).filter(m => room.members[m] != null);
       if (room.pendingShoot?.seq === curSeq) throw new Error("還有射手沒射完");
       if (room.pendingSettle?.seq === curSeq || room.pendingEvent?.seq === curSeq || room.pendingFork?.seq === curSeq) {
-        const allClaimed = memberIds.every(mid =>
-          (room.settleClaims?.[mid] || 0) >= curSeq || (room.eventClaims?.[mid] || 0) >= curSeq || !!room.forkVotes?.[mid]);
-        if (!allClaimed) throw new Error("請等待所有隊員完成後再擲骰");
+        if (!teamRoomStepPassed(room, curSeq)) throw new Error("請等待所有隊員完成後再擲骰");
       }
 
-      const dice = hs.data()?.villageBoard?.dice || 0;
+      // 新房以 room 為唯一權威；舊房缺欄位時才安全回退 member snapshot。
+      const dice = Number.isFinite(room.hostDiceLeft) ? room.hostDiceLeft : (hs.data()?.villageBoard?.dice || 0);
       if (dice <= 0) throw new Error("房主骰子用完了");
 
       // ── 旅程內前進（直線 100~200 格，夾在終點）＋陷阱/捷徑的特殊移動 ──
@@ -390,7 +407,7 @@ export async function roomRollAndMove(roomId, hostId) {
       tx.update(roomRef, upd);
       result = { ok: true, roll, rolls, from, to, finalTo, tile };
     });
-    if (result.ok) import("./worldBossDb").then(module => module.contributeWorldBossSpawnProgress({
+    if (result.ok) import("./worldBossLifecycleClient").then(module => module.contributeWorldBossSpawnProgress({
       memberId:hostId, type:"villageDice", amount:1, operationId:`village-team-dice:${roomId}:${result.from}:${result.to}:${Date.now()}`,
     })).catch(() => {});
     return result;
@@ -530,8 +547,37 @@ export async function claimBoardSettle(roomId, memberId, { villageBuildings = {}
       return { ok: true, reward: { band: "cardgacha", cardGachaViews: gacha?.ok ? gacha.views : [] } };
     }
     if (ps.tileType === "fate" || ps.tileType === "opp") {
-      // 旅程中命運/機會＝給少量金幣（不翻卡，與單人旅程一致）
-      reward = { coins: (20 + Math.floor(Math.random() * 60) * roomTier) * partyMult, band: ps.tileType };
+      // 🎴 命運/機會（08-08 恢復）：全隊共用房主抽的卡，每人各自套用效果
+      //    （組隊池已排除移動/傳送/觸發/加倍——共享棋不動，只發資源類）。
+      const ev = ps.event || {};
+      const eff = ev.effect || {};
+      const rnd = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
+      reward = { band: ps.tileType };
+      const amt = eff.min != null ? rnd(eff.min, eff.max) : 0;
+      if (eff.type === "gain" || eff.type === "team") {
+        if (eff.sub === "allMove") reward.coins = 30 * roomTier;   // allMove：共享棋不動 → 安慰金幣
+        else if (eff.resource === "coins") reward.coins = amt;
+        else if (eff.resource === "arrowdew") reward.arrowdew = amt;
+        else if (eff.resource === "gachaToken") reward.gachaToken = amt;
+        else if (eff.resource === "catXP") reward.catXP = amt;
+        else if (eff.resource === "potion") reward.potions = [{ tier: 1 }];
+        else if (eff.resource === "fur") reward.villageResources = { fur: amt };
+        else if (eff.resource === "material") {
+          const t = Math.min(6, Math.max(1, Math.ceil(Math.random() * roomTier)));
+          const pool = getNormalMaterialPool({ family: mode.family, exactTier: t });
+          const picked = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+          const id = picked ? picked.id : `${mode.family}_m${t}`;
+          reward.familyMaterials = { [id]: amt };
+        } else reward.villageResources = { [eff.resource]: amt };
+      } else if (eff.type === "chest") {
+        reward.chests = [{ kind: eff.kind || "family", family: mode.family, tier: roomTier }];
+      } else if (eff.type === "catBond") {
+        reward.catXP = eff.xp; reward.catBond = eff.bond;
+      } else if (eff.type === "micro") {
+        reward.coins = eff.coins || 0;
+      }
+      reward.event = ev;   // UI 顯示 EventScene 用
+      reward.detail = eff.sub === "allMove" ? `獲得 ${30 * roomTier} 金幣` : describeEventEffect(eff, amt);
     } else if (ps.tileType === "trap") {
       // 陷阱：多種事件（蛇咬/流沙/竊金/骰子/箭露）——同一事件全隊共用（房主已抽好放進 pendingSettle）。
       // 後退已由房主移動；這裡只懲罰資源（每人各自扣，下限 0）。

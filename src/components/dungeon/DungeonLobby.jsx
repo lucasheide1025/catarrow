@@ -1,7 +1,5 @@
 // src/components/dungeon/DungeonLobby.jsx — 地下城大廳（挖掘探索 + 進入地下城 + 圖鑑 + 遠征 + 組隊）
 import { useState, useEffect } from "react";
-import { doc, onSnapshot } from "firebase/firestore";
-import { db } from "../../lib/firebase";
 import { useAuth } from "../../hooks/useAuth";
 import DungeonDex from "./DungeonDex";
 import DungeonExcavationTab from "./DungeonExcavationTab";
@@ -138,38 +136,26 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap, a
     };
   }, [myId, autoReconnectRoomId]);
 
-  // 偵測單人遠征中斷進度（即時訂閱 members/{myId} + 本地 localStorage 雙重保障）
+  // 偵測單人遠征中斷進度。會員快照由 useAuth 即時維護，
+  // 此處只需合併 Firestore profile 與本機備援，避免重複監聽同一文件。
   useEffect(() => {
     let localData = null;
     try {
       const localSave = localStorage.getItem(`active_expedition_${myId || "guest"}`);
-      if (localSave) {
-        localData = JSON.parse(localSave);
-        setSoloRecovery(localData);
-      } else if (profile?.activeExpedition) {
-        setSoloRecovery(profile.activeExpedition);
-      }
+      if (localSave) localData = JSON.parse(localSave);
     } catch {}
-
-    if (!myId || isGuest) return;
-    const unsub = onSnapshot(doc(db, "members", myId), snap => {
-      if (!snap.exists()) return;
-      const data = snap.data();
-      if (data.activeExpedition) {
-        setSoloRecovery(data.activeExpedition);
-      } else if (!localData) {
-        // 只有當雲端為空且本機 localStorage 也沒有進度時，才設為 null
-        setSoloRecovery(null);
-      }
-    });
-    return unsub;
+    setSoloRecovery(profile?.activeExpedition || localData || null);
   }, [myId, isGuest, profile?.activeExpedition]);
 
   // 訂閱開放的組隊房間
   useEffect(() => {
+    if (tab !== "enter" || teamLobby) {
+      setOpenTeamRooms([]);
+      return undefined;
+    }
     const unsub = subscribeOpenTeamExpeditionRooms(setOpenTeamRooms);
     return unsub;
-  }, []);
+  }, [tab, teamLobby]);
 
   // 監聽遠征開始事件（單人用）
   useEffect(() => {

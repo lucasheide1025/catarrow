@@ -24,6 +24,7 @@ const ACH_ANNOUNCE = new Set(["epic", "legendary", "mythic"]);
 import { getAllowedPages, isAutoLocked } from "../lib/accessControl";
 import { MaintenanceScreen, FrozenScreen, LockedFeatureCard } from "../components/member/AccessLockScreens";
 import { subscribeWorldBossStatus } from "../lib/worldBossDb";
+import { initGoalTracker } from "../lib/villageGoalDb";
 import { isKillReplayForEvent, shouldReplayKill, worldBossKillSeenKey } from "../worldboss/domain/raidKill";
 import { subscribeLatestBroadcast } from "../lib/dungeonDb";
 import { getDuelStats } from "../lib/duelDb";
@@ -132,6 +133,10 @@ export default function MemberApp() {
   const { logout, profile, role } = useAuth();
   const guildRankInfo = useGuildRank(profile?.id);
   const { policy: costPolicy, allows: costAllows } = useCostControl();
+  useEffect(() => {
+    const unsub = initGoalTracker();
+    return () => unsub?.();
+  }, []);
   // 成本防護升到 restricted 以上時關掉「非必要監聽」（橫幅/播報/彈窗這類看板功能）。
   // ⚠️ 這個能力旗標本來就定義在 costControl.js，但一直沒有任何地方真的用它——等於警報升級了
   //    也沒省到。核心功能（通知/報到/認證/存檔）不在此列，永遠保留。
@@ -169,6 +174,7 @@ export default function MemberApp() {
   const [bossIntroEvent, setBossIntroEvent] = useState(null);
   const [wbKillAlert,    setWbKillAlert]    = useState(null);
   const [activeWorldBoss, setActiveWorldBoss] = useState(null); // 供首頁「進行中」卡顯示世界王入口
+  const [worldBossStatus, setWorldBossStatus] = useState(null);  // 與大廳共用，避免重複 status listener
   const [wbKillReplay, setWbKillReplay] = useState(null);       // 全服擊倒演出重播
 
   const shownWbKillRef  = useRef(null);
@@ -214,6 +220,7 @@ export default function MemberApp() {
   const [cardData,      setCardData]      = useState({ cards:{}, equipped:[] });
   const [cardDataReady, setCardDataReady] = useState(false);
   const [cats,          setCats]          = useState([]);   // 貓咪子集合（成就偵測用）
+  const [catsReady,     setCatsReady]     = useState(false);
   const [certRecords,   setCertRecords]   = useState([]);   // 年度檢定紀錄（成就偵測用）
   // 年度檢定紅點：用已載入的 certActive＋certRecords 計算（成就偵測本來就要載），不加讀取。
   const [certActive,    setCertActive]    = useState(null);
@@ -260,6 +267,7 @@ export default function MemberApp() {
 
   // 今日報到訂閱（供浮動視窗判斷）— 一天只彈一次
   useEffect(() => {
+    setCatsReady(false);
     if (!profile?.id) return;
     setCardDataReady(false);
     // 歷史負值一次性修復（村莊資源被舊 increment(-n) 競態扣成負數）
@@ -391,25 +399,13 @@ export default function MemberApp() {
     if (profile.studentTier === "retired" && page !== "profile") setPage("profile");
   }, [profile?.studentTier]); // eslint-disable-line
 
-  // 瀏覽器空閒時預載最常用的頁面 chunk（手機也適用）
-  useEffect(() => {
-    const idle = typeof requestIdleCallback !== "undefined" ? requestIdleCallback : (cb) => setTimeout(cb, 1000);
-    const cancel = typeof cancelIdleCallback !== "undefined" ? cancelIdleCallback : clearTimeout;
-    const h = idle(() => {
-      import("../components/member/MemberPractice");
-      import("../components/member/MemberAdventureHub");
-      import("../components/member/MonsterBattle");
-      import("../components/member/MemberProfile");
-    }, { timeout: 4000 });
-    return () => cancel(h);
-  }, []);
-
   // 世界王登場 + 擊殺公告
   // ⚠️ 不掛 liveExtras 節流（2026-08-06）：訂閱的是極小的 worldBossStatus/current
   //    （一場活動只寫個位數次），而且「登入自動播擊倒演出」是核心體驗——
   //    被成本節流擋掉，玩家就永遠看不到自己打下的那場演出了。
   useEffect(() => {
     return subscribeWorldBossStatus(ev => {   // 小狀態文件：不再因為別人打王而被推 HP 更新
+      setWorldBossStatus(ev || null);
       setActiveWorldBoss(ev && ev.status === "active" ? ev : null);
       if (!ev) return;
       if (ev.status === "active") {
@@ -463,7 +459,10 @@ export default function MemberApp() {
       setCardData(data);
       setCardDataReady(true);
     });
-    const u8 = subscribeMyCats(profile.id, obj => setCats(Object.values(obj || {})));
+    const u8 = subscribeMyCats(profile.id, obj => {
+      setCats(Object.values(obj || {}));
+      setCatsReady(true);
+    });
     return () => { u1?.(); u2?.(); u3?.(); u4?.(); u5?.(); u6?.(); u7?.(); u8?.(); };
   }, [profile?.id]); // eslint-disable-line
 
@@ -914,12 +913,13 @@ export default function MemberApp() {
         {page==="gacha"       && <div className="no-override"><CatVillage
           catCards={profile?.catCards}
           gachaCoins={profile?.gachaCoins ?? 0}
+          sharedCats={cats}
           initialTab={gachaInitTab} /></div>}
         {page==="monsterdex"  && <MemberMonsterDex onBack={()=>setPage("adventure-hub")} monsterDex={monsterDex} />}
         {page==="dungeon"     && <DungeonLobby onBack={()=>setPage("adventure-hub")} autoReconnectRoomId={teamDungeonRecovery?.id || null} sharedData={sharedPlayerData} />}
-        {page==="worldboss"   && <div style={{ position:"fixed", inset:0, zIndex:60 }}><WorldBossLobby onBack={()=>setPage("adventure-hub")} sharedData={sharedPlayerData}/></div>}
-        {page==="cats"        && <CatCollection onBack={()=>setPage("inventory-hub")} onOpenBook={()=>setPage("catbook")} onOpenForge={()=>{ setGachaInitTab("forge"); setPage("gacha"); }}/>}
-        {page==="catbook"     && <CatStoryBook  onBack={()=>setPage("cats")}/>}
+        {page==="worldboss"   && <div style={{ position:"fixed", inset:0, zIndex:60 }}><WorldBossLobby onBack={()=>setPage("adventure-hub")} sharedData={sharedPlayerData} worldBossStatus={worldBossStatus}/></div>}
+        {page==="cats"        && <CatCollection sharedCats={cats} sharedCatsReady={catsReady} onBack={()=>setPage("inventory-hub")} onOpenBook={()=>setPage("catbook")} onOpenForge={()=>{ setGachaInitTab("forge"); setPage("gacha"); }}/>}
+        {page==="catbook"     && <CatStoryBook sharedCats={cats} sharedCatsReady={catsReady} onBack={()=>setPage("cats")}/>}
         {page==="story"       && <StoryBook     onBack={()=>setPage("inventory-hub")}/>}
         {/* 冒險者公會：2026-07-25 起**全面換成新的公會遠征介面**（作者拍板）。
             舊 `AdventurerGuild`（懸賞任務清單）整個下架，射手與教練都走新介面。

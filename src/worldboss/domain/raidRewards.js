@@ -116,6 +116,10 @@ export function rollSortieRewards({
 // 結算頁用：把獎勵攤成一行一行
 export function rewardRows(reward) {
   if (!reward) return [];
+  if(reward.snapshotVersion===2){
+    return [["coins","💰","金幣"],["arrowDew","💧","箭露"],["archerXP","🏹","射手經驗"],["catXP","🐾","貓咪經驗"],["bond","💞","羈絆"],["materialChests","📦","普通材料寶箱"]]
+      .filter(([key])=>Number(reward[key])>0).map(([key,icon,label])=>({key,icon,label,value:reward[key]}));
+  }
   const rows = [
     { key: "coins", icon: "💰", label: "金幣", value: reward.coins },
     { key: "archerXP", icon: "🏹", label: "射手經驗", value: reward.archerXP },

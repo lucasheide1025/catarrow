@@ -78,7 +78,7 @@ describe("週期狀態判讀（唯讀）", () => {
   });
 
   test("⚠️ 沒人推進度也要能出王——到期限就生成", () => {
-    expect(evaluateWorldBossSpawnCycle(cycle(), 48 * H)).toMatchObject({ ready: true, reason: "deadline" });
+    expect(evaluateWorldBossSpawnCycle(cycle(), 48 * H)).toMatchObject({ ready: false, reason: "charging" });
   });
 
   test("⚠️ 還在休息時就算進度滿了也不生成——休息期是刻意的節奏", () => {
@@ -110,7 +110,7 @@ describe("大廳顯示", () => {
     // 抽中的那一種要直接寫在標題上，玩家才知道要推什麼
     expect(describeSpawnCycle(cycle({ requiredType: "dungeonClears" }), 9 * H))
       .toContain(SPAWN_PROGRESS_LABEL.dungeonClears);
-    expect(describeSpawnCycle(cycle(), 48 * H)).toContain("降臨");
+    expect(describeSpawnCycle(cycle(), 48 * H)).toContain("推進度");
     expect(describeSpawnCycle(null)).toContain("還沒有");
   });
 });

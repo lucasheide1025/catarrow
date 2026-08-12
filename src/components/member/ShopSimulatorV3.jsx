@@ -23,7 +23,7 @@ import {
   selectVillageShopManager,
 } from "../../lib/villageShopDb";
 import { advanceManualShopClock, buildLiveShopSession, evaluateLiveShopMission, getLiveActorStage, liveShopStateSignature } from "../../lib/villageShopLive";
-import { CUSTOMER_ART_MANIFEST, GOOD_ART_MANIFEST, getShopCustomerArt, getShopGoodArt, getShopManager, SHOP_MANAGER_OPTIONS } from "../../lib/shopArt";
+import { CUSTOMER_ART_MANIFEST, GOOD_ART_MANIFEST, getShopCustomerArt, getShopGoodArt, getShopInteriorArt, getShopManager, getShopVisualMilestone, SHOP_INTERIOR_ART, SHOP_MANAGER_OPTIONS } from "../../lib/shopArt";
 
 const SHOP_CAT_ART = [
   "/assets/guild/chibi/cat_meimei.webp",
@@ -38,11 +38,9 @@ const SHOP_CAT_ART = [
 ];
 const MASCOT = SHOP_CAT_ART[0];
 const SHOP_PRELOAD_URLS = [...new Set([
-  "/assets/shop/interior-stock-low.webp",
-  "/assets/shop/interior-stock-normal.webp",
-  "/assets/shop/interior-stock-abundant.webp",
+  ...Object.values(SHOP_INTERIOR_ART),
   ...Object.values(GOOD_ART_MANIFEST),
-  ...Object.values(CUSTOMER_ART_MANIFEST).flatMap(group => Object.values(group)),
+  ...Object.values(CUSTOMER_ART_MANIFEST),
   ...SHOP_MANAGER_OPTIONS.map(manager => manager.art),
 ])];
 let shopPreloadPromise = null;
@@ -212,6 +210,7 @@ const CSS = `
 .shop3 .s3-autostatus{display:flex;align-items:center;gap:10px;margin:9px 2px;padding:10px 12px;border:1px solid #a9bd8c;border-radius:15px;background:linear-gradient(135deg,#eef5df,#ddebc9);color:#405532}.shop3 .s3-autostatus.paused{border-color:#d3b98f;background:linear-gradient(135deg,#fff6e6,#f1e2c9);color:#745638}.shop3 .s3-autostatus.checking{border-color:#94b5ca;background:linear-gradient(135deg,#edf7fb,#dcecf4);color:#35566b}.shop3 .s3-autostatus>span{font-size:25px}.shop3 .s3-autostatus b,.shop3 .s3-autostatus small{display:block}.shop3 .s3-autostatus b{font-size:15px}.shop3 .s3-autostatus small{margin-top:3px;font-size:12px;line-height:1.4;font-weight:750}
 .shop3>.s3-modalbg{z-index:1120}.shop3 .s3-livehud>span:nth-child(4) small{color:#ffe0a0;font-weight:950}
 .shop3 .s3-livescene.v8 .s3-livegoodart .s3-goodvisual-img,.shop3 .s3-preview-product .s3-goodvisual-img{padding:8%!important;transform:scale(.84);transform-origin:center;object-fit:contain!important}
+.shop3 .s3-preview-zone{position:absolute;z-index:6;border:2px solid rgba(255,233,190,.24);border-radius:14px;pointer-events:none}.shop3 .s3-preview-entry{left:2%;bottom:8%;width:17%;height:43%;border-radius:40% 40% 8px 8px}.shop3 .s3-preview-aisle{left:21%;right:22%;bottom:5%;height:28%;border-style:dashed}.shop3 .s3-preview-counter{z-index:8}.shop3 .s3-preview-customers{position:absolute;z-index:9;left:17%;right:27%;bottom:12%;height:28%;pointer-events:none}.shop3 .s3-preview-customer{position:absolute;left:0;bottom:0;width:11%;min-width:42px;max-width:72px;height:78%;object-fit:contain;filter:drop-shadow(0 4px 2px rgba(42,23,12,.35));animation:s3shopwalk 2.8s ease-in-out infinite}.shop3 .s3-preview-customer:nth-child(2){left:31%;bottom:18%;animation-delay:.4s}.shop3 .s3-preview-customer:nth-child(3){left:62%;animation-delay:.8s}.shop3 .s3-milestone-decor{position:absolute;z-index:10;right:2%;top:20%;display:grid;place-items:center;width:11%;aspect-ratio:1;border:2px solid rgba(255,226,168,.55);border-radius:50%;background:rgba(82,48,26,.82);font-size:clamp(18px,4vw,42px);filter:drop-shadow(0 4px 2px rgba(42,23,12,.3))}.shop3 .s3-milestone-name{position:absolute;z-index:11;right:2%;top:16%;padding:3px 7px;border-radius:99px;background:rgba(69,40,22,.9);color:#ffe8bd;font-size:10px;font-weight:950}@media(max-width:620px){.shop3 .s3-preview-entry{width:20%}.shop3 .s3-preview-customers{left:13%;right:22%;bottom:15%}.shop3 .s3-preview-customer{width:18%}.shop3 .s3-milestone-decor{right:3%;top:17%;width:16%}.shop3 .s3-milestone-name{right:2%;top:13%;font-size:9px}}
 `;
 
 export default function ShopSimulatorV3({ memberId, resources, coins, village, onChange }) {
@@ -440,6 +439,7 @@ export default function ShopSimulatorV3({ memberId, resources, coins, village, o
     settlingRef.current = true;
     setBusy(true);
     try {
+      const authoritativeElapsedSeconds = Math.max(0, (Date.now() - live.startedAt) / 1000);
       const res = await completeLiveShopSession(memberId, {
         seed:live.seed,
         startedAt:live.startedAt,
@@ -447,7 +447,7 @@ export default function ShopSimulatorV3({ memberId, resources, coins, village, o
         stateSignature:live.stateSignature,
         missionId:missionStartIndex != null ? live.mission.id : null,
         missionStartIndex,
-        manualElapsedSeconds:manualElapsedRef.current,
+        manualElapsedSeconds:authoritativeElapsedSeconds,
         manualMode:liveMode,
         completedVisitors:completedCount,
         allowedStockAdditions:liveAddedStockRef.current,
@@ -489,11 +489,12 @@ export default function ShopSimulatorV3({ memberId, resources, coins, village, o
     if (totalDuration <= 0) return undefined;
     const frame = 80;
     const timer = window.setInterval(() => {
-      const clock = advanceManualShopClock({ rushSeconds:liveRushRef.current, manualActive:true, manualMode:liveMode, elapsedSeconds:frame / 1000 });
+      const wallElapsed = Math.max(0, (Date.now() - live.startedAt) / 1000);
+      const clock = advanceManualShopClock({ rushSeconds:shop.rushSeconds, manualActive:true, manualMode:liveMode, elapsedSeconds:wallElapsed });
       liveRushRef.current = clock.rushSeconds;
-      manualElapsedRef.current += frame / 1000;
+      manualElapsedRef.current = wallElapsed;
       setLiveRushSeconds(clock.rushSeconds);
-      setLiveElapsed(current => Math.min(totalDuration, current + clock.timelineSeconds * 1000 * liveSpeed));
+      setLiveElapsed(current => Math.min(totalDuration, current + (frame * liveSpeed)));
     }, frame);
     return () => window.clearInterval(timer);
   }, [live, liveStage, liveSpeed, liveMode, missionOffered]);
@@ -504,7 +505,10 @@ export default function ShopSimulatorV3({ memberId, resources, coins, village, o
       const now = Date.now();
       const accumulated = calcWaitingVisitors(shop, now);
       if (accumulated <= (live.result?.waiting || 0)) return;
-      const extended = buildLiveShopSession(shop, { now, seed:live.seed, goodsMap, mode:liveMode });
+      const elapsedSeconds = Math.max(0, (now - live.startedAt) / 1000);
+      const extended = buildLiveShopSession(shop, {
+        now:live.startedAt, seed:live.seed, goodsMap, mode:liveMode, elapsedSeconds,
+      });
       if ((extended.result?.events?.length || 0) > (live.result?.events?.length || 0)) setLive(extended);
     }, 1000);
     return () => window.clearInterval(timer);
@@ -533,7 +537,7 @@ export default function ShopSimulatorV3({ memberId, resources, coins, village, o
             {liveTool === "craft" ? <Workshop resources={resources} coins={coins} shop={shop} busy={busy} onCraft={craft} onCraftAndStock={craftAndStock} /> : <LiveRefill shop={shop} resources={resources} busy={busy} displayGoods={displayGoods} onRefill={craftAndStock} />}
           </div>}
         </div>
-      : <CrossSectionStore shop={shop} manager={manager} displayGoods={displayGoods} />}
+      : <CrossSectionStore shop={shop} manager={manager} displayGoods={displayGoods} waiting={waiting} />}
     {!liveActive && <div className={`s3-autostatus ${autoSettling ? "checking" : autoReady ? "" : "paused"}`} role="status">
       <span aria-hidden="true">{autoSettling ? "🧾" : autoReady ? "🌙" : "📦"}</span>
       <div><b>{autoSettling ? "正在結算離線自動經營…" : autoReady ? "離店自動經營 5%・已啟用" : "離店自動經營 5%・暫停中"}</b>
@@ -571,13 +575,13 @@ function OpenModePicker({ waiting, rushSeconds, onChoose, onClose }) {
   return <div className="s3-modalbg" style={{zIndex:250}} onClick={onClose}>
     <div className="s3-modepicker" role="dialog" aria-modal="true" aria-label="選擇營業模式" onClick={event => event.stopPropagation()}>
       <h3>選擇這次的營業節奏</h3>
-      <p>門口累積的 {waiting} 位顧客會接續進店，不會因開店重新計算。一般營業保留旺季時間；旺季會形成無空窗客潮，大量販售商品。</p>
+      <p>門口累積的 {waiting} 位顧客會接續進店，不會因開店重新計算。一般營業保留旺季時間；旺季以真實時間 1:1 持續補入客流，顧客挑選與結帳時間不會加速。</p>
       <div className="s3-modechoices">
         <button type="button" className="s3-modechoice" onClick={() => onChoose("manual")}>
           <strong>🌿 一般時間</strong><span>來客效率 50%</span><small>不消耗旺季時間。適合慢慢補貨、整理貨架與接委託。</small>
         </button>
         <button type="button" className="s3-modechoice rush" disabled={rush <= 0} onClick={() => onChoose("rush_manual")}>
-          <strong>🔥 旺季時間</strong><span>大量販售 500%</span><small>{rush > 0 ? `可用 ${rushMinutes} 分 ${rushRemainder} 秒；顧客連續入店不必等待，使用完會轉為一般速度。` : "目前沒有旺季時間。每 10 支有效箭可在下課時累積 1 分鐘。"}</small>
+          <strong>🔥 旺季時間</strong><span>真實時間 1:1・連續客流</span><small>{rush > 0 ? `可用 ${rushMinutes} 分 ${rushRemainder} 秒；旺季期間顧客持續入店，個別挑選與結帳速度不變，使用完會轉為一般營業。` : "目前沒有旺季時間。每 10 支有效箭可在下課時累積 1 分鐘。"}</small>
         </button>
       </div>
       <button type="button" className="s3-modecancel" onClick={onClose}>先不開店</button>
@@ -585,14 +589,20 @@ function OpenModePicker({ waiting, rushSeconds, onChoose, onClose }) {
   </div>;
 }
 
-function CrossSectionStore({ shop, manager, displayGoods }) {
+function CrossSectionStore({ shop, manager, displayGoods, waiting }) {
   const preview = displayGoods.filter(entry => entry.good).slice(0, 6);
   const left = preview.slice(0, 3), right = preview.slice(3, 6);
-  const shelf = (entries, side) => <div className={`s3-preview-shelf ${side}`}>{entries.map(entry => <span className="s3-preview-stock" key={entry.goodId}><GoodVisual good={entry.good} className="s3-preview-product" /><b>×{Math.max(0, Number(shop.stock?.[entry.goodId]) || 0)}</b></span>)}</div>;
-  return <div className="s3-crosssection" aria-label="貓貓村商店場景">
-    <img className="s3-crosssection-bg" src={shopInteriorArt(shop)} alt="" aria-hidden="true" />
+  const milestone = getShopVisualMilestone(shop.level);
+  const visibleCustomers = SHOP_CUSTOMERS.filter(customer => customer.unlockLevel <= shop.level).slice(0, Math.min(3, Math.max(1, waiting || 0)));
+  const shelf = (entries, side) => <div className={`s3-preview-shelf ${side}`} aria-label="商品貨架">{entries.map(entry => <span className="s3-preview-stock" key={entry.goodId}><GoodVisual good={entry.good} className="s3-preview-product" /><b>×{Math.max(0, Number(shop.stock?.[entry.goodId]) || 0)}</b></span>)}</div>;
+  return <div className="s3-crosssection" aria-label="貓貓村商店場景" data-milestone={milestone.id}>
+    <img className="s3-crosssection-bg" src={getShopInteriorArt(shop)} alt="" aria-hidden="true" />
+    <div className="s3-preview-zone s3-preview-entry" role="img" aria-label="商店入口" />
     {shelf(left, "left")}{shelf(right, "right")}
-    <div className="s3-preview-counter"><ArtIcon src={manager.art} fallback="🐱" alt={`${manager.name}店長`} className="s3-preview-manager" /></div>
+    <div className="s3-preview-zone s3-preview-aisle" role="img" aria-label="店內走道" />
+    <div className="s3-preview-customers" role="group" aria-label="等候中的顧客">{visibleCustomers.map(customer => <ArtIcon key={customer.id} src={customerArt(customer)} fallback={customer.emoji} alt={customer.name} className="s3-preview-customer" />)}</div>
+    <div className="s3-preview-counter" role="group" aria-label="結帳櫃台"><ArtIcon src={manager.art} fallback="🐱" alt={`${manager.name}店長`} className="s3-preview-manager" /></div>
+    <span className="s3-milestone-name">{milestone.label}</span><span className="s3-milestone-decor" aria-hidden="true">{milestone.decor}</span>
   </div>;
 }
 
@@ -638,7 +648,7 @@ function LiveStoreScene({ shop, manager, live, elapsed, stage, liveMode, complet
           : focusStage === "checkout" && event?.outcome === "sale" ? "「謝謝惠顧，歡迎再來！」"
             : focusStage === "checkout" ? "「缺貨了，我等等立刻補上。」"
               : liveMode === "rush_manual" && rushSeconds > 0
-                ? "「旺季客潮不停，下一批馬上進店喵！」"
+                ? "「旺季客潮持續，大家照順序慢慢挑、慢慢結帳喵！」"
                 : "「這批客人接待完了，下一位正在路上喵。」";
   const shelf = (entries, side) => <div className={`s3-liveshelf s3-liveshelf-${side}`}>
     <div className="s3-liveshelfsign">{side === "left" ? "武器・裝備選物" : "料理・人氣商品"}</div>
@@ -658,11 +668,11 @@ function LiveStoreScene({ shop, manager, live, elapsed, stage, liveMode, complet
 
   return <div className="s3-livewrap">
     <div className="s3-livescene v7 v8" aria-label={`商店營業中，目前店內 ${actorViews.length} 位顧客`}>
-      <img className="s3-livebg" src={shopInteriorArt(shop)} alt="" aria-hidden="true" />
+      <img className="s3-livebg" src={getShopInteriorArt(shop)} alt="" aria-hidden="true" />
       <div className="s3-liveveil" aria-hidden="true" />
       <div className="s3-livehud">
         <span className="s3-openbadge"><i />營業中</span>
-        <span><b>{liveMode === "rush_manual" && rushSeconds > 0 ? "旺季大量販售 500%" : "一般 50%"}</b><small>{liveMode === "rush_manual" ? (rushSeconds > 0 ? `連續客潮・剩餘 ${Math.ceil(rushSeconds)} 秒` : "旺季用完，轉為一般") : "不消耗旺季時間"}</small></span>
+        <span><b>{liveMode === "rush_manual" && rushSeconds > 0 ? "旺季真實時間 1:1" : "一般 50%"}</b><small>{liveMode === "rush_manual" ? (rushSeconds > 0 ? `持續客流・剩餘 ${Math.ceil(rushSeconds)} 秒・服務速度不變` : "旺季用完，轉為一般") : "不消耗旺季時間"}</small></span>
         <span className="s3-hudevent"><b>{customer ? `${customer.name || event?.customerName}・${stageLabel}` : stageLabel}</b><small>{focusStage === "checkout" && event?.outcome === "sale" ? `${saleText || "成交"}・+${Number(event.tickets || 0).toLocaleString()} 🎟` : `${manager.name}：${managerLine}`}</small></span>
         <span><b>+{liveTickets.toLocaleString()} 🎟</b><small>結束營業後入帳</small></span>
         <button type="button" onClick={onSpeed} aria-label={`目前營業速度 ${speed} 倍，點擊切換`}>×{speed}</button>
@@ -812,9 +822,3 @@ function craftState(good, resources, coins, shop) {
   return { stock, stockFull:room<=0, maxCraft:Math.max(0,Math.min(room,goldCap,...materialCaps)) };
 }
 function stockCount(shop) { return Object.values(shop?.stock||{}).reduce((sum,value)=>sum+(Number(value)||0),0); }
-function shopInteriorArt(shop) {
-  const units = stockCount(shop);
-  if (units >= 120) return "/assets/shop/interior-stock-abundant.webp";
-  if (units >= 30) return "/assets/shop/interior-stock-normal.webp";
-  return "/assets/shop/interior-stock-low.webp";
-}

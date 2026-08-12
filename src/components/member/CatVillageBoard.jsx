@@ -4,7 +4,7 @@
 // 規格見 .trellis/tasks/08-07-village-board-journey-redesign/design.md。
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import {
-  subscribeBoardState, ensureDailyDice, startJourney, rollJourney,
+  ensureDailyDice, startJourney, rollJourney,
   settleJourneyTile, chooseForkPath, refillBoardDice, addBoardDice, DAILY_DICE,
   claimCardGachaFree, claimCardGachaPaid,
 } from "../../lib/villageBoardDb";
@@ -20,6 +20,7 @@ import BoardRewardPopup from "./BoardRewardPopup";
 import TileDemo from "./TileDemo";
 import BossDuel from "./BossDuel";
 import CardGachaRoom from "./CardGachaRoom";
+import EventScene from "./EventScene";
 import BoardGuide from "./BoardGuide";
 import { MATERIALS } from "../../lib/monsterMaterials";
 import { NORMAL_MATERIALS } from "../../lib/monsterEconomyCatalog";
@@ -104,7 +105,12 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
   const villageBuildings = profile?.village?.buildings || {};
   const catId = profile?.equippedCat?.catId || null;
 
-  const [board, setBoard] = useState(null);
+  // useAuth already keeps the member document live. Reuse that snapshot instead
+  // of opening a second listener for the same members/{id} document here.
+  const board = useMemo(() => ({
+    ...(profile?.villageBoard || {}),
+    _hasVillageBoard: Boolean(profile?.villageBoard),
+  }), [profile?.villageBoard]);
   const [selecting, setSelecting] = useState(true);   // 地圖選單
   // 旅程完成（Boss 打敗）後待回選單：等獎勵 popup 關閉才跳，避免 popup 被選單蓋住。
   const pendingMenuRef = useRef(false);
@@ -120,6 +126,7 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
   const [arrows, setArrows] = useState([]);
   const [tileDemo, setTileDemo] = useState(null);     // 格子動作演示：null＝關、"mining"/"material"/"chest"/"arrowdew"
   const [cardGacha, setCardGacha] = useState(false);  // 🃏 抽卡房 overlay（踩到抽卡房格開啟）
+  const [boardEvent, setBoardEvent] = useState(null); // 🎴 命運/機會事件場景 overlay（{event,reward,detail,movedTo,tile,deck}）
   const [fork, setFork] = useState(null);             // 分岔路口：{left,right} 兩路預覽
   const [diceAnim, setDiceAnim] = useState(null);
   const [diceLocked, setDiceLocked] = useState(false);
@@ -156,8 +163,6 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
   useEffect(() => {
     if (!myId) return;
     ensureDailyDice(myId);
-    const unsub = subscribeBoardState(myId, s => { setBoard(s); });
-    return unsub;
   }, [myId]);
 
   // 旅程 = 同 seed 確定性生成；seed/pos 變了就跟著重算
@@ -276,6 +281,14 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
       return;
     }
     if (tileType === "cardgacha") { setCardGacha(true); return; }   // 🃏 抽卡房：開抽卡 overlay（免費 1 張／付費 3 張）
+    if (tileType === "fate" || tileType === "opp") {
+      // 🎴 命運/機會（08-08 恢復）：抽事件卡 → 開事件場景 overlay（含移動/觸發鏈）
+      const res = await settleJourneyTile(myId, mapId, tileType, { villageBuildings, catId });
+      if (!res?.ok) { showToast(res?.reason || "事件結算失敗"); setBusyBoth(false); flushSummary(); return; }
+      sfxBoardTile(tileType);
+      setBoardEvent(res);
+      return;
+    }
     if (tileType === "fork") {
       // 預覽兩條路：左路＝前方最近素材/採集格、右路＝前方最近怪物格
       const cells = journey?.cells || [];
@@ -289,7 +302,7 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
       return;
     }
     await settleAt(tileType, {});
-  }, [settleAt, journey, displayPos]);
+  }, [settleAt, journey, displayPos, myId, mapId, villageBuildings, catId, flushSummary, setBusyBoth]);
 
   // 分岔路二選一：跳到目標格 → 照常結算該格（素材直接領、採集開演示、怪物開 6 箭）
   const chooseFork = useCallback(async (side) => {
@@ -688,6 +701,33 @@ export default function CatVillageBoard({ profile, onClose, onTeam }) {
           }}
           onClose={() => { setCardGacha(false); setBusyBoth(false); flushSummary(); }}
           zIndex={138} />
+      )}
+
+      {/* 🎴 命運/機會事件場景：顯示場景圖＋文案＋效果；關閉後處理移動/觸發鏈 */}
+      {boardEvent && (
+        <EventScene event={boardEvent.event} deck={boardEvent.deck} detail={boardEvent.detail}
+          onClose={async () => {
+            const ev = boardEvent;
+            setBoardEvent(null);
+            if (ev.movedTo != null && ev.movedTo !== displayPos) {
+              setDisplayPos(ev.movedTo);
+              setHopNonce(n => n + 1);
+              setLandFx({ index: ev.movedTo, type: ev.tile || ev.deck, nonce: Date.now() });
+              sfxBoardLand();
+              await new Promise(r => setTimeout(r, 700));
+              if (ev.tile) {
+                if (JOURNEY_SHOOTING_TILES.has(ev.tile)) { setShootTile({ type: ev.tile }); setBusyBoth(false); return; }
+                if (ev.tile === "mining" || ev.tile === "material" || ev.tile === "chest" || ev.tile === "arrowdew") { setTileDemo(ev.tile); return; }
+                await settle(ev.tile);
+                return;
+              }
+            }
+            const items = describeReward(ev.reward);
+            if (items.length) setRewardPopup({ items, band: ev.deck || "fate", tileType: ev.tile || ev.deck });
+            setBusyBoth(false);
+            flushSummary();
+          }}
+          zIndex={139} />
       )}
 
       {/* 貓貓羈絆格：陪練貓說句話 */}

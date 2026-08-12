@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
-  subscribeMyCheckin, submitCheckin, approveCheckin, submitClassEnd, addArrowdew,
+  subscribeMyCheckin, submitCheckin, approveCheckin, submitClassEnd, retryClassEndShopRushAward, addArrowdew,
   grantArrowMilestoneRewards, checkAndGrantArrowMilestones, subscribeLocalTodayArrows, initializeTodayArrows,
   submitMonthlyCardRequest,
 } from "../../lib/db";
@@ -12,7 +12,6 @@ import { COIN_CHEST_TIERS } from "../../lib/lootTable";
 import { getVillagePack } from "../../lib/villagePack";
 import { sfxSuccess, sfxTap } from "../../lib/sound";
 import ArrowMilestonePopup from "./ArrowMilestonePopup";
-import { claimVillageShopRushTime } from "../../lib/villageShopDb";
 
 // ── 今日里程碑全覽板 ─────────────────────────────────────────────
 function MilestoneBoard({ todayArrows }) {
@@ -108,6 +107,15 @@ export default function DailyQuest({ onJoinParty }) {
     return () => unsub?.();
   }, [profile?.id]);
 
+  // 下課已落盤但箭數 flush／旺季 claim 曾離線失敗時，重開本頁會依
+  // durable arrow queue + shop checkpoint 安全重試；成功重放不會再次發放。
+  useEffect(() => {
+    if (!profile?.id || !checkin?.classEnded) return;
+    retryClassEndShopRushAward(profile.id).catch(error => {
+      console.warn("retryClassEndShopRushAward:", error?.message);
+    });
+  }, [profile?.id, checkin?.classEnded]);
+
   useEffect(() => {
     initializeTodayArrows(profile?.id).catch(() => {});
     return subscribeLocalTodayArrows(profile?.id, setTodayArrows);
@@ -150,10 +158,10 @@ export default function DailyQuest({ onJoinParty }) {
         ).catch(() => {});
       }
 
-      await submitClassEnd(profile.id, checkin.id);
+      const classEnd = await submitClassEnd(profile.id, checkin.id);
       try {
-        const rush = await claimVillageShopRushTime(profile.id);
-        if (rush.awardedSeconds > 0) {
+        const rush = classEnd?.rushAward;
+        if ((rush?.awardedSeconds || 0) > 0) {
           const minutes = Math.floor(rush.awardedSeconds / 60);
           const seconds = rush.awardedSeconds % 60;
           const duration = [minutes > 0 ? `${minutes} 分鐘` : "", seconds > 0 ? `${seconds} 秒` : ""]

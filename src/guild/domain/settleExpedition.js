@@ -131,6 +131,7 @@ export function settleExpedition(state, opts = {}) {
 
   return {
     won: true, materials, legacyMaterials, junk, equipDrops, coins, catCoins,
+    defeatedMonsterIds:defeated.map(monster=>monster.id||monster.monsterId).filter(Boolean),
     accuracy: { ratio, band: acc.band, label: acc.label, dropMult: acc.dropMult, extraRoll: acc.extraRoll },
     // LUK 的效果原本完全看不見（掉寶多拿了什麼、雜貨多值多少，畫面上沒有任何提示），
     // 玩家因此覺得「LUK 沒意義」。把它攤出來讓結算頁能講清楚。

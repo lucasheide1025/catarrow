@@ -20,20 +20,21 @@ import {
   buildLiveShopSession, buildLiveShopTimeline, createSeededRng, evaluateLiveShopMission,
   getLiveActorStage, getLiveCustomerProfile, getShopOperationsProfile, hashShopSessionSeed, liveShopStateSignature,
   getShopSalesRateProfile, buildAutoShopSale, advanceManualShopClock,
+  countCompletedLiveVisitors,
 } from "./villageShopLive";
 
 const GOODS_MAP = {};
 SHOP_GOODS.forEach(g => { GOODS_MAP[g.id] = g; });
 
 describe("manual shop rush clock", () => {
-  test("rush time drives a 500% bulk-sale timeline and is consumed deterministically", () => {
-    expect(advanceManualShopClock({ rushSeconds:30, manualActive:true, elapsedSeconds:12 })).toMatchObject({
-      profile:getShopSalesRateProfile("rush_manual"), rushSeconds:18, consumedRushSeconds:12, timelineSeconds:60,
+  test("旺季時間以真實時間 1:1 消耗與推進", () => {
+    expect(advanceManualShopClock({ rushSeconds:30, manualActive:true, manualMode:"rush_manual", elapsedSeconds:12 })).toMatchObject({
+      profile:getShopSalesRateProfile("rush_manual"), rushSeconds:18, consumedRushSeconds:12, timelineSeconds:12,
     });
   });
   test("crossing rush expiry seamlessly continues at the 50% manual rate", () => {
-    expect(advanceManualShopClock({ rushSeconds:3, manualActive:true, elapsedSeconds:7 })).toMatchObject({
-      profile:getShopSalesRateProfile("manual"), rushSeconds:0, consumedRushSeconds:3, timelineSeconds:17,
+    expect(advanceManualShopClock({ rushSeconds:3, manualActive:true, manualMode:"rush_manual", elapsedSeconds:7 })).toMatchObject({
+      profile:getShopSalesRateProfile("manual"), rushSeconds:0, consumedRushSeconds:3, timelineSeconds:5,
     });
   });
   test("a closed shop uses auto profile without consuming rush", () => {
@@ -43,6 +44,11 @@ describe("manual shop rush clock", () => {
   });
   test("choosing normal business preserves stored rush time", () => {
     expect(advanceManualShopClock({ rushSeconds:30, manualActive:true, manualMode:"manual", elapsedSeconds:10 })).toMatchObject({
+      profile:getShopSalesRateProfile("manual"), rushSeconds:30, consumedRushSeconds:0, timelineSeconds:5,
+    });
+  });
+  test("omitting manual mode defaults safely to normal business", () => {
+    expect(advanceManualShopClock({ rushSeconds:30, manualActive:true, elapsedSeconds:10 })).toMatchObject({
       profile:getShopSalesRateProfile("manual"), rushSeconds:30, consumedRushSeconds:0, timelineSeconds:5,
     });
   });
@@ -112,10 +118,59 @@ describe("offline auto sales", () => {
 });
 
 describe("新版商店營業速率", () => {
-  test("旺季手動、一般手動、離店自動固定為 500／50／5", () => {
-    expect(getShopSalesRateProfile("rush_manual")).toMatchObject({ multiplier: 5, consumesRush: true });
+  test("旺季使用真實時間 100%，一般手動與離店自動維持 50%／5%", () => {
+    expect(getShopSalesRateProfile("rush_manual")).toMatchObject({ multiplier: 1, consumesRush: true });
     expect(getShopSalesRateProfile("manual")).toMatchObject({ multiplier: 0.5, consumesRush: false });
     expect(getShopSalesRateProfile("auto")).toMatchObject({ multiplier: 0.05, consumesRush: false });
+  });
+
+  test("三種速度以 100:50:5 改變權威客流，且都由同一庫存規則防止超賣", () => {
+    const shop = defaultShopState(1700000000000);
+    const good = SHOP_GOODS[0];
+    shop.display = [{ slot:"counter", goodId:good.id }];
+    shop.stock = { [good.id]:20 };
+    shop.furniture.flag = 10;
+    shop.rushSeconds = 1200;
+    shop.lastVisitedAt = 1699994000000;
+    const sessions = ["rush_manual", "manual", "auto"].map(mode =>
+      buildLiveShopSession(shop, { now:1700000000000, seed:9876, goodsMap:GOODS_MAP, mode, elapsedSeconds:1200 }).result
+    );
+    // 100 customers were already waiting when the shop opened. The live
+    // session then adds 20/10/1 arrivals at rush/manual/auto demand rates.
+    expect(sessions.map(result => result.processedVisitors)).toEqual([120, 110, 101]);
+    expect(sessions.every(result => result.totalItems <= 20)).toBe(true);
+    expect(sessions.every(result => result.stockAfter[good.id] >= 0)).toBe(true);
+  });
+
+  test("權威旺季客流受持久化秒數限制，零秒、部分到期與省略模式都回到一般倍率", () => {
+    const last = 1700000000000;
+    const base = defaultShopState(last);
+    base.lastVisitedAt = last;
+    base.furniture.flag = 10;
+    base.stock = { [SHOP_GOODS[0].id]:500 };
+    base.display = [{ slot:"counter", goodId:SHOP_GOODS[0].id }];
+    const build = (rushSeconds, elapsedSeconds, mode) => buildLiveShopSession(
+      { ...base, rushSeconds },
+      { now:last + 6000 * 1000, elapsedSeconds, seed:123, goodsMap:GOODS_MAP, ...(mode ? { mode } : {}) },
+    );
+    // 100 were waiting before opening. Only arrivals after opening use the
+    // chosen rate; historical backlog is never retroactively accelerated.
+    expect(build(0, 1200, "rush_manual").result.processedVisitors).toBe(110);
+    expect(build(60, 1200, "rush_manual").result.processedVisitors).toBe(110);
+    expect(build(1200, 1200, "rush_manual").result.processedVisitors).toBe(120);
+    expect(build(1200, 1200).result.processedVisitors).toBe(110);
+    expect(build(1, 2, "rush_manual").demandClock).toMatchObject({
+      consumedRushSeconds:1, rushSeconds:0, timelineSeconds:1.5,
+    });
+  });
+
+  test("1x/2x/4x 只改畫面播放，權威完成數只看真實經過時間", () => {
+    const timeline = { actors:[
+      { checkoutEnd:1000 }, { checkoutEnd:2000 }, { checkoutEnd:3000 },
+    ] };
+    expect(countCompletedLiveVisitors(timeline, 1500)).toBe(1);
+    expect(countCompletedLiveVisitors(timeline, 1500 * 2)).toBe(3); // visual-only comparison
+    expect(countCompletedLiveVisitors(timeline, 1500)).toBe(1);
   });
 });
 
@@ -166,12 +221,12 @@ describe("商品目錄（120 件）", () => {
   test("V5 商品視覺 metadata：120 件都有 visualKey / motif，24 種基礎造型跨 T1~T5 共用", () => {
     expect(new Set(SHOP_GOODS.map(g => g.visualKey)).size).toBe(24);
     SHOP_GOODS.forEach(g => {
-      expect(g.visualKey).toMatch(/^(weapon|armor|food)_[0-7]$/);
+      expect(g.visualKey).toMatch(/^[a-z]+(?:-[a-z]+)*$/);
       expect(g.visualLabel).toBeTruthy();
       expect(g.motifArt).toMatch(/^\/ui\/village\/resource-[a-z]+[1-5]\.webp$/);
     });
-    expect(SHOP_GOODS.find(g => g.visualKey === "weapon_0")?.art).toBe("/assets/cat_equip/bow.jpg");
-    expect(SHOP_GOODS.find(g => g.visualKey === "armor_0")?.art).toBe("/assets/cat_equip/armor.jpg");
+    expect(SHOP_GOODS.find(g => g.visualKey === "bow")?.art).toBe("/assets/cat_equip/bow.jpg");
+    expect(SHOP_GOODS.find(g => g.visualKey === "chest-armor")?.art).toBe("/assets/cat_equip/armor.jpg");
   });
 
   test("每級解鎖 4 件（L1 起手 4 件，L30 全 120）", () => {
@@ -850,6 +905,8 @@ describe("V7 多顧客即時營運舞台", () => {
     expect(rush.actors[1].entryAt - rush.actors[0].entryAt).toBe(120);
     expect(rush.actors[1].entryAt).toBeLessThan(normal.actors[1].entryAt);
     expect(rush.actors[2].entryAt - rush.actors[1].entryAt).toBe(120);
+    expect(rush.actors.map(actor => actor.checkoutEnd - actor.checkoutAt))
+      .toEqual(normal.actors.map(actor => actor.checkoutEnd - actor.checkoutAt));
   });
 
   test("店內最多同時 3 位，而且客流足夠時真的會重疊", () => {

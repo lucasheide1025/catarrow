@@ -7,7 +7,7 @@ import { CATS, CAT_SKILL_GROUPS } from "./catData";
 // 六大族→地下城族名對照（world boss family key ↔ monsterData.js FAMILIES key）
 export const WB_FAMILY_TO_DUNGEON_FAMILY = {
   ghost: "ghost", forest: "mountain", poison: "insect",
-  office: "workplace", exam: "exam", western: "temple",
+  office: "workplace", exam: "exam", western: "temple", treasure:"treasure",
 };
 
 // 貓貓稱號（依 CAT_SKILL_GROUPS 分組風格擬定）
@@ -26,17 +26,11 @@ const CAT_TITLES = {
 // 貓貓數值（依 CAT_SKILL_GROUPS：heal 均衡／atk 高攻低防／def 高血高防）
 const CAT_STATS = {
   // 攻擊組
-  haji:     { hp: 84000, atk: 105, def: 45 },
-  baobao:   { hp: 91000, atk: 112, def: 48 },
-  niuniu:   { hp: 98000, atk: 118, def: 52 },
+  haji:{hp:336000,atk:200,def:100}, baobao:{hp:336000,atk:190,def:108}, niuniu:{hp:336000,atk:198,def:102},
   // 治癒組
-  meimei:   { hp: 81500, atk: 78,  def: 50 },
-  gege:     { hp: 88500, atk: 82,  def: 55 },
-  daming:   { hp: 93000, atk: 85,  def: 58 },
+  meimei:{hp:336000,atk:178,def:116}, gege:{hp:336000,atk:175,def:120}, daming:{hp:336000,atk:170,def:125},
   // 防禦組
-  youyou:   { hp: 102500, atk: 70,  def: 68 },
-  xiaoan:   { hp: 109500, atk: 75,  def: 72 },
-  diandian: { hp: 116500, atk: 78,  def: 78 },
+  youyou:{hp:336000,atk:165,def:130}, xiaoan:{hp:336000,atk:160,def:135}, diandian:{hp:336000,atk:168,def:128},
 };
 
 const CAT_BG    = { daming:"#78350f", gege:"#7c2d12", meimei:"#7c2d12", niuniu:"#0f172a", haji:"#78350f", baobao:"#7c2d12", youyou:"#7c2d12", xiaoan:"#78350f", diandian:"#18181b" };
@@ -59,19 +53,19 @@ export const WORLD_BOSSES = {
   head_coach: {
     name: "主教練",       title: "永恆弓聖",
     desc: "道館最強的存在。傳說從未被任何射手擊敗過，他的每一箭都是天崩地裂的示範。",
-    hp: 648000, atk: 240, def: 130, pixelKey: "head_coach",
+    hp:540000,atk:270,def:140,pixelKey:"head_coach",
     family: "coach", bg: "#0f172a", accent: "#f59e0b",
   },
   wife: {
     name: "師母",         title: "隱世弓后",
     desc: "外表溫柔，實則功力深不可測。見過她真正發怒的人，箭靶上找不到完整的環。",
-    hp: 530000, atk: 215, def: 115, pixelKey: "wife",
+    hp:540000,atk:235,def:170,pixelKey:"wife",
     family: "coach", bg: "#4a044e", accent: "#f0abfc",
   },
   yumi: {
     name: "YUMI教練",    title: "速射之神",
     desc: "速度快到讓人以為她有三隻手。每次教學課結束，靶場都要更換新靶。",
-    hp: 442000, atk: 190, def: 100, pixelKey: "yumi",
+    hp:540000,atk:265,def:145,pixelKey:"yumi",
     family: "coach", bg: "#064e3b", accent: "#6ee7b7",
   },
 
@@ -90,74 +84,82 @@ export const WORLD_BOSSES = {
   ghost_boss_small: {
     name: "纏身女鬼",    title: "夜半哭聲",
     desc: "在你收拾器材時，鏡子裡多了一個不是你的影子。她只是想找人陪她說說話，順便討一支箭。",
-    hp: 176000, atk: 60, def: 33, pixelKey: "ghost_boss",
+    hp:96000,atk:60,def:40,pixelKey:"ghost_boss",
     family: "ghost", familyGroup: "ghost", familyTier: "small", bg: "#1e1b4b", accent: "#818cf8",
   },
   ghost_boss: {
     name: "怨靈大君",    title: "千年怨魂",
     desc: "箭場建立前就存在於此。每當有人丟掉靶紙，他就會更憤怒一分。",
-    hp: 352000, atk: 155, def: 85, pixelKey: "ghost_boss",
+    hp:168000,atk:115,def:75,pixelKey:"ghost_boss",
     family: "ghost", familyGroup: "ghost", familyTier: "big", bg: "#1e1b4b", accent: "#818cf8",
   },
   forest_boss_small: {
     name: "山魈頭領",    title: "迷霧引路",
     desc: "帶你走一條「捷徑」的山中精怪，走著走著你就發現自己繞回了原地，牠在旁邊笑得很開心。",
-    hp: 128000, atk: 45, def: 25, pixelKey: "forest_boss",
+    hp:96000,atk:55,def:48,pixelKey:"forest_boss",
     family: "forest", familyGroup: "forest", familyTier: "small", bg: "#14532d", accent: "#86efac",
   },
   forest_boss: {
     name: "山林守護神",  title: "翠林仙尊",
     desc: "管轄箭場周圍所有樹木。有人說他會移動樹枝讓風向改變，毀掉你的完美一箭。",
-    hp: 255000, atk: 115, def: 65, pixelKey: "forest_boss",
+    hp:168000,atk:105,def:88,pixelKey:"forest_boss",
     family: "forest", familyGroup: "forest", familyTier: "big", bg: "#14532d", accent: "#86efac",
   },
   poison_boss_small: {
     name: "蜈蚣蜂王",    title: "夏日惡夢",
     desc: "夏天箭場最讓人尖叫的存在，專門挑你拉弓拉到一半、動彈不得的時候出現在手臂上。",
-    hp: 107000, atk: 38, def: 22, pixelKey: "poison_boss",
+    hp:96000,atk:72,def:32,pixelKey:"poison_boss",
     family: "poison", familyGroup: "poison", familyTier: "small", bg: "#451a03", accent: "#fcd34d",
   },
   poison_boss: {
     name: "毒蟲之母",    title: "蟲族女王",
     desc: "夏天箭場的真正老大。蚊子、蜜蜂全聽她指揮，專門在你拉弓到一半時出現。",
-    hp: 210000, atk: 95, def: 55, pixelKey: "poison_boss",
+    hp:168000,atk:138,def:62,pixelKey:"poison_boss",
     family: "poison", familyGroup: "poison", familyTier: "big", bg: "#451a03", accent: "#fcd34d",
   },
   office_boss_small: {
     name: "奧客糾察隊長", title: "投訴連環信",
     desc: "還沒開賣就在門口排隊嫌貴，買完立刻上網寫一篇「教練不推薦」，每天準時報到打卡投訴。",
-    hp: 203000, atk: 68, def: 37, pixelKey: "office_boss",
+    hp:96000,atk:70,def:35,pixelKey:"office_boss",
     family: "office", familyGroup: "office", familyTier: "small", bg: "#450a0a", accent: "#fca5a5",
   },
   office_boss: {
     name: "職場終極魔王", title: "工時永恆者",
     desc: "用無止盡的加班和報表消耗射手的意志。據說他的技能就是讓你忘記來練習。",
-    hp: 412000, atk: 175, def: 95, pixelKey: "office_boss",
+    hp:168000,atk:130,def:68,pixelKey:"office_boss",
     family: "office", familyGroup: "office", familyTier: "big", bg: "#450a0a", accent: "#fca5a5",
   },
   exam_boss_small: {
     name: "期末考魔王",   title: "熬夜復仇者",
     desc: "前一晚熬夜抱佛腳的報應，在你翻開考卷的瞬間降臨——每一題都似曾相識，每一題都不會寫。",
-    hp: 149000, atk: 53, def: 29, pixelKey: "exam_boss",
+    hp:96000,atk:60,def:40,pixelKey:"exam_boss",
     family: "exam", familyGroup: "exam", familyTier: "small", bg: "#2e1065", accent: "#c4b5fd",
   },
   exam_boss: {
     name: "考試恐懼之神", title: "白卷支配者",
     desc: "出現時，所有人的肌肉記憶都會消失。你的第一直覺永遠是錯的，他保證。",
-    hp: 300000, atk: 135, def: 75, pixelKey: "exam_boss",
+    hp:168000,atk:115,def:78,pixelKey:"exam_boss",
     family: "exam", familyGroup: "exam", familyTier: "big", bg: "#2e1065", accent: "#c4b5fd",
   },
   western_boss_small: {
     name: "狼人首領",     title: "月圓獵殺",
     desc: "月圓之夜的箭場外圍傳來低吼，牠只是想確認你有沒有準時交作業（誤），還是想吃了你。",
-    hp: 245000, atk: 78, def: 43, pixelKey: "western_boss",
+    hp:96000,atk:75,def:30,pixelKey:"western_boss",
     family: "western", familyGroup: "western", familyTier: "small", bg: "#0c1a0c", accent: "#4ade80",
   },
   western_boss: {
     name: "古龍皇帝",     title: "西境霸主",
     desc: "從遠古傳說中走出的龍族王者。弓箭對他而言是玩具，但他尊重真正的射手。",
-    hp: 487000, atk: 200, def: 110, pixelKey: "western_boss",
+    hp:168000,atk:140,def:60,pixelKey:"western_boss",
     family: "western", familyGroup: "western", familyTier: "big", bg: "#0c1a0c", accent: "#4ade80",
+  },
+  treasure_boss_small:{
+    name:"鎏金寶匣獸",title:"七族守藏者",desc:"以金鎖守護七族珍藏的寶匣巨獸。牠不急著進攻，只會讓每一支箭都像射進封死的金庫。",
+    hp:96000,atk:52,def:50,pixelKey:"treasure_boss_small",family:"treasure",familyGroup:"treasure",familyTier:"small",bg:"#422006",accent:"#fbbf24",
+  },
+  treasure_boss:{
+    name:"萬寶藏王",title:"無盡寶庫之主",desc:"統御七族秘寶的藏王，能將無數寶物化為風暴，也能用貪婪封印奪走回復的希望。",
+    hp:168000,atk:112,def:90,pixelKey:"treasure_boss",family:"treasure",familyGroup:"treasure",familyTier:"big",bg:"#451a03",accent:"#fde047",
   },
 };
 
@@ -381,6 +383,8 @@ export const BOSS_QUOTES = {
     ["🌕", "別怕，我只是想跟你玩"],
     ["🐾", "聞到你緊張的味道了"],
   ],
+  treasure_boss_small:[["🔒","黃金鎖鏈已經扣上了！"],["📦","七族珍藏，一箱也別想拿走！"]],
+  treasure_boss:[["👑","無盡寶庫只服從藏王！"],["💰","貪婪會封住你的回復！"]],
 };
 
 // 隨機取一則公告並填入變數
@@ -418,6 +422,8 @@ export const WORLD_BOSS_ACHIEVEMENTS = {
   slay_exam_boss:          { name: "滿分神話",    icon: "📝", desc: "成功擊殺考試恐懼之神", rarity: "epic" },
   slay_western_boss_small: { name: "月下獵人",    icon: "🐉", desc: "成功擊殺狼人首領",   rarity: "rare" },
   slay_western_boss:       { name: "龍族剋星",    icon: "🐉", desc: "成功擊殺古龍皇帝",   rarity: "epic" },
+  slay_treasure_boss_small:{name:"破鎖之箭",icon:"🔒",desc:"成功擊殺鎏金寶匣獸",rarity:"rare"},
+  slay_treasure_boss:{name:"寶庫征服者",icon:"👑",desc:"成功擊殺萬寶藏王",rarity:"epic"},
   // 特殊成就
   last_hit:          { name: "終結者",      icon: "⚡", desc: "觸發大 Boss 最後一擊", rarity: "legendary" },
   participate_10:    { name: "世界守護者",  icon: "🌍", desc: "參與 10 次世界大 Boss 挑戰", rarity: "rare" },

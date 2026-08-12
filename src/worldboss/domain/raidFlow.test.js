@@ -118,6 +118,38 @@ describe("王的意圖", () => {
 });
 
 describe("一個回合的結算", () => {
+  test("後衛治療保留來源歸屬並套用該治療者的世界王卡加成", () => {
+    const state = newState({ members:[
+      { memberId:"front", name:"前衛", stats:{ atk:150, def:60, hp:300 }, hp:100, maxHp:300 },
+      { memberId:"healer", name:"治療者", stats:{ atk:150, def:60, hp:300 }, hp:0, maxHp:300, damage:100, cardFx:{ healPct:12 } },
+    ] });
+    state.members[0].hp = 100;
+    state.members[0].damage = 100;
+    state.members[1].hp = 0;
+    state.members[1].damage = 100;
+    const { log } = resolveRaidRound({ state, arrows:[], rand:() => 0.5 });
+    const heal = log.find(event => event.type === "supportHeal");
+    expect(heal.healed[0].sources).toEqual([{ memberId:"healer", name:"治療者", amount:heal.healed[0].amount }]);
+    expect(heal.healPct).toBeGreaterThan(.075);
+  });
+
+  test("v2 卡片灼燒依玩家保存來源並刷新為單層", () => {
+    const burnFx = { inflict:{ burn:{ chancePct:100, strength:20, duration:3, uncapped:true } } };
+    const state = withSpot(newState({ members:[
+      { memberId:"a", name:"甲", stats:{ atk:100, def:60, hp:300 }, inflict:burnFx.inflict, cardFx:burnFx },
+      { memberId:"b", name:"乙", stats:{ atk:200, def:60, hp:300 }, inflict:burnFx.inflict, cardFx:burnFx },
+    ] }));
+    const arrows = [
+      { memberId:"a", nx:0, ny:0, score:10 }, { memberId:"a", nx:0, ny:0, score:10 },
+      { memberId:"b", nx:0, ny:0, score:10 },
+    ];
+    const { state:next, log } = resolveRaidRound({ state, arrows, rand:() => 0 });
+    expect(Object.keys(next.cardBurns)).toEqual(["a", "b"]);
+    expect(next.cardBurns.a.remaining).toBe(2);
+    expect(next.cardBurns.b.remaining).toBe(2);
+    expect(log.filter(event => event.type === "statusTick" && event.sourceMemberId)).toHaveLength(2);
+  });
+
   test("射進圈裡會扣王的血，並累積破防", () => {
     const { state, log } = resolveRaidRound({ state: withSpot(newState()), arrows: atCentre() });
     expect(state.bossHp).toBeLessThan(200000);

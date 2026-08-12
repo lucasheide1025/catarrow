@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
   subscribeCampSessions, createCampSession, updateCampSession, deleteCampSession,
+} from "../../lib/campSessionsDb";
+import {
   subscribeKidAccounts, convertGuestToOfficial, deleteMember,
 } from "../../lib/db";
 import { useAuth } from "../../hooks/useAuth";

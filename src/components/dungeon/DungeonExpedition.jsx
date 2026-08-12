@@ -33,7 +33,8 @@ import {
   calculateExpeditionRewards,
   saveExpeditionRecord,
   grantExpeditionRewards,
-  setActiveExpeditionProgress,
+  queueActiveExpeditionProgress,
+  flushActiveExpeditionProgress,
   clearActiveExpeditionProgress,
 } from "../../lib/expeditionDb";
 import { trySetDungeonWorldFirstClear, claimDungeonPersonalFirstClear, addDungeonBroadcast, addCollectibles } from "../../lib/dungeonDb";
@@ -110,8 +111,10 @@ function ExpeditionBattleRoom({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [battleDone, setBattleDone] = useState(false);
+  const [settlementError, setSettlementError] = useState("");
   const terminalHandledRef = useRef(false);
   const timerRef = useRef(null);
+  const retrySettlementRef = useRef(null);
 
   // 建立戰鬥房間
   useEffect(() => {
@@ -161,10 +164,24 @@ function ExpeditionBattleRoom({
         if (terminalHandledRef.current) return;
         terminalHandledRef.current = true;
         setBattleDone(true);
-        timerRef.current = setTimeout(async () => {
-          await cleanupExpeditionRoom(roomId).catch(() => {});
-          onDoneRef.current({ won, member: me, battle: { id:roomId, ...data } });
-        }, delay);
+        const finalize = async () => {
+          try {
+            const outcome = await onDoneRef.current({ won, member: me, battle: { id:roomId, ...data } });
+            retrySettlementRef.current = null;
+            setSettlementError("");
+            if (!outcome?.preserveRoom) {
+              await cleanupExpeditionRoom(roomId).catch(cleanupError => {
+                console.warn("dungeon room cleanup failed after settlement", cleanupError);
+              });
+            }
+          } catch (settlementFailure) {
+            console.warn("dungeon settlement failed; waiting for manual retry", settlementFailure);
+            setSettlementError(settlementFailure?.message || "戰鬥結算同步失敗");
+            setBattleDone(false);
+          }
+        };
+        retrySettlementRef.current = finalize;
+        timerRef.current = setTimeout(finalize, delay);
       };
 
       // 檢測戰鬥結束
@@ -201,6 +218,31 @@ function ExpeditionBattleRoom({
         <button onClick={onAbandon}
           style={{ padding:"8px 24px", borderRadius:12, background:"#334155", color:"#e2e8f0", border:"none", cursor:"pointer" }}>
           返回
+        </button>
+      </div>
+    );
+  }
+
+  if (settlementError) {
+    return (
+      <div className="h-[100dvh] flex flex-col items-center justify-center gap-4 px-6 text-center"
+        style={{ background:"#0a0a0f", color:"rgba(255,255,255,0.72)" }}>
+        <div style={{ fontSize:44 }}>⚠️</div>
+        <div style={{ fontSize:16, fontWeight:900, color:"#fecaca" }}>戰鬥已結束，但結算同步失敗</div>
+        <div style={{ maxWidth:320, fontSize:13, lineHeight:1.7, color:"#94a3b8" }}>
+          {settlementError}。戰鬥結果仍保留，可重新同步，不會自動重複結算。
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            const retry = retrySettlementRef.current;
+            if (!retry) return;
+            setSettlementError("");
+            setBattleDone(true);
+            retry();
+          }}
+          style={{ padding:"10px 24px", borderRadius:12, background:"#f59e0b", color:"#111827", border:"none", cursor:"pointer", fontWeight:900 }}>
+          重新同步結算
         </button>
       </div>
     );
@@ -462,9 +504,23 @@ export default function DungeonExpedition({
       localStorage.setItem(`active_expedition_${myId || "guest"}`, JSON.stringify(payload));
     } catch {}
 
-    // 2. 寫入雲端 Firestore
-    setActiveExpeditionProgress(myId, payload).catch(() => {});
+    // 2. 雲端只需要最後一份續玩狀態：連續走格/探索時合併寫入，避免每一步都 updateDoc。
+    queueActiveExpeditionProgress(myId, payload);
   }, [myId, family, difficultyTier, isHidden, floorsCleared, playerState?.hp, playerState?.maxHP, playerState?.atk, playerState?.def, playerState?.wbBonus, playerState?.restBonuses, playerState?.merchantBonuses, runLootMult, arrowsPerRound, targetFmt, expansionBossEncounter, floorIndex, gridFloor, playerPos, visitedIds, branchFloor, branchChoice, branchStep, phase]);
+
+  // localStorage 每一步已同步；雲端 pending 狀態在切背景、關頁或離開元件時補寫最後一份。
+  useEffect(() => {
+    if (!myId) return undefined;
+    const flush = () => { flushActiveExpeditionProgress(myId).catch(() => {}); };
+    const onVisibilityChange = () => { if (document.hidden) flush(); };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      flush();
+    };
+  }, [myId]);
 
   // 勝負已定（won/result）＝ run 結束：立即鎖住並清除續玩來源（雲端＋local）。
   // 比「領獎時才清」更早，避免打完王領完獎仍跳「從第三層繼續」而重複打王
@@ -528,7 +584,7 @@ export default function DungeonExpedition({
   // 初始化玩家狀態 + 樓層/地圖還原
   useEffect(() => {
     if (phase === "intro" && cardReady) {
-      const base = buildExpeditionMemberData(profile, cardBonus);
+      const base = buildExpeditionMemberData(profile, cardBonus, cardColl);
       const isResume = resumeFromFloor > 0 || resumeHp > 0 || excavation?.mapState;
       const hasTrustedCombatSnapshot = Number(excavation?.combatSnapshotVersion) >= 2;
       const lockedMaxHP = isResume && hasTrustedCombatSnapshot && Number.isFinite(Number(excavation?.resumeMaxHP))
@@ -966,6 +1022,16 @@ export default function DungeonExpedition({
       return;
     }
     const killedMonster = battle?.monster || pendingRoom?.monster;
+    let serverCardClaim = null;
+    if (killedMonster?.expansionVersion === 1 && battle?.id && !isGuest
+      && !["miniBoss", "boss"].includes(killedMonster.encounter)) {
+      try {
+        const {claimDungeonNormalCard}=await import("../../lib/dungeonBossRewardDb");
+        serverCardClaim=await claimDungeonNormalCard({battleId:battle.id,memberId:myId,monsterId:killedMonster.id});
+      } catch (cardError) {
+        console.warn("dungeon normal card claim failed; continuing settlement", cardError);
+      }
+    }
     const killLoot = createExpeditionKillLoot(killedMonster, runLootMult, {
       roomType: pendingRoom?.type === "boss_battle" ? "boss"
         : pendingRoom?.type === "elite_battle" ? "elite" : "monster",
@@ -984,7 +1050,11 @@ export default function DungeonExpedition({
         pendingRoom?.type === "elite_battle" ? "elite" : "monster",
       )].filter(Boolean);
     if (collectibleDrops.length > 0) {
-      await addCollectibles(myId, collectibleDrops);
+      try {
+        await addCollectibles(myId, collectibleDrops);
+      } catch (collectibleError) {
+        console.warn("dungeon collectible sync failed; continuing settlement", collectibleError);
+      }
       setRunLoot(previous => mergeExpeditionLoot(previous, null, {
         treasure: collectibleDrops
           .map(drop => COLLECTIBLE_MAP[drop.itemId])
@@ -998,6 +1068,7 @@ export default function DungeonExpedition({
     // 每殺金幣（Tier 級距×5）＋射手 XP 即時入帳（王房獎勵另有 envelope,不重複——只對一般/精英房發）
     let killCoins = 0;
     let killArcherXP = 0;
+    let killCard = null;
     if (killedMonster && !isGuest && !["miniBoss", "boss"].includes(killedMonster.encounter)) {
       const kill = rollDungeonKillReward(killedMonster, { eliteMult: pendingRoom?.type === "elite_battle" ? 1.5 : 1 });
       if (kill) {
@@ -1012,6 +1083,7 @@ export default function DungeonExpedition({
           kills: previous.kills + 1,
         }));
       }
+      killCard=serverCardClaim?.card||null;
     }
     const battleStats = collectBattleStats(battle?.log);
     setRunStats(previous => mergeExpeditionStats(previous, battleStats));
@@ -1022,31 +1094,40 @@ export default function DungeonExpedition({
     if (defeatedMonster?.expansionVersion === 1
       && ["miniBoss", "boss"].includes(defeatedMonster.encounter)
       && battle?.id) {
+      const bossKillResultBase = {
+        monster: defeatedMonster,
+        isBoss: true,
+        chests: killLoot.chests,
+        coins: 0,
+        archerXP: 0,
+        lootMult: runLootMult,
+        collectibles: collectibleItems,
+        continueLabel: "前往戰利品房 →",
+        self: {
+          id: myId,
+          name: profile?.nickname || profile?.name || "我",
+          arrows: collectBattleArrows(battle?.log)[myId] || [],
+          dmgDealt: battleStats[myId]?.dmgDealt || 0,
+          dmgTaken: battleStats[myId]?.dmgTaken || 0,
+          crits: battleStats[myId]?.crits || 0,
+        },
+      };
       try {
         const claim = await claimBossReward({ battleId:battle.id, monsterId:defeatedMonster.id });
         // 王也要走單場結算（使用者規格：「擊倒王時也一樣」），按下一步才進補給箱領獎房
         setKillResult({
-          monster: defeatedMonster,
-          isBoss: true,
+          ...bossKillResultBase,
           bossDrops: bossDropsFromEnvelope(claim?.envelope),
-          chests: killLoot.chests,
-          coins: 0,          // 王房獎勵走 envelope，不重複發每殺金幣／XP
-          archerXP: 0,
-          lootMult: runLootMult,
-          collectibles: collectibleItems,
-          continueLabel: "前往戰利品房 →",
-          self: {
-            id: myId,
-            name: profile?.nickname || profile?.name || "我",
-            arrows: collectBattleArrows(battle?.log)[myId] || [],
-            dmgDealt: battleStats[myId]?.dmgDealt || 0,
-            dmgTaken: battleStats[myId]?.dmgTaken || 0,
-            crits: battleStats[myId]?.crits || 0,
-          },
         });
       } catch (error) {
-        setBossRewardRetry({ battleId:battle.id, monsterId:defeatedMonster.id, error:error?.message || "王房獎勵同步失敗" });
+        setBossRewardRetry({
+          battleId:battle.id,
+          monsterId:defeatedMonster.id,
+          resultBase:bossKillResultBase,
+          error:error?.message || "王房獎勵同步失敗",
+        });
         setPhase("boss_reward_retry");
+        return { preserveRoom:true };
       }
       return;
     }
@@ -1057,6 +1138,7 @@ export default function DungeonExpedition({
       chests: killLoot.chests,
       coins: killCoins,
       archerXP: killArcherXP,
+      card: killCard,
       lootMult: runLootMult,
       collectibles: collectibleItems,
       self: {
@@ -1069,6 +1151,27 @@ export default function DungeonExpedition({
       },
     });
   }, [myId, isFromStorage, floorIndex, floorsCleared, difficultyTier, profile, pendingRoom, finishPendingRoom, showResult, claimBossReward, bossDropsFromEnvelope, runLootMult, isGuest]);
+
+  const retryBossReward = useCallback(async () => {
+    const retry = bossRewardRetry;
+    if (!retry) return;
+    try {
+      const claim = await claimBossReward(retry);
+      if (retry.resultBase) {
+        setKillResult({
+          ...retry.resultBase,
+          bossDrops: bossDropsFromEnvelope(claim?.envelope),
+        });
+      } else {
+        // 舊 hot-reload 狀態若沒有 resultBase，至少讓已成功取得的 envelope 進入戰利品房。
+        setPhase("treasure");
+      }
+    } catch (error) {
+      setBossRewardRetry(current => current
+        ? { ...current, error:error?.message || "同步失敗" }
+        : current);
+    }
+  }, [bossRewardRetry, claimBossReward, bossDropsFromEnvelope]);
 
   const handleAbandon = useCallback(() => {
     if (!isFromStorage) abandonExcavation(myId).catch(() => {});
@@ -1202,6 +1305,7 @@ export default function DungeonExpedition({
         chests={killResult.chests}
         coins={killResult.coins}
         archerXP={killResult.archerXP}
+        card={killResult.card}
         lootMult={killResult.lootMult}
         isBoss={killResult.isBoss}
         bossDrops={killResult.bossDrops}
@@ -1338,7 +1442,7 @@ export default function DungeonExpedition({
           <h1 className="mt-3 text-xl font-black">戰利品尚未同步</h1>
           <p className="mt-2 text-sm leading-6 text-slate-400">戰鬥結果已保留，請重新同步；不會重複計算或遺失保底。</p>
           <div role="alert" className="mt-3 text-xs text-rose-300">{bossRewardRetry.error}</div>
-          <button type="button" onClick={() => claimBossReward(bossRewardRetry).catch(error => setBossRewardRetry(current => ({ ...current, error:error?.message || "同步失敗" })))}
+          <button type="button" onClick={retryBossReward}
             className="mt-5 min-h-12 w-full rounded-2xl bg-amber-300 font-black text-slate-950">重新同步獎勵</button>
         </div>
       </main>

@@ -2,14 +2,14 @@
 import {
   collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc,
   setDoc, query, where, orderBy, limit, serverTimestamp, onSnapshot,
-  increment, arrayUnion, arrayRemove, Timestamp, deleteField, writeBatch, runTransaction, getDocsFromCache
+  increment, arrayUnion, Timestamp, deleteField, writeBatch, runTransaction, getDocsFromCache
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { MATERIALS } from "./monsterMaterials";
 import { POTIONS, FRAGMENTS, makeFamilyMaterialChest } from "./itemData";
 import { migratePotionInventory } from "./consumableSystem";
 import { makeCoinChest, COIN_CHEST_TIERS } from "./lootTable";
-import { EQUIP_GRADES, EQUIP_SLOT_DEFS, getCertLevelByScores } from "./constants";
+import { EQUIP_GRADES, getCertLevelByScores } from "./constants";
 import { EQUIP_UPGRADE_COST, generateRandomMats, KING_SEAL_BREAKTHROUGH_COST } from "./equipData";
 import { getEquipmentRune, getNextEquipmentRune } from "./equipmentRuneData";
 import { SHOP_PRODUCT_MAP, SPECIAL_TICKET_META, getMaterialUpgradePlan, getShopPeriodKey, getShopDailyKey, getShopWeeklyKey } from "./shopData";
@@ -26,6 +26,7 @@ import { sumPracticeLogArrows } from "./practiceLogArrows";
 import { planPracticeLogRepair } from "./practiceLogRepair";
 import { SHOOTING_SCHEMA_VERSION, buildMonsterShootingRecord, buildPracticeShootingRecord, buildShootingEnds, calculateSessionMetrics } from "./shootingPerformance";
 import { assertCostCapability, COST_CAPABILITIES, isCostCapabilityAllowed } from "./costControl";
+import { completeClassEndRushFlow, settleClassEndRushAward } from "./classEndRush";
 import {
   createRoundArrowRecorder, dailyArrowStorageKey, getLocalTodayArrows,
   setLocalTodayArrows, subscribeLocalTodayArrows, taipeiDateKey,
@@ -40,14 +41,12 @@ const C = {
   messages:     "messages",
   learnLogs:    "learnLogs",
   practiceLogs: "practiceLogs",
-  achievements: "achievements",
   certRecords:  "certRecords",
   badgeLogs:    "badgeLogs",
   auditLogs:    "auditLogs",
   externalComps:"externalComps",
   registrations:"registrations",
   billingRecords:"billingRecords",
-  campSessions: "campSessions",
   shootingSessions: "shootingSessions",
   gamePerformances: "gamePerformances",
   arrowCountEvents: "arrowCountEvents",
@@ -210,7 +209,6 @@ export async function finalizeMonsterShootingSession(input) {
   const contributeVillageKill = () => contributesKill
     ? import("./villageGoalDb").then(m => m.contributeKillToGoal(input.memberId, `monster:${record.session.id}`))
     : Promise.resolve();
-
   // 一律先存 localStorage，下課或下次登入時才 flush 到 Firestore
   if (!input.__skipPendingQueue) {
     queuePendingShootingSession("game", input);
@@ -249,9 +247,8 @@ export async function finalizeMonsterShootingSession(input) {
   // This branch is the deferred queue flush. Await the idempotent contribution
   // so a transient failure keeps the shooting session queued for a later retry.
   await contributeVillageKill();
-
   if (input.memberId && input.result === "win" && Number(input.finalMonsterHp) <= 0) {
-    import("./worldBossDb").then(module => module.contributeWorldBossSpawnProgress({
+    import("./worldBossLifecycleClient").then(module => module.contributeWorldBossSpawnProgress({
       memberId:input.memberId, type:"monsterKills", amount:1, operationId:`monster:${record.session.id}`,
     })).catch(() => {});
   }
@@ -690,13 +687,6 @@ export async function getMembers({ fresh = false } = {}) {
   return membersInflight;
 }
 
-export function subscribeMembers(callback) {
-  return onSnapshot(
-    collection(db, C.members),
-    snap => callback(sortByLastLogin(snap.docs.map(d => ({ id: d.id, ...d.data() }))))
-  );
-}
-
 export async function getMember(id) {
   const snap = await getDoc(doc(db, C.members, id));
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
@@ -761,11 +751,9 @@ export async function updateLastLogin(id, prevLastLoginAt) {
 // ─── 訪客/兒童帳號（兒童模式後台，2026-07-09）─────────────────
 export function subscribeKidAccounts(callback) {
   return onSnapshot(
-    collection(db, C.members),
+    query(collection(db, C.members), where("accountType", "in", ["guest", "kid"])),
     snap => {
-      const list = snap.docs
-        .map(d => ({ id: d.id, ...d.data() }))
-        .filter(m => m.accountType === "guest" || m.accountType === "kid");
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       callback(sortByLastLogin(list));
     }
   );
@@ -794,46 +782,12 @@ export async function convertGuestToOfficial(memberId, officialFields, newUid, o
     updatedAt: serverTimestamp(),
   };
   await updateDoc(doc(db, C.members, memberId), patch);
+  invalidateMembersCache();
   // deleteField() 是 update() 專用 sentinel，不能出現在 addDoc()/新文件裡（會丟例外）——
   // 稽核紀錄跟回傳值都要用「已清掉的值」取代，不能直接沿用 patch 本體
   const logged = { ...patch, contactHash: null, createdViaQR: null };
   await writeAuditLog("CONVERT_TO_OFFICIAL", memberId, "member", before, logged, operatorId);
   return { id: memberId, ...before, ...logged };
-}
-
-// ─── 夏令營場次（campSessions）─────────────────────────────
-export async function getCampSessions() {
-  const snap = await getDocs(collection(db, C.campSessions));
-  const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  return list.sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
-}
-
-export function subscribeCampSessions(callback) {
-  return onSnapshot(collection(db, C.campSessions), snap => {
-    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    list.sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
-    callback(list);
-  });
-}
-
-export async function createCampSession(data, operatorId) {
-  const ref = await addDoc(collection(db, C.campSessions), {
-    name: data.name || "",
-    startDate: data.startDate || "",
-    endDate: data.endDate || "",
-    active: data.active !== undefined ? data.active : true,
-    createdBy: operatorId || null,
-    createdAt: serverTimestamp(),
-  });
-  return ref.id;
-}
-
-export async function updateCampSession(id, patch) {
-  await updateDoc(doc(db, C.campSessions, id), patch);
-}
-
-export async function deleteCampSession(id) {
-  await deleteDoc(doc(db, C.campSessions, id));
 }
 
 // ─── Badge Logic ───────────────────────────────────────────
@@ -1047,7 +1001,7 @@ async function applyArrowOperation(operation) {
     });
     transaction.set(operationRef, { memberId:operation.memberId, arrowCount:operation.count, deviceId:arrowDeviceId(), createdAt:serverTimestamp() });
   });
-  import("./worldBossDb").then(module => module.contributeWorldBossSpawnProgress({
+  import("./worldBossLifecycleClient").then(module => module.contributeWorldBossSpawnProgress({
     memberId:operation.memberId, type:"arrows", amount:operation.count, operationId:`arrows:${operation.id}`,
   })).catch(() => {});
 }
@@ -1126,10 +1080,6 @@ export function subscribePendingBadgeLogs(memberId, callback) {
 export async function getCompetitions() {
   const snap = await getDocs(query(collection(db, C.competitions), orderBy("date", "desc")));
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-}
-
-export function subscribeCompetitions(callback) {
-  return onSnapshot(query(collection(db, C.competitions), orderBy("date", "desc")), snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 }
 
 export async function createCompetition(data, operatorId) {
@@ -1211,6 +1161,7 @@ export async function settleCompetition(compId, operatorId) {
       await updateDoc(doc(db, C.members, sorted[i].memberId), { eventPoints: increment(pts) });
     }
   }
+  invalidateMembersCache();
   await updateCompetition(compId, { status: "settled", settledAt: serverTimestamp() }, operatorId);
 }
 
@@ -1289,24 +1240,6 @@ export async function upsertCertRecord(memberId, year, half, bowType, score, ope
 export async function getCertRecords(memberId) {
   const snap = await getDocs(query(collection(db, C.certRecords), where("memberId", "==", memberId)));
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-}
-
-export function subscribeCertRecords(memberId, callback) {
-  return onSnapshot(
-    query(collection(db, C.certRecords), where("memberId", "==", memberId)),
-    snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
-    err => { console.warn("subscribeCertRecords:", err.message); callback([]); }
-  );
-}
-
-export async function getAchievements() {
-  const snap = await getDocs(query(collection(db, C.achievements), orderBy("createdAt", "desc")));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-}
-
-export async function createAchievement(data, operatorId) {
-  const ref = await addDoc(collection(db, C.achievements), { ...data, status: "active", createdAt: serverTimestamp(), operatorId });
-  return ref.id;
 }
 
 export async function addExternalComp(memberId, data) {
@@ -1440,12 +1373,6 @@ export async function rejectCertResult(resultId, operatorId) {
   const ref = doc(db, C.results, resultId);
   const snap = await getDoc(ref);
   if (snap.exists()) { await updateDoc(ref, { reviewStatus: "rejected", reviewedAt: serverTimestamp(), reviewedBy: operatorId }); await deleteDoc(ref); }
-}
-
-export async function getMyCompResult(compId, memberId) {
-  const snap = await getDocs(query(collection(db, C.results), where("compId", "==", compId), where("memberId", "==", memberId)));
-  if (snap.empty) return null;
-  return { id: snap.docs[0].id, ...snap.docs[0].data() };
 }
 
 // 年度檢定一個人可能考多個弓種 → 複數版。首頁/「我的」要判斷「我這期考到哪一步」
@@ -1841,21 +1768,6 @@ export function checkinId(memberId, date) {
   return `${memberId}_${date || todayStr()}`;
 }
 
-// 純上課：建立上課紀錄，等待學生點「下課」才計次
-export async function submitSimpleCheckin(memberId, memberName, memberNickname) {
-  const date = todayStr();
-  const id = checkinId(memberId, date);
-  const ref = doc(db, C_CHECKIN, id);
-  const snap = await getDoc(ref);
-  if (snap.exists()) return { id, already: true };
-  await setDoc(ref, {
-    memberId, memberName: memberName || "", memberNickname: memberNickname || "",
-    date, type: "simple", status: "done", finalConfirmed: false, classEnded: false,
-    createdAt: serverTimestamp(),
-  });
-  return { id, already: false };
-}
-
 // 學生點報到 → 建立 pending 紀錄（等待教練審核）
 export async function submitCheckin(memberId, memberName, memberNickname) {
   const date = todayStr();
@@ -1943,26 +1855,6 @@ export function subscribePendingCheckins(callback) {
   );
 }
 
-// 教練施法 → 隨機 10-50% 降幅 buff
-export async function castBuff(checkinId, operatorId) {
-  const pct = Math.floor(Math.random() * 41) + 10; // 10-50
-  const buff = { name: `魔法加持 ${pct}%`, icon: "✨", actualPower: pct, type: "cast" };
-  await updateDoc(doc(db, C_CHECKIN, checkinId), {
-    buff,
-    buffAt: serverTimestamp(),
-    buffBy: operatorId,
-  });
-  return buff;
-}
-
-// 學生重抽 buff（失敗後）→ failCount +1，寫入新 buff
-export async function rerollCheckinBuff(checkinId, newBuff, newFailCount) {
-  await updateDoc(doc(db, C_CHECKIN, checkinId), {
-    buff: newBuff || null,
-    failCount: newFailCount,
-  });
-}
-
 // 學生登記今日任務結果（達標）→ 自動計入次數 + 給寶箱
 export async function markQuestDone(checkinId, questResult, memberId = null, chestType = null) {
   await updateDoc(doc(db, C_CHECKIN, checkinId), {
@@ -1987,41 +1879,46 @@ export async function markQuestDone(checkinId, questResult, memberId = null, che
 
 // 學生點「下課」→ 計入本次上課次數 +1
 export async function submitClassEnd(memberId, checkinDocId) {
-  await updateDoc(doc(db, C_CHECKIN, checkinDocId), {
-    classEnded: true,
-    classEndedAt: serverTimestamp(),
-    finalConfirmed: true,
-  });
-  try {
-    const member = await getMember(memberId);
-    const newCount = (member?.dailyQuestCount || 0) + 1;
-    await updateDoc(doc(db, C.members, memberId), { dailyQuestCount: increment(1), eventPoints: increment(1) });
-    const config = await getDailyQuestConfig();
-    const rewardEvery = config?.rewardEvery || 10;
-    if (newCount % rewardEvery === 0) {
-      await addBadge(memberId, "achievement", "silver", 1, memberId, `上課累積 ${newCount} 次`);
+  const rushAward = await completeClassEndRushFlow({
+    persistClassEnd:async () => {
+      await updateDoc(doc(db, C_CHECKIN, checkinDocId), {
+        classEnded: true,
+        classEndedAt: serverTimestamp(),
+        finalConfirmed: true,
+      });
+      try {
+        const member = await getMember(memberId);
+        const newCount = (member?.dailyQuestCount || 0) + 1;
+        await updateDoc(doc(db, C.members, memberId), { dailyQuestCount: increment(1), eventPoints: increment(1) });
+        const config = await getDailyQuestConfig();
+        const rewardEvery = config?.rewardEvery || 10;
+        if (newCount % rewardEvery === 0) {
+          await addBadge(memberId, "achievement", "silver", 1, memberId, `上課累積 ${newCount} 次`);
+        }
+      } catch (e) { console.warn("submitClassEnd:", e?.message); }
+      // 下課時 flush 所有累積在 localStorage 的射手表現資料到 Firestore
+      try {
+        await flushPendingShootingSessions(memberId);
+      } catch (e) { console.warn("submitClassEnd flush shooting:", e?.message); }
+    },
+    settleRush:async () => {
+      try {
+        return await retryClassEndShopRushAward(memberId);
+      } catch (e) {
+        console.warn("submitClassEnd shop rush:", e?.message);
+        return { pending:true, reason:"claim_failed", lastError:e?.message || String(e) };
+      }
     }
-  } catch (e) { console.warn("submitClassEnd:", e?.message); }
-  // 下課時 flush 所有累積在 localStorage 的射手表現資料到 Firestore
-  try {
-    await flushPendingShootingSessions(memberId);
-  } catch (e) { console.warn("submitClassEnd flush shooting:", e?.message); }
-  try {
-    await flushPendingArrowProgress(memberId);
-  } catch (e) { console.warn("submitClassEnd flush arrows:", e?.message); }
+  });
+  return { rushAward };
 }
 
-// 教練最終確認（舊流程相容，新流程已不需要）
-export async function confirmCheckinReward(checkinId, memberId, operatorId, chestType = "iron") {
-  await markQuestDone(checkinId, null, memberId, chestType);
-}
-
-// 取得會員今日任務累積次數
-export async function getDailyQuestCount(memberId) {
-  try {
-    const m = await getMember(memberId);
-    return m?.dailyQuestCount || 0;
-  } catch { return 0; }
+export async function retryClassEndShopRushAward(memberId) {
+  const { claimVillageShopRushTime } = await import("./villageShopDb");
+  return settleClassEndRushAward(memberId, {
+    flushArrows:flushPendingArrowProgress,
+    claimRush:claimVillageShopRushTime,
+  });
 }
 
 // 強制結束今日所有仍在上課中（active、尚未 classEnded）的報到
@@ -2081,13 +1978,6 @@ export const PROMO_QUEST_DEFAULTS = {
   40: { dist: "15", arrowCount: 6, goal: 42, bonusXP: 1200 },
   50: { dist: "18", arrowCount: 6, goal: 48, bonusXP: 1800 },
 };
-export async function getPromotionQuestConfig() {
-  try {
-    const snap = await getDoc(doc(db, C_PROMO_CONFIG, "default"));
-    if (snap.exists()) return { ...PROMO_QUEST_DEFAULTS, ...snap.data() };
-  } catch (e) { console.warn("getPromotionQuestConfig:", e?.message); }
-  return PROMO_QUEST_DEFAULTS;
-}
 export function subscribePromotionQuestConfig(cb) {
   return onSnapshot(doc(db, C_PROMO_CONFIG, "default"),
     snap => cb(snap.exists() ? { ...PROMO_QUEST_DEFAULTS, ...snap.data() } : { ...PROMO_QUEST_DEFAULTS }),
@@ -2140,47 +2030,6 @@ export async function addAdventurerXP(memberId, xp) {
       await updateDoc(doc(db, C.members, memberId), { adventurerXP: increment(xp) });
     }
   } catch (e) { console.warn("addAdventurerXP:", e?.message); }
-}
-
-// 訂閱今日公會任務進度
-export function subscribeAdventurerProgress(memberId, cb) {
-  const date = todayStr();
-  return onSnapshot(doc(db, C_GUILD, memberId), snap => {
-    if (!snap.exists()) { cb({ date, completed: [], submittedQuests: [] }); return; }
-    const d = snap.data();
-    // completed 每日重置；submittedQuests 永久記錄不受換日影響
-    const completed = d.date === date ? (d.completed || []) : [];
-    cb({ ...d, date, completed, submittedQuests: d.submittedQuests || [], acceptedQuests: d.acceptedQuests || [] });
-  }, err => { console.warn("subscribeAdventurerProgress:", err.message); cb({ date, completed: [], submittedQuests: [] }); });
-}
-
-// 完成公會任務 → 記錄 + 給 XP + 給金幣 + 給箭露
-export async function completeGuildTask(memberId, taskId, xp, coins, bonus = null, arrowDew = 0) {
-  const date = todayStr();
-  const ref = doc(db, C_GUILD, memberId);
-  const snap = await getDoc(ref);
-  const d = snap.exists() ? snap.data() : {};
-  const prevCompleted = d.date === date ? (d.completed || []) : [];
-  if (prevCompleted.includes(taskId)) return { ok: true, already: true };
-  await setDoc(ref, { date, completed: [...prevCompleted, taskId], updatedAt: serverTimestamp() });
-  if (xp > 0) addAdventurerXP(memberId, xp).catch(() => {});
-  if (coins > 0) addCoins(memberId, coins).catch(() => {});
-  if (arrowDew > 0) addArrowdew(memberId, arrowDew).catch(() => {});
-  if (bonus?.type === "coins")  addCoins(memberId, bonus.amount).catch(() => {});
-  if (bonus?.type === "chest")  addChests(memberId, [{
-    id: `chest_guild_${taskId}_${Date.now()}`,
-    type: bonus.chestType, from: "公會任務", ts: Date.now(),
-  }]).catch(() => {});
-  return { ok: true, bonus };
-}
-
-// 完成晉階任務 → 記錄 promotionDone + 給 bonusXP
-export async function completePromotionQuest(memberId, promotionLevel, bonusXP) {
-  if (!memberId) return;
-  await updateDoc(doc(db, C.members, memberId), {
-    adventurerXP:  increment(bonusXP),
-    promotionDone: arrayUnion(promotionLevel),
-  });
 }
 
 // ── 公會懸賞任務（後台發佈）─────────────────────────────────
@@ -2272,26 +2121,6 @@ export async function deleteGuildQuest(questId) {
   await deleteDoc(doc(db, C_GUILD_Q, questId));
 }
 
-// 系統：每兩週自動發佈懸賞任務（前台進入公會頁時呼叫，內部防重複）
-export async function autoPublishBountyQuests(monsters) {
-  try {
-    const { getBiWeeklyPeriodKey, generateBiWeeklyBounties } = await import("./adventurerSystem");
-    const periodKey = getBiWeeklyPeriodKey();
-    // 用 guildMeta/bountyPeriod 文件防重複，避免需要 Firestore 複合索引
-    const metaRef  = doc(db, "guildMeta", "bountyPeriod");
-    const metaSnap = await getDoc(metaRef);
-    if (metaSnap.exists() && metaSnap.data().periodKey === periodKey) {
-      return { ok: true, reason: "already_exists" };
-    }
-    const bounties = generateBiWeeklyBounties(periodKey, monsters);
-    for (const b of bounties) {
-      await publishGuildQuest(b, "system").catch(() => {});
-    }
-    await setDoc(metaRef, { periodKey, generatedAt: serverTimestamp() });
-    return { ok: true, count: bounties.length };
-  } catch (e) { return { ok: false, reason: e.message }; }
-}
-
 /* ════════════════════════════════════════════════════════════
    一般懸賞任務（每日刷新，教練可調整範本池與難度獎勵）
    ════════════════════════════════════════════════════════════ */
@@ -2309,11 +2138,6 @@ export const DEFAULT_BOUNTY_REWARDS = {
 };
 
 // ── 範本 CRUD（後台管理）───────────────────────────────────
-export async function getGuildBountyTemplates() {
-  const snap = await getDocs(collection(db, C_BOUNTY_TEMPLATES));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-}
-
 export function subscribeGuildBountyTemplates(cb) {
   return onSnapshot(collection(db, C_BOUNTY_TEMPLATES),
     snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
@@ -2458,14 +2282,6 @@ export async function autoPublishDailyGeneralBounties() {
     await setDoc(metaRef, { dateKey, generatedAt: serverTimestamp() });
     return { ok: true, count: questsToPublish.length };
   } catch (e) { return { ok: false, reason: e.message }; }
-}// 前台：接受任務（標記進行中；kill_monster 任務記錄接任時的擊殺基準值）
-export async function acceptGuildQuest(memberId, questId, baselineKills = null) {
-  if (!memberId || !questId) return;
-  const updates = { acceptedQuests: arrayUnion(questId) };
-  if (baselineKills !== null) updates[`acceptedKillCounts.${questId}`] = baselineKills;
-  await updateDoc(doc(db, C_GUILD, memberId), updates).catch(() =>
-    setDoc(doc(db, C_GUILD, memberId), { acceptedQuests: [questId] }, { merge: true })
-  );
 }
 
 // 前台：會員提交完成（XP/金幣立即發放；徽章待審核）
@@ -2584,63 +2400,8 @@ export async function rejectGuildSubmission(subId, sub, reason, adminId) {
   }
 }
 
-// 前台：直接挑戰下一階段（provisional 解鎖）
-export async function provisionalUnlockQuest(memberId, questId, questTitle, badgeReward) {
-  await updateDoc(doc(db, C.members, memberId), {
-    [`completedGuildQuestsMap.${questId}`]: {
-      questTitle, badgeReward: badgeReward || null,
-      status: "provisional", completedAt: serverTimestamp(),
-    },
-  }).catch(() => setDoc(doc(db, C.members, memberId), {
-    completedGuildQuestsMap: {
-      [questId]: { questTitle, badgeReward: badgeReward || null, status: "provisional", completedAt: serverTimestamp() },
-    },
-  }, { merge: true }));
-}
-
-// 前台：重新送審（不重發 XP，只建新審核記錄）
-export async function resubmitGuildBadge(memberId, memberName, questId, questTitle, badgeReward) {
-  await addDoc(collection(db, C_GUILD_SUBS), {
-    questId, questTitle, memberId, memberName,
-    badgeReward, note: "重新送審",
-    status: "pending", submittedAt: serverTimestamp(),
-  });
-  await updateDoc(doc(db, C.members, memberId), {
-    [`completedGuildQuestsMap.${questId}.status`]: "provisional",
-    [`completedGuildQuestsMap.${questId}.rejectReason`]: deleteField(),
-  }).catch(() => {});
-}
-
-// 前台：重新挑戰（清除記錄，允許重打）
-export async function retryGuildQuest(memberId, questId) {
-  await updateDoc(doc(db, C_GUILD, memberId), {
-    submittedQuests: arrayRemove(questId),
-  }).catch(() => {});
-  await updateDoc(doc(db, C.members, memberId), {
-    [`completedGuildQuestsMap.${questId}`]: deleteField(),
-  }).catch(() => {});
-}
-
 // ─── 教練挑戰賽 ─────────────────────────────────────────────
 const C_COACH_CHALLENGES = "coachChallenges";
-
-// 前台：射手申請與教練決鬥
-export async function submitCoachChallenge(memberId, memberName, quest) {
-  if (!memberId || !quest?.id) return;
-  // 立即鎖定防重複申請
-  await updateDoc(doc(db, C_GUILD, memberId), {
-    submittedQuests: arrayUnion(quest.id),
-  }).catch(() =>
-    setDoc(doc(db, C_GUILD, memberId), { submittedQuests: [quest.id] }, { merge: true })
-  );
-  await addDoc(collection(db, C_COACH_CHALLENGES), {
-    questId: quest.id, questTitle: quest.title,
-    memberId, memberName,
-    status: "pending",
-    createdAt: serverTimestamp(),
-    reward: quest.reward || {},
-  });
-}
 
 // 後台：訂閱所有挑戰申請
 export function subscribeCoachChallenges(cb) {
@@ -2730,10 +2491,6 @@ export async function revokeSpecialAchievement(memberId, specialId, operatorId) 
 
 // ═══════════════════════════════════════════════════════════
  
-export async function deleteCheckin(checkinId) {
-  await deleteDoc(doc(db, C_CHECKIN, checkinId));
-}
-
 export async function adminDismissCheckin(checkinId) {
   await updateDoc(doc(db, C_CHECKIN, checkinId), { adminDismissed: true });
 }
@@ -3436,14 +3193,6 @@ export async function getAllMonsterDex() {
   return snap.docs.map(d => ({ memberId: d.id, monsters: d.data().monsters || {} }));
 }
 
-// 供排行榜：一次讀全部卡片收藏（memberId → { cards, wbCards, equipped }）
-export async function getAllCardCollections() {
-  const snap = await getDocs(collection(db, C_CARDS));
-  const map = {};
-  snap.docs.forEach(d => { map[d.id] = d.data() || {}; });
-  return map;
-}
-
 // ─── 排行榜累計計數器（埋點）────────────────────────────
 // 貓貓村探索繞圈（累計，不隨每日重置歸零）
 export async function addVillageLap(memberId, n = 1) {
@@ -3456,7 +3205,7 @@ export async function addDungeonClear(memberId, family, n = 1, operationId = nul
   if (!memberId || !family || n <= 0) return;
   try {
     await updateDoc(doc(db, "members", memberId), { [`dungeonClears.${family}`]: increment(n) });
-    if (operationId) import("./worldBossDb").then(module => module.contributeWorldBossSpawnProgress({
+    if (operationId) import("./worldBossLifecycleClient").then(module => module.contributeWorldBossSpawnProgress({
       memberId, type:"dungeonClears", amount:n, operationId:`dungeon:${operationId}`,
     })).catch(() => {});
   }
@@ -3478,7 +3227,7 @@ export async function saveDexSummary(memberId, totalUnlocked, totalAll) {
 
 // 供 partyDb 呼叫：更新怪物圖鑑（勝/敗記錄）
 export async function recordBattleDex(memberId, monsterId, result, dmgDealt) {
-  if (!memberId || !monsterId || await isGuestOrKidMember(memberId)) return;
+  if (!memberId || !monsterId || !["win", "lose"].includes(result) || await isGuestOrKidMember(memberId)) return;
   await updateMonsterDex(memberId, monsterId, result, 0, dmgDealt || 0).catch(() => {});
 }
 
@@ -3599,6 +3348,7 @@ export async function adminSetMemberBadge(memberId, badgeField, badgeLevel, valu
   if (!memberId) return { ok: false };
   try {
     await updateDoc(doc(db, C.members, memberId), { [`${badgeField}.${badgeLevel}`]: Number(value) });
+    invalidateMembersCache();
     return { ok: true };
   } catch (e) { return { ok: false, reason: e?.message }; }
 }
@@ -3720,7 +3470,9 @@ function normalizeEquipped(item) {
 
 function normalizeWorldBossCard(key, card = {}) {
   const def = WB_CARDS[key] || {};
-  const merged = { ...def, ...card, bossKey: card.bossKey || def.bossKey || key, tier: "worldboss", stars: card.stars || 1 };
+  // Definition metadata is canonical. Persisted ownership/progression may be
+  // old v1 data and must not overwrite the current v2 effects or display text.
+  const merged = { ...card, ...def, bossKey: def.bossKey || card.bossKey || key, tier: "worldboss", stars: card.stars || 1 };
   if (merged.statMode === "fixed") {
     merged.stat = merged.stat || def.stat || "atk";
   }
@@ -3786,7 +3538,7 @@ export async function addMonsterCard(memberId, cardData, chosenStat) {
 }
 
 // 世界王卡：一隻王一張，沒有重複張數概念。已擁有則直接略過（呼叫端可另外轉換材料）。
-// statMode==="choose"（教練系列）時 chosenStat 必填；statMode==="fixed" 直接用 WB_CARDS 內建的 stat。
+// v2 世界王卡全部使用定義檔中的專屬被動；chosenStat 僅容忍舊文件，不再寫入新卡。
 export async function addWorldBossCard(memberId, bossKey, chosenStat) {
   if (!memberId || !bossKey || await isGuestOrKidMember(memberId)) return { ok: false };
   const cardDef = WB_CARDS[bossKey];
@@ -3799,8 +3551,6 @@ export async function addWorldBossCard(memberId, bossKey, chosenStat) {
     const wbCards = normalizeWorldBossCards(data.wbCards || {});
     wbCards[bossKey] = {
       ...cardDef, tier: "worldboss", stars: 1,
-      stat: cardDef.statMode === "fixed" ? cardDef.stat : null,
-      chosenStat: cardDef.statMode === "choose" ? (chosenStat || null) : null,
       ts: Date.now(),
     };
     await setDoc(ref, { cards: data.cards || {}, wbCards, equipped: data.equipped || [], updatedAt: serverTimestamp() }, { merge: true });
@@ -4075,6 +3825,7 @@ export async function approveMonthlyCardRequest(requestId, memberId, operatorId)
     const hoursUsed = req.hours || 1;
     if (!card?.active || card.sessions < hoursUsed) return { ok: false, reason: "月卡無效或點數不足" };
     await updateDoc(memRef, { "monthlyCard.sessions": increment(-hoursUsed) });
+    invalidateMembersCache();
     await updateDoc(reqRef, { status: "approved", reviewedAt: serverTimestamp() });
     await _logMonthlyCard(memberId, req.memberName || memberId, "use_approved", -hoursUsed,
       `核准使用 ${hoursUsed} 小時（扣 ${hoursUsed} 點）`, operatorId);
@@ -4111,6 +3862,7 @@ export async function grantMonthlyCard(memberId, memberName, operatorId) {
     await updateDoc(doc(db, C.members, memberId), {
       monthlyCard: { active: true, sessions, expiresAt: Timestamp.fromDate(expiresAt), startedAt: serverTimestamp(), bonusSessions: 0 }
     });
+    invalidateMembersCache();
     const action = isRenew ? "renew" : "purchase";
     const note   = `${isRenew ? "續約" : "購買"}月卡 ${sessions} 次，有效 ${validDays} 天`;
     await _logMonthlyCard(memberId, memberName || memberId, action, sessions, note, operatorId);
@@ -4131,6 +3883,7 @@ export async function giftMonthlyCardSessions(memberId, memberName, sessions, op
       "monthlyCard.sessions": curSessions + sessions,
       ...(expiresAt ? {} : { "monthlyCard.expiresAt": Timestamp.fromDate((() => { const d = new Date(); d.setDate(d.getDate()+60); return d; })()) }),
     });
+    invalidateMembersCache();
     await _logMonthlyCard(memberId, memberName || memberId, "gift_sessions", sessions,
       `贈送 ${sessions} 次`, operatorId);
     return { ok: true };
@@ -4166,6 +3919,7 @@ export async function checkExpireMonthlyCard(memberId) {
     const expires = card.expiresAt?.toDate ? card.expiresAt.toDate() : null;
     if (expires && expires < new Date()) {
       await updateDoc(memRef, { "monthlyCard.active": false, "monthlyCard.sessions": 0 });
+      invalidateMembersCache();
     }
   } catch {}
 }
@@ -4207,9 +3961,6 @@ export function subscribeAppVersion(callback) {
     snap => callback(snap.exists() ? (snap.data().current || null) : null),
     () => callback(null)
   );
-}
-export async function setAppVersion(version) {
-  await setDoc(doc(db, C_SYS, "version"), { current: version });
 }
 
 // ─── 金幣商店 ──────────────────────────────────────────────
@@ -4348,38 +4099,6 @@ export async function shopBuyEquip(memberId, slotId, itemId, price) {
     return { ok: true };
   } catch (e) {
     return { ok: false, reason: e?.message || "購買失敗，請稍後再試" };
-  }
-}
-
-export async function shopUnlockEquipAppearance(memberId, itemId) {
-  if (!memberId || !itemId) return { ok:false, reason:"外觀參數錯誤" };
-  try {
-    const memberRef = doc(db, C.members, memberId);
-    const itemRef = doc(db, C_EQUIP_ITEMS, itemId);
-    let paid = 0;
-    await runTransaction(db, async transaction => {
-      const [memberSnap, itemSnap] = await Promise.all([
-        transaction.get(memberRef),
-        transaction.get(itemRef),
-      ]);
-      if (!memberSnap.exists() || !itemSnap.exists()) throw new Error("找不到這個裝備外觀");
-      const member = memberSnap.data();
-      if (member.unlockedEquipItems?.[itemId]) throw new Error("已經解鎖這個外觀");
-      const item = itemSnap.data();
-      const slot = EQUIP_SLOT_DEFS.find(entry => entry.id === item.slotId);
-      const price = slot?.stat === "atk" ? 1500 : slot?.stat === "def" ? 1300 : 1000;
-      const coins = Math.floor(member.coins || 0);
-      if (coins < price) throw new Error(`金幣不足（需要 ${price.toLocaleString()}）`);
-      paid = price;
-      transaction.update(memberRef, {
-        coins:coins - price,
-        unlockedEquipItems:{ ...(member.unlockedEquipItems || {}), [itemId]:true },
-        updatedAt:serverTimestamp(),
-      });
-    });
-    return { ok:true, price:paid };
-  } catch (error) {
-    return { ok:false, reason:error?.message || "解鎖失敗，請稍後再試" };
   }
 }
 
@@ -5272,27 +4991,6 @@ export async function upgradeVillageBuilding(memberId, buildingId, village) {
   return { newLevel: currentLevel + 1, resources };
 }
 
-// 市集材料換算：升階 5T(n)→1T(n+1)，降階 1T(n)→3T(n-1)
-export async function exchangeVillageMaterial(memberId, resource, fromTier, direction) {
-  if (!TIERED_RESOURCES.has(resource)) throw new Error('不支援此材料');
-  const fromKey = `${resource}_t${fromTier}`;
-  if (direction === 'up') {
-    if (fromTier >= 5) throw new Error('已是最高階');
-    const toKey = `${resource}_t${fromTier + 1}`;
-    await updateDoc(doc(db, C.members, memberId), {
-      [`village.resources.${fromKey}`]: increment(-5),
-      [`village.resources.${toKey}`]:   increment(1),
-    });
-  } else {
-    if (fromTier <= 1) throw new Error('已是最低階');
-    const toKey = `${resource}_t${fromTier - 1}`;
-    await updateDoc(doc(db, C.members, memberId), {
-      [`village.resources.${fromKey}`]: increment(-1),
-      [`village.resources.${toKey}`]:   increment(3),
-    });
-  }
-}
-
 export async function addArrowdew(memberId, amount) {
   if (!memberId || !amount) return;
   await updateDoc(doc(db, C.members, memberId), {
@@ -5312,25 +5010,6 @@ export async function addGachaCoins(memberId, amount) {
   await updateDoc(doc(db, C.members, memberId), {
     gachaCoins: increment(Math.round(amount)),
   });
-}
-
-// costs = [{ resource, tier, count }, ...]
-export async function exchangeMaterialsForChest(memberId, chestType, costs, family = null) {
-  const snap = await getDoc(doc(db, C.members, memberId));
-  const village = snap.data()?.village || {};
-  const RES_CN = { ore:'礦物', melon:'瓜瓜', fish:'鮮魚', meat:'動物肉', driedfish:'小魚乾', can:'貓罐頭', potion:'貓薄荷藥水', fur:'貓毛' };
-  for (const { resource, tier, count } of costs) {
-    const have = Math.floor(village?.resources?.[`${resource}_t${tier}`] || 0);
-    if (have < count) throw new Error(`${RES_CN[resource] || resource} T${tier} 不足（需 ${count}，目前 ${have}）`);
-  }
-  const updates = {};
-  costs.forEach(({ resource, tier, count }) => {
-    updates[`village.resources.${resource}_t${tier}`] = increment(-count);
-  });
-  await updateDoc(doc(db, C.members, memberId), updates);
-  const chest = { id: `vmarket_${Date.now()}`, type: chestType, from: "village_market", ts: Date.now() };
-  if (family) chest.family = family;
-  await addChests(memberId, [chest]);
 }
 
 // ── 卡片掛賣市集 ─────────────────────────────────────────────
@@ -5505,27 +5184,6 @@ export async function cancelCardListing(memberId, listingId, cardId) {
   await batch.commit();
 }
 
-// ── 市集兌換設定（後台可調整）──────────────────────────────
-export function subscribeVillageMarketConfig(callback) {
-  return onSnapshot(
-    doc(db, "sysConfig", "villageMarket"),
-    snap => callback(snap.exists() ? snap.data() : null),
-    () => callback(null)
-  );
-}
-
-export async function getVillageMarketConfig() {
-  const snap = await getDoc(doc(db, "sysConfig", "villageMarket"));
-  return snap.exists() ? snap.data() : null;
-}
-
-export async function saveVillageMarketConfig(battleExchange) {
-  await setDoc(doc(db, "sysConfig", "villageMarket"),
-    { battleExchange, updatedAt: serverTimestamp() },
-    { merge: true }
-  );
-}
-
 export async function initVillageIfNeeded(memberId, currentVillage) {
   if (currentVillage) return;
   await updateDoc(doc(db, C.members, memberId), {
@@ -5543,6 +5201,7 @@ export async function adminSetVillageBuilding(memberId, buildingId, level) {
   await updateDoc(doc(db, C.members, memberId), {
     [`village.buildings.${buildingId}`]: lv,
   });
+  invalidateMembersCache();
 }
 
 export async function adminAdjustVillageResource(memberId, resourceKey, delta) {
@@ -5559,12 +5218,14 @@ export async function adminAdjustVillageResource(memberId, resourceKey, delta) {
       [`village.resources.${resourceKey}`]: increment(d),
     });
   }
+  invalidateMembersCache();
 }
 
 export async function adminResetVillage(memberId) {
   await updateDoc(doc(db, C.members, memberId), {
     village: { ...DEFAULT_VILLAGE, lastCollectedAt: serverTimestamp() },
   });
+  invalidateMembersCache();
 }
 
 // ─── 議會廳 ───────────────────────────────────────────────
@@ -5755,12 +5416,14 @@ const C_SYSTEM_CONFIG = "systemConfig";
 export async function setStudentTier(memberId, tier, operatorId) {
   const before = await getMember(memberId);
   await updateDoc(doc(db, C.members, memberId), { studentTier: tier, updatedAt: serverTimestamp() });
+  invalidateMembersCache();
   await writeAuditLog("SET_STUDENT_TIER", memberId, "member", { studentTier: before?.studentTier }, { studentTier: tier }, operatorId);
 }
 
 export async function setAccountFrozen(memberId, frozen, operatorId) {
   const before = await getMember(memberId);
   await updateDoc(doc(db, C.members, memberId), { accountFrozen: !!frozen, updatedAt: serverTimestamp() });
+  invalidateMembersCache();
   await writeAuditLog("SET_ACCOUNT_FROZEN", memberId, "member", { accountFrozen: before?.accountFrozen }, { accountFrozen: !!frozen }, operatorId);
 }
 
@@ -5772,6 +5435,7 @@ export async function bulkSetStudentTier(memberIds, tier, operatorId) {
   const batch = writeBatch(db);
   ids.forEach(id => batch.update(doc(db, C.members, id), { studentTier: tier, updatedAt: serverTimestamp() }));
   await batch.commit();
+  invalidateMembersCache();
   await writeAuditLog("BULK_SET_STUDENT_TIER", ids.join(","), "member", null, { studentTier: tier, count: ids.length }, operatorId);
 }
 
@@ -5816,6 +5480,7 @@ export async function setDisplayVillageLv(memberId, level) {
     } else {
       await updateDoc(doc(db, C.members, memberId), { displayVillageLv: Number(level) });
     }
+    invalidateMembersCache();
   } catch (e) { console.warn("setDisplayVillageLv:", e?.message); }
 }
 // ── 每日一般懸賞設定（教練可關閉特定難度的自動生成）────────────────
@@ -5853,5 +5518,6 @@ export async function assignVillageWorker(memberId, buildingId, catId) {
   } else {
     await updateDoc(doc(db, C.members, memberId), { [fieldPath]: deleteField() });
   }
+  invalidateMembersCache();
   return { ok: true };
 }

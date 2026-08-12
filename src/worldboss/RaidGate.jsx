@@ -19,6 +19,7 @@ import { WORLD_BOSS_SKILLS } from "../lib/worldBossSkillData";
 import { calcArcherStats } from "../lib/monsterData";
 import { calcEquippedBonus, resolveEquippedCards } from "../lib/monsterCards";
 import { calcCardCombatEffectsFromCollection } from "../lib/cardTalents";
+import { WB_FAMILY_TO_DUNGEON_FAMILY } from "../lib/worldBossData";
 import { archerLevelBonus, archerLevelFromXP } from "../lib/archerLevel";
 import { calcCatCombatStats } from "../lib/catCombat";
 import { CATS, CAT_TYPE_MAP } from "../lib/catData";
@@ -57,7 +58,8 @@ function saveLoadout(targetFmt, distanceM) {
 export default function RaidGate({ event, onBack, sharedData, onComplete }) {
   const { profile } = useAuth();
   const myId = profile?.id;
-  const myName = profile?.name || "射手";
+  // 世界王是公開榜單與全服擊倒演出，只能使用玩家自行設定的暱稱。
+  const myName = profile?.nickname || profile?.name || "射手";
 
   const [screen, setScreen] = useState("solo");     // solo | wait | battle
   // ── 線上組隊 ───────────────────────────────────────────────
@@ -177,7 +179,8 @@ export default function RaidGate({ event, onBack, sharedData, onComplete }) {
         memberId: myId, name: myName, stats, archerLevel, cats,
         targetFmt, distanceM, equipped: resolveEquippedCards(cardColl),
         // ☠️ 卡片能對王施加什麼異常
-        inflict: calcCardCombatEffectsFromCollection(cardColl || {}).inflict || {},
+        inflict: calcCardCombatEffectsFromCollection(cardColl || {}, { enemyFamily:WB_FAMILY_TO_DUNGEON_FAMILY[event.bossData?.family] || event.bossData?.family, enemyClass:"boss" }).inflict || {},
+        cardFx: calcCardCombatEffectsFromCollection(cardColl || {}, { enemyFamily:WB_FAMILY_TO_DUNGEON_FAMILY[event.bossData?.family] || event.bossData?.family, enemyClass:"boss" }),
       }],
       stats, archerLevel, cats, targetFmt, distanceM,
     }));
@@ -323,7 +326,8 @@ export default function RaidGate({ event, onBack, sharedData, onComplete }) {
     const res = await roomAction(() => createRaidRoom({
       hostId: myId, hostName: myName, bossKey: event.bossKey, eventId: event.id,
       targetFmt, distanceM, stats, archerLevel, cats,
-      inflict: calcCardCombatEffectsFromCollection(cardColl || {}).inflict || {},
+      inflict: calcCardCombatEffectsFromCollection(cardColl || {}, { enemyFamily:WB_FAMILY_TO_DUNGEON_FAMILY[event.bossData?.family] || event.bossData?.family, enemyClass:"boss" }).inflict || {},
+      cardFx: calcCardCombatEffectsFromCollection(cardColl || {}, { enemyFamily:WB_FAMILY_TO_DUNGEON_FAMILY[event.bossData?.family] || event.bossData?.family, enemyClass:"boss" }),
     }));
     if (res?.ok) { setRoomId(res.roomId); setScreen("wait"); }
   }, [roomAction, myId, myName, event, targetFmt, distanceM, stats, archerLevel, cats]);
@@ -332,7 +336,8 @@ export default function RaidGate({ event, onBack, sharedData, onComplete }) {
     if (!target?.code) return;
     const res = await roomAction(() => joinRaidRoom(target.code, myId, myName, {
       stats, archerLevel, cats, targetFmt, distanceM,
-      inflict: calcCardCombatEffectsFromCollection(cardColl || {}).inflict || {},
+      inflict: calcCardCombatEffectsFromCollection(cardColl || {}, { enemyFamily:WB_FAMILY_TO_DUNGEON_FAMILY[event.bossData?.family] || event.bossData?.family, enemyClass:"boss" }).inflict || {},
+      cardFx: calcCardCombatEffectsFromCollection(cardColl || {}, { enemyFamily:WB_FAMILY_TO_DUNGEON_FAMILY[event.bossData?.family] || event.bossData?.family, enemyClass:"boss" }),
     }));
     if (res?.ok) { setRoomId(res.roomId || target.roomId); setScreen("wait"); }
   }, [roomAction, myId, myName, stats, archerLevel, cats, targetFmt, distanceM]);
@@ -369,6 +374,7 @@ export default function RaidGate({ event, onBack, sharedData, onComplete }) {
           bossKey={event.bossData?.pixelKey || event.bossKey}
           bossTitle={event.bossData?.title || bossDef.title}
           bossMeta={{ family: event.bossData?.family, familyTier: bossDef.familyTier }}
+          rewardSnapshot={event.rewardSnapshot}
           eventId={event.id}
           participants={event.totalParticipants || 0}
           playerName={myName}

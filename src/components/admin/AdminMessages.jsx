@@ -5,21 +5,26 @@ import { useAuth } from "../../hooks/useAuth";
 import { fmtDT } from "../../lib/constants";
 import { Card, Btn, TA, Modal, Spinner, Empty, useToast } from "../shared/UI";
  
-export default function AdminMessages() {
+export default function AdminMessages({ messages: providedMessages }) {
   const { profile } = useAuth();
   const { toast, ToastContainer } = useToast();
-  const [messages, setMessages] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const hasProvidedMessages = Array.isArray(providedMessages);
+  const [subscribedMessages, setSubscribedMessages] = useState([]);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(true);
   const [replyModal, setReplyModal] = useState(null);
   const [filter, setFilter] = useState("全部");
  
   useEffect(() => {
+    if (hasProvidedMessages) return undefined;
     const unsub = subscribeAllMessages(msgs => {
-      setMessages(msgs);
-      setLoading(false);
+      setSubscribedMessages(msgs);
+      setSubscriptionLoading(false);
     });
     return unsub;
-  }, []);
+  }, [hasProvidedMessages]);
+
+  const messages = hasProvidedMessages ? providedMessages : subscribedMessages;
+  const loading = hasProvidedMessages ? false : subscriptionLoading;
  
   const grouped = {};
   messages.forEach(m => {

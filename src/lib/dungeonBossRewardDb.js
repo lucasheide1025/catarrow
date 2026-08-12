@@ -16,3 +16,10 @@ export async function claimDungeonBossChoices({ claimId, memberId, selectedOptio
   const response = await callable({ claimId, memberId, selectedOptionIds });
   return response.data;
 }
+
+export async function claimDungeonNormalCard({ battleId, memberId, monsterId }) {
+  if(!battleId||!memberId||!monsterId)throw new Error("invalid_dungeon_card_identity");
+  const callable=httpsCallable(functions,"claimDungeonNormalCard");
+  const response=await callable({battleId,memberId,monsterId});
+  return response.data;
+}

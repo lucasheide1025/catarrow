@@ -25,6 +25,7 @@ import { EXPEDITION_MISSIONS, fmtCountdown } from "../../lib/expeditionData";
 import { subscribeActiveGoal } from "../../lib/villageGoalDb";
 import { GOAL_TYPE_MAP, buildGoalTitle } from "../../lib/villageGoalData";
 import { subscribeWorldBossSpawnCycle } from "../../lib/worldBossDb";
+import { activeSpawnTypes } from "../../lib/worldBossSpawnCycle";
 import { Card, ST } from "../shared/UI";
 import { SectionHeader, StatBar, ProgressRing, HubTile } from "../shared/Widgets";
 import ShareCard from "./ShareCard";
@@ -534,7 +535,9 @@ export default function MemberHome({
           貓貓探險隊不會再被冷卻卡擠出螢幕）─────────────── */}
       {(() => {
         const wbActive = worldBoss && worldBoss.status === "active";
-        const wbCharging = !wbActive && worldBossCycle && !["spawned"].includes(worldBossCycle.status);
+        // 活動已被後台移除、但雲端尚未把舊 spawned 週期換成新週期時，
+        // 仍保留狀態卡告知玩家正在更新，不能讓首頁整塊消失。
+        const wbCharging = !wbActive && !!worldBossCycle;
         if (!wbCharging) return null;
         const WB_LABELS = { arrows:"射箭", dungeonClears:"通關地下城", monsterKills:"擊倒怪物", villageDice:"探索骰子" };
         const restLeftMs = Math.max(0, Number(worldBossCycle.restEndsAtMs || 0) - nowMs);
@@ -565,9 +568,8 @@ export default function MemberHome({
                 </div>
               ) : (
                 <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:4 }}>
-                  {[
-                    ["arrows","🏹"], ["dungeonClears","🏰"], ["monsterKills","👹"], ["villageDice","🎲"],
-                  ].map(([key,icon]) => {
+                  {activeSpawnTypes(worldBossCycle).map(key => {
+                    const icon = ({ arrows:"🏹", dungeonClears:"🏰", monsterKills:"👹", villageDice:"🎲" })[key] || "🌌";
                     const value = Number(worldBossCycle.progress?.[key] || 0);
                     const target = Number(worldBossCycle.targets?.[key] || 1);
                     const isReq = required === key;

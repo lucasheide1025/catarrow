@@ -14,8 +14,7 @@
 //   hits            純演出段數（哈吉2段/YUMI3段,合計傷害不變,PRD 23/25）
 
 import {
-  WB_STRIKE_MULTIPLIER, WB_FINISHER_MULTIPLIER,
-  WB_FAMILY_STRIKE_MULTIPLIER, WB_FAMILY_FINISHER_MULTIPLIER,
+  WB_SMALL_STRIKE_MULTIPLIER,WB_SMALL_FINISHER_MULTIPLIER,WB_BIG_STRIKE_MULTIPLIER,WB_BIG_FINISHER_MULTIPLIER,WB_CAT_STRIKE_MULTIPLIER,WB_CAT_FINISHER_MULTIPLIER,WB_COACH_STRIKE_MULTIPLIER,WB_COACH_FINISHER_MULTIPLIER,
 } from "./worldBossStrikeEngine";
 
 const status = (effect, name, strength, duration = 1) => ({ id: effect, name, effect, strength, duration });
@@ -24,7 +23,7 @@ function mkR2(bossKey, cls, name, { effectText = "", ...opts } = {}) {
   return {
     skillId: `wb_${bossKey}_strike`,
     name,
-    baseMultiplier: cls === "family" ? WB_FAMILY_STRIKE_MULTIPLIER : WB_STRIKE_MULTIPLIER,
+    baseMultiplier:cls==="prime"?(bossKey.startsWith("cat_")?WB_CAT_STRIKE_MULTIPLIER:WB_COACH_STRIKE_MULTIPLIER):(bossKey.endsWith("_small")?WB_SMALL_STRIKE_MULTIPLIER:WB_BIG_STRIKE_MULTIPLIER),
     canKnockOut: false, // PRD 17：R2 不可擊倒,最低保 1 HP
     status: null,
     counterText: `本回合射出高分就能削弱「${name}」，85% 以上完全破解${effectText ? `，還能擋下${effectText}` : ""}！`,
@@ -36,7 +35,7 @@ function mkR4(bossKey, cls, name, opts = {}) {
   return {
     skillId: `wb_${bossKey}_finisher`,
     name,
-    baseMultiplier: cls === "family" ? WB_FAMILY_FINISHER_MULTIPLIER : WB_FINISHER_MULTIPLIER,
+    baseMultiplier:cls==="prime"?(bossKey.startsWith("cat_")?WB_CAT_FINISHER_MULTIPLIER:WB_COACH_FINISHER_MULTIPLIER):(bossKey.endsWith("_small")?WB_SMALL_FINISHER_MULTIPLIER:WB_BIG_FINISHER_MULTIPLIER),
     canKnockOut: true,  // PRD 18：R4 可擊倒;倒地後睡飽不可復活
     status: null,       // PRD 20/25/26：終結技一律不追加異常
     counterText: `全力以赴！「${name}」威力極強，85% 以上得分可完全破解、毫髮無傷！`,
@@ -108,7 +107,7 @@ export const WORLD_BOSS_SKILLS = Object.freeze({
   cat_daming: {
     bossClass: "prime", color: "#fda4af",
     r2Strike: mkR2("cat_daming", "prime", "家長威壓", {
-      status: status("healDownPct", "威壓", 30), effectText: "下一回合回復量-30%",
+      status: status("healDownPct", "威壓", 25), effectText: "下一回合回復量-25%",
     }),
     r4Finisher: mkR4("cat_daming", "prime", "家法降臨"),
   },
@@ -117,7 +116,7 @@ export const WORLD_BOSS_SKILLS = Object.freeze({
   cat_youyou: {
     bossClass: "prime", color: "#fda4af",
     r2Strike: mkR2("cat_youyou", "prime", "鷹眼守勢", {
-      status: status("dealtDownPct", "鷹眼屏障", 10), effectText: "下一回合對王傷害-10%",
+      status: status("dealtDownPct", "鷹眼屏障", 15), effectText: "下一回合對王傷害-15%",
     }),
     r4Finisher: mkR4("cat_youyou", "prime", "鷹眼終斷"),
   },
@@ -220,6 +219,16 @@ export const WORLD_BOSS_SKILLS = Object.freeze({
       shieldPiercePct: 10, effectText: "無視 10% 護盾的吐息",
     }),
     r4Finisher: mkR4("western_boss", "family", "西境龍星"),
+  },
+  treasure_boss_small:{
+    bossClass:"family",color:"#fbbf24",
+    r2Strike:mkR2("treasure_boss_small","family","黃金鎖鏈",{status:status("dealtDownPct","金鎖",5),effectText:"下一回合對王傷害-5%"}),
+    r4Finisher:mkR4("treasure_boss_small","family","千鎖墜金"),
+  },
+  treasure_boss:{
+    bossClass:"family",color:"#fde047",
+    r2Strike:mkR2("treasure_boss","family","貪婪封印",{status:status("healDownPct","貪婪封印",15),effectText:"下一回合治療-15%"}),
+    r4Finisher:mkR4("treasure_boss","family","萬寶天墜"),
   },
 });
 

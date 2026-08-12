@@ -15,7 +15,7 @@ jest.mock("firebase/firestore", () => ({
 jest.mock("./firebase", () => ({ db:{} }));
 jest.mock("./db", () => ({ addChests:jest.fn() }));
 
-const { exchangeTicketsForReward, settleVillageShopAutoSales, completeLiveShopSession } = require("./villageShopDb");
+const { exchangeTicketsForReward, settleVillageShopAutoSales, completeLiveShopSession, claimVillageShopRushTime } = require("./villageShopDb");
 const { todayStr } = require("./villageShop");
 const { defaultShopState } = require("./villageShop");
 const { liveShopStateSignature } = require("./villageShopLive");
@@ -81,11 +81,70 @@ test("live session persists batched rush consumption in its single guarded trans
   const result = await completeLiveShopSession("member-1", {
     startedAt:1700000000000, seed:123,
     expectedLastVisitedAtMs:1699996400000, manualElapsedSeconds:8,
+    manualMode:"rush_manual",
   });
 
   expect(result).toMatchObject({ ok:true, rushSeconds:12, consumedRushSeconds:8 });
   expect(mockTransactionUpdate).toHaveBeenCalledTimes(1);
   expect(mockTransactionUpdate.mock.calls[0][1]["village.shop.rushSeconds"]).toBe(12);
+});
+
+test("live settlement rebuilds authoritative sales with the submitted manual mode", async () => {
+  const now = 1700000000000;
+  const shop = defaultShopState(now - 20 * 60000);
+  shop.lastVisitedAt = now - 20 * 60000;
+  shop.furniture.flag = 10;
+  const good = SHOP_GOODS[0];
+  shop.display = [{ slot:"counter", goodId:good.id }];
+  shop.stock = { [good.id]:200 };
+  mockTransactionGet.mockResolvedValue(memberSnapshot({ village:{ shop } }));
+
+  const result = await completeLiveShopSession("member-1", {
+    startedAt:now, seed:9876, expectedLastVisitedAtMs:now - 20 * 60000,
+    manualElapsedSeconds:1200, manualMode:"manual",
+  });
+  expect(result.result.processedVisitors).toBe(30); // 20 backlog + 10 during live session
+});
+
+test("transaction settlement bounds rush economics by persisted rush and defaults omitted mode to manual", async () => {
+  const now = 1700000000000;
+  const good = SHOP_GOODS[0];
+  const makeShop = rushSeconds => {
+    const shop = defaultShopState(now);
+    shop.lastVisitedAt = now - 20 * 60000;
+    shop.rushSeconds = rushSeconds;
+    shop.furniture.flag = 10;
+    shop.furniture.flower = 100;
+    shop.furniture.sign = 100;
+    shop.display = [{ slot:"counter", goodId:good.id }];
+    shop.stock = { [good.id]:500 };
+    return shop;
+  };
+  mockTransactionGet.mockResolvedValueOnce(memberSnapshot({ village:{ shop:makeShop(1) } }));
+  const partial = await completeLiveShopSession("member-1", {
+    startedAt:now, seed:123, expectedLastVisitedAtMs:now - 20 * 60000,
+    manualElapsedSeconds:2, manualMode:"rush_manual",
+  });
+  expect(partial.result.processedVisitors).toBe(0); // no checkout can finish in two real seconds
+  expect(partial.salesClock).toMatchObject({ consumedRushSeconds:1, timelineSeconds:1.5 });
+  expect(partial.salesClock).toEqual(expect.objectContaining({
+    consumedRushSeconds:partial.consumedRushSeconds,
+  }));
+
+  mockTransactionGet.mockResolvedValueOnce(memberSnapshot({ village:{ shop:makeShop(1200) } }));
+  const omitted = await completeLiveShopSession("member-1", {
+    startedAt:now, seed:123, expectedLastVisitedAtMs:now - 20 * 60000,
+    manualElapsedSeconds:2,
+  });
+  expect(omitted.result.processedVisitors).toBe(0);
+  expect(omitted.consumedRushSeconds).toBe(0);
+});
+
+test("live settlement rejects an unknown manual mode", async () => {
+  await expect(completeLiveShopSession("member-1", {
+    startedAt:1700000000000, seed:1, manualMode:"turbo",
+  })).rejects.toThrow("manual mode");
+  expect(mockTransactionGet).not.toHaveBeenCalled();
 });
 
 test("ending a live session deposits sold-item tickets in the same transaction", async () => {
@@ -101,7 +160,7 @@ test("ending a live session deposits sold-item tickets in the same transaction",
     startedAt:now,
     seed:123,
     expectedLastVisitedAtMs:now - 60 * 60000,
-    manualElapsedSeconds:30,
+    manualElapsedSeconds:120,
     manualMode:"manual",
   });
 
@@ -124,7 +183,7 @@ test("ending early settles only customers completed at the button press and pres
     seed:456,
     expectedLastVisitedAtMs:now - 60 * 60000,
     completedVisitors:1,
-    manualElapsedSeconds:2,
+    manualElapsedSeconds:120,
     manualMode:"manual",
   });
 
@@ -199,5 +258,33 @@ test("offline sales reject a replayed cursor before writing", async () => {
     now:1700003600000,
     expectedLastAutoSaleAtMs:1700000000000,
   })).rejects.toThrow("auto sale cursor");
+  expect(mockTransactionUpdate).not.toHaveBeenCalled();
+});
+
+test("class end atomically grants rush from official arrow delta and checkpoint prevents replay", async () => {
+  const shop = defaultShopState(1700000000000);
+  shop.rushArrowRemainder = 7;
+  shop.rushClaimedArrowTotal = 100;
+  mockTransactionGet.mockResolvedValueOnce(memberSnapshot({ totalArrowsAllTime:108, village:{ shop } }));
+
+  await expect(claimVillageShopRushTime("member-1")).resolves.toMatchObject({
+    rushSeconds:60,
+    rushArrowRemainder:5,
+    rushClaimedArrowTotal:108,
+    awardedSeconds:60,
+    isReplay:false,
+  });
+  expect(mockTransactionUpdate.mock.calls[0][1]).toEqual({
+    "village.shop.rushSeconds":60,
+    "village.shop.rushArrowRemainder":5,
+    "village.shop.rushClaimedArrowTotal":108,
+  });
+
+  mockTransactionUpdate.mockClear();
+  mockTransactionGet.mockResolvedValueOnce(memberSnapshot({
+    totalArrowsAllTime:108,
+    village:{ shop:{ ...shop, rushSeconds:60, rushArrowRemainder:5, rushClaimedArrowTotal:108 } },
+  }));
+  await expect(claimVillageShopRushTime("member-1")).resolves.toMatchObject({ isReplay:true, awardedSeconds:0 });
   expect(mockTransactionUpdate).not.toHaveBeenCalled();
 });

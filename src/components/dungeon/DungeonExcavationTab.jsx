@@ -2,8 +2,6 @@
 // 三種地下城來源：① 定時自動生成 ② 練箭/報到挖掘 ③ 世界王卷軸
 
 import { useState, useEffect, useRef } from "react";
-import { doc, onSnapshot } from "firebase/firestore";
-import { db } from "../../lib/firebase";
 import { StatBar } from "../shared/Widgets";
 import {
   revealExcavation, saveExcavation,
@@ -85,7 +83,7 @@ function fmtRemaining(ms) {
 
 export default function DungeonExcavationTab({ profile }) {
   const myId = profile?.id;
-  const [excavation, setExcavation] = useState(null);
+  const excavation = profile?.dungeonExcavation || null;
   const [loading, setLoading] = useState(false);
 
   // 揭曉 overlay 狀態
@@ -103,24 +101,14 @@ export default function DungeonExcavationTab({ profile }) {
   const [scrollResult, setScrollResult] = useState(null);
   const [scrollBusy, setScrollBusy] = useState(false);
 
-  // 訂閱 member doc
+  // useAuth 已即時維護 member doc；只同步挖掘畫面的衍生狀態。
   useEffect(() => {
-    if (!myId) return;
-    const unsub = onSnapshot(doc(db, "members", myId), snap => {
-      if (!snap.exists()) return;
-      const data = snap.data();
-      const ex = data.dungeonExcavation || null;
-      setExcavation(ex);
-      // 更新自動挖掘狀態
-      setAutoDigStatus(checkAutoDigStatus(ex));
-      // 同步 pendingReveal
-      if (ex?.pendingReveal) {
-        setPendingReveal(prev => prev || ex.pendingReveal);
-        setRevealOpen(true);
-      }
-    });
-    return unsub;
-  }, [myId]);
+    setAutoDigStatus(checkAutoDigStatus(excavation));
+    if (excavation?.pendingReveal) {
+      setPendingReveal(prev => prev || excavation.pendingReveal);
+      setRevealOpen(true);
+    }
+  }, [excavation]);
 
   // 初始化自動挖掘計時器
   useEffect(() => {

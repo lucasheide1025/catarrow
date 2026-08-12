@@ -7,6 +7,7 @@ export const RAID_ARENAS = Object.freeze([
 ]);
 
 export function raidBackground(family) {
+  if(family==="treasure")return "/assets/raid/raid_bg_exam.webp";
   const key = RAID_ARENAS.includes(family) ? family : "coach";
   return `/assets/raid/raid_bg_${key}.webp`;
 }

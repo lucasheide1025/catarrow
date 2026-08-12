@@ -1,6 +1,7 @@
 "use strict";
 
 const catalog = require("./data/monsterExpansionCatalog.json");
+const { resolveCardDropChance } = require("./cardDropPolicy");
 
 const MONSTERS = new Map(catalog.monsters.map(monster => [monster.id, monster]));
 const COIN_RANGE = Object.freeze({
@@ -12,7 +13,7 @@ const SOLO_CHALLENGE = Object.freeze({
   standard:{ materialQty:5, cardChance:0.20, coinMult:1 },
   hard:{ materialQty:7, cardChance:0.30, coinMult:1.5 },
 });
-const REWARD_TYPES = new Set(["solo_hunt", "team_hunt"]);
+const REWARD_TYPES = new Set(["solo_hunt"]);
 
 function seededRoll(key) {
   let hash = 2166136261;
@@ -34,7 +35,7 @@ function buildTrustedMonsterReward(input) {
   if (!REWARD_TYPES.has(rewardType)) throw new Error("invalid_reward_type");
   const monster = MONSTERS.get(monsterId);
   if (!monster || monster.encounter !== "normal") throw new Error("monster_not_rewardable");
-  const mode = rewardType === "team_hunt" ? "expedition" : String(input?.mode || "novice");
+  const mode = String(input?.mode || "novice");
   if (!(mode in MODE_MULT)) throw new Error("invalid_reward_mode");
   const challengeLevel = rewardType === "solo_hunt" ? String(input?.challengeLevel || "standard") : "standard";
   if (!(challengeLevel in SOLO_CHALLENGE)) throw new Error("invalid_challenge_level");
@@ -43,11 +44,12 @@ function buildTrustedMonsterReward(input) {
   const rawCoins = range[0] + Math.floor(seededRoll(`${battleId}:${memberId}:${monsterId}:coins`) * (range[1] - range[0] + 1));
   const challenge = SOLO_CHALLENGE[challengeLevel];
   const coins = Math.round(rawCoins * MODE_MULT[mode] * challenge.coinMult);
-  const cardDropped = rewardType === "solo_hunt" && seededRoll(`${battleId}:${memberId}:${monsterId}:card`) < challenge.cardChance;
+  const cardChance = resolveCardDropChance({ mode:"solo", encounter:monster.encounter, baseChance:challenge.cardChance });
+  const cardDropped = seededRoll(`${battleId}:${memberId}:${monsterId}:card`) < cardChance;
   const claimId = [battleId, memberId, rewardType].map(encodeURIComponent).join("~");
   return {
     claimId, battleId, memberId, monsterId, rewardType, mode, coins,
-    challengeLevel,
+    challengeLevel, cardChance,
     materialTotals:{ [monster.material.id]:challenge.materialQty },
     card:cardDropped ? {
       monsterId:monster.card.id || monster.id, name:monster.name, icon:monster.icon || "👾",
@@ -57,4 +59,14 @@ function buildTrustedMonsterReward(input) {
   };
 }
 
-module.exports = { buildTrustedMonsterReward, seededRoll };
+function buildDungeonNormalCardClaim({ battleId, memberId, monsterId }) {
+  const safeBattleId=requireId(battleId,"invalid_battle_id"),safeMemberId=requireId(memberId,"invalid_member_id"),safeMonsterId=requireId(monsterId,"invalid_monster_id");
+  const monster=MONSTERS.get(safeMonsterId);
+  if(!monster||monster.encounter!=="normal")throw new Error("normal_monster_required");
+  const chance=resolveCardDropChance({mode:"dungeon",encounter:"normal",baseChance:SOLO_CHALLENGE.standard.cardChance});
+  const dropped=seededRoll(`${safeBattleId}:${safeMemberId}:${safeMonsterId}:dungeon-card`)<chance;
+  return{claimId:[safeBattleId,safeMemberId,"dungeon_normal_card"].map(encodeURIComponent).join("~"),battleId:safeBattleId,memberId:safeMemberId,monsterId:safeMonsterId,chance,
+    card:dropped?{monsterId:monster.card.id||monster.id,name:monster.name,icon:monster.icon||"👾",tier:monster.tier,family:monster.family,encounter:monster.encounter,artKey:monster.artKey}:null};
+}
+
+module.exports = { buildDungeonNormalCardClaim, buildTrustedMonsterReward, seededRoll };

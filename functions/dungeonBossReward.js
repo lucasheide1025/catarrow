@@ -1,14 +1,22 @@
 "use strict";
 
 const catalog = require("./data/monsterExpansionCatalog.json");
-const collectibleIds = require("./data/dungeonCollectibleIds.json");
 const { seededRoll } = require("./monsterReward");
+const { resolveCardDropChance } = require("./cardDropPolicy");
 
 const MONSTERS = new Map(catalog.monsters.map(monster => [monster.id, monster]));
 const TIER_BASE = [0,1,1,2,2,3,3];
 const BOSS_MARKS = [0,1,1,2,3,5,8];
 const BOSS_COINS = [0,300,600,1200,2400,4800,8000];
 const RUNES = ["atk", "def", "hp", "cat"];
+const CHOICE_VALUES = Object.freeze({
+  1:{ regularCoins:300, largeCoins:900, regularChests:2, largeChests:6, arrowDew:50, archerXP:150 },
+  2:{ regularCoins:600, largeCoins:1800, regularChests:3, largeChests:9, arrowDew:80, archerXP:250 },
+  3:{ regularCoins:1200, largeCoins:3600, regularChests:4, largeChests:12, arrowDew:120, archerXP:400 },
+  4:{ regularCoins:2000, largeCoins:6000, regularChests:5, largeChests:15, arrowDew:180, archerXP:650 },
+  5:{ regularCoins:3500, largeCoins:10500, regularChests:6, largeChests:18, arrowDew:250, archerXP:900 },
+  6:{ regularCoins:6000, largeCoins:18000, regularChests:8, largeChests:24, arrowDew:350, archerXP:1300 },
+});
 
 function rewardKey({ battleId, memberId }) {
   if (!battleId || !memberId || String(battleId).includes("/") || String(memberId).includes("/")) throw new Error("invalid_dungeon_reward_identity");
@@ -28,15 +36,17 @@ function split(materials, total, key) {
   return quantities.map((quantity,index) => ({ materialId:materials[(index+offset)%3].id, quantity })).filter(item => item.quantity > 0);
 }
 
-function cardResult(monster, firstDefeat, misses, roll) {
-  if (firstDefeat) return { dropped:true, nextMisses:0, guaranteed:true, reason:"firstDefeat" };
-  const threshold = monster.encounter === "miniBoss" ? 5 : 8;
-  if (misses >= threshold-1) return { dropped:true, nextMisses:0, guaranteed:true, reason:"pity" };
-  const dropped = roll < (monster.encounter === "miniBoss" ? .2 : .1);
-  return { dropped, nextMisses:dropped?0:misses+1, guaranteed:false, reason:dropped?"roll":"miss" };
+function selectBossChoiceCard(monster, key) {
+  const candidates = catalog.monsters.filter(item => item.family === monster.family && item.tierIndex === monster.tierIndex && ["miniBoss", "boss"].includes(item.encounter));
+  const minis = candidates.filter(item => item.encounter === "miniBoss");
+  const boss = candidates.find(item => item.encounter === "boss");
+  if (minis.length < 2 || !boss) throw new Error("boss_card_choice_pool_invalid");
+  const roll = seededRoll(`${key}:boss-card-choice`);
+  const picked = roll < .35 ? minis[0] : roll < .7 ? minis[1] : boss;
+  return { monsterId:picked.card.id, name:picked.name, family:picked.family, tier:picked.tier, encounter:picked.encounter, artKey:picked.artKey };
 }
 
-function buildDungeonBossEnvelope({ battleId, memberId, monsterId, firstDefeat=false, cardMisses=0 }) {
+function buildDungeonBossEnvelope({ battleId, memberId, monsterId }) {
   const monster = MONSTERS.get(monsterId);
   if (!monster || !["miniBoss", "boss"].includes(monster.encounter)) throw new Error("boss_monster_required");
   const key = rewardKey({ battleId, memberId });
@@ -52,40 +62,38 @@ function buildDungeonBossEnvelope({ battleId, memberId, monsterId, firstDefeat=f
     choiceCount:isBoss?2:1,
   };
   fixedReward.runeFragment = { type:RUNES[Math.floor(seededRoll(`${key}:${monsterId}:rune`)*RUNES.length)], count:fixedReward.runeFragments };
-  const card = cardResult(monster, firstDefeat, cardMisses, seededRoll(`${key}:${monsterId}:card`));
-  const choiceOptions = ["material", "coins", "exploration"].map(type => {
-    let reward;
-    if (type === "material") reward = { type, materials:split(pool, TIER_BASE[monster.tierIndex]*5, `${monster.id}:choice`) };
-    else if (type === "coins") reward = { type, coins:Math.floor(fixedReward.coins*1.5) };
-    else {
-      const roll=seededRoll(`${key}:${monsterId}:choice:exploration`);
-      const rarity=roll<.6?"common":roll<.95?"rare":"boss";
-      // ⚠️ 寶箱族（treasure）沒有專屬收藏品池，資料檔只有六個一般族系。
-      // 寶箱王房因此 throw missing_collectible_pool、玩家完全領不到獎勵（使用者實測）。
-      // 缺池時退到「所有族的同稀有度合併池」——寶箱族本來就是什麼都有。
-      const poolFor=r=>{
-        const own=collectibleIds[monster.family]?.[r] || [];
-        return own.length ? own : Object.values(collectibleIds).flatMap(entry => entry?.[r] || []);
-      };
-      let ids=poolFor(rarity);
-      // 再往下退一層稀有度，避免某個稀有度整體無內容時仍然 throw
-      if (!ids.length) for (const fb of ["boss","rare","common"]) { ids=poolFor(fb); if (ids.length) break; }
-      if (!ids.length) throw new Error("missing_collectible_pool");
-      reward={ type, rarity, quantity:rarity==="common"?3:rarity==="rare"?2:1, itemId:ids[Math.floor(seededRoll(`${key}:${monsterId}:collectible`)*ids.length)] };
-    }
-    return { type, reward };
-  });
-  // 三個箱子必須「長得一樣、位置隨機」讓玩家用猜的（2026-07-19 使用者指示）：
-  // ①用 seeded Fisher-Yates 打亂順序（同一場結果穩定,重連不會變）；
-  // ②id 改為位置索引，不再是 `choice:material` 這種會洩漏內容的字串。
-  for (let i = choiceOptions.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(seededRoll(`${key}:${monsterId}:shuffle:${i}`) * (i + 1));
-    [choiceOptions[i], choiceOptions[j]] = [choiceOptions[j], choiceOptions[i]];
+  const chance = resolveCardDropChance({ mode:"dungeon", encounter:monster.encounter });
+  const dropped = seededRoll(`${key}:${monsterId}:card`) < chance;
+  const cardResult = { dropped, guaranteed:false, reason:dropped?"roll":"miss", chance };
+  const values = CHOICE_VALUES[monster.tierIndex];
+  const choiceOptions = [
+    { type:"largeCoins", reward:{ type:"coins", coins:values.largeCoins } },
+    { type:"largeMaterialChests", reward:{ type:"materialChests", quantity:values.largeChests, family:monster.family, tier:monster.tierIndex } },
+    { type:"bossCard", reward:{ type:"card", card:selectBossChoiceCard(monster, key) } },
+    { type:"regularCoins", reward:{ type:"coins", coins:values.regularCoins } },
+    { type:"regularMaterialChests", reward:{ type:"materialChests", quantity:values.regularChests, family:monster.family, tier:monster.tierIndex } },
+    { type:"consolation", reward:{ type:"consolation", arrowDew:values.arrowDew, archerXP:values.archerXP } },
+  ];
+  for (let i=choiceOptions.length-1; i>0; i--) {
+    const j=Math.floor(seededRoll(`${key}:${monsterId}:shuffle:${i}`)*(i+1));
+    [choiceOptions[i],choiceOptions[j]]=[choiceOptions[j],choiceOptions[i]];
   }
-  choiceOptions.forEach((option, index) => { option.id = `${key}:choice:${index}`; });
-  return { version:1, catalogVersion:catalog.version, rewardKey:key, battleId, memberId, monsterId, encounter:monster.encounter,
-    fixedReward, cardResult:card, card:card.dropped?{ monsterId:monster.card.id, name:monster.name, family:monster.family, tier:monster.tier, encounter:monster.encounter, artKey:monster.artKey }:null,
+  choiceOptions.forEach((option,index)=>{ option.id=`${key}:choice:${index}`; });
+  return { version:2, catalogVersion:catalog.version, rewardKey:key, battleId, memberId, monsterId, encounter:monster.encounter,
+    fixedReward, cardResult, card:dropped?{ monsterId:monster.card.id, name:monster.name, family:monster.family, tier:monster.tier, encounter:monster.encounter, artKey:monster.artKey }:null,
     choiceCount:fixedReward.choiceCount, choiceOptions };
+}
+
+function publicEnvelope(envelope) {
+  return { ...envelope, choiceOptions:envelope.choiceOptions.map(({ id }) => ({ id })) };
+}
+
+function buildFamilyMaterialChests({ claimId, optionId, family, tierIndex, quantity, now=Date.now() }) {
+  return Array.from({length:Math.max(0,Number(quantity)||0)},(_,index)=>({
+    id:`${claimId}:${optionId}:${index}`,type:"family_mat",family,tierIndex,
+    tier:["common","rare","elite","fierce","boss","mythic"][tierIndex-1]||"common",
+    name:`T${tierIndex} ${family} 族系素材箱`,icon:"📦",color:"#a16207",from:"dungeon_boss_choice",ts:now,
+  }));
 }
 
 function validateChoices(envelope, selectedOptionIds) {
@@ -94,4 +102,16 @@ function validateChoices(envelope, selectedOptionIds) {
     && selectedOptionIds.every(id => envelope.choiceOptions.some(option => option.id === id));
 }
 
-module.exports = { buildDungeonBossEnvelope, validateChoices };
+function hasDungeonWinProof(room){
+  if(room?.result==="win") return true;
+  const logs=room?.log||[];
+  const lastLog=logs[logs.length-1];
+  return room?.status==="map_explore"&&room?.result==null&&Number(lastLog?.monsterHPAfter)<=0;
+}
+
+function isRewardableDungeonRoom(room,memberId,monsterId){
+  const participated=(room?.log||[]).some(entry=>(entry.playerLog||[]).some(player=>player.id===memberId));
+  return Boolean(room?.members?.[memberId]&&hasDungeonWinProof(room)&&Number(room.monsterHP)<=0&&participated&&(room.monster?.id||room.monsterId)===monsterId);
+}
+
+module.exports = { buildDungeonBossEnvelope, buildFamilyMaterialChests, isRewardableDungeonRoom, publicEnvelope, validateChoices };

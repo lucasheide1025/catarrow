@@ -2,11 +2,20 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { subscribeMonsterDex } from "../../lib/db";
-import { MONSTERS, FAMILIES, TIER_LABEL } from "../../lib/monsterData";
+import { FAMILIES, TIER_LABEL } from "../../lib/monsterData";
+import { EXPANSION_MONSTERS } from "../../lib/monsterExpansionCatalog";
 import { MonsterImage } from "../MonsterSVG";
 
 const TIER_ORDER = ["common", "rare", "elite", "fierce", "boss", "mythic"];
-const HP_MAX = 1200, ATK_MAX = 160, DEF_MAX = 120;
+const MONSTER_TOTAL = EXPANSION_MONSTERS.length;
+const HP_MAX = Math.max(1, ...EXPANSION_MONSTERS.map(monster => Number(monster.hp) || 0));
+const ATK_MAX = Math.max(1, ...EXPANSION_MONSTERS.map(monster => Number(monster.atk) || 0));
+const DEF_MAX = Math.max(1, ...EXPANSION_MONSTERS.map(monster => Number(monster.def) || 0));
+const ENCOUNTER_LABEL = {
+  normal: { label:"一般怪", icon:"⚔️", className:"bg-slate-500/20 text-slate-300" },
+  miniBoss: { label:"小王", icon:"💀", className:"bg-orange-500/20 text-orange-300" },
+  boss: { label:"大王", icon:"👑", className:"bg-red-500/20 text-red-300" },
+};
 
 export default function MemberMonsterDex({ onBack, monsterDex }) {
   const { profile } = useAuth();
@@ -14,6 +23,7 @@ export default function MemberMonsterDex({ onBack, monsterDex }) {
   const [loading,      setLoading]      = useState(true);
   const [familyFilter, setFamilyFilter] = useState("all");
   const [tierFilter,   setTierFilter]   = useState("all");
+  const [encounterFilter, setEncounterFilter] = useState("all");
   const [selected,     setSelected]     = useState(null);
 
   useEffect(() => {
@@ -30,14 +40,20 @@ export default function MemberMonsterDex({ onBack, monsterDex }) {
     return () => unsub && unsub();
   }, [profile?.id, monsterDex]);
 
-  const defeated   = MONSTERS.filter(m => (dexData[m.id]?.wins  || 0) > 0).length;
-  const seen       = MONSTERS.filter(m => (dexData[m.id]?.wins  || 0) > 0 || (dexData[m.id]?.losses || 0) > 0).length;
-  const totalWins  = Object.values(dexData).reduce((s, m) => s + (m.wins  || 0), 0);
-  const totalLoss  = Object.values(dexData).reduce((s, m) => s + (m.losses || 0), 0);
+  const defeated   = EXPANSION_MONSTERS.filter(m => (dexData[m.id]?.wins  || 0) > 0).length;
+  const seen       = EXPANSION_MONSTERS.filter(m => (dexData[m.id]?.wins  || 0) > 0 || (dexData[m.id]?.losses || 0) > 0).length;
+  const totalWins  = EXPANSION_MONSTERS.reduce((sum, m) => sum + (dexData[m.id]?.wins || 0), 0);
+  const totalLoss  = EXPANSION_MONSTERS.reduce((sum, m) => sum + (dexData[m.id]?.losses || 0), 0);
+  const familyProgress = Object.fromEntries(Object.keys(FAMILIES).map(family => {
+    const familyCatalog = EXPANSION_MONSTERS.filter(monster => monster.family === family);
+    const familyDefeated = familyCatalog.filter(monster => (dexData[monster.id]?.wins || 0) > 0).length;
+    return [family, { defeated:familyDefeated, total:familyCatalog.length }];
+  }));
 
-  const visible = MONSTERS.filter(m => {
+  const visible = EXPANSION_MONSTERS.filter(m => {
     if (familyFilter !== "all" && m.family !== familyFilter) return false;
     if (tierFilter   !== "all" && m.tier   !== tierFilter)   return false;
+    if (encounterFilter !== "all" && m.encounter !== encounterFilter) return false;
     return true;
   });
 
@@ -57,11 +73,11 @@ export default function MemberMonsterDex({ onBack, monsterDex }) {
         <div className="grid grid-cols-4 gap-2 text-center mb-3">
           <div>
             <div className="text-purple-200 text-[10px] mb-0.5">已擊敗</div>
-            <div className="font-black text-xl">{defeated}<span className="text-purple-300 text-xs font-normal">/36</span></div>
+            <div className="font-black text-xl">{defeated}<span className="text-purple-300 text-xs font-normal">/{MONSTER_TOTAL}</span></div>
           </div>
           <div>
             <div className="text-purple-200 text-[10px] mb-0.5">已遭遇</div>
-            <div className="font-black text-xl">{seen}</div>
+            <div className="font-black text-xl">{seen}<span className="text-purple-300 text-xs font-normal">/{MONSTER_TOTAL}</span></div>
           </div>
           <div>
             <div className="text-purple-200 text-[10px] mb-0.5">總勝場</div>
@@ -74,12 +90,32 @@ export default function MemberMonsterDex({ onBack, monsterDex }) {
         </div>
         <div className="h-2.5 bg-white/20 rounded-full overflow-hidden">
           <div className="h-full rounded-full transition-all duration-700"
-            style={{ width: `${defeated / 36 * 100}%`, background: "linear-gradient(90deg,#fbbf24,#f59e0b)" }} />
+            style={{ width: `${defeated / MONSTER_TOTAL * 100}%`, background: "linear-gradient(90deg,#fbbf24,#f59e0b)" }} />
         </div>
         <div className="flex justify-between mt-1">
           <span className="text-purple-200 text-[10px]">圖鑑完成度</span>
-          <span className="text-amber-300 text-[10px] font-bold">{Math.round(defeated / 36 * 100)}%</span>
+          <span className="text-amber-300 text-[10px] font-bold">{Math.round(defeated / MONSTER_TOTAL * 100)}%</span>
         </div>
+      </div>
+
+      {/* 七族各自 36 種的完成度 */}
+      <div className="grid grid-cols-2 gap-2">
+        {Object.entries(FAMILIES).map(([id, fam]) => {
+          const progress = familyProgress[id] || { defeated:0, total:0 };
+          return (
+            <button key={id} onClick={() => setFamilyFilter(id)}
+              className="rounded-xl border border-white/10 bg-white/5 p-2.5 text-left active:scale-[0.98] transition-all">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-black text-gray-200">{fam.icon} {fam.label}</span>
+                <span className="text-[11px] font-black" style={{ color:fam.color }}>{progress.defeated}/{progress.total}</span>
+              </div>
+              <div className="mt-2 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                <div className="h-full rounded-full"
+                  style={{ width:`${progress.total ? progress.defeated / progress.total * 100 : 0}%`, background:fam.color }} />
+              </div>
+            </button>
+          );
+        })}
       </div>
 
       {/* 族別篩選 */}
@@ -119,6 +155,20 @@ export default function MemberMonsterDex({ onBack, monsterDex }) {
         })}
       </div>
 
+      {/* 遭遇類型篩選 */}
+      <div className="flex gap-2 overflow-x-auto pb-1 -mx-0.5">
+        <button onClick={() => setEncounterFilter("all")}
+          className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border flex-shrink-0 ${encounterFilter === "all" ? "bg-white/25 text-white border-white/40" : "bg-white/10 text-gray-300 border-white/15"}`}>
+          全部類型
+        </button>
+        {Object.entries(ENCOUNTER_LABEL).map(([id, meta]) => (
+          <button key={id} onClick={() => setEncounterFilter(id)}
+            className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border flex-shrink-0 ${encounterFilter === id ? `${meta.className} border-white/25` : "bg-white/10 text-gray-300 border-white/15"}`}>
+            {meta.icon} {meta.label}
+          </button>
+        ))}
+      </div>
+
       {/* 怪物卡格 */}
       {loading ? (
         <div className="text-center py-12 text-gray-400 text-sm">載入中…</div>
@@ -131,6 +181,7 @@ export default function MemberMonsterDex({ onBack, monsterDex }) {
             const hasSeen  = wins > 0 || losses > 0;
             const hasWon   = wins > 0;
             const tier     = TIER_LABEL[monster.tier];
+            const encounter = ENCOUNTER_LABEL[monster.encounter] || ENCOUNTER_LABEL.normal;
 
             return (
               <button key={monster.id}
@@ -151,6 +202,9 @@ export default function MemberMonsterDex({ onBack, monsterDex }) {
                 <div className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
                   style={{ background: tier.bg, color: tier.color }}>
                   {tier.label}
+                </div>
+                <div className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${encounter.className}`}>
+                  {encounter.icon} {encounter.label}
                 </div>
                 {hasWon && (
                   <div className="text-[10px] font-bold text-emerald-400">⚔️ {wins}勝</div>
@@ -195,6 +249,7 @@ function MonsterDetailModal({ monster, rec, onClose }) {
   const winRate = total > 0 ? Math.round(wins / total * 100) : 0;
   const tier    = TIER_LABEL[monster.tier];
   const fam     = FAMILIES[monster.family];
+  const encounter = ENCOUNTER_LABEL[monster.encounter] || ENCOUNTER_LABEL.normal;
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-end justify-center z-50"
@@ -216,15 +271,20 @@ function MonsterDetailModal({ monster, rec, onClose }) {
                 <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-white/30 backdrop-blur-sm">
                   {fam?.icon} {fam?.label}
                 </span>
+                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-white/30 backdrop-blur-sm">
+                  {encounter.icon} {encounter.label}
+                </span>
               </div>
             </div>
           </div>
         </div>
 
         <div className="p-5 flex flex-col gap-4">
-          {/* 描述 */}
-          <div className="bg-white/5 rounded-xl p-3 text-gray-300 text-sm leading-relaxed italic border border-white/10">
-            「{monster.desc}」
+          {/* 擴充怪物資訊 */}
+          <div className="bg-white/5 rounded-xl p-3 text-gray-300 text-sm leading-relaxed border border-white/10 flex flex-col gap-1.5">
+            {monster.title && <div className="font-black text-gray-100">「{monster.title}」</div>}
+            <div>{monster.signatureName ? `✨ ${monster.signatureName}：` : "✨ "}{monster.signatureSummary || monster.desc || "尚無技能紀錄"}</div>
+            {monster.counterSummary && <div className="text-cyan-300">🎯 破解：{monster.counterSummary}</div>}
           </div>
 
           {/* 能力值 */}

@@ -2,10 +2,11 @@
 // 貓貓村大富翁：玩家棋盤狀態 + 每日骰 + 移動 + 結算 + 事件效果。
 // 規格見 docs/second_brain/village-board-spec.md。
 // ⚠️ members.villageBoard 為新欄位，已加進 firestore.rules 白名單。
-import { doc, getDoc, updateDoc, onSnapshot, increment, serverTimestamp, deleteField } from "firebase/firestore";
+import { doc, getDoc, updateDoc, increment, serverTimestamp, deleteField } from "firebase/firestore";
 import { db } from "./firebase";
 import { addCoins, addArrowdew, addGachaCoins, addMaterials, addChests, addPotions, addMonsterCards, spendCoins } from "./db";
 import { rollCardGachaOne, rollCardGachaN, cardToMonsterCard, cardToView, CARD_GACHA_PAID_PRICE } from "./boardCardGacha";
+import { drawBoardEvent, describeEventEffect } from "./boardEvents";
 import { addCatXP, addCatBond } from "./catDb";
 import { CARRY_POTIONS, makeFamilyMaterialChest } from "./itemData";
 import { BOARD_LAYOUT, BOARD_SIZE, BOARD_MODE_MAP, getModeTierCap, rollTileReward } from "./boardData";
@@ -25,17 +26,6 @@ function todayKey() {
 }
 
 const DEFAULT_BOARD = { dice: DAILY_DICE, diceGrantedDate: "", boardPos: 0, lapCount: 0, boardSeed: 0, mode: "mine", tier: null, pendingEvent: null };
-
-export function subscribeBoardState(memberId, cb) {
-  if (!memberId) return () => {};
-  return onSnapshot(doc(db, "members", memberId), snap => {
-    // _hasVillageBoard：區分「全新玩家（無 villageBoard 文件）」與「有文件」——
-    // 新 UI 靠它避免把 DEFAULT_BOARD 的 boardPos:0 當成 legacy 遷移。
-    cb(snap.exists()
-      ? { ...DEFAULT_BOARD, ...(snap.data().villageBoard || {}), _hasVillageBoard: Boolean(snap.data().villageBoard) }
-      : { ...DEFAULT_BOARD });
-  }, () => cb({ ...DEFAULT_BOARD }));
-}
 
 // 每日重置（跨過午夜 12 點才重置）：骰子補滿至 15、棋子回起點、圈數歸零。
 // 當天內不重置 → boardPos/lapCount 保留，關掉再進來可從原位置續跑（記憶跑到哪）。
@@ -103,7 +93,7 @@ export async function rollAndMove(memberId) {
       "villageBoard.boardPos": to,
       ...(lapped ? { "villageBoard.lapCount": increment(1), villageTotalLaps: increment(1) } : {}),
     });
-    import("./worldBossDb").then(module => module.contributeWorldBossSpawnProgress({
+    import("./worldBossLifecycleClient").then(module => module.contributeWorldBossSpawnProgress({
       memberId, type:"villageDice", amount:1, operationId:`village-dice:${memberId}:${Date.now()}:${from}:${to}`,
     })).catch(() => {});
     return { ok: true, roll, from, to, lapped, tile: BOARD_LAYOUT[to], diceLeft: (vb.dice || 0) - 1 };
@@ -314,7 +304,7 @@ export async function rollJourney(memberId, mapId) {
     };
     if (diceN > 1) patch[`villageBoard.maps.${mapId}.buffs.diceCount`] = deleteField();
     await updateDoc(ref, patch);
-    import("./worldBossDb").then(module => module.contributeWorldBossSpawnProgress({
+    import("./worldBossLifecycleClient").then(module => module.contributeWorldBossSpawnProgress({
       memberId, type: "villageDice", amount: 1, operationId: `village-journey:${memberId}:${Date.now()}:${from}:${to}`,
     })).catch(() => {});
     return { ok: true, roll, rolls, from, to, reachedBoss: to === m.length - 1, diceLeft: (norm.dice || 0) - 1 };
@@ -434,15 +424,98 @@ export async function settleJourneyTile(memberId, mapId, tileType, ctx = {}) {
       return { ok: true, reward, buffs: { ...buffs, nextShootMult: 0 }, kind: "shoot" };
     }
 
+    // ── 命運/機會（旅程版 08-08）：抽事件卡 + 套用效果（配事件場景圖）──
+    if (tileType === "fate" || tileType === "opp") {
+      const event = drawBoardEvent(tileType);
+      const eff = event.effect || {};
+      const rnd = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
+      let reward = {};
+      let detail = "";
+      let movedTo = null;
+      let tile = null;
+      // 事件資源入帳（material 從該族該階的一般素材池取，與射箭格同一套）
+      const applyGain = async (resource, amount) => {
+        if (resource === "coins") reward.coins = amount;
+        else if (resource === "arrowdew") reward.arrowdew = amount;
+        else if (resource === "gachaToken") reward.gachaToken = amount;
+        else if (resource === "catXP") reward.catXP = amount;
+        else if (resource === "potion") reward.potions = [{ tier: Math.min(3, Math.ceil(T / 2)) }];
+        else if (resource === "fur") reward.villageResources = { ...(reward.villageResources || {}), fur: amount };
+        else if (resource === "material") {
+          const t = Math.min(6, Math.max(1, Math.ceil(Math.random() * tierCap)));
+          const pool = getNormalMaterialPool({ family: mode.family, exactTier: t });
+          const picked = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+          const id = picked ? picked.id : `${mode.family}_m${t}`;
+          reward.familyMaterials = { ...(reward.familyMaterials || {}), [id]: (reward.familyMaterials?.[id] || 0) + amount };
+        } else reward.villageResources = { ...(reward.villageResources || {}), [resource]: amount };
+      };
+      const nearestTile = (target) => {
+        const j = generateJourney(mapId, m.seed);
+        for (let i = (m.pos || 0) + 1; i < j.cells.length; i += 1) if (j.cells[i] === target) return i;
+        return null;
+      };
+      switch (eff.type) {
+        case "gain": { const amt = rnd(eff.min, eff.max); await applyGain(eff.resource, amt); detail = describeEventEffect(eff, amt); break; }
+        case "lose": {
+          const amt = rnd(eff.min, eff.max);
+          const patch = {};
+          if (eff.resource === "coins") { const lose = Math.min(amt, snap.data()?.coins || 0); if (lose > 0) patch.coins = increment(-lose); }
+          else if (eff.resource === "arrowdew") { const lose = Math.min(amt, snap.data()?.arrowdew || 0); if (lose > 0) patch.arrowdew = increment(-lose); }
+          else if (eff.resource === "gachaToken") { const lose = Math.min(amt, snap.data()?.gachaCoins || 0); if (lose > 0) patch.gachaCoins = increment(-lose); }
+          if (Object.keys(patch).length) await updateDoc(ref, patch);
+          detail = describeEventEffect(eff, amt);
+          break;
+        }
+        case "move": { movedTo = Math.max(0, Math.min(m.length - 1, (m.pos || 0) + (Number(eff.steps) || 0))); detail = describeEventEffect(eff); break; }
+        case "teleport": {
+          const idx = nearestTile(eff.tile);
+          if (idx != null) { movedTo = idx; tile = eff.tile; } else { reward.coins = 50 * T; }
+          detail = describeEventEffect(eff);
+          break;
+        }
+        case "dice": {
+          const delta = Number(eff.delta) || 0;
+          if (delta > 0) await addBoardDice(memberId, delta);
+          else { const lose = Math.min(norm.dice || 0, -delta); if (lose > 0) await updateDoc(ref, { "villageBoard.dice": increment(-lose) }); }
+          detail = describeEventEffect(eff);
+          break;
+        }
+        case "multiplier": {
+          // 旅程沒有「下一格」常駐倍率 → 改成現領等價獎勵（挖礦×2／素材×2）
+          const factor = Number(eff.factor) || 2;
+          reward = eff.next === "mining"
+            ? applyJourneyMultipliers(rollTileReward("mining", { ...baseCtx, gatheringProgress: 100 }), { shootMult: factor })
+            : applyJourneyMultipliers(rollTileReward("material", baseCtx), { shootMult: factor });
+          detail = describeEventEffect(eff);
+          break;
+        }
+        case "chest": { reward.chests = [{ kind: eff.kind || "family", family: mode.family, tier: T }]; detail = describeEventEffect(eff); break; }
+        case "catBond": { reward.catXP = eff.xp; reward.catBond = eff.bond; detail = describeEventEffect(eff); break; }
+        case "trigger": {
+          const target = eff.event === "monster" ? "monster" : "mining";
+          const idx = nearestTile(target);
+          if (idx != null) { movedTo = idx; tile = target; } else { reward.coins = 50 * T; }
+          detail = describeEventEffect(eff);
+          break;
+        }
+        case "micro": { reward.coins = eff.coins || 0; detail = describeEventEffect(eff, eff.coins || 0); break; }
+        case "team": {
+          // 單人模式：組隊卡退化成自身資源加成（allMove 給安慰金幣）
+          if (eff.sub === "allMove") { reward.coins = 30 * T; detail = `獲得 ${30 * T} 金幣`; }
+          else { const amt = rnd(eff.min ?? 1, eff.max ?? 3); await applyGain(eff.resource, amt); detail = describeEventEffect(eff, amt); }
+          break;
+        }
+        default: { reward.coins = 30 * T; break; }
+      }
+      await applyBoardReward(memberId, reward, { catId });
+      if (movedTo != null) await updateDoc(ref, { [`villageBoard.maps.${mapId}.pos`]: movedTo });
+      return { ok: true, event, reward, detail, buffs, kind: "event", movedTo, tile, deck: tileType };
+    }
+
     // ── 一般格（material/coins/arrowdew/gacha/potion/chest/catbond/start/scenery/market）──
-    // 命運/機會在旅程中不翻卡：給少量金幣（避免空獎），事件卡僅舊版棋盤使用。
-    const reward = applyJourneyMultipliers(
-      (tileType === "fate" || tileType === "opp")
-        ? { coins: 20 + Math.floor(Math.random() * 60) * T }
-        : rollTileReward(tileType, baseCtx),
-      { campMult }
-    );
-    await applyBoardReward(memberId, reward, { catId });      return { ok: true, reward, buffs, kind: "default" };
+    const reward = applyJourneyMultipliers(rollTileReward(tileType, baseCtx), { campMult });
+    await applyBoardReward(memberId, reward, { catId });
+    return { ok: true, reward, buffs, kind: "default" };
   } catch (e) { return { ok: false, reason: e?.message }; }
 }
 

@@ -27,8 +27,12 @@ test("the public shop entry is a single cross-section scene with an operations d
   expect(html).toContain("/assets/shop/interior-stock-low.webp");
   expect(html).toContain('aria-label="貓貓村商店場景"');
   expect(html).toContain("/assets/shop/managers/manager-meimei.webp");
-  expect(html).not.toContain("入口");
-  expect(html).not.toContain("走道");
+  expect(html).toContain('aria-label="商店入口"');
+  expect(html).toContain('aria-label="商品貨架"');
+  expect(html).toContain('aria-label="店內走道"');
+  expect(html).toContain('aria-label="結帳櫃台"');
+  expect(html).toContain('aria-label="等候中的顧客"');
+  expect(html).toContain('data-milestone="starter"');
   expect(html).toContain('aria-label="商店營運操作"');
   expect(html).toContain("補貨");
   expect(html).toContain("陳列");

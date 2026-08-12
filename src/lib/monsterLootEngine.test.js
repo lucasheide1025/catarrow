@@ -14,11 +14,9 @@ describe("monster loot engine", () => {
     expect(selectBossRoomEncounter({ roll: 0.1, consecutiveNonBoss: 3 })).toMatchObject({ role: "boss", guaranteed: true });
   });
 
-  test("guarantees first card and applies per-monster pity", () => {
-    expect(resolveBossCardDrop({ encounter: "miniBoss", firstDefeat: true })).toMatchObject({ dropped: true, reason: "firstDefeat" });
-    expect(resolveBossCardDrop({ encounter: "miniBoss", misses: 4, roll: 0.99 })).toMatchObject({ dropped: true, reason: "pity" });
-    expect(resolveBossCardDrop({ encounter: "boss", misses: 6, roll: 0.99 })).toMatchObject({ dropped: false, nextMisses: 7 });
-    expect(resolveBossCardDrop({ encounter: "boss", misses: 7, roll: 0.99 })).toMatchObject({ dropped: true, reason: "pity" });
+  test("uses a flat 40% boss-card chance without first-clear or pity", () => {
+    expect(resolveBossCardDrop({ encounter: "miniBoss", firstDefeat:true, misses:99, roll:0.39 })).toMatchObject({ dropped:true, chance:.4, guaranteed:false });
+    expect(resolveBossCardDrop({ encounter: "boss", firstDefeat:true, misses:99, roll:0.4 })).toMatchObject({ dropped:false, chance:.4, guaranteed:false });
   });
 
   test("builds fixed boss reward without leaking boss materials into the general pool", () => {

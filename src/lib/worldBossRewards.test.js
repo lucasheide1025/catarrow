@@ -17,6 +17,14 @@ const p = (dmg, days = 1, over = {}) => ({
 const group = (dmgs) => Object.fromEntries(dmgs.map((d, i) => [`p${i}`, p(d)]));
 const coinsOf = (rewards, id) => rewards[id].total.coins;
 
+test("v2 快照固定共同擊殺、守恆分潤，名次與尾刀完整疊加", () => {
+  const snapshot={version:2,kill:{coins:222,arrowDew:55,archerXP:300,catXP:90,bond:9,materialChests:2,coinChests:1,cardPacks:1,scrolls:1,wbCardChance:.2},effortPool:{coins:2001,arrowDew:401,archerXP:1601,catXP:501,bond:61},honor:{rank1:{arrowDew:200,materialChests:30,coinChests:30,catBoxes:1},rank2:{materialChests:20,coinChests:20},rank3:{materialChests:10,coinChests:10},lastHit:{arrowDew:150,materialChests:5,coinChests:5,catBoxes:1}}};
+  const rewards=calcWorldBossRewards({a:p(100),b:p(400)},"family_small",{top3Ids:["b","a"],lastHitBy:"b",rewardSnapshot:snapshot});
+  expect(rewards.a.participation.coins).toBe(222);
+  expect(rewards.b.honor).toMatchObject({materialChests:35,coinChests:35,catBoxes:2,arrowDew:350});
+  for(const field of Object.keys(snapshot.effortPool))expect(rewards.a.effort[field]+rewards.b.effort[field]).toBe(snapshot.effortPool[field]);
+});
+
 describe("理念 ①：上場幫忙的就有不錯的獎勵", () => {
   test("⚠️ 幫忙的人不會拿到「幾乎是 0」——舊版下限是 1 金幣", () => {
     // 一個只打了 2% 傷害的人，跟一個打了 50% 的人同場
@@ -120,15 +128,15 @@ describe("強度：血量用「幾人次」推，不憑感覺填", () => {
   });
 
   test("四個分類的難度是遞增的", () => {
-    const order = ["cat", "family_small", "family_big", "coach"];
+    const order = ["family_small", "family_big", "cat", "coach"];
     for (let i = 1; i < order.length; i += 1) {
       expect(TARGET_ATTACKS[order[i]]).toBeGreaterThan(TARGET_ATTACKS[order[i - 1]]);
       expect(suggestedBossHp(order[i])).toBeGreaterThan(suggestedBossHp(order[i - 1]));
     }
   });
 
-  test("入門王一小群人一次聚會就收得掉", () => {
-    expect(TARGET_ATTACKS.cat).toBeLessThanOrEqual(10);
+  test("族系小王一小群人一次聚會就收得掉", () => {
+    expect(TARGET_ATTACKS.family_small).toBeLessThanOrEqual(10);
   });
 
   test("可以指定人次覆寫", () => {

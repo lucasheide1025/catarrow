@@ -13,19 +13,18 @@ describe("dungeon boss reward envelope", () => {
     expect(first.choiceCount).toBe(1);
     expect(["atk", "def", "hp", "cat"]).toContain(first.fixedReward.runeFragment.type);
     expect(first.fixedReward.runeFragment.count).toBe(first.fixedReward.runeFragments);
-    expect(first.choiceOptions.map(option => option.type)).toEqual(["material", "coins", "exploration"]);
-    expect(first.choiceOptions.find(option => option.type === "exploration").reward.itemId).toBeTruthy();
+    expect(first.version).toBe(2);
+    expect(first.choiceOptions).toHaveLength(6);
   });
 
-  test("first defeat guarantees its monster card", () => {
+  test("boss cards always use the fixed 40% roll without first-clear guarantee", () => {
     const reward = buildDungeonBossRewardEnvelope({
       battleId:"battle-first",
       memberId:"member-1",
       monsterId:"ghost_t2_boss",
       firstDefeat:true,
     });
-    expect(reward.cardResult).toMatchObject({ dropped:true, guaranteed:true, reason:"firstDefeat" });
-    expect(reward.card?.monsterId).toBe("ghost_t2_boss");
+    expect(reward.cardResult).toMatchObject({ chance:.4, guaranteed:false });
   });
 
   test("boss grants two distinct choices and rejects duplicate selection", () => {
@@ -41,14 +40,14 @@ describe("dungeon boss reward envelope", () => {
     expect(validateDungeonBossChoices(reward, [first.id])).toBe(false);
   });
 
-  test("mini boss fifth miss and boss eighth miss trigger their independent pity", () => {
+  test("miss counters do not trigger pity", () => {
     const mini = buildDungeonBossRewardEnvelope({
       battleId:"mini-pity", memberId:"m", monsterId:"ghost_t1_mini_b", cardMisses:4,
     });
     const boss = buildDungeonBossRewardEnvelope({
       battleId:"boss-pity", memberId:"m", monsterId:"ghost_t1_boss", cardMisses:7,
     });
-    expect(mini.cardResult.reason).toBe("pity");
-    expect(boss.cardResult.reason).toBe("pity");
+    expect(mini.cardResult.guaranteed).toBe(false);
+    expect(boss.cardResult.guaranteed).toBe(false);
   });
 });

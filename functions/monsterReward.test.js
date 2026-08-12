@@ -32,3 +32,8 @@ test("new monster reward keeps its expansion material and card ids", () => {
   assert.equal(reward.card?.monsterId, "mountain_t2_normal_b");
   assert.equal(reward.card?.name, "岩甲山衛");
 });
+
+test("generic callable rejects mode-specific reward identities",()=>{
+  const base={battleId:"policy",memberId:"m1",monsterId:"ghost_t1_normal_a"};
+  for(const rewardType of ["team_hunt","guild_hunt","dungeon_normal"]){assert.throws(()=>buildTrustedMonsterReward({...base,rewardType}),/invalid_reward_type/);}
+});

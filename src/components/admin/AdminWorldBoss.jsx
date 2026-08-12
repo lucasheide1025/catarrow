@@ -15,7 +15,7 @@ import {
   subscribeWorldBossSpawnCycle,
   forceSpawnWorldBossFromCycle,
 } from "../../lib/worldBossDb";
-import { WORLD_BOSSES, WORLD_BOSS_KEYS, getBossPhase, PHASE_LABELS, getRewardByBossKey, getRewardTier, BOSS_DURATION_MAX_DAYS } from "../../lib/worldBossData";
+import { WORLD_BOSSES, WORLD_BOSS_KEYS, getBossPhase, PHASE_LABELS, BOSS_DURATION_MAX_DAYS } from "../../lib/worldBossData";
 import { WB_CARDS } from "../../lib/worldBossCards";
 import { addCardPack, addCoins, addChests, getMembers, adminGrantWorldBossCard } from "../../lib/db";
 import WorldBossSVG from "../worldboss/WorldBossSVG";
@@ -35,53 +35,6 @@ function HPBar({ current, max }) {
       <div className="flex justify-between mt-1 text-xs">
         <span style={{ color }}>{PHASE_LABELS[phase]?.label}</span>
         <span className="text-slate-400 font-mono">{current?.toLocaleString()} / {max?.toLocaleString()}</span>
-      </div>
-    </div>
-  );
-}
-
-const TIER_LABEL_ZH = { entry: "入門（貓貓）", low: "低（R1~R2）", mid: "中（R3~R4）", high: "高（R5~R6）", top: "頂級（教練）" };
-
-const DEFAULT_REWARD = {
-  base:    { coins: 100, woodChests: 1 },
-  rank1:   { coins: 800, goldChests: 3, catBoxes: 1, mimiBoxes: 1, cardChance: 30 },
-  rank3:   { coins: 500, goldChests: 2, catBoxes: 0, mimiBoxes: 1, cardChance: 15 },
-  rankAll: { coins: 300, goldChests: 1, catBoxes: 0, mimiBoxes: 0, cardChance:  5 },
-};
-// cardChance 在 UI 用整數 %，寫入 Firestore 時除以 100
-
-function rewardToStore(r) {
-  return {
-    base:    { ...r.base },
-    rank1:   { ...r.rank1,   cardChance: (r.rank1.cardChance   || 0) / 100 },
-    rank3:   { ...r.rank3,   cardChance: (r.rank3.cardChance   || 0) / 100 },
-    rankAll: { ...r.rankAll, cardChance: (r.rankAll.cardChance || 0) / 100 },
-  };
-}
-
-// 依選中的 Boss 帶出 worldBossData.js 的分級建議值（entry/low/mid/high/top），轉成表單格式（cardChance 用 0~100 整數）
-function rewardFromBossKey(key) {
-  const suggested = getRewardByBossKey(key);
-  if (!suggested) return JSON.parse(JSON.stringify(DEFAULT_REWARD));
-  const toPct = (r) => ({ ...r, mimiBoxes: 0, cardChance: Math.round((r.cardChance || 0) * 100) });
-  return {
-    base:    { ...suggested.base },
-    rank1:   toPct(suggested.rank1),
-    rank3:   toPct(suggested.rank3),
-    rankAll: toPct(suggested.rankAll),
-  };
-}
-
-function StepCtrl({ label, value, onChange, step = 1, min = 0, max = 9999, unit = "" }) {
-  return (
-    <div>
-      <div className="text-xs text-slate-500 mb-1">{label}</div>
-      <div className="flex items-center gap-1.5">
-        <button onClick={() => onChange(Math.max(min, value - step))}
-          className="w-7 h-7 rounded-lg bg-white/10 text-white font-bold text-sm flex items-center justify-center">−</button>
-        <span className="w-10 text-center font-bold text-sm text-white">{value}{unit}</span>
-        <button onClick={() => onChange(Math.min(max, value + step))}
-          className="w-7 h-7 rounded-lg bg-white/10 text-white font-bold text-sm flex items-center justify-center">+</button>
       </div>
     </div>
   );
@@ -108,17 +61,9 @@ export default function AdminWorldBoss() {
   const [bossKey,   setBossKey]   = useState("head_coach");
   const [useRandom, setUseRandom] = useState(false);
   const [duration,  setDuration]  = useState(3);
-  const [reward,    setReward]    = useState(() => rewardFromBossKey("head_coach"));
   const [creating,  setCreating]  = useState(false);
   const [createMsg, setCreateMsg] = useState("");
   const [actionMsg, setActionMsg] = useState("");
-
-  // 選王時自動帶出該王的分級建議獎勵（entry/low/mid/high/top，見 worldBossData.js）；
-  // 教練後續仍可手動調整表單覆蓋掉建議值，勾選隨機時保留目前設定不自動變動
-  useEffect(() => {
-    if (useRandom) return;
-    setReward(rewardFromBossKey(bossKey));
-  }, [bossKey, useRandom]);
 
   // 自動刷新設定（活動天數，固定預設30天，後台可調）
   const [spawnDays, setSpawnDays] = useState(30);
@@ -219,7 +164,6 @@ export default function AdminWorldBoss() {
       adminId:     profile?.id,
       bossKey:     key,
       durationDays: duration,
-      reward: rewardToStore(reward),
     });
     if (res.ok) {
       setCreateMsg(`✅ 已建立《${WORLD_BOSSES[key]?.name}》活動！`);
@@ -399,6 +343,13 @@ export default function AdminWorldBoss() {
                 </div>
               </div>
 
+              {event.rewardSnapshot?.version===2&&<div className="bg-amber-500/10 border border-amber-400/30 rounded-2xl p-4 text-xs text-slate-300 space-y-1">
+                <div className="font-bold text-amber-300">🔒 本場 v2 獎勵快照（唯讀）</div>
+                <div>參戰：金幣 {event.rewardSnapshot.participation.coins}・箭露 {event.rewardSnapshot.participation.arrowDew}・射手 EXP {event.rewardSnapshot.participation.archerXP}・材料箱 {event.rewardSnapshot.participation.materialChests}</div>
+                <div>共同擊殺：金幣 {event.rewardSnapshot.kill.coins}・箭露 {event.rewardSnapshot.kill.arrowDew}・射手 EXP {event.rewardSnapshot.kill.archerXP}・王卡 {Math.round(event.rewardSnapshot.kill.wbCardChance*100)}%</div>
+                <div>分潤池：金幣 {event.rewardSnapshot.effortPool.coins}・箭露 {event.rewardSnapshot.effortPool.arrowDew}・射手 EXP {event.rewardSnapshot.effortPool.archerXP}</div>
+              </div>}
+
               {/* 教練參戰入口 */}
               {event.status === "active" && (
                 <button onClick={() => setShowBattle(true)}
@@ -556,7 +507,7 @@ export default function AdminWorldBoss() {
                 </div>
               )}
             </div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="grid grid-cols-1 gap-2 text-xs">
               {[
                 ["arrows","全體射箭箭數"], ["dungeonClears","地下城通關"],
                 ["monsterKills","全模式怪物擊倒"], ["villageDice","貓貓村骰子"],
@@ -582,12 +533,8 @@ export default function AdminWorldBoss() {
                   onChange={e => setCycleConfig(c => ({...c, restHours:Number(e.target.value)||0}))}
                   className="mt-1 w-full rounded-lg bg-black/30 border border-white/10 px-2 py-1.5 text-white"/>
               </label>
-              <label className="text-slate-400">最晚自動誕生（小時）
-                <input type="number" min="1" max="48" value={cycleConfig.deadlineHours}
-                  onChange={e => setCycleConfig(c => ({...c, deadlineHours:Number(e.target.value)||1}))}
-                  className="mt-1 w-full rounded-lg bg-black/30 border border-white/10 px-2 py-1.5 text-white"/>
-              </label>
             </div>
+            <div className="text-[10px] text-violet-300">世界王只會在本輪條件完成，或教練按下「強制召喚」時出現，不再因時間經過自動降臨。</div>
             <div className="flex gap-2">
               <button disabled={cycleBusy} onClick={handleSaveCycleConfig}
                 className="flex-1 rounded-xl bg-violet-500/20 border border-violet-400/40 py-2 text-xs font-black text-violet-200 disabled:opacity-40">
@@ -656,38 +603,9 @@ export default function AdminWorldBoss() {
             </div>
           </div>
 
-          {/* 獎勵設定 */}
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="text-xs text-slate-400 font-bold">🎁 獎勵設定</div>
-              {!useRandom && (
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-amber-300 font-bold bg-amber-400/10 border border-amber-400/30 rounded-full px-2 py-0.5">
-                    建議檔次：{TIER_LABEL_ZH[getRewardTier(WORLD_BOSSES[bossKey])]}
-                  </span>
-                  <button onClick={() => setReward(rewardFromBossKey(bossKey))}
-                    className="text-[10px] font-bold text-slate-400 underline underline-offset-2">套用建議值</button>
-                </div>
-              )}
-            </div>
-
-            {/* 保底獎勵 */}
-            <div className="bg-white/5 rounded-xl p-3">
-              <div className="text-xs text-emerald-400 font-bold mb-2">🛡️ 保底（所有參戰者）</div>
-              <div className="flex gap-4">
-                <StepCtrl label="💰 金幣" value={reward.base.coins} step={50}
-                  onChange={v => setReward(r => ({ ...r, base: { ...r.base, coins: v } }))}/>
-                <StepCtrl label="🪵 木箱" value={reward.base.woodChests}
-                  onChange={v => setReward(r => ({ ...r, base: { ...r.base, woodChests: v } }))}/>
-              </div>
-            </div>
-
-            {/* 均分獎勵說明（六大族改版後，這部分改由 worldBossData.js 的 DROP_TABLE_BY_CATEGORY 依王的分類自動決定，不再是這裡手動編輯） */}
-            <div className="bg-white/5 rounded-xl p-3 text-xs text-slate-400 leading-relaxed">
-              <div className="text-amber-400 font-bold mb-1.5">🎁 均分獎勵（比例貨幣/寶箱/王卡/召喚卷）</div>
-              依這隻王的分類（六族小王/六族大王/貓貓/教練）自動套用對應掉落表——比例金幣/箭露/射手經驗/貓咪經驗/羈絆值、寶箱、怪物卡包、世界王卡機率、召喚卷。數值定義在 <code className="text-amber-300">worldBossData.js::DROP_TABLE_BY_CATEGORY</code>，目前還沒做成後台可調，要調整請直接改該檔案。
-              <br/>排名額外獎勵（前三名/尾刀）＋專屬收藏獎盃另外自動疊加發放，不用在這裡設定。
-            </div>
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-xs text-slate-300 leading-relaxed">
+            <div className="text-amber-300 font-bold mb-2">🎁 獎勵於生成時鎖定</div>
+            系統會依所選世界王級別，在建立活動時逐欄位獨立抽出參戰、共同擊殺與分潤獎池。建立後只能查看，不能手動修改或重抽；前三名與尾刀榮譽會額外疊加。
           </div>
 
           {createMsg && (
@@ -757,7 +675,7 @@ export default function AdminWorldBoss() {
                   <WorldBossSVG bossKey={k} currentHP={b.hp} maxHP={b.hp} size={32}/>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-bold truncate" style={{ color: grantBossKey === k ? b.accent : undefined }}>{card?.icon} {b.name}</div>
-                    <div className="text-xs text-slate-500">{b.title}｜{card?.statMode === "choose" ? "屬性可選" : `固定 ${card?.stat?.toUpperCase()}`}</div>
+                    <div className="text-xs text-slate-500">{b.title}｜專屬被動</div>
                   </div>
                   {grantBossKey === k && <span className="text-amber-400 text-xs">✓</span>}
                 </button>

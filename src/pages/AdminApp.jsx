@@ -13,6 +13,7 @@ import { levelFromXP, rankFromLevel } from "../lib/adventurerSystem";
 import { archerLevelFromXP } from "../lib/archerLevel";
 import { APP_VERSION } from "../lib/version";
 import { subscribeWorldBossStatus } from "../lib/worldBossDb";
+import { initGoalTracker } from "../lib/villageGoalDb";
 import { subscribeLatestBroadcast } from "../lib/dungeonDb";
 import { OverlayModal } from "../components/shared/UI";
 import MemberHome         from "../components/member/MemberHome";
@@ -149,6 +150,10 @@ const ARCHER_NAV_PRELOADS = {
 export default function AdminApp() {
   const { logout, profile } = useAuth();
   const { policy: costPolicy } = useCostControl();
+  useEffect(() => {
+    const unsub = initGoalTracker();
+    return () => unsub?.();
+  }, []);
   const VALID_PAGES = new Set(["daily", "members-finance", "game-events", "system-tools"]);
   const [page, setPageState]        = useState(() => {
     const isArcher = sessionStorage.getItem("admin_archerMode") === "1";
@@ -195,13 +200,13 @@ export default function AdminApp() {
   const [allMessages,     setAllMessages]     = useState([]);
   const [pendingExtList,  setPendingExtList]  = useState([]);
   const [certTasksList,   setCertTasksList]   = useState([]);
-  const [pendingCheckinN,      setPendingCheckinN]      = useState(0);
-  const [pendingCheckinAwaitN, setPendingCheckinAwaitN] = useState(0);
-  const [pendingMonthlyN,  setPendingMonthlyN]  = useState(0);
+  const [pendingCheckinList, setPendingCheckinList] = useState([]);
+  const [pendingMonthlyList, setPendingMonthlyList] = useState([]);
   const pendingMonthlyRef = useRef(null); // null = 尚未收到首次快照（首次不播提醒音）
-  const [pendingGuildN,    setPendingGuildN]    = useState(0);
+  const [pendingGuildList, setPendingGuildList] = useState([]);
   const [bossIntroEvent,   setBossIntroEvent]   = useState(null);
   const [activeWorldBoss,  setActiveWorldBoss]  = useState(null); // 供首頁「進行中」卡顯示世界王入口
+  const [worldBossStatus,  setWorldBossStatus]  = useState(null); // 與射手模式大廳共用
   const [dungeonKillAlert, setDungeonKillAlert] = useState(null);
   const lastBroadcastIdRef = useRef(null);
   const [latestVersion, setLatestVersion] = useState(null);
@@ -287,7 +292,10 @@ export default function AdminApp() {
   }, [profile?.id, costPolicy.level]);
 
   useEffect(() => {
-    if (!profile?.id) return;
+    if (!profile?.id || !archerMode) {
+      seenQuestIds.current = null;
+      return;
+    }
     return subscribeActiveGuildQuests(quests => {
       if (seenQuestIds.current === null) {
         seenQuestIds.current = new Set(quests.map(q => q.id));
@@ -297,7 +305,7 @@ export default function AdminApp() {
       quests.forEach(q => seenQuestIds.current.add(q.id));
       if (newSpecial) setSpecialAlert(newSpecial);
     });
-  }, [profile?.id]); // eslint-disable-line
+  }, [profile?.id, archerMode]); // eslint-disable-line
 
   useEffect(() => {
     if (!archerMode) return;
@@ -334,6 +342,10 @@ export default function AdminApp() {
   const pendingMsgN  = allMessages.filter(m => !m.reply).length;
   const pendingExtN  = pendingExtList.length;
   const pendingExamN = certTasksList.length;
+  const pendingMonthlyN = pendingMonthlyList.length;
+  const pendingCheckinN = pendingCheckinList.length;
+  const pendingCheckinAwaitN = pendingCheckinList.filter(c => c.status === "pending").length;
+  const pendingGuildN = pendingGuildList.length;
 
   // eslint-disable-next-line no-unused-vars -- 舊公會下架後暫時沒有呼叫者，保留以備懸賞玩法回歸
   function handleGuildNavigate(targetPage, ctx) {
@@ -406,17 +418,17 @@ export default function AdminApp() {
     const u4 = subscribePendingCertTasks(list => setCertTasksList(Array.isArray(list) ? list : []));
     const u5 = subscribePendingCheckins(list => {
       const arr = Array.isArray(list) ? list : [];
-      setPendingCheckinN(arr.length);
-      setPendingCheckinAwaitN(arr.filter(c => c.status === "pending").length);
+      setPendingCheckinList(arr);
     });
     const u6 = subscribePendingMonthlyRequests(list => {
-      const n = list.length;
+      const normalized = Array.isArray(list) ? list : [];
+      const n = normalized.length;
       // 首次快照（ref 為 null）只記錄不播音，避免開頁面就「亂播音效」
       if (pendingMonthlyRef.current !== null && n > pendingMonthlyRef.current) sfxNotify();
       pendingMonthlyRef.current = n;
-      setPendingMonthlyN(n);
+      setPendingMonthlyList(normalized);
     });
-    const u7 = subscribeGuildSubmissions(list => setPendingGuildN(Array.isArray(list) ? list.length : 0));
+    const u7 = subscribeGuildSubmissions(list => setPendingGuildList(Array.isArray(list) ? list : []));
     return () => { u1 && u1(); u2 && u2(); u3 && u3(); u4 && u4(); u5 && u5(); u6 && u6(); u7 && u7(); };
   }, []);
 
@@ -451,6 +463,7 @@ export default function AdminApp() {
   // 世界王登場：教練也要看到
   useEffect(() => {
     return subscribeWorldBossStatus(ev => {   // 小狀態文件：不再因為別人打王而被推 HP 更新
+      setWorldBossStatus(ev || null);
       setActiveWorldBoss(ev && ev.status === "active" ? ev : null);
       if (!ev) return;
       const key = `wb_intro_${ev.id}`;
@@ -458,18 +471,6 @@ export default function AdminApp() {
       sessionStorage.setItem(key, "1");
       setBossIntroEvent(ev);
     });
-  }, []);
-
-  // 瀏覽器空閒時預載最常用後台頁面
-  useEffect(() => {
-    const idle = typeof requestIdleCallback !== "undefined" ? requestIdleCallback : (cb) => setTimeout(cb, 1200);
-    const cancel = typeof cancelIdleCallback !== "undefined" ? cancelIdleCallback : clearTimeout;
-    const h = idle(() => {
-      import("../components/admin/AdminMembers");
-      import("../components/admin/AdminReviewCenter");
-      import("../components/admin/AdminCompetitions");
-    }, { timeout: 4000 });
-    return () => cancel(h);
   }, []);
 
 const adminNav = [
@@ -654,7 +655,7 @@ const adminNav = [
           {page==="specialization-runes" && <EquipmentProgressionPage onBack={()=>setPage("inventory-hub")}/>}
           {page==="coinshop"    && <CoinShop/>}
           {page==="gacha"       && <CatVillage catCards={profile?.catCards} gachaCoins={profile?.gachaCoins ?? 0} initialTab={gachaInitTab} />}
-          {page==="worldboss"   && <div style={{ position:"fixed", inset:0, zIndex:60 }}><WorldBossLobby onBack={()=>setPage("adventure-hub")} sharedData={sharedPlayerData}/></div>}
+          {page==="worldboss"   && <div style={{ position:"fixed", inset:0, zIndex:60 }}><WorldBossLobby onBack={()=>setPage("adventure-hub")} sharedData={sharedPlayerData} worldBossStatus={worldBossStatus}/></div>}
           {page==="cats"        && <CatCollection onBack={()=>setPage("inventory-hub")} onOpenBook={()=>setPage("catbook")} onOpenForge={()=>{ setGachaInitTab("forge"); setPage("gacha"); }}/>}
           {page==="catbook"     && <CatStoryBook  onBack={()=>setPage("cats")}/>}
           {page==="story"       && <StoryBook     onBack={()=>setPage("inventory-hub")}/>}
@@ -894,8 +895,8 @@ const adminNav = [
 
         {/* 1. 今日營運 */}
         {page === "daily" && dailySub === "booking"     && <AdminBooking />}
-        {page === "daily" && dailySub === "review"      && <AdminUnifiedReview pendingCert={pendingCertList} messages={allMessages} pendingExtItems={pendingExtList} certTasks={certTasksList} />}
-        {page === "daily" && dailySub === "monthlycard" && <AdminFinance adminProfile={profile} />}
+        {page === "daily" && dailySub === "review"      && <AdminUnifiedReview pendingCert={pendingCertList} messages={allMessages} pendingExtItems={pendingExtList} certTasks={certTasksList} pendingCheckins={pendingCheckinList} guildSubmissions={pendingGuildList} />}
+        {page === "daily" && dailySub === "monthlycard" && <AdminFinance adminProfile={profile} pendingRequests={pendingMonthlyList} />}
         {page === "daily" && dailySub === "guestreviews" && <AdminGuestReviews />}
 
         {/* 2. 學員與財務 */}
@@ -903,7 +904,7 @@ const adminNav = [
         {page === "members-finance" && mfSub === "guests"    && <AdminGuestAccounts />}
         {page === "members-finance" && mfSub === "kidmode"   && <AdminKidMode />}
         {page === "members-finance" && mfSub === "learn"     && <AdminLearn />}
-        {page === "members-finance" && mfSub === "messages"  && <AdminMessages />}
+        {page === "members-finance" && mfSub === "messages"  && <AdminMessages messages={allMessages} />}
 
         {/* 3. 遊戲與活動 */}
         {page === "game-events" && eventsSub === "villagegoal"   && <AdminVillageGoals />}
@@ -960,84 +961,8 @@ const adminNav = [
 }
 
 
-// ── Hub 共用：返回按鈕 ─────────────────────────────────────
-function HubBack({ onClick }) {
-  return (
-    <div style={{background:"#1e293b",borderBottom:"1px solid rgba(255,255,255,0.08)",padding:"10px 16px",position:"sticky",top:0,zIndex:30}}>
-      <button onClick={onClick} style={{color:"#94a3b8",fontSize:"13px",fontWeight:"700",background:"none",border:"none",cursor:"pointer"}}>← 返回</button>
-    </div>
-  );
-}
-
-// ── Hub 共用：選項卡片 ─────────────────────────────────────
-function HubCard({ icon, label, badge, desc, onClick }) {
-  return (
-    <button onClick={onClick} style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:"6px",background:"#1e293b",border:"1px solid rgba(255,255,255,0.10)",borderRadius:"16px",padding:"20px 12px",cursor:"pointer",boxShadow:"0 1px 4px rgba(0,0,0,0.2)",transition:"all 0.15s",width:"100%"}}>
-      {badge > 0 && (
-        <span style={{position:"absolute",top:"8px",right:"8px",background:"#ef4444",color:"white",fontSize:"10px",fontWeight:"900",borderRadius:"99px",padding:"2px 6px",minWidth:"18px",textAlign:"center"}}>{badge}</span>
-      )}
-      <span style={{fontSize:"28px"}}>{icon}</span>
-      <span style={{fontSize:"13px",fontWeight:"900",color:"#f1f5f9"}}>{label}</span>
-      {desc && <span style={{fontSize:"11px",color:"#94a3b8",textAlign:"center",lineHeight:"1.4"}}>{desc}</span>}
-    </button>
-  );
-}
-
-// ── 會員中心 Hub ──────────────────────────────────────────
-function AdminMemberHub({ onSelect, pendingCertN, pendingMsgN, pendingCheckinN, pendingExtN, pendingExamN, pendingMonthlyN, pendingGuildN }) {
-  const reviewBadge = pendingCertN + pendingCheckinN + pendingExtN + pendingExamN + pendingGuildN;
-  return (
-    <div style={{padding:"16px"}}>
-      <div style={{fontWeight:"900",color:"#f1f5f9",fontSize:"18px",marginBottom:"16px"}}>👥 會員中心</div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
-        <HubCard icon="👤" label="會員管理" desc="帳號、積分、裝備" onClick={() => onSelect("members")} />
-        <HubCard icon="🎓" label="權限設定" desc="分級鎖定頁面矩陣" onClick={() => onSelect("tierperms")} />
-        <HubCard icon="🎫" label="財務" badge={pendingMonthlyN} desc="月費卡、收費記錄" onClick={() => onSelect("monthlycard")} />
-        <HubCard icon="🔔" label="審核中心" badge={reviewBadge} desc="檢定、報到、外賽審核" onClick={() => onSelect("review")} />
-        <HubCard icon="📓" label="學習記錄" desc="查看、回覆學生紀錄" onClick={() => onSelect("learn")} />
-        <HubCard icon="💬" label="留言" badge={pendingMsgN} desc="學生留言管理" onClick={() => onSelect("messages")} />
-        <HubCard icon="🏰" label="地下城測試" desc="設定玩家地下城類型" onClick={() => onSelect("dungeon-test")} />
-        <HubCard icon="🎫" label="訪客帳號" desc="檢視訪客、預約統計、轉正式" onClick={() => onSelect("guest-accounts")} />
-        <HubCard icon="🎈" label="兒童模式" desc="夏令營場次、帳號轉正式" onClick={() => onSelect("kidmode")} />
-        <HubCard icon="📅" label="線上約課" desc="行事曆、開放名單、報表" onClick={() => onSelect("booking")} />
-      </div>
-    </div>
-  );
-}
-
-// ── 賽事中心 Hub ──────────────────────────────────────────
-function AdminEventsHub({ onSelect }) {
-  return (
-    <div style={{padding:"16px"}}>
-      <div style={{fontWeight:"900",color:"#f1f5f9",fontSize:"18px",marginBottom:"16px"}}>🏆 賽事中心</div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
-        <HubCard icon="🏆" label="比賽管理"   desc="新增、報名、審核" onClick={() => onSelect("comps")} />
-        <HubCard icon="🎮" label="打怪賽事"   desc="每日任務、賽事模式" onClick={() => onSelect("battlesetting")} />
-        <HubCard icon="🏛️" label="冒險者公會" desc="懸賞任務、晉階設定" onClick={() => onSelect("guild-admin")} />
-        <HubCard icon="🌍" label="世界王"     desc="BOSS 管理、獎勵" onClick={() => onSelect("worldboss-admin")} />
-        <HubCard icon="🔄" label="重置中心"   desc="資料重置與清除" onClick={() => onSelect("reset-center")} />
-        <HubCard icon="🎨" label="戰鬥版式"   desc="戰鬥 UI 版式測試預覽" onClick={() => onSelect("battle-test")} />
-      </div>
-    </div>
-  );
-}
-
-// ── 裝備&故事 Hub ─────────────────────────────────────────
-function AdminItemsHub({ onSelect }) {
-  return (
-    <div style={{padding:"16px"}}>
-      <div style={{fontWeight:"900",color:"#f1f5f9",fontSize:"18px",marginBottom:"16px"}}>⚔️ 裝備 & 故事</div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
-        <HubCard icon="🗡️" label="裝備庫"    desc="裝備道具管理"       onClick={() => onSelect("equipitems")} />
-        <HubCard icon="📖" label="故事本"    desc="故事章節管理"       onClick={() => onSelect("story-admin")} />
-        <HubCard icon="🏡" label="村莊調試"  desc="給資源、調建築等級" onClick={() => onSelect("village-manager")} />
-      </div>
-    </div>
-  );
-}
-
 // ── 統一審核中心 ──────────────────────────────────────────
-function AdminUnifiedReview({ pendingCert, messages, pendingExtItems, certTasks }) {
+function AdminUnifiedReview({ pendingCert, messages, pendingExtItems, certTasks, pendingCheckins, guildSubmissions }) {
   const [tab, setTab] = useState("general");
   const TABS = [
     { id: "general", label: "🔔 一般審核" },
@@ -1057,9 +982,10 @@ function AdminUnifiedReview({ pendingCert, messages, pendingExtItems, certTasks 
         <AdminReviewCenter
           pendingCert={pendingCert} messages={messages}
           pendingExtItems={pendingExtItems} certTasks={certTasks}
+          pendingCheckins={pendingCheckins}
         />
       )}
-      {tab==="guild" && <AdminGuildQuests defaultTab="review"/>}
+      {tab==="guild" && <AdminGuildQuests defaultTab="review" submissions={guildSubmissions}/>}
     </div>
   );
 }

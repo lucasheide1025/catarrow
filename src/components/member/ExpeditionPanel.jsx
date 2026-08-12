@@ -1,6 +1,5 @@
 // src/components/member/ExpeditionPanel.jsx — 遠征隊派遣面板（3 槽位）
 import { useState, useEffect, useRef } from "react";
-import { subscribeMyCats } from "../../lib/catDb";
 import { CATS, CAT_TYPE_MAP } from "../../lib/catData";
 import { catLevelFromXP } from "../../lib/catLevel";
 import { startExpedition, collectExpedition } from "../../lib/db";
@@ -299,8 +298,7 @@ function SlotCard({ slotIdx, expedition, myCats, now, onSelect, isActive, onColl
   );
 }
 
-export default function ExpeditionPanel({ profile }) {
-  const [myCats,      setMyCats]      = useState({});
+export default function ExpeditionPanel({ profile, myCats = {} }) {
   const [activeSlot,  setActiveSlot]  = useState(null);
   const [selectedCat, setSelectedCat] = useState(null);
   const [selectedTier,setSelectedTier]= useState(null);
@@ -310,11 +308,6 @@ export default function ExpeditionPanel({ profile }) {
   const [rewardResult,setRewardResult]= useState(null);
   const [now,         setNow]         = useState(Date.now());
   const timerRef = useRef(null);
-
-  useEffect(() => {
-    if (!profile?.id) return;
-    return subscribeMyCats(profile.id, setMyCats);
-  }, [profile?.id]);
 
   useEffect(() => {
     timerRef.current = setInterval(() => setNow(Date.now()), 1000);

@@ -1,8 +1,7 @@
 // src/lib/worldBossStrikeEngine.js
 // 世界王強攻 resolver（垂直切片,純函式無 Firestore）。
 // 依 research/claude-worldboss-skill-spec.md（PRD 11-21 結構化）：
-//   R2 強攻 1.6x（不可擊倒,保 1 HP,可帶一個較輕異常）
-//   R4 終結 2.2x（可擊倒;不追加持續傷害;完全破解仍播非傷害演出）
+//   R2/R4 倍率依王級別分層（small/big/cat/coach）；不可擊倒/可擊倒規則不變。
 //   結算順序（PRD 19）：基礎反擊 × 倍率 → 射擊破解減幅 → 防禦/專精抗性 → 護盾 → HP
 //   once-only：resolvedKey = {sortieId}:{round}:{bossKey}:{skillId},重複結算只回演出
 // UI/持久化由呼叫端（Codex 接線）處理;本模組只做決定性結算。
@@ -11,16 +10,15 @@ import { calculateBreakRatio, getBreakOutcome, makeSkillResolutionKey, reduceSta
 
 export const WB_STRIKE_ROUND = 2;
 export const WB_FINISHER_ROUND = 4;
-export const WB_STRIKE_MULTIPLIER = 1.6;          // PRD 17：教練＋貓王
-export const WB_FINISHER_MULTIPLIER = 2.2;        // PRD 18
-export const WB_FAMILY_STRIKE_MULTIPLIER = 1.3;   // PRD 17：六族 12 王偏弱
-export const WB_FAMILY_FINISHER_MULTIPLIER = 1.8;
+export const WB_SMALL_STRIKE_MULTIPLIER=1.2,WB_SMALL_FINISHER_MULTIPLIER=1.6;
+export const WB_BIG_STRIKE_MULTIPLIER=1.4,WB_BIG_FINISHER_MULTIPLIER=1.9;
+export const WB_CAT_STRIKE_MULTIPLIER=1.6,WB_CAT_FINISHER_MULTIPLIER=2.2;
+export const WB_COACH_STRIKE_MULTIPLIER=1.8,WB_COACH_FINISHER_MULTIPLIER=2.5;
+export const WB_STRIKE_MULTIPLIER=WB_CAT_STRIKE_MULTIPLIER,WB_FINISHER_MULTIPLIER=WB_CAT_FINISHER_MULTIPLIER;
+export const WB_FAMILY_STRIKE_MULTIPLIER=WB_BIG_STRIKE_MULTIPLIER,WB_FAMILY_FINISHER_MULTIPLIER=WB_BIG_FINISHER_MULTIPLIER;
 
 // bossClass → 期望倍率（config 資料層宣告 bossClass:"prime"|"family",未宣告視為 prime）
-const EXPECTED_MULTIPLIERS = {
-  prime:  { strike: WB_STRIKE_MULTIPLIER,        finisher: WB_FINISHER_MULTIPLIER },
-  family: { strike: WB_FAMILY_STRIKE_MULTIPLIER, finisher: WB_FAMILY_FINISHER_MULTIPLIER },
-};
+function expectedMultipliers(config){const id=config?.r2Strike?.skillId||"";if(id.includes("_cat_"))return{strike:WB_CAT_STRIKE_MULTIPLIER,finisher:WB_CAT_FINISHER_MULTIPLIER};if(["head_coach","wife","yumi"].some(key=>id.includes(`_${key}_`)))return{strike:WB_COACH_STRIKE_MULTIPLIER,finisher:WB_COACH_FINISHER_MULTIPLIER};if(id.includes("_small_"))return{strike:WB_SMALL_STRIKE_MULTIPLIER,finisher:WB_SMALL_FINISHER_MULTIPLIER};return{strike:WB_BIG_STRIKE_MULTIPLIER,finisher:WB_BIG_FINISHER_MULTIPLIER};}
 
 // 排程：世界王不用一般怪循環（PRD 50）,只有 R2/R4 兩擊。
 export function getWorldBossScheduledStrike(config, round) {
@@ -45,10 +43,10 @@ export function getWorldBossTelegraph(config, roundJustEnded) {
 }
 
 // 單一世界王 config 驗證（24 王上線前逐一跑;PRD 17/20-21）
-// 倍率依 bossClass：教練/貓王(prime) 1.6/2.2、六族(family) 1.3/1.8。
+// 倍率依現行四級：小王 1.2/1.6、大王 1.4/1.9、貓王 1.6/2.2、教練 1.8/2.5。
 export function validateWorldBossSkillConfig(config) {
   const errors = [];
-  const expected = EXPECTED_MULTIPLIERS[config?.bossClass === "family" ? "family" : "prime"];
+  const expected = expectedMultipliers(config);
   const r2 = config?.r2Strike;
   const r4 = config?.r4Finisher;
   if (!r2?.skillId || !r2?.name) errors.push("r2_identity");

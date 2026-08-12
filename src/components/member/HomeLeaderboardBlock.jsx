@@ -62,10 +62,12 @@ export default function HomeLeaderboardBlock({ myId, onPageChange }) {
   const [mine, setMine] = useState(null);
   const [updatedAt, setUpdatedAt] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!myId || busy) return;
     setBusy(true);
+    setLoadError(false);
     try {
       const members = await getMembers({ fresh: true });
       const next = computeMine(members, myId);
@@ -74,6 +76,7 @@ export default function HomeLeaderboardBlock({ myId, onPageChange }) {
       setUpdatedAt(Date.now());
     } catch {
       // 讀不到就維持舊資料，不要把畫面清空
+      setLoadError(true);
     } finally {
       setBusy(false);
     }
@@ -86,7 +89,7 @@ export default function HomeLeaderboardBlock({ myId, onPageChange }) {
     refresh();                                  // 本機還沒有 → 第一次自動抓一次
   }, [myId]); // eslint-disable-line
 
-  if (!myId || mine === null) return null;
+  if (!myId) return null;
 
   const action = (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
@@ -100,6 +103,18 @@ export default function HomeLeaderboardBlock({ myId, onPageChange }) {
       </button>
     </span>
   );
+
+  if (mine === null) {
+    return (
+      <Card className="relative isolate overflow-hidden p-4" style={{ background:"linear-gradient(145deg,#171d31,#101827 70%)", border:"1px solid rgba(96,165,250,.22)" }}>
+        <MemberFeatureArt name="history" size={125} style={{ position:"absolute", right:-24, bottom:-35, opacity:.13, zIndex:-1 }} />
+        <SectionHeader icon="🏆" title="排行榜" action={action} />
+        <div role="status" style={{ fontSize:12, color:"rgba(255,255,255,.58)", textAlign:"center", padding:"12px 0" }}>
+          {loadError ? "暫時無法取得排名，稍後可按「更新排名」重試。" : "正在讀取你的排行榜資料…"}
+        </div>
+      </Card>
+    );
+  }
 
   if (mine.length === 0) {
     return (

@@ -30,7 +30,7 @@ export const MONSTER_STATUSES = Object.freeze({
   },
   burn: {
     id: "burn", name: "灼燒", icon: "🔥", color: "#f97316", kind: "dot",
-    unit: "atkPct", nonLethal: false, maxDuration: 2,
+    unit: "atkPct", nonLethal: false, maxDuration: 3,
     desc: "每回合依你的攻擊力持續燃燒，可以造成最後一擊",
   },
   bleed: {
@@ -103,7 +103,7 @@ export function rollInflict({ score, inflict = {}, rand = Math.random } = {}) {
   for (const [id, cfg] of Object.entries(inflict || {})) {
     const def = MONSTER_STATUSES[id];
     if (!def || !cfg) continue;
-    const chance = Math.min(procCapFor(id), Math.max(0, num(cfg.chancePct)));
+    const chance = Math.min(cfg.uncapped ? 100 : procCapFor(id), Math.max(0, num(cfg.chancePct)));
     if (chance <= 0) continue;
     if (rand() * 100 >= chance) continue;
     out.push({

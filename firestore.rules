@@ -455,6 +455,7 @@ service cloud.firestore {
     match /guildProfiles/{docId} {
       allow read, write: if isAdmin() || ownsMember(docId);
     }
+
     // 裝備專精（design.md §8）：解鎖/升級/切換,transaction 內驗證金幣與素材
     match /equipSpecializations/{docId} {
       allow read, write: if isAdmin() || ownsMember(docId);

@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route, useSearchParams } from "react-router-dom"
 import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { Spinner } from "./components/shared/UI";
 import ErrorBoundary from "./components/shared/ErrorBoundary";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import LoginPage   from "./pages/LoginPage";
 import AdminApp    from "./pages/AdminApp";
 import MemberApp   from "./pages/MemberApp";
@@ -14,7 +14,6 @@ import ZombieGame   from "./zombie/ZombieGame";
 import CatalogPreviewPage from "./features/catalog/CatalogPreviewPage";
 import GuildTestApp from "./guild/GuildTestApp";
 import RaidSandbox from "./worldboss/ui/RaidSandbox";
-import { initGoalTracker } from "./lib/villageGoalDb";
 import { CostControlProvider } from "./hooks/useCostControl";
 import { resolveGuestEntry } from "./lib/guestEntryRoute";
 
@@ -82,12 +81,6 @@ function AppRoutes() {
 }
 
 export default function App() {
-  // 啟動村目標追蹤器（訂閱 active 目標，供 addRoundArrows 貢獻箭數）
-  useEffect(() => {
-    const unsub = initGoalTracker();
-    return () => unsub?.();
-  }, []);
-
   return (
     <ErrorBoundary>
       <AuthProvider>

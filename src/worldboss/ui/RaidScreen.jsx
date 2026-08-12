@@ -19,7 +19,7 @@ import { botRoundArrows } from "../domain/raidBot";
 import { allSubmitted, pendingMembers } from "../domain/raidTeam";
 import { saveRaidProgress } from "../domain/raidResume";
 import { RAID_MEDALS } from "../raidAssets";
-import { rewardRows, rollSortieRewards } from "../domain/raidRewards";
+import { rewardRows } from "../domain/raidRewards";
 import { buildKillPayload, findKillingBlow, killAnnouncement, lastHitReward } from "../domain/raidKill";
 import RaidBoss from "./RaidBoss";
 import RaidTarget from "./RaidTarget";
@@ -33,6 +33,7 @@ export default function RaidScreen({
   onState,                     // (nextState, roundLog) => void
   bossKey, bossTitle,
   bossMeta = null,             // { family, familyTier } → 決定獎勵檔次
+  rewardSnapshot = null,
   eventId = null,
   isHost = true,               // 只有房主看得到強制推進
   onForceAdvance = null,       // 組隊接線上時由外層提供（沙盒直接本機推進）
@@ -377,13 +378,7 @@ export default function RaidScreen({
           };
           setKillInfo(killInfoData);
         }
-        rewardData = rollSortieRewards({
-          boss: bossMeta || { family: null },
-          totals: next.totals,
-          bossMaxHp: next.boss.maxHp,
-          defeated: next.bossHp <= 0,
-          hasCat: ((next.members || []).find(m => m.memberId === meId) || next.members?.[0])?.cats?.length > 0,
-        });
+        rewardData = rewardSnapshot?.version===2?{...rewardSnapshot.participation,snapshotVersion:2}:null;
         setReward(rewardData);
         // 存「已結束未結算」：重整後 resume 回來直接接上結算畫面，獎勵不會消失
         saveRaidProgress(next, {
@@ -397,7 +392,7 @@ export default function RaidScreen({
       onRoundDone?.(next, log);          // 🏆 演出跑完才叫——激勵詞要在動畫之後
       if (next.finished) onFinish?.(next);
     }, total + 240));
-  }, [state, meId, bossKey, bossMeta, eventId, onState, onFinish, onRoundDone, pushFloat]);
+  }, [state, meId, bossKey, bossMeta, rewardSnapshot, eventId, onState, onFinish, onRoundDone, pushFloat]);
 
   /** 本機算完再播（單人、以及沙盒的假組隊） */
   const playRound = useCallback(collected => {

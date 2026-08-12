@@ -21,10 +21,11 @@ const CSS = `
 @keyframes gather-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 `;
 
-export default function CouncilHall({ profile, village, onBack, initialTab = "expedition" }) {
+export default function CouncilHall({ profile, village, myCats, onBack, initialTab = "expedition" }) {
   const [tab, setTab] = useState(initialTab === "collect" ? "collect" : "expedition");
   const [boardTeam, setBoardTeam] = useState(false);
   const [boardChecking, setBoardChecking] = useState(false);
+  const [reconnectBoardRoomId, setReconnectBoardRoomId] = useState(null);
   const [activeSite, setActiveSite] = useState(null);
   const [activeRunNonce, setActiveRunNonce] = useState(0);
   const [partySite, setPartySite] = useState(null);
@@ -53,10 +54,10 @@ export default function CouncilHall({ profile, village, onBack, initialTab = "ex
     let cancelled = false;
     setBoardChecking(true);
     findReconnectableBoardRoom(profile.id)
-      .then(r => { if (!cancelled && r.room) setBoardTeam(true); })
+      .then(r => { if (!cancelled && r.room) { setReconnectBoardRoomId(r.room.id); setBoardTeam(true); } })
       .finally(() => { if (!cancelled) setBoardChecking(false); });
     return () => { cancelled = true; };
-  }, [tab, boardTeam, profile?.id]);
+  }, [tab, profile?.id]);
 
   useEffect(() => {
     if (!profile?.id || activeSite) return;
@@ -260,12 +261,12 @@ export default function CouncilHall({ profile, village, onBack, initialTab = "ex
         </div>
       )}
 
-      {tab === "expedition" && <ExpeditionPanel profile={profile} />}
+      {tab === "expedition" && <ExpeditionPanel profile={profile} myCats={myCats} />}
 
       {tab === "collect" && (boardChecking
         ? <div style={{ padding: "48px 0", textAlign: "center", color: "rgba(255,255,255,0.6)", fontWeight: 700 }}>🔄 重新連線中…</div>
         : boardTeam
-          ? <CatVillageBoardTeam profile={profile} onClose={() => { setBoardTeam(false); setTab("expedition"); }} />
+          ? <CatVillageBoardTeam profile={profile} initialRoomId={reconnectBoardRoomId} onClose={() => { setReconnectBoardRoomId(null); setBoardTeam(false); setTab("expedition"); }} />
           : <CatVillageBoard profile={profile} onClose={() => setTab("expedition")} onTeam={() => setBoardTeam(true)} />
       )}
 

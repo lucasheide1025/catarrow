@@ -29,7 +29,7 @@ const activeIds = data => Object.keys(data?.members || {}).filter(id => data.mem
 export async function createRaidRoom({
   hostId, hostName, bossKey, eventId,
   targetFmt = "half_17", distanceM = 10,
-  stats, archerLevel = 1, cats = [], inflict = null,
+  stats, archerLevel = 1, cats = [], inflict = null, cardFx = null,
 }) {
   // ⚠️ 房間層的 targetFmt/distanceM 只是**新進來的人的預設值**。
   //    真正生效的是每位成員自己的那一份（作者 2026-07-31：
@@ -48,7 +48,7 @@ export async function createRaidRoom({
         [hostId]: {
           name: hostName || "房主", ready: true,
           atk: Number(stats?.atk) || 0, def: Number(stats?.def) || 0, hp: Number(stats?.hp) || 100,
-          archerLevel, cats: cats || [], inflict: inflict || {},
+          archerLevel, cats: cats || [], inflict: inflict || {}, cardFx:cardFx || null,
           targetFmt, distanceM, joinedAt: serverTimestamp(),
         },
       },
@@ -58,7 +58,7 @@ export async function createRaidRoom({
   } catch (e) { return { ok: false, reason: e?.message }; }
 }
 
-export async function joinRaidRoom(code, memberId, memberName, { stats, archerLevel = 1, cats = [], targetFmt = null, distanceM = null, inflict = null } = {}) {
+export async function joinRaidRoom(code, memberId, memberName, { stats, archerLevel = 1, cats = [], targetFmt = null, distanceM = null, inflict = null, cardFx = null } = {}) {
   if (!code || !memberId) return { ok: false, reason: "參數錯誤" };
   try {
     const snap = await getDocs(query(
@@ -77,7 +77,7 @@ export async function joinRaidRoom(code, memberId, memberName, { stats, archerLe
       tx.update(roomRef, {
         [`members.${memberId}`]: {
           name: memberName || "隊員", ready: false,
-          atk: Number(stats?.atk) || 0, def: Number(stats?.def) || 0, hp: Number(stats?.hp) || 100,
+          atk: Number(stats?.atk) || 0, def: Number(stats?.def) || 0, hp: Number(stats?.hp) || 100, cardFx:cardFx || null,
           archerLevel, cats: cats || [], inflict: inflict || {},
           targetFmt: targetFmt || data.targetFmt || "half_17",
           distanceM: Number(distanceM) || Number(data.distanceM) || 10,

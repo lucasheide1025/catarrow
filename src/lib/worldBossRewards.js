@@ -52,9 +52,9 @@ export const EXPECTED_DAMAGE_PER_ATTACK = 12000;
 
 /** 四個分類各要幾人次才打得死 */
 export const TARGET_ATTACKS = Object.freeze({
-  cat: 8,             // 入門王：一小群人一次聚會就能收掉
-  family_small: 14,   // 六族小王
-  family_big: 28,     // 六族大王：要動員
+  cat: 28,
+  family_small: 8,
+  family_big: 14,
   coach: 45,          // 教練隱藏王：全場出動才有機會
 });
 
@@ -149,7 +149,7 @@ export function calcWorldBossRewards(participants = {}, category = "family_big",
   const out = {};
   if (!entries.length) return out;
 
-  // ⚠️ 鍋子大小 ＝ 每人份 × 人數。人多是把鍋變大，不是把每片切小。
+  const snapshot = opts.rewardSnapshot?.version === 2 ? opts.rewardSnapshot : null;
   const n = entries.length;
   const weights = entries.map(([id, p]) => [id, effortWeight(p)]);
   const totalWeight = weights.reduce((s, [, w]) => s + w, 0) || 1;
@@ -157,19 +157,25 @@ export function calcWorldBossRewards(participants = {}, category = "family_big",
   const top3 = opts.top3Ids || [];
   const lastHitBy = opts.lastHitBy || null;
 
-  for (const [id, weight] of weights) {
-    const participation = { ...table.participation };
-    const effort = {};
-    for (const [key, perPlayer] of Object.entries(table.perPlayerEffort)) {
-      effort[key] = Math.round((perPlayer * n) * (weight / totalWeight));
-    }
+  const effortAlloc={};
+  for(const key of Object.keys(snapshot?.effortPool||table.perPlayerEffort)){
+    const pool=snapshot?Number(snapshot.effortPool[key]||0):Number(table.perPlayerEffort[key]||0)*n;
+    const parts=weights.map(([id,weight])=>({id,raw:pool*weight/totalWeight}));
+    let left=pool-parts.reduce((sum,item)=>sum+Math.floor(item.raw),0);
+    parts.sort((a,b)=>(b.raw-Math.floor(b.raw))-(a.raw-Math.floor(a.raw))||a.id.localeCompare(b.id));
+    parts.forEach(item=>{(effortAlloc[item.id]||={})[key]=Math.floor(item.raw)+(left-->0?1:0);});
+  }
+
+  for (const [id] of weights) {
+    const participation = snapshot ? {...snapshot.kill} : { ...table.participation };
+    const effort = effortAlloc[id] || {};
 
     const rankIndex = top3.indexOf(id);
     const rank = rankIndex >= 0 ? rankIndex + 1 : null;
     const honor = {};
-    if (rank) Object.assign(honor, WB_RANK_HONOR[rank]);
+    if (rank) Object.assign(honor, snapshot?.honor?.[`rank${rank}`] || WB_RANK_HONOR[rank]);
     if (lastHitBy === id) {
-      for (const [k, v] of Object.entries(WB_RANK_HONOR.lastHit)) {
+      for (const [k, v] of Object.entries(snapshot?.honor?.lastHit || WB_RANK_HONOR.lastHit)) {
         honor[k] = typeof v === "number" ? num(honor[k]) + v : v;
       }
     }

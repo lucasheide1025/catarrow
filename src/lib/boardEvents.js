@@ -133,7 +133,59 @@ export const OPP_EVENTS = [
 export const BOARD_EVENTS = [...FATE_EVENTS, ...OPP_EVENTS];
 
 // 抽一張指定牌堆的事件（實作端用；種子/去重由呼叫端決定）
-export function drawBoardEvent(deck) {
-  const pool = deck === "fate" ? FATE_EVENTS : OPP_EVENTS;
+// movement=false（組隊用）：排除會動共享棋的效果（move/teleport/trigger/multiplier）——
+// 組隊房只抽資源類事件，每人各自領，避免共享棋移動複雜度。
+export function drawBoardEvent(deck, { movement = true } = {}) {
+  const pool = (deck === "fate" ? FATE_EVENTS : OPP_EVENTS)
+    .filter(ev => movement || !["move", "teleport", "trigger", "multiplier"].includes(ev.effect?.type));
   return pool[Math.floor(Math.random() * pool.length)];
+}
+
+// ── 事件場景圖（08-08：事件配場景圖，取代單純翻卡）────────────
+// 依 effect 類型對應一張場景圖（fate/opp 共用、框色不同）：
+// public/assets/board/event_<scene>.webp；缺圖時 UI 退回 emoji。
+const RESOURCE_SCENE = {
+  coins: "coin", arrowdew: "arrowdew", gachaToken: "gacha", potion: "potion",
+  fur: "material", material: "material", catXP: "cat",
+};
+export function eventSceneOf(effect = {}) {
+  switch (effect.type) {
+    case "move":       return effect.steps > 0 ? "move" : "retreat";
+    case "teleport":   return "teleport";
+    case "trigger":    return effect.event === "monster" ? "monster" : "mining";
+    case "dice":       return "dice";
+    case "multiplier": return "mult";
+    case "chest":      return "chest";
+    case "catBond":    return "cat";
+    case "lose":       return "lose";
+    case "micro":      return "micro";
+    case "team":       return RESOURCE_SCENE[effect.resource] || "micro";
+    case "gain":       return RESOURCE_SCENE[effect.resource] || "micro";
+    default:            return "micro";
+  }
+}
+
+const RESOURCE_LABEL = {
+  coins: "金幣", arrowdew: "箭露", gachaToken: "扭蛋幣", potion: "藥水",
+  fur: "皮草", material: "家族素材", catXP: "貓咪經驗",
+};
+const EVENT_TILE_LABEL = { monster: "怪物", mining: "挖礦", chest: "寶箱", start: "起點", material: "素材" };
+
+// 玩家向效果摘要（rolled＝實際擲出的量；沒傳就顯示範圍）
+export function describeEventEffect(effect = {}, rolled) {
+  switch (effect.type) {
+    case "gain":
+    case "team":
+      return `${effect.type === "team" ? "全隊：" : ""}獲得 ${rolled ?? `${effect.min}~${effect.max}`} ${RESOURCE_LABEL[effect.resource] || effect.resource}`;
+    case "lose":     return `損失 ${rolled ?? `${effect.min}~${effect.max}`} ${RESOURCE_LABEL[effect.resource] || effect.resource}`;
+    case "move":     return effect.steps > 0 ? `前進 ${effect.steps} 格` : `後退 ${-effect.steps} 格`;
+    case "teleport": return `傳送到最近的${EVENT_TILE_LABEL[effect.tile] || effect.tile}格`;
+    case "dice":     return effect.delta > 0 ? `骰子 +${effect.delta}` : `骰子 ${effect.delta}`;
+    case "multiplier": return `下次${EVENT_TILE_LABEL[effect.next] || effect.next}格獎勵 ×${effect.factor}`;
+    case "chest":    return "獲得 1 個寶箱";
+    case "catBond":  return `貓咪經驗 +${effect.xp}、羈絆 +${effect.bond}`;
+    case "trigger":  return `觸發${EVENT_TILE_LABEL[effect.event] || effect.event}`;
+    case "micro":    return `獲得 ${rolled ?? effect.coins} 金幣`;
+    default:          return "";
+  }
 }

@@ -13,7 +13,8 @@
 // ─────────────────────────────────────────────────────────────
 import { doc, getDoc, setDoc, updateDoc, onSnapshot, increment, serverTimestamp, runTransaction } from "firebase/firestore";
 import { db } from "../../lib/firebase";
-import { addMaterials } from "../../lib/db";
+import { addMaterials, addMonsterCards } from "../../lib/db";
+import { resolveGuildDefeatedCards } from "../domain/guildCardDrops";
 import { normalizeGuildProfile, applyLootToProfile, expandLootMaterials, expandExpansionMaterials, sellJunkFromStock } from "../domain/guildRewards";
 import { purchaseFromShop } from "../domain/guildShopPurchase";
 import { markContractDone } from "../domain/guildContracts";
@@ -42,6 +43,7 @@ const toDoc = p => ({
   salvagedCount: p.salvagedCount,
   catEarned: p.catEarned,
   contracts: p.contracts,
+  cardRewardClaims: p.cardRewardClaims || {},
   junkSeen: p.junkSeen,
   junkStock: p.junkStock,
   autoSalvage: p.autoSalvage,
@@ -213,7 +215,10 @@ export async function grantExpeditionRewards(memberId, loot, opts = {}) {
   const current = opts.profile !== undefined ? opts.profile : await loadGuildProfile(memberId);
   const applied = applyLootToProfile(current, loot, { danger: opts.danger || 1 });
   // 委託結案：勝敗都鎖同一張（企劃拍板——失敗也算接過了，當天不能重刷）
-  if (opts.contractId) applied.profile = markContractDone(applied.profile, opts.contractId, opts.dateKey);
+  if (opts.completionContractId) applied.profile = markContractDone(applied.profile, opts.completionContractId, opts.dateKey);
+  const cardClaimKey=opts.cardSourceId&&loot?.won?`${opts.cardSourceId}:${memberId}:guild-cards-v1`:null;
+  const guildCards=cardClaimKey&&!applied.profile.cardRewardClaims?.[cardClaimKey]?resolveGuildDefeatedCards({contractId:opts.cardSourceId,memberId,monsterIds:loot?.defeatedMonsterIds||[]}):[];
+  if(cardClaimKey&&!applied.profile.cardRewardClaims?.[cardClaimKey])applied.profile={...applied.profile,cardRewardClaims:{...(applied.profile.cardRewardClaims||{}),[cardClaimKey]:{cardIds:guildCards.map(card=>card.monsterId),at:Date.now()}}};
   // 擴充材料（主力，2~3 倍量）＋ 舊六族材料鏈（保底）都寫進主線 materialInventory
   const materials = loot?.won
     ? [...expandExpansionMaterials(loot.materials), ...expandLootMaterials(loot.legacyMaterials)]
@@ -228,6 +233,7 @@ export async function grantExpeditionRewards(memberId, loot, opts = {}) {
       await updateDoc(doc(db, "members", memberId), { coins: increment(applied.coinsGained), updatedAt: serverTimestamp() });
     }
     if (materials.length) await addMaterials(memberId, materials);
+    if(guildCards.length)await addMonsterCards(memberId,guildCards);
     return { ok: true, offline: false, ...applied, materialsGranted: materials.length };
   } catch (e) {
     console.warn("grantExpeditionRewards:", e?.message);

@@ -1,49 +1,69 @@
-import { SHOP_CUSTOMERS } from "./villageShop";
-
-const CUSTOMER_GROUPS = [
-  "kitten", "worker", "elder", "scholar",
-  "foodie", "fashion", "adventurer", "vip",
-];
-const CUSTOMER_TIERS = ["common", "rare", "legend"];
-
-export const CUSTOMER_ART_MANIFEST = Object.freeze(Object.fromEntries(
-  CUSTOMER_GROUPS.map(group => [group, Object.freeze(Object.fromEntries(
-    CUSTOMER_TIERS.map(tier => [tier, `/assets/shop/customer-${group}-${tier}.webp`]),
-  ))]),
-));
-
-export const GOOD_ART_MANIFEST = Object.freeze({
-  weapon_0: "/assets/shop/good-bow.webp",
-  weapon_1: "/assets/shop/good-crossbow.webp",
-  weapon_2: "/assets/shop/good-sling.webp",
-  weapon_3: "/assets/shop/good-staff.webp",
-  weapon_4: "/assets/shop/good-short-sword.webp",
-  weapon_5: "/assets/shop/good-long-sword.webp",
-  weapon_6: "/assets/shop/good-fishbone-sword.webp",
-  weapon_7: "/assets/shop/good-war-hammer.webp",
-  armor_0: "/assets/shop/good-helmet.webp",
-  armor_1: "/assets/shop/good-chest-armor.webp",
-  armor_2: "/assets/shop/good-gloves.webp",
-  armor_3: "/assets/shop/good-boots.webp",
-  armor_4: "/assets/shop/good-shield.webp",
-  armor_5: "/assets/shop/good-cloak.webp",
-  armor_6: "/assets/shop/good-amulet.webp",
-  armor_7: "/assets/shop/good-collar.webp",
-  food_0: "/assets/shop/good-rice-bowl.webp",
-  food_1: "/assets/shop/good-ramen.webp",
-  food_2: "/assets/shop/good-sushi.webp",
-  food_3: "/assets/shop/good-dumplings.webp",
-  food_4: "/assets/shop/good-meat-skewer.webp",
-  food_5: "/assets/shop/good-soup.webp",
-  food_6: "/assets/shop/good-salad.webp",
-  food_7: "/assets/shop/good-cake.webp",
+// Explicit ID mapping. Each portrait was visually reviewed; filenames describe
+// the illustrated archetype, which does not always match the old customer array order.
+const customerArt = (archetype, tier) => `/assets/shop/customer-${archetype}-${tier}.webp`;
+export const CUSTOMER_ART_MANIFEST = Object.freeze({
+  小貓仔:customerArt("kitten", "common"), 冒險貓:customerArt("foodie", "common"),
+  淑女貓:customerArt("scholar", "common"), 貓村長:customerArt("elder", "common"),
+  神秘貓:customerArt("adventurer", "common"), 批發貓:customerArt("vip", "common"),
+  收藏貓:customerArt("fashion", "common"), 旅行貓:customerArt("worker", "common"),
+  大食客貓:customerArt("worker", "rare"), 獵人貓:customerArt("foodie", "rare"),
+  貴族貓:customerArt("scholar", "rare"), 貓議員:customerArt("elder", "rare"),
+  幻影貓:customerArt("adventurer", "rare"), 富商貓:customerArt("vip", "rare"),
+  古董商貓:customerArt("fashion", "rare"), 觀光團長貓:customerArt("kitten", "rare"),
+  美食家貓:customerArt("worker", "legend"), 傳奇勇者貓:customerArt("foodie", "legend"),
+  女王貓:customerArt("scholar", "legend"), 貓神:customerArt("elder", "legend"),
+  異世界貓:customerArt("adventurer", "legend"), 銀行家貓:customerArt("vip", "legend"),
+  圖鑑大師貓:customerArt("fashion", "legend"), 異國商隊貓:customerArt("kitten", "legend"),
 });
 
+export const GOOD_ART_MANIFEST = Object.freeze({
+  bow:"/assets/shop/good-bow.webp", "short-sword":"/assets/shop/good-short-sword.webp",
+  "long-sword":"/assets/shop/good-long-sword.webp", staff:"/assets/shop/good-staff.webp",
+  sling:"/assets/shop/good-sling.webp", "war-hammer":"/assets/shop/good-war-hammer.webp",
+  "fishbone-sword":"/assets/shop/good-fishbone-sword.webp", crossbow:"/assets/shop/good-crossbow.webp",
+  "chest-armor":"/assets/shop/good-chest-armor.webp", amulet:"/assets/shop/good-amulet.webp",
+  cloak:"/assets/shop/good-cloak.webp", helmet:"/assets/shop/good-helmet.webp",
+  boots:"/assets/shop/good-boots.webp", gloves:"/assets/shop/good-gloves.webp",
+  shield:"/assets/shop/good-shield.webp", collar:"/assets/shop/good-collar.webp",
+  "rice-bowl":"/assets/shop/good-rice-bowl.webp", salad:"/assets/shop/good-salad.webp",
+  soup:"/assets/shop/good-soup.webp", "meat-skewer":"/assets/shop/good-meat-skewer.webp",
+  cake:"/assets/shop/good-cake.webp", sushi:"/assets/shop/good-sushi.webp",
+  ramen:"/assets/shop/good-ramen.webp", dumplings:"/assets/shop/good-dumplings.webp",
+});
+
+export const SHOP_INTERIOR_ART = Object.freeze({
+  low: "/assets/shop/interior-stock-low.webp",
+  normal: "/assets/shop/interior-stock-normal.webp",
+  abundant: "/assets/shop/interior-stock-abundant.webp",
+});
+
+const SHOP_VISUAL_MILESTONES = Object.freeze([
+  Object.freeze({ id:"starter", minLevel:1, label:"街角小舖", decor:"🪴" }),
+  Object.freeze({ id:"established", minLevel:10, label:"人氣商店", decor:"🏮" }),
+  Object.freeze({ id:"renowned", minLevel:20, label:"貓村名店", decor:"✨" }),
+  Object.freeze({ id:"legendary", minLevel:30, label:"傳說商號", decor:"👑" }),
+]);
+
+export function getShopInteriorArt(shop) {
+  const units = Object.values(shop?.stock || {}).reduce(
+    (sum, value) => sum + (Number(value) || 0),
+    0,
+  );
+  if (units >= 120) return SHOP_INTERIOR_ART.abundant;
+  if (units >= 30) return SHOP_INTERIOR_ART.normal;
+  return SHOP_INTERIOR_ART.low;
+}
+
+export function getShopVisualMilestone(level) {
+  const safeLevel = Math.max(1, Number(level) || 1);
+  for (let index = SHOP_VISUAL_MILESTONES.length - 1; index >= 0; index -= 1) {
+    if (safeLevel >= SHOP_VISUAL_MILESTONES[index].minLevel) return SHOP_VISUAL_MILESTONES[index];
+  }
+  return SHOP_VISUAL_MILESTONES[0];
+}
+
 export function getShopCustomerArt(customer) {
-  const index = SHOP_CUSTOMERS.findIndex(candidate => candidate.id === customer?.id);
-  const group = CUSTOMER_GROUPS[(index < 0 ? 0 : index) % CUSTOMER_GROUPS.length];
-  const tier = CUSTOMER_TIERS.includes(customer?.tier) ? customer.tier : "common";
-  return CUSTOMER_ART_MANIFEST[group][tier];
+  return CUSTOMER_ART_MANIFEST[customer?.id] || null;
 }
 
 export function getShopGoodArt(good) {

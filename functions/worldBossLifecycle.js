@@ -2,6 +2,8 @@
 
 const { FieldValue, Timestamp } = require("firebase-admin/firestore");
 const { HttpsError } = require("firebase-functions/v2/https");
+const { buildWorldBossRewardSnapshot, rewardCategoryForBoss } = require("./worldBossRewardSnapshot");
+const { WORLD_BOSS_CATALOG } = require("./worldBossCatalog");
 
 const DEFAULTS = Object.freeze({
   restHours: 8,
@@ -32,13 +34,16 @@ function normalizedEnabledTypes(raw) {
 }
 
 function buildCycle(eventId, event, nowMs, config) {
-  const defeatedAtMs = toMillis(event.defeatedAt) || nowMs;
+  const endedAtMs = toMillis(event.defeatedAt)
+    || toMillis(event.expiredAt)
+    || toMillis(event.cancelledAt)
+    || nowMs;
   return {
-    status: nowMs < defeatedAtMs + config.restHours * 3600000 ? "resting" : "charging",
+    status: nowMs < endedAtMs + config.restHours * 3600000 ? "resting" : "charging",
     previousEventId:eventId,
     previousBossKey:event.bossKey || null,
-    restEndsAtMs:defeatedAtMs + config.restHours * 3600000,
-    deadlineAtMs:defeatedAtMs + config.deadlineHours * 3600000,
+    restEndsAtMs:endedAtMs + config.restHours * 3600000,
+    deadlineAtMs:endedAtMs + config.deadlineHours * 3600000,
     progress:{ arrows:0, dungeonClears:0, monsterKills:0, villageDice:0 },
     targets:config.targets,
     // ⚠️ 這一輪**只認一種**條件，開週期時抽一次就定了。
@@ -61,7 +66,27 @@ function evaluate(cycle, nowMs) {
   for (const type of required) {
     if (Number(cycle.progress?.[type] || 0) >= Number(cycle.targets?.[type] || Infinity)) return type;
   }
-  return nowMs >= Number(cycle.deadlineAtMs || Infinity) ? "deadline" : null;
+  // 世界王不再因時間到自動降臨；只允許有效條件完成或教練後台強制召喚。
+  return null;
+}
+
+function cycleAfterCancellation(currentCycle, eventId, event, nowMs, config) {
+  const required = TYPES.has(currentCycle?.requiredType)
+    ? [currentCycle.requiredType]
+    : [...TYPES];
+  const targetReached = required.some(type =>
+    Number(currentCycle?.progress?.[type] || 0) >= Number(currentCycle?.targets?.[type] || Infinity));
+  const canResumeAdminCycle = currentCycle?.spawnedEventId === eventId
+    && currentCycle?.triggeredBy === "admin"
+    && !targetReached;
+
+  if (!canResumeAdminCycle) return buildCycle(eventId, event, nowMs, config);
+  return {
+    ...currentCycle,
+    status:"charging", previousEventId:eventId, previousBossKey:event.bossKey || null,
+    spawnedEventId:null, spawnedBossKey:null, spawnedAt:null, triggeredBy:null,
+    updatedAt:FieldValue.serverTimestamp(),
+  };
 }
 
 function activeStatusPatch(eventId, event = {}) {
@@ -83,29 +108,31 @@ async function ensureCycle(db) {
   if (latest.empty) return null;
   const latestDoc = latest.docs[0];
   const latestEvent = latestDoc.data();
-  if (latestEvent.status !== "defeated") return null;
+  if (!["defeated", "expired", "cancelled"].includes(latestEvent.status)) return null;
   const configSnap = await db.doc("sysConfig/worldBossSpawn").get();
   const config = normalizedConfig(configSnap.data());
   await db.runTransaction(async tx => {
     const [eventSnap, cycleSnap] = await Promise.all([tx.get(latestDoc.ref), tx.get(cycleRef)]);
-    if (!eventSnap.exists || eventSnap.data().status !== "defeated") return;
-    if (Number(eventSnap.data().bossCurrentHP) !== 0) tx.update(latestDoc.ref, { bossCurrentHP:0 });
-    if (!cycleSnap.exists || cycleSnap.data().previousEventId !== latestDoc.id) {
-      tx.set(cycleRef, buildCycle(latestDoc.id, eventSnap.data(), Date.now(), config));
+    if (!eventSnap.exists || !["defeated", "expired", "cancelled"].includes(eventSnap.data().status)) return;
+    const latestData = eventSnap.data();
+    if (latestData.status === "defeated" && Number(latestData.bossCurrentHP) !== 0) {
+      tx.update(latestDoc.ref, { bossCurrentHP:0 });
+    }
+    const currentCycle = cycleSnap.exists ? cycleSnap.data() : null;
+    if (latestData.status === "cancelled" && currentCycle?.spawnedEventId === latestDoc.id) {
+      // 只有教練提早強制召喚、且條件尚未達標時才恢復舊進度。
+      // 條件達標後生成的王若被移除，必須開全新週期，否則排程會無限重生並重複發獎。
+      tx.set(cycleRef, cycleAfterCancellation(currentCycle, latestDoc.id, latestData, Date.now(), config));
+    } else if (!cycleSnap.exists || currentCycle.previousEventId !== latestDoc.id) {
+      tx.set(cycleRef, buildCycle(latestDoc.id, latestData, Date.now(), config));
     }
   });
   return (await cycleRef.get()).data() || null;
 }
 
 async function pickBossTemplate(db, previousBossKey) {
-  const snapshot = await db.collection("worldBossEvents").orderBy("createdAt", "desc").limit(50).get();
-  const byKey = new Map();
-  for (const doc of snapshot.docs) {
-    const data = doc.data();
-    if (data.bossKey && data.bossData && !byKey.has(data.bossKey)) byKey.set(data.bossKey, data);
-  }
-  const pool = [...byKey.values()].filter(item => item.bossKey !== previousBossKey);
-  const available = pool.length ? pool : [...byKey.values()];
+  const all=Object.entries(WORLD_BOSS_CATALOG).map(([bossKey,bossData])=>({bossKey,bossData,bossMaxHP:bossData.hp}));
+  const pool=all.filter(item=>item.bossKey!==previousBossKey),available=pool.length?pool:all;
   return available[Math.floor(Math.random() * available.length)] || null;
 }
 
@@ -139,6 +166,9 @@ async function trySpawn(db, forcedBy = null) {
     const durationDays = Math.max(1, Math.min(30, Number(configSnap.data()?.durationDays) || 30));
     const endAt = Timestamp.fromMillis(Date.now() + durationDays * 86400000);
     const eventRef = db.collection("worldBossEvents").doc();
+    const family=template.bossData?.family;
+    const category = rewardCategoryForBoss(template);
+    const rewardSnapshot = buildWorldBossRewardSnapshot({ category, bossFamily:template.bossData?.family || null });
     await db.runTransaction(async tx => {
       const latestCycle = await tx.get(cycleRef);
       if (!latestCycle.exists || latestCycle.data().status !== "spawning") throw new Error("spawn_lock_lost");
@@ -152,6 +182,7 @@ async function trySpawn(db, forcedBy = null) {
         endAt,
         durationDays,
         reward:template.reward || null,
+        rewardSnapshot,
         lastHitBy:null,
         announcement:null,
         totalParticipants:0,
@@ -217,4 +248,4 @@ async function contribute(db, request) {
   return result;
 }
 
-module.exports = { DEFAULTS, normalizedConfig, evaluate, activeStatusPatch, ensureCycle, trySpawn, contribute };
+module.exports = { DEFAULTS, normalizedConfig, buildCycle, cycleAfterCancellation, evaluate, activeStatusPatch, ensureCycle, trySpawn, contribute };

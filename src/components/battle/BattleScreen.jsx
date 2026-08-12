@@ -357,10 +357,10 @@ function battleReducer(state, action) {
     case"PARTY_COUNTER_HIT":{const n=Math.max(0,state.playerHp-(action.dmg||0));return{...state,playerHp:n,messages:[...state.messages,`💥 怪物反擊：${action.dmg||0} 傷害`]};}
     // 權威端已把技能結果組成一行敘述（partyDb.buildAbilityMessage），這裡只負責推進訊息列
     case"PUSH_MESSAGE":{if(!action.text)return state;return{...state,messages:[...state.messages,action.text]};}
-    case"CARRY_BUFF":{const{atkAdd,defAdd,heal,shieldHp,buffMsgs,name}=action;return{...state,playerAtk:state.playerAtk+(atkAdd||0),playerDef:state.playerDef+(defAdd||0),playerHp:Math.min(state.playerMaxHp,state.playerHp+(heal||0)),potionShield:Math.max(state.potionShield||0,shieldHp||0),messages:[...state.messages,...(buffMsgs||[`⚗️ ${name||"藥水"} 效果發動！`])]};}
+    case"CARRY_BUFF":{const{atkAdd,defAdd,heal,shieldHp,buffMsgs,name}=action;const boostedHeal=Math.round((heal||0)*(1+(state.cardFx?.healPct||0)/100));return{...state,playerAtk:state.playerAtk+(atkAdd||0),playerDef:state.playerDef+(defAdd||0),playerHp:Math.min(state.playerMaxHp,state.playerHp+boostedHeal),potionShield:Math.max(state.potionShield||0,shieldHp||0),messages:[...state.messages,...(buffMsgs||[`⚗️ ${name||"藥水"} 效果發動！`])]};}
     case"THROW_DMG":{const shield=state.monsterShield||0;const absorbed=Math.min(shield,action.dmg||0);const dmg=(action.dmg||0)-absorbed;const nhp=Math.max(0,state.monsterHp-dmg);return{...state,monsterShield:shield-absorbed,monsterHp:nhp,phase:nhp<=0?PHASE.VICTORY_ANIM:state.phase,messages:[...state.messages,action.msg||`🔪 投擲傷害：${dmg}`]};}
     case"DEBUFF_MONSTER":{const{monAtkPct,monDefPct,msg}=action;return{...state,monsterAtk:monAtkPct?Math.max(1,Math.round(state.monsterAtk*(1-monAtkPct/100))):state.monsterAtk,monsterDef:monDefPct?Math.max(0,Math.round(state.monsterDef*(1-monDefPct/100))):state.monsterDef,messages:[...state.messages,msg||`🧴 怪物被削弱！`]};}
-    case"HEAL":{const h=Math.min(state.playerMaxHp,state.playerHp+(action.amount||0));return{...state,playerHp:h,messages:[...state.messages,`💚 回復 ${action.amount} HP`]};}
+    case"HEAL":{const amount=Math.round((action.amount||0)*(1+(state.cardFx?.healPct||0)/100));const h=Math.min(state.playerMaxHp,state.playerHp+amount);return{...state,playerHp:h,messages:[...state.messages,`💚 回復 ${amount} HP`]};}
     case"START_PLAYING":return{...state,phase:PHASE.PLAYING};
     case"SHOW_WON":return{...state,phase:PHASE.WON};
     case"NEXT_PHASE":return state.phase===PHASE.PROCESSING?{...state,phase:PHASE.ROUND_RES}:state;
@@ -429,9 +429,12 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
   useEffect(() => {
     if (!authedProfile?.id) { setCardFx(null); return undefined; }
     return subscribeCardCollection(authedProfile.id, collection => {
-      try { setCardFx(calcCardCombatEffectsFromCollection(collection)); } catch { setCardFx(null); }
+      try { setCardFx(calcCardCombatEffectsFromCollection(collection, {
+        enemyFamily:monster?.family,
+        enemyClass:(monster?.bossTagged || (monster?.encounter && monster.encounter !== "normal")) ? "boss" : "monster",
+      })); } catch { setCardFx(null); }
     });
-  }, [authedProfile?.id]);
+  }, [authedProfile?.id, monster?.family, monster?.bossTagged, monster?.encounter]);
   useEffect(() => {
     let cancelled = false;
     if (!authedProfile?.id) { setEquipSpec(null); return undefined; }
@@ -1074,6 +1077,7 @@ let abilityResolution=null;if(battleId&&monster?.signatureSkillId){const ability
       if(fx.firstStrikePct)chips.push(`⏳首回合+${fx.firstStrikePct}%`);
       if(fx.finisherPct)chips.push(`🏆殘血+${fx.finisherPct}%`);
       if(fx.damageReductionPct)chips.push(`🧱減傷${fx.damageReductionPct}%`);
+      if(fx.healPct)chips.push(`💚治療+${fx.healPct}%`);
       if(fx.reflectPct)chips.push(`🌵反彈${fx.reflectPct}%`);
       if(fx.endRoundHeal)chips.push(`🌿回復${fx.endRoundHeal}`);
       for(const [id,cfg] of Object.entries(fx.inflict||{})){

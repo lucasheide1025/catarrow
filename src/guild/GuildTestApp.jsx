@@ -13,6 +13,7 @@ import {
 } from "./domain/expeditionGridEvents";
 import { calcGuildExpeditionStats, STAT_META } from "./domain/guildStats";
 import { settleExpedition } from "./domain/settleExpedition";
+import { guildRewardIdentity } from "./domain/guildCardDrops";
 import { equipFromStash, normalizeGuildProfile } from "./domain/guildRewards";
 import { consumeExpeditionSupplies, EXPEDITION_SUPPLY_LOAD, refundExpeditionSupplies } from "./domain/guildSupplies";
 import { claimBuildingProduction, finishConstruction, startConstruction } from "./domain/guildBuildings";
@@ -183,15 +184,16 @@ export default function GuildTestApp({ onBack, onLegacy, onImmersiveChange }) {
     const rolled = result.status === "won" ? settleExpedition(result) : { won: false, materials: [], junk: [], equipDrops: [], coins: 0, catCoins: 0 };
     setLoot(rolled);
     // 組隊時委託額度**只算房主那張**（鼓勵揪人）：隊員不傳 contractId，自己的每日委託不被消耗
-    const inTeam = !!teamRoom?.battle;
     const promotion = rolled.won && contract?.isPromotion ? completePromotionTrial(gp, contract.targetRankId) : null;
     const promotedProfile = promotion?.ok ? promotion.profile : gp;
     const rewardProfile = result.supplies
       ? refundExpeditionSupplies(promotedProfile, result.supplies)
       : promotedProfile;
+    const teamReward=String(run.key||"").startsWith("team_");
+    const {completionContractId,cardSourceId}=guildRewardIdentity({contractId:contract?.id,memberId,isPromotion:contract?.isPromotion,teamRoomId:teamReward?(teamRoom?.id||run.key):null,teamHostId:teamRoom?.hostId});
     grantExpeditionRewards(memberId, rolled, {
       danger: contract?.danger || 1, profile: rewardProfile,
-      contractId: contract?.isPromotion || (inTeam && !isTeamHost) ? undefined : contract?.id, dateKey,
+      completionContractId, cardSourceId, dateKey,
     }).then(res => {
       setGp(res.profile);
       if (res.offline) setGrantMsg("（未登入：離線試玩，未存檔）");
@@ -217,7 +219,7 @@ export default function GuildTestApp({ onBack, onLegacy, onImmersiveChange }) {
         }
       }
     });
-  }, [result, gp, run, memberId, contract, dateKey]); // eslint-disable-line
+  }, [result, gp, run, memberId, contract, dateKey, teamRoom?.id, teamRoom?.hostId]); // eslint-disable-line
 
   // 回委託板（一趟結束或中途放棄）
   const backToBoard = () => {

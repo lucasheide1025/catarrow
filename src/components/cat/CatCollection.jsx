@@ -705,7 +705,7 @@ function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, 
 }
 
 // ── 主頁面 ──────────────────────────────────────────────────
-export default function CatCollection({ onBack, onOpenBook, onOpenForge }) {
+export default function CatCollection({ onBack, onOpenBook, onOpenForge, sharedCats, sharedCatsReady = false }) {
   const { profile } = useAuth();
   const [myCats,    setMyCats]    = useState({});
   const [loading,   setLoading]   = useState(true);
@@ -718,13 +718,18 @@ export default function CatCollection({ onBack, onOpenBook, onOpenForge }) {
   const memberName = profile?.nickname || profile?.name || "射手";
 
   useEffect(() => {
+    if (sharedCats !== undefined) {
+      setMyCats(Object.fromEntries((sharedCats || []).map(cat => [cat.catId, cat])));
+      setLoading(!sharedCatsReady);
+      return undefined;
+    }
     if (!memberId) return;
     const unsub = subscribeMyCats(memberId, cats => {
       setMyCats(cats);
       setLoading(false);
     });
     return () => unsub();
-  }, [memberId]);
+  }, [memberId, sharedCats, sharedCatsReady]);
 
   useEffect(() => {
     setEquipped(profile?.equippedCat || null);

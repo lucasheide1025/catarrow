@@ -4,7 +4,7 @@
 import { SHOP_CUSTOMERS, simulateServe, getShopLastVisitedMs } from "./villageShop";
 
 export const SHOP_SALES_RATE_PROFILES = Object.freeze({
-  rush_manual: Object.freeze({ id:"rush_manual", multiplier:5, consumesRush:true }),
+  rush_manual: Object.freeze({ id:"rush_manual", multiplier:1, consumesRush:true }),
   manual: Object.freeze({ id:"manual", multiplier:0.5, consumesRush:false }),
   auto: Object.freeze({ id:"auto", multiplier:0.05, consumesRush:false }),
 });
@@ -20,7 +20,7 @@ export function advanceManualShopClock({ rushSeconds = 0, manualActive = false, 
     const profile = getShopSalesRateProfile("auto");
     return { profile, rushSeconds:remainingRush, consumedRushSeconds:0, timelineSeconds:elapsed * profile.multiplier };
   }
-  if (manualMode === "manual") {
+  if (manualMode !== "rush_manual") {
     const profile = getShopSalesRateProfile("manual");
     return { profile, rushSeconds:remainingRush, consumedRushSeconds:0, timelineSeconds:elapsed * profile.multiplier };
   }
@@ -173,6 +173,11 @@ export function getLiveActorStage(actor, elapsedMs) {
   if (elapsed < actor.checkoutAt) return "queue";
   if (elapsed < actor.checkoutEnd) return "checkout";
   return "exit";
+}
+
+export function countCompletedLiveVisitors(timeline, elapsedMs) {
+  const elapsed = Math.max(0, Number(elapsedMs) || 0);
+  return (timeline?.actors || []).filter(actor => elapsed >= actor.checkoutEnd).length;
 }
 
 function clamp(value, min, max) {
@@ -473,14 +478,32 @@ export function buildLiveShopSession(shop, {
   goodsMap = {},
   mode = "manual",
   visitorLimit = Infinity,
+  elapsedSeconds:demandElapsedSeconds = null,
 } = {}) {
   const startedAt = Number(now) || Date.now();
   const expectedLastVisitedAtMs = getShopLastVisitedMs(shop, startedAt);
+  // The backlog that existed when the bell was rung is already represented by
+  // `startedAt - lastVisitedAt`. elapsedSeconds is only time spent in this live
+  // session, so applying the mode multiplier to historical waiting would invent
+  // rush demand before the player actually selected rush mode.
+  const elapsedSeconds = demandElapsedSeconds == null
+    ? 0
+    : Math.max(0, Number(demandElapsedSeconds) || 0);
+  const demandClock = advanceManualShopClock({
+    rushSeconds:shop?.rushSeconds,
+    manualActive:mode !== "auto",
+    manualMode:mode,
+    elapsedSeconds,
+  });
+  // Move the demand cursor forward from opening time. Rush adds one second of
+  // arrivals per real second; normal/auto add half/five percent respectively.
+  // simulateServe still owns stock limits and never sells below zero.
+  const authoritativeNow = startedAt + demandClock.timelineSeconds * 1000;
   const resolvedSeed = seed == null
     ? hashShopSessionSeed(expectedLastVisitedAtMs, startedAt, shop?.stats?.totalRevenue || 0)
     : toUint32(seed);
   const result = simulateServe(shop, {
-    now:startedAt,
+    now:authoritativeNow,
     goodsMap,
     rng:createSeededRng(resolvedSeed),
     visitorLimit,
@@ -500,6 +523,9 @@ export function buildLiveShopSession(shop, {
     seed:resolvedSeed,
     startedAt,
     expectedLastVisitedAtMs,
+    authoritativeNow,
+    rateProfile:demandClock.profile.id,
+    demandClock,
     stateSignature:liveShopStateSignature(shop),
     initialDisplay:(shop.display || []).map(entry => ({ slot:entry.slot || "counter", goodId:entry.goodId || null })),
     offerAt,

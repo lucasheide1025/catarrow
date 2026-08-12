@@ -2,7 +2,7 @@
 // 2026-07-09：金幣改接真正持久的 members/{memberId}.coins（訪客帳號現在跨次造訪會保留），
 // 世界王藥水/打怪加成護符這類單次消耗buff維持 sessionStorage（本來就是一次性、沒有跨次保留的必要）。
 import { useState, useEffect } from "react";
-import { doc, onSnapshot, updateDoc, increment } from "firebase/firestore";
+import { doc, updateDoc, increment } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import { addCoins } from "../../lib/db";
 import { sfxShopBuy, sfxSoftFail, sfxTap } from "../../lib/sound";
@@ -88,8 +88,8 @@ const MISC_ITEMS = [
   },
 ];
 
-export default function GuestShop({ memberId }) {
-  const [memberData, setMemberData] = useState(null);
+export default function GuestShop({ profile }) {
+  const memberId = profile?.id;
   const [msg,        setMsg]        = useState("");
   const [msgOk,      setMsgOk]      = useState(true);
 
@@ -102,21 +102,13 @@ export default function GuestShop({ memberId }) {
     return () => s.remove();
   }, []);
 
-  useEffect(() => {
-    if (!memberId) return;
-    const unsub = onSnapshot(doc(db, "members", memberId), snap => {
-      setMemberData(snap.exists() ? { id: snap.id, ...snap.data() } : null);
-    });
-    return unsub;
-  }, [memberId]);
-
   function showMsg(text, ok = true) {
     setMsg(text); setMsgOk(ok);
     setTimeout(() => setMsg(""), 2200);
   }
 
-  const coins = memberData?.coins || 0;
-  const rpgEquip = memberData?.rpgEquip || {};
+  const coins = profile?.coins || 0;
+  const rpgEquip = profile?.rpgEquip || {};
   const hasStarterEquip = STARTER_EQUIP.every(item => rpgEquip[item.slotId]?.itemId);
 
   function currentPotion() { return sessionStorage.getItem(`guest_wb_potion_${memberId}`) || null; }

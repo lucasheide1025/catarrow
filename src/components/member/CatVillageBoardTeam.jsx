@@ -2,14 +2,13 @@
 // 貓貓村探索地圖：組隊版（Phase 3）。全員共享一顆棋、只吃房主骰子、成員各自 claim。
 // 旅程＝「房主的旅程」（room.journeySeed 確定性重算，組隊吃房主進度）；
 // 2.5D 格子 + 76px + 鏡頭雙軸跟隨；分岔路口＝全員投票（票多者勝）。
-// 旅程規則與單機版一致：只有怪物格/終點 Boss 射箭、採集不射箭、fate/opp 純金幣不翻卡。
+// 旅程規則與單機版一致：只有怪物格/終點 Boss 射箭、採集不射箭；
+// fate/opp（08-08 恢復）＝抽事件卡＋事件場景圖，組隊只抽資源類（共享棋不動）。
 // 規格見 .trellis/tasks/08-07-village-board-journey-redesign/design.md。
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { onSnapshot, doc } from "firebase/firestore";
-import { db } from "../../lib/firebase";
 import {
   createBoardRoom, joinBoardRoom, subscribeBoardRoom, leaveBoardRoom, disbandBoardRoom,
-  findReconnectableBoardRoom, startBoardRoom, roomRollAndMove,
+  startBoardRoom, roomRollAndMove,
   claimBoardSettle, partyMultOf, subscribeOpenBoardRooms,
   submitBoardShootScore, finalizeBoardShoot, clearRoomPending, kickBoardMember, forceAdvanceRoom,
   ackBoardStep, voteForkPath, resolveFork,
@@ -33,8 +32,10 @@ import CatVillageNavArt from "./CatVillageNavArt";
 import TileDemo from "./TileDemo";
 import BossDuel from "./BossDuel";
 import BoardGuide from "./BoardGuide";
+import EventScene from "./EventScene";
 import CardArtImage from "./cards/CardArt";
 import { teamExplorationCompletionOperation } from "../../lib/villageGoalContribution";
+import { resolveTeamHostDice } from "../../lib/villageBoardTeamState";
 
 const ASSET = "/assets/board";
 // 旅程畫布尺寸（與單機版同一套）：76px 格子、88×96 間距、鏡頭雙軸跟隨
@@ -126,7 +127,7 @@ function describeReward(rw) {
   return out;
 }
 
-export default function CatVillageBoardTeam({ profile, onClose }) {
+export default function CatVillageBoardTeam({ profile, initialRoomId = null, onClose }) {
   const myId = profile?.id;
   const villageBuildings = profile?.village?.buildings || {};
   const catId = profile?.equippedCat?.catId || null;
@@ -134,9 +135,9 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
   const { role } = useAuth();
   const isAdmin = role === "admin";
 
-  const [roomId, setRoomId] = useState(null);
+  const [roomId, setRoomId] = useState(initialRoomId);
   const [room, setRoom] = useState(null);
-  const [hostDice, setHostDice] = useState(0);
+  const [hostDice] = useState(() => Math.max(0, Number(profile?.villageBoard?.dice) || 0));
   const [openRooms, setOpenRooms] = useState([]);
   const [selMode, setSelMode] = useState(BOARD_MODES[0].id);
   const [selTier, setSelTier] = useState(1);
@@ -155,6 +156,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
   const [shootResult, setShootResult] = useState(null); // { type, score, ratio, band, labels }
   const [reward, setReward] = useState(null);
   const [cardGachaResult, setCardGachaResult] = useState(null);   // 🃏 抽卡房結果：{views, seq}
+  const [boardEvent, setBoardEvent] = useState(null);             // 🎴 命運/機會事件場景：{event, deck, detail, seq}
   const [toast, setToast] = useState(null);
   const [showTeamSummary, setShowTeamSummary] = useState(false);
   const [catBondPop, setCatBondPop] = useState(null);
@@ -232,13 +234,10 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     return generateJourney(room.mode, room.journeySeed);
   }, [room?.journeySeed, room?.mode]);
 
-  // 重連（僅在使用者尚未主動建立/加入房間時才自動重連）
+  // CouncilHall owns the single reconnect discovery and passes the room identity here.
   useEffect(() => {
     if (!myId) return;
     ensureDailyDice(myId);
-    findReconnectableBoardRoom(myId).then(r => {
-      if (!joinedRef.current && r.room) setRoomId(r.room.id);
-    });
   }, [myId]);
 
   // 大廳：訂閱可加入的等待中房間
@@ -259,12 +258,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
 
   const isHost = room && room.hostId === myId;
 
-  // 訂閱房主骰子
-  useEffect(() => {
-    if (!room?.hostId) return;
-    const unsub = onSnapshot(doc(db, "members", room.hostId), s => setHostDice(s.data()?.villageBoard?.dice || 0));
-    return unsub;
-  }, [room?.hostId]);
+  const effectiveHostDice = resolveTeamHostDice(room, isHost ? hostDice : null);
 
   // 初始化 animatedSeq（首次載入/重連：直接對齊當前 seq，不重播舊動畫）
   useEffect(() => {
@@ -435,6 +429,11 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
         setCardGachaResult({ views: res.reward.cardGachaViews, seq });
         return;
       }
+      // 🎴 命運/機會事件（08-08 恢復）：claim 已套用效果 → 開事件場景（看完 ack）
+      if ((tileType === "fate" || tileType === "opp") && res.reward.event) {
+        setBoardEvent({ event: res.reward.event, deck: tileType, detail: res.reward.detail, seq });
+        return;
+      }
       // 特殊格子 toast（buff／陷阱／捷徑／完成旅程）——陷阱帶事件名（08-08 多種事件）
       if (tileType === "trap") {
         const ev = res.reward || {};
@@ -575,7 +574,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     if (!isHost || !room) return;
     const seq = room.seq || 0;
     const hasPend = seq > 0 && ((room.pendingEvent?.seq === seq) || (room.pendingSettle?.seq === seq));
-    if (hasPend && allPassed) clearRoomPending(roomId, myId).catch(() => bumpRetry());
+    if (hasPend && allPassed) clearRoomPending(roomId, myId, seq).catch(() => bumpRetry());
   }, [isHost, room, allPassed, roomId, myId, retryNonce]); // eslint-disable-line
 
   // 房主骰子用完 + 當前這步全員都領完 → 進結算畫面（全員都看得到）。
@@ -601,12 +600,24 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     setRetryNonce(n => n + 1);
     // ⚠️ 只有「全員都領完」才清 pending，否則會把還沒領的隊員的獎勵直接抹掉
     const hasPend = (room?.pendingEvent?.seq === seq) || (room?.pendingSettle?.seq === seq);
-    if (isHost && allPassed && hasPend) clearRoomPending(roomId, myId).catch(() => {});
+    if (isHost && allPassed && hasPend) clearRoomPending(roomId, myId, seq).catch(() => {});
     if (!opts.silent) showToast("已重新同步");   // 自動同步不吵玩家
   }, [room, myId, isHost, allPassed, roomId]); // eslint-disable-line
 
   // 🤖 自動同步看門狗（0 次額外讀取：只重設本機閘門＋重試自己的寫入）
   const autoSyncedRef = useRef(0);
+  useEffect(() => {
+    // A room id is a complete runtime identity boundary: never carry animation,
+    // claim, ack, shooting or popup state into another room.
+    setRoom(null); setDisplayPos(0); setRolling(false); setAnimating(false);
+    setDiceAnim(null); setDiceLocked(false); setLandFx(null); setShoot(null);
+    setArrows([]); setShootResult(null); setReward(null); setCardGachaResult(null);
+    setBoardEvent(null); setGatherTeam(null); setCatBondPop(null); setShowTeamSummary(false);
+    gatherAnimRef.current = { seq: 0, done: false };
+    lastSettleRef.current = 0; shootSeqRef.current = 0; animatedSeqRef.current = -1;
+    animatingRef.current = false; ackedSeqRef.current = 0; autoSyncedRef.current = 0;
+    setAnimatedSeq(-1);
+  }, [roomId]);
   useEffect(() => {
     const seq = room?.seq || 0;
     const iClaimed = (room?.settleClaims?.[myId] || 0) >= seq || (room?.eventClaims?.[myId] || 0) >= seq;
@@ -652,7 +663,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
 
   // ── 房主：擲骰（權威狀態機在 DB，動畫由 lastMove Effect 同步）──
   const hostRoll = useCallback(async () => {
-    if (!isHost || rolling || hostDice <= 0) return;
+    if (!isHost || rolling || effectiveHostDice <= 0) return;
     setRolling(true); sfxCast();
     const res = await roomRollAndMove(roomId, myId);
     if (!res?.ok) { showToast(res?.reason || "無法擲骰"); setRolling(false); return; }
@@ -661,7 +672,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
     await new Promise(r => { const end = Date.now() + 700; const iv = setInterval(() => { if (Date.now() >= end) { clearInterval(iv); setDiceAnim(res.rolls?.length > 1 ? res.rolls.join("+") : res.roll); sfxSuccess(); r(); } else setDiceAnim(1 + Math.floor(Math.random() * 15)); }, 80); });
     await new Promise(r => setTimeout(r, 500)); setDiceAnim(null);
     setRolling(false);
-  }, [isHost, rolling, hostDice, roomId, myId]);
+  }, [isHost, rolling, effectiveHostDice, roomId, myId]);
 
   // 射手：6 箭計分完成 → 顯示分帶結果（S/A/B/C，與獎勵分層同一張表）
   const hostFinishShoot = useCallback(async () => {
@@ -852,7 +863,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
                     className="rounded-lg bg-emerald-600/70 border border-emerald-400/40 px-1.5 py-1 text-emerald-50 text-[10px] font-black active:scale-95">🔄重置</button>
                 </div>
               )}
-              <div className="rounded-xl bg-amber-500/20 border border-amber-400/40 px-2.5 py-1 text-amber-200 text-xs font-black">🎲 {hostDice}</div>
+              <div className="rounded-xl bg-amber-500/20 border border-amber-400/40 px-2.5 py-1 text-amber-200 text-xs font-black">🎲 {effectiveHostDice ?? "同步中"}</div>
             </div>
           </div>
           <div className="rounded-2xl bg-black/30 border border-amber-500/25 p-4 mb-4 text-center">
@@ -894,7 +905,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
   const shootWaiting = !!room?.pendingShoot && room.pendingShoot.seq === curSeq;
   const shootNames = shootWaiting ? (room.pendingShoot.shooters || []).map(id => room.members?.[id]?.name || "隊員") : [];
   const shootDone = shootWaiting ? Object.keys(room.pendingShoot.scores || {}).length : 0;
-  const canRoll = isHost && !rolling && hostDice > 0 && allPassed && !shoot && !shootResult && !forkPending && !animating && !room?.pendingShoot;
+  const canRoll = isHost && !rolling && effectiveHostDice > 0 && allPassed && !shoot && !shootResult && !forkPending && !animating && !room?.pendingShoot;
   // 誰卡住了：射箭中＝還沒交分的射手；分岔路＝還沒投票；等領取＝還沒 claim 的隊員
   const blockingList = (shootWaiting
     ? (room.pendingShoot.shooters || []).filter(id => room.pendingShoot.scores?.[id] == null)
@@ -922,7 +933,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
                 className="rounded-lg bg-emerald-600/70 border border-emerald-400/40 px-1.5 py-1 text-emerald-50 text-[10px] font-black active:scale-95">🔄重置</button>
             </div>
           )}
-          <div className="rounded-xl bg-amber-500/20 border border-amber-400/40 px-2.5 py-1 text-amber-200 text-xs font-black">🎲 {room?.hostDiceLeft ?? hostDice}</div>
+          <div className="rounded-xl bg-amber-500/20 border border-amber-400/40 px-2.5 py-1 text-amber-200 text-xs font-black">🎲 {effectiveHostDice ?? "同步中"}</div>
         </div>
       </div>
 
@@ -1018,7 +1029,7 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
         {isHost ? (
           <button onClick={hostRoll} disabled={!canRoll}
             className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-slate-900 font-black text-base shadow-lg disabled:opacity-40 active:scale-95">
-            {rolling ? "🎲 前進中…" : hostDice <= 0 ? "骰子用完了" : !allPassed ? `⏳ 等隊員完成 ${claimedN}/${memberCount}` : "🎲 房主擲骰"}
+            {rolling ? "🎲 前進中…" : effectiveHostDice <= 0 ? "骰子用完了" : !allPassed ? `⏳ 等隊員完成 ${claimedN}/${memberCount}` : "🎲 房主擲骰"}
           </button>
         ) : (
           <div className="w-full py-3.5 rounded-2xl bg-black/30 border border-amber-500/25 text-center text-amber-200/80 text-sm font-black">
@@ -1053,6 +1064,12 @@ export default function CatVillageBoardTeam({ profile, onClose }) {
       {/* 🃏 抽卡房結果（組隊自動免費抽 1 張） */}
       {cardGachaResult && (
         <TeamCardGachaResultPopup cardGachaResult={cardGachaResult} onClose={() => { setCardGachaResult(null); ackStep(cardGachaResult.seq || curSeq); }} />
+      )}
+
+      {/* 🎴 命運/機會事件場景（組隊：全隊共用房主抽的卡，每人各自領） */}
+      {boardEvent && (
+        <EventScene event={boardEvent.event} deck={boardEvent.deck} detail={boardEvent.detail}
+          onClose={() => { setBoardEvent(null); ackStep(boardEvent.seq || curSeq); }} zIndex={230} />
       )}
 
       {/* 📖 探索地圖說明書（大廳／等待室／遊戲中都可開啟） */}

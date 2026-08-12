@@ -4,6 +4,7 @@ import {
   serverTimestamp, arrayUnion, query, where, getDocs, runTransaction,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { resolveWorldBossCardEffects } from "./worldBossCards";
 import {
   mergeAllStatuses, monsterStatMods, rollInflictForArrows, tickMonsterStatuses,
 } from "./monsterStatus";
@@ -338,6 +339,7 @@ export async function startPartyBattle(roomId, room, monster, mode, distanceMode
       monsterCardId: monster.cardId || monster.id,
       monsterHP: scaledHP,
       monsterMaxHP: scaledHP,
+      battleInstanceId:`${roomId}_${Date.now()}`,
       hpMult, rewardMult,
       // 供全房 UI 顯示：強度檔位＋人數加成明細
       challengeLevel: room.challengeLevel || "standard",
@@ -609,7 +611,11 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       // 🔨 破防：怪物身上的異常先削一層防禦（全隊都吃得到）
       const statusedDef = Math.max(0,
         room.monster.def * (1 - monsterStatMods(room.monsterStatuses || []).defDownPct / 100));
-      const raw = calcDmgFn(scoreArrows, buffedAtk, statusedDef, m.wbBonus?.dmgBonusPct || 0);
+      const wbFx = Number(m.wbBonus?.effectVersion) >= 2
+        ? resolveWorldBossCardEffects({ equippedCardKeys:m.wbBonus?.equippedCardKeys || [], enemyFamily:room.monster?.family, enemyClass:(room.monster?.bossTagged || room.monster?.encounter === "boss") ? "boss" : "monster" }).modifiers
+        : { damagePct:0, damageReducePct:0, healPct:0, armorPiercePct:0 };
+      const piercedDef = Math.max(0, statusedDef * (1 - wbFx.armorPiercePct / 100));
+      const raw = calcDmgFn(scoreArrows, buffedAtk, piercedDef, (m.wbBonus?.dmgBonusPct || 0) + wbFx.damagePct);
       const rawDmg = typeof raw === "number" ? raw : (raw.dmg || 0);
       const rawBreakdown = [
         ...(typeof raw === "object" ? (raw.arrowBreakdown || []) : []),
@@ -677,7 +683,8 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
     for (const id of rearIds) {
       const scorePct = rearScorePct[id] || 0;
       if (members[id].rearChoice === "heal") {
-        const healBonusPct = members[id].wbBonus?.healBonusPct || 0;
+        const healBonusPct = (members[id].wbBonus?.healBonusPct || 0) + (Number(members[id].wbBonus?.effectVersion) >= 2
+          ? resolveWorldBossCardEffects({ equippedCardKeys:members[id].wbBonus?.equippedCardKeys || [], enemyFamily:room.monster?.family, enemyClass:(room.monster?.bossTagged || room.monster?.encounter === "boss") ? "boss" : "monster" }).modifiers.healPct : 0);
         const pool = Math.round((members[id].maxHP || 100) * 0.15 * scorePct * (1 + healBonusPct));
         healGivenBy[id] = pool;
         const targets = frontIds.filter(tid => memberHPNow[tid] > 0);
@@ -776,7 +783,9 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
         const ctrCrit = Math.random() < 0.1;
         const abilityTargetsMember = !partyAbility?.targetId || partyAbility.targetId === id;
         const skillMult = abilityTargetsMember && partyAbility?.resolved?.skillDamageMult > 0 ? partyAbility.resolved.skillDamageMult : 1;
-        const rawCtr = Math.ceil(calcCtrFn(room.monster.atk, effectiveDef, mem?.wbBonus?.dmgReducePct || 0, ctrCrit) * skillMult * (1 - (room.consumableEffects?.counterReducePct || 0) / 100));
+        const wbReduce = Number(mem?.wbBonus?.effectVersion) >= 2
+          ? resolveWorldBossCardEffects({ equippedCardKeys:mem.wbBonus?.equippedCardKeys || [], enemyFamily:room.monster?.family, enemyClass:(room.monster?.bossTagged || room.monster?.encounter === "boss") ? "boss" : "monster" }).modifiers.damageReducePct : 0;
+        const rawCtr = Math.ceil(calcCtrFn(room.monster.atk, effectiveDef, (mem?.wbBonus?.dmgReducePct || 0) + wbReduce, ctrCrit) * skillMult * (1 - (room.consumableEffects?.counterReducePct || 0) / 100));
         const counterHit = resolvePlayerCounter({ arrows:mem?.arrows || [], baseDamage:rawCtr, maxHP:mem?.maxHP || memberHPNow[id] });
         const absorbed = Math.min(mem?.potionBuffs?.shield || 0, counterHit.damage);
         const ctr = counterHit.damage - absorbed;

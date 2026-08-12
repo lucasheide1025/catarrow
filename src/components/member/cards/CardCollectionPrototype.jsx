@@ -43,9 +43,16 @@ function wbViews(collection) {
       encounter: "worldboss", role: "worldboss", source: "wb",
       name: (meta && meta.name) || "世界王卡",
       owned: has, stars: has ? (owned[key].stars || 1) : 0,
-      duplicates: 0, chosenStat: (has && owned[key].chosenStat) || null,
-      stat: (has && owned[key].stat) || meta?.stat || null,
+      duplicates: 0,
+      // v2 世界王卡能力由 WB_CARDS 定義檔決定；舊收藏文件中的
+      // stat/chosenStat 是 v1 遺留資料，不得覆蓋新版專屬被動。
+      stat: null, chosenStat: null,
       statMode: meta?.statMode, title: meta?.title,
+      version: meta?.version || 2,
+      effects: meta?.effects || [],
+      effectText: meta?.effectText || "",
+      roleLabel: meta?.roleLabel || "戰術型",
+      flavor: meta?.flavor || "",
       equipped: (collection?.equipped || []).some(item => typeof item !== "string" && item?.key === key && item?.source === "wb"),
       activeTitle: collection?.activeTitleBossKey === key,
     };

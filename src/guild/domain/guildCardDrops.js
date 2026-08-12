@@ -1,0 +1,5 @@
+import catalog from "../../data/monsterExpansionCatalog.json";
+const MONSTERS=new Map(catalog.monsters.map(monster=>[monster.id,monster]));
+function roll(seed){let h=2166136261;for(const char of seed){h^=char.charCodeAt(0);h=Math.imul(h,16777619);}return(h>>>0)/4294967296;}
+export function resolveGuildDefeatedCards({contractId,memberId,monsterIds}){return(monsterIds||[]).flatMap((id,index)=>{const monster=MONSTERS.get(id);if(!monster)return[];const chance=Number(monster.card?.soloDropChance??monster.soloCardChance??(["boss","miniBoss","mini"].includes(monster.encounter)?.4:.2));return roll(`${contractId}:${memberId}:${id}:${index}:guild-card`)<chance?[{monsterId:monster.card?.id||monster.id,name:monster.name,icon:monster.icon||"?",tier:monster.tier,family:monster.family,encounter:monster.encounter,artKey:monster.artKey}]:[];});}
+export function guildRewardIdentity({contractId,memberId,isPromotion=false,teamRoomId=null,teamHostId=null}){const team=!!teamRoomId;return{completionContractId:isPromotion||team&&teamHostId!==memberId?undefined:contractId,cardSourceId:isPromotion?undefined:`${contractId}:${team?teamRoomId:"solo"}`};}

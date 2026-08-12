@@ -39,15 +39,24 @@ export function AuthProvider({ children }) {
       // admin 檢查與 member 查詢同時發出，不用等一個回來再發另一個
       const memberQuery = query(collection(db, "members"), where("uid", "==", fbUser.uid));
       let adminSnap, memberSnap;
-      try {
-        [adminSnap, memberSnap] = await Promise.all([
-          getDoc(doc(db, "admins", fbUser.uid)),
-          getDocs(memberQuery),
-        ]);
-      } catch (e) {
-        console.warn("登入查詢失敗，嘗試只查 members：", e.message);
+      const [adminResult, memberResult] = await Promise.allSettled([
+        getDoc(doc(db, "admins", fbUser.uid)),
+        getDocs(memberQuery),
+      ]);
+      if (adminResult.status === "fulfilled") {
+        adminSnap = adminResult.value;
+      } else {
+        console.warn("admin 登入查詢失敗：", adminResult.reason?.message);
         setProfileError("query-failed");
         adminSnap = { exists: () => false };
+      }
+      if (memberResult.status === "fulfilled") {
+        memberSnap = memberResult.value;
+      } else {
+        // 只重試真正失敗的 member 查詢；舊 Promise.all 流程會在 admin
+        // 單獨失敗時也重讀一次已成功的 members query。
+        console.warn("member 登入查詢失敗，重試一次：", memberResult.reason?.message);
+        setProfileError("query-failed");
         try { memberSnap = await getDocs(memberQuery); }
         catch { memberSnap = { empty: true, docs: [] }; }
       }
@@ -126,11 +135,11 @@ export function AuthProvider({ children }) {
       // 傳入已知的舊值：省掉 db 端多餘的 getDoc，30 分鐘內也不重複寫
       if (memberDoc) updateLastLogin(memberDoc.id, memberDoc.data()?.lastLoginAt).catch(() => {});
 
-      // 即時訂閱：profile 有變動時自動更新（裝備、積分等）
-      profileUnsub = onSnapshot(memberQuery, (snapshot) => {
-        if (snapshot.empty) return;
-        const doc = snapshot.docs[0];
-        setProfile(prev => prev ? { uid: prev.uid, isAdmin: prev.isAdmin, ...doc.data(), id: doc.id } : prev);
+      // 即時訂閱：已定位 member 後直接監聽單一文件。這可避免 uid query
+      // 同時讀到正式／訪客文件，也確保 email fallback 補 uid 尚未完成時仍能同步。
+      if (memberDoc) profileUnsub = onSnapshot(doc(db, "members", memberDoc.id), (snapshot) => {
+        if (!snapshot.exists()) return;
+        setProfile(prev => prev ? { uid: prev.uid, isAdmin: prev.isAdmin, ...snapshot.data(), id: snapshot.id } : prev);
       }, () => {});
     });
 

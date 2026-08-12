@@ -2258,7 +2258,7 @@ function getVillagePrimaryTab(tab) {
 }
 
 // ── 主元件 ───────────────────────────────────────────────────
-export default function CatVillage({ catCards, gachaCoins, initialTab = "village" }) {
+export default function CatVillage({ catCards, gachaCoins, initialTab = "village", sharedCats }) {
   const { profile } = useAuth();
   // ⚠️ initialTab="board"＝從首頁「貓貓村探索地圖」建議跳進來：
   //    直接進議事廳（council），並讓 CouncilHall 開在探索地圖（collect）分頁。
@@ -2296,10 +2296,14 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
   }, [tab, profile?.id]); // eslint-disable-line
 
   useEffect(() => {
+    if (sharedCats !== undefined) {
+      setMyCats(Object.fromEntries((sharedCats || []).map(cat => [cat.catId, cat])));
+      return undefined;
+    }
     if (!profile?.id) return;
     const unsub = subscribeMyCats(profile.id, setMyCats);
     return unsub;
-  }, [profile?.id]); // eslint-disable-line
+  }, [profile?.id, sharedCats]);
 
   useEffect(() => {
     if (!profile?.id) return;
@@ -2435,6 +2439,7 @@ export default function CatVillage({ catCards, gachaCoins, initialTab = "village
         <CouncilHall
           profile={profile}
           village={localVillage || profile?.village}
+          myCats={myCats}
           onBack={() => setTab("village")}
           initialTab={boardFocus ? "collect" : "expedition"}
         />

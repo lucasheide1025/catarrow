@@ -13,8 +13,6 @@ import EquipmentPage   from "../components/member/EquipmentPage";
 import GuestShareCard  from "../components/member/GuestShareCard";
 import { EQUIP_SLOT_DEFS } from "../lib/constants";
 import FadeContent from "../components/react-bits/FadeContent";
-import practiceCardImage from "../assets/hub/practice.webp";
-import performanceCardImage from "../assets/hub/performance.webp";
 
 const MemberPractice = lazy(() => import("../components/member/MemberPractice"));
 const MemberPerformance = lazy(() => import("../components/member/MemberPerformance"));
@@ -496,7 +494,7 @@ export default function GuestApp({ accountType = "guest", sessionSourceId = null
           <WorldBossLobby guestOverride={guestOverride} onBattleComplete={result => setWbResult(result)} />
         )}
         {tab === "handbook" && <Suspense fallback={<GuestPanelLoading label="正在載入怪物手冊…" />}><MonsterHandbook onBack={() => goTo("adventure")} /></Suspense>}
-        {tab === "shop" && <GuestShop memberId={guestProfile.id} />}
+        {tab === "shop" && <GuestShop profile={guestFullProfile || guestProfile} />}
         {tab === "gacha" && (
           <GuestGachaPanel profile={guestFullProfile} isKid={isKid} onBack={() => setTab("profile")} />
         )}
@@ -667,70 +665,6 @@ function GuestExpiredScreen({ onRestart, onBooking }) {
 
 const modalBackdrop = { position:"fixed", inset:0, zIndex:100, display:"grid", placeItems:"center", padding:20, background:"rgba(2,6,23,.82)" };
 const modalPanel = { width:"min(100%,390px)", padding:22, borderRadius:24, background:"#0f172a", border:"1px solid rgba(255,255,255,.16)", color:"white", boxShadow:"0 24px 80px #000" };
-
-function GuestHome({ name, isKid, onGo, onShareCard, coins, wbResult }) {
-  const cards = [
-    { id:"practice", title:"自主練箭", desc:"逐箭記錄・靶面點擊・射手表現", image:practiceCardImage, feature:true },
-    { id:"performance", title:"射手表現", desc:"查看每場真實射箭紀錄", image:performanceCardImage },
-    { id:"monster", title:isKid ? "出發打怪" : "單人冒險", desc:"T1-T2 怪物挑戰，熟悉正式戰鬥節奏", image:"/ui/cell-monster.webp", feature:true },
-    { id:"party", title:isKid ? "大家一起打" : "一起打怪", desc:"用房號加入隊伍，團康活動一起推進", image:"/ui/cell-party.webp", feature:true },
-    { id:"dungeon", title:"地下城探索", desc:"正式迷霧探索版本，低階 T1-T2 體驗", image:"/ui/home/adventure.webp" },
-    { id:"worldboss", title:isKid ? "打大魔王" : "世界王活動", desc:"多人一起攻擊世界王，感受共同作戰", image:"/ui/cell-worldboss.webp" },
-    { id:"profile", title:"我的角色", desc:"裝備、商店、紀念卡與進度保留", image:"/ui/home/inventory.webp" },
-  ];
-  return (
-    <FadeContent>
-      <div className={`guest-hero ${isKid ? "kid" : ""}`}>
-        <div className="guest-hero-kicker">CATARROW {isKid ? "KID CAMP" : "TRIAL QUEST"}</div>
-        <div className="guest-hero-title">{isKid ? "今天一起打怪、探險、打大王" : "用正式玩法進入低階冒險"}</div>
-        <div className="guest-hero-copy">
-          {isKid ? `嗨，${name}，選一個活動就能和大家一起玩。` : `嗨，${name}，你的體驗進度會保留，之後可轉正式。`}
-        </div>
-        <div className="guest-hero-actions">
-          <button className="guest-chip-btn" onClick={() => onGo("monster")}>⚔️ 立即打怪</button>
-          <button className="guest-chip-btn" onClick={() => onGo("worldboss")}>🌍 世界王</button>
-          <button className="guest-chip-btn" onClick={onShareCard}>🎴 紀念卡</button>
-        </div>
-      </div>
-
-      <div className="guest-stat-grid" style={{ marginTop: 12 }}>
-        <div className="guest-stat">
-          <div className="guest-stat-head"><span className="guest-stat-icon" style={{ background: "rgba(251,191,36,.16)" }}>🪙</span>體驗金幣</div>
-          <div className="guest-stat-value">{coins || 0}</div>
-        </div>
-        <div className="guest-stat">
-          <div className="guest-stat-head"><span className="guest-stat-icon" style={{ background: "rgba(14,165,233,.16)" }}>🌍</span>世界王</div>
-          <div className="guest-stat-value" style={{ fontSize: 18 }}>{wbResult ? "已參戰" : "可參戰"}</div>
-        </div>
-      </div>
-
-      <div className="guest-section-title">選擇活動</div>
-      <div className="guest-action-grid">
-        {cards.map(c => (
-          <button key={c.id} onClick={() => c.action ? c.action() : onGo(c.id)}
-            className={`guest-action ${c.feature ? "feature" : ""}`}
-            style={{ backgroundImage:`url(${c.image})` }}>
-            <span className="guest-action-title">{c.title}</span>
-            <span className="guest-action-desc">{c.desc}</span>
-            <span className="guest-action-arrow">›</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="guest-quick-row">
-        <button onClick={() => onGo("equipment")} className="guest-mini">
-          🛡️ 裝備
-        </button>
-        <button onClick={onShareCard} className="guest-mini">
-          🎴 紀念卡
-        </button>
-      </div>
-      <div className="guest-note" style={{ marginTop: 10 }}>
-        💡 訪客與兒童模式開放低階多人活動；正式會員可解鎖高階地下城、完整世界王獎勵與長期成就。
-      </div>
-    </FadeContent>
-  );
-}
 
 function GuestProfileHub({ name, isKid, coins, profile, wbResult, onGo, onShareCard }) {
   const equipment = profile?.rpgEquip || {};

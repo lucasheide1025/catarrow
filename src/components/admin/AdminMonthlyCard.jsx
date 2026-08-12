@@ -1,13 +1,11 @@
 // src/components/admin/AdminMonthlyCard.jsx
 import { useState, useEffect } from "react";
-import { collection, getDocs } from "firebase/firestore";
-import { db } from "../../lib/firebase";
 import {
   subscribePendingMonthlyRequests,
   approveMonthlyCardRequest, rejectMonthlyCardRequest,
   grantMonthlyCard, giftMonthlyCardSessions,
   getMonthlyCardConfig, saveMonthlyCardConfig,
-  subscribeMonthlyCardLogs,
+  subscribeMonthlyCardLogs, getMembers,
 } from "../../lib/db";
 import { Card, Btn } from "../shared/UI";
 
@@ -67,9 +65,10 @@ function MemberLogPanel({ memberId }) {
   );
 }
 
-export default function AdminMonthlyCard({ adminProfile }) {
+export default function AdminMonthlyCard({ adminProfile, pendingRequests }) {
   const [tab,        setTab]        = useState("pending");
-  const [pending,    setPending]    = useState([]);
+  const hasProvidedPending = Array.isArray(pendingRequests);
+  const [subscribedPending, setSubscribedPending] = useState([]);
   const [members,    setMembers]    = useState([]);
   const [busy,       setBusy]       = useState({});
   const [msg,        setMsg]        = useState("");
@@ -87,15 +86,18 @@ export default function AdminMonthlyCard({ adminProfile }) {
   const operatorId = adminProfile?.id || adminProfile?.uid || null;
 
   useEffect(() => {
-    const unsub = subscribePendingMonthlyRequests(setPending);
+    if (hasProvidedPending) return undefined;
+    const unsub = subscribePendingMonthlyRequests(setSubscribedPending);
     return unsub;
-  }, []);
+  }, [hasProvidedPending]);
+
+  const pending = hasProvidedPending ? pendingRequests : subscribedPending;
 
   useEffect(() => {
     if (tab !== "members") return;
-    getDocs(collection(db, "members"))
-      .then(snap => {
-        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    getMembers()
+      .then(members => {
+        const list = [...members];
         list.sort((a, b) => {
           const aCard = a.monthlyCard; const bCard = b.monthlyCard;
           const aDays = aCard?.expiresAt ? daysLeft(aCard.expiresAt) : null;

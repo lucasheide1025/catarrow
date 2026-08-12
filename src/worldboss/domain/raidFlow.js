@@ -105,6 +105,7 @@ export function createRaidState({
       faceCount: faceCountOf(myFmt),
       // ☠️ 這位成員的卡片能對王施加什麼異常
       inflict: m.inflict || {},
+      cardFx: m.cardFx || null,
       archerLevel: Number(m.archerLevel) || 1,
       rookieMult: rookieMultiplier(Number(m.archerLevel) || 1),
       cats: (m.cats || []).filter(c => c && Number(c.atk) > 0),
@@ -148,6 +149,7 @@ export function createRaidState({
     round: 1,
     noRetaliation, endless, fixedSpots,
     bossStatuses: [],   // ☠️ 王身上的異常
+    cardBurns: {},      // v2 YUMI：每位來源各一層，命中刷新但不疊層
     gauge: { ...emptyGaugeState(), ...(gauge || {}) },
     staggered: false,          // 上回合打斷成功 → 這回合王硬直
     // ⚠️ 弱點圈必須在**射之前**就抽好並放進 state——UI 要先把圈畫在靶面上，
@@ -207,6 +209,7 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
 
   // ☠️ 王身上的異常：先算現有的數值影響，射的過程再累加新施加的
   let bossStatuses = [...(s.bossStatuses || [])];
+  const cardBurns = { ...(s.cardBurns || {}) };
   const bossStatMods = monsterStatMods(bossStatuses);
 
   let spotHits = 0;
@@ -257,11 +260,11 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
     const xBreak = (!hit.hit && !hit.missed && label === "X") ? RAID_X_BREAK_POINTS : 0;
     const shooter = shooterEarly;
     // 🔨 破防：王身上的異常先削一層防禦（全隊都吃得到）
-    const bossDef = Math.max(0, s.boss.def * (1 - bossStatMods.defDownPct / 100));
+    const bossDef = Math.max(0, s.boss.def * (1 - bossStatMods.defDownPct / 100) * (1 - (shooter.cardFx?.armorPiercePct || 0) / 100));
     // ⚠️ 一般傷害照原本公式（calcWorldBossArrowDmg），不再砍半（2026-08-06 修 bug）
     const normal = calcWorldBossArrowDmg(
       effectiveScore,
-      Math.round(shooter.stats.atk * support.atkMult), bossDef, s.participantBonus, s.dmgBonusPct,
+      Math.round(shooter.stats.atk * support.atkMult), bossDef, s.participantBonus, s.dmgBonusPct + (shooter.cardFx?.damagePct || 0) / 100,
     ) * hit.normalMult;
 
     // 這張靶滿了嗎（只有三連靶會有上限）
@@ -295,6 +298,16 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
         inflict: shooter.inflict,
         rand,
       })) {
+        if (st.id === "burn" && shooter.cardFx?.inflict?.burn?.uncapped) {
+          cardBurns[shooter.memberId] = {
+            sourceMemberId:shooter.memberId, sourceName:shooter.name,
+            remaining:shooter.cardFx.inflict.burn.duration || 3,
+            snapshotAtk:shooter.stats.atk,
+            strengthPct:shooter.cardFx.inflict.burn.strength || 20,
+            effectVersion:2,
+          };
+          continue;
+        }
         bossStatuses = mergeAllStatuses(bossStatuses, [[st]]);
         log.push({
           type: "statusInflict", round, memberId: shooter.memberId, shooterName: shooter.name,
@@ -407,7 +420,7 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
       s.totals.interrupts += 1;
       log.push({ type: "interrupt", round, intent, legHits: spotHits });
     } else if (outcome.fired) {
-      const base = calcWorldBossCounter(s.boss.atk, s.stats.def, s.dmgReducePct);
+      const base = calcWorldBossCounter(s.boss.atk, s.stats.def, s.dmgReducePct + (s.members[0]?.cardFx?.damageReductionPct || 0) / 100);
       const mult = (intent.skill?.baseMultiplier || 1) * outcome.ultMultiplier;
       const dealt = Math.max(1, Math.round(base * mult));
       // R2 保 1 血、R4 才可能打死（沿用既有 canKnockOut 設定）
@@ -455,7 +468,7 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
       // 平砍也是打全隊，但每個人吃自己的防禦
       let shown = 0;
       for (const m of s.members) {
-        const base = calcWorldBossCounter(s.boss.atk, m.stats.def, s.dmgReducePct);
+        const base = calcWorldBossCounter(s.boss.atk, m.stats.def, s.dmgReducePct + (m.cardFx?.damageReductionPct || 0) / 100);
         m.hp = Math.max(1, m.hp - base);
         if (m === s.members[0]) shown = base;
       }
@@ -470,11 +483,24 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
   // 後衛補血：回合結束時幫還站著的人回一點（依表現，最多 15% 最大生命）
   if (support.healPct > 0 && s.bossHp > 0) {
     const healed = [];
+    const sourceWeights = support.supporters.map(source => ({
+      memberId:source.memberId, name:source.name,
+      weight:source.perf * (1 + (source.healBonusPct || 0) / 100),
+    })).filter(source => source.weight > 0);
+    const sourceWeightTotal = sourceWeights.reduce((sum, source) => sum + source.weight, 0);
     for (const m of s.members) {
       if (m.hp <= 0 || m.hp >= m.maxHp) continue;
       const amount = Math.max(1, Math.round(m.maxHp * support.healPct));
       m.hp = Math.min(m.maxHp, m.hp + amount);
-      healed.push({ memberId: m.memberId, name: m.name, amount, hp: m.hp });
+      let allocated = 0;
+      const sources = sourceWeights.map((source, index) => {
+        const sourceAmount = index === sourceWeights.length - 1
+          ? amount - allocated
+          : Math.round(amount * source.weight / sourceWeightTotal);
+        allocated += sourceAmount;
+        return { memberId:source.memberId, name:source.name, amount:sourceAmount };
+      });
+      healed.push({ memberId: m.memberId, name: m.name, amount, hp: m.hp, sources });
     }
     if (healed.length) {
       s.playerHp = s.members[0].hp;
@@ -506,6 +532,24 @@ export function resolveRaidRound({ state, arrows = [], rand = Math.random } = {}
     bossStatuses = tick.statuses;
   }
   s.bossStatuses = bossStatuses;
+
+  // 卡片灼燒使用施放當下 ATK，依來源獨立；重試同一權威 state 只會產生同一份 next state。
+  if (s.bossHp > 0) {
+    for (const [sourceMemberId, burn] of Object.entries(cardBurns)) {
+      const damage = Math.max(1, Math.round((burn.snapshotAtk || 0) * (burn.strengthPct || 0) / 100));
+      s.bossHp = Math.max(0, s.bossHp - damage);
+      s.totals.damage += damage;
+      roundDamage += damage;
+      log.push({ type:"statusTick", round, status:{ id:"burn", name:"灼燒", icon:"🔥", sourceMemberId }, damage,
+        sourceMemberId, sourceName:burn.sourceName, bossHp:s.bossHp, bossHpRatio:raidHpRatio(s),
+        text:`🔥 ${burn.sourceName || "射手"}的灼燒造成 ${damage} 傷害` });
+      const remaining = (burn.remaining || 1) - 1;
+      if (remaining > 0) cardBurns[sourceMemberId] = { ...burn, remaining };
+      else delete cardBurns[sourceMemberId];
+      if (s.bossHp <= 0) break;
+    }
+  }
+  s.cardBurns = cardBurns;
 
   s.staggered = nextStagger;
   s.round = round + 1;

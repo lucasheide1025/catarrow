@@ -35,6 +35,9 @@ export function buildExpeditionMemberData(profile, cardBonus = null, cardCollect
       stars: topWorldBoss.card.stars || topWorldBoss.card.level || 1,
     },
   } : null;
+  const wbKeys = (cardCollection?.equipped || [])
+    .filter(entry => entry && typeof entry !== "string" && entry.source === "wb" && WB_CARDS[entry.key])
+    .map(entry => entry.key);
   return {
     ...profile,
     level: archerLevel,
@@ -48,7 +51,12 @@ export function buildExpeditionMemberData(profile, cardBonus = null, cardCollect
     catXP: equippedCat?.catXP || 0,
     catBond: equippedCat?.bond || 0,
     catAtk: catStats?.catATK || 0,
-    wbBonus: { dmgBonusPct: cb.dmgBonusPct || 0, dmgReducePct: cb.dmgReducePct || 0, healBonusPct: cb.healBonusPct || 0 },
+    wbBonus: {
+      effectVersion:2, equippedCardKeys:wbKeys,
+      dmgBonusPct:cb.dmgBonusPct || 0,
+      dmgReducePct:cb.dmgReducePct || 0,
+      healBonusPct:cb.healBonusPct || 0,
+    },
     avatarId: profile?.avatarId || null,
     battleCosmetics,
   };

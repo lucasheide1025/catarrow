@@ -24,9 +24,10 @@ import {
   DIFFICULTY_REWARD_MULT, DYNAMIC_DIFFICULTY,
 } from "./dungeonData";
 import { createOrdinaryChestLoot } from "./dungeonChestLoot";
+import { resolveWorldBossCardEffects } from "./worldBossCards";
 import { planDungeonRoundAbility, tickDungeonStatuses, getStatusStatMods } from "./dungeonAbilityRound";
 import {
-  mergeAllStatuses, monsterStatMods, rollInflictForArrows, tickMonsterStatuses,
+  mergeAllStatuses, mergeMonsterStatus, monsterStatMods, rollInflictForArrows, tickMonsterStatuses,
 } from "./monsterStatus";
 
 const D = "dungeonRooms";
@@ -34,6 +35,13 @@ const D = "dungeonRooms";
 function restAtkMult(member) {
   return (1 + Math.max(0, Number(member?.restBonuses?.atkPct) || 0) / 100)
     * (1 + Math.max(0, Number(member?.merchantBonuses?.atkPct) || 0) / 100);
+}
+function resolveMemberWbFx(member, monster) {
+  if (Number(member?.wbBonus?.effectVersion) < 2) return { damagePct:0, damageReducePct:0, healPct:0, armorPiercePct:0, burn:null };
+  return resolveWorldBossCardEffects({
+    equippedCardKeys:member.wbBonus?.equippedCardKeys || [], enemyFamily:monster?.family,
+    enemyClass:["boss", "mythic"].includes(monster?.tier) ? "boss" : "monster",
+  }).modifiers;
 }
 
 function restDefMult(member) {
@@ -242,7 +250,8 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       const effectiveAtk = isRear
         ? 0
         : Math.round((m.atk || 10) * (m.buffs?.atkMult || 1) * (m.potionBuffs?.atkMult || 1) * restAtkMult(m) * (1 + atkBuffPctForFront) * (1 - statusMods.atkPct / 100));
-      const dmgMult      = (m.buffs?.dmgMult || 1) * (m.potionBuffs?.dmgMult || 1) * (mods.dmgMult || 1) * (room.consumableEffects?.teamDmgMult || 1) * (1 + (m.wbBonus?.dmgBonusPct || 0)) * monsterReduceMult;
+      const wbFx = resolveMemberWbFx(m, room.monster);
+      const dmgMult      = (m.buffs?.dmgMult || 1) * (m.potionBuffs?.dmgMult || 1) * (mods.dmgMult || 1) * (room.consumableEffects?.teamDmgMult || 1) * (1 + (m.wbBonus?.dmgBonusPct || 0) + wbFx.damagePct) * monsterReduceMult;
       const contract     = m.contract || { type:"standard", param:null };
       const damageItems  = (m.arrows || []).filter(arrow => getPotion(arrow?.label || arrow)?.actionCost === "arrow");
       const scoreArrows  = (m.arrows || []).filter(arrow => !getPotion(arrow?.label || arrow));
@@ -259,7 +268,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
           })) }
         // 🔨 破防：怪物身上的異常先削一層防禦（全隊都吃得到）
         : calcDmgFn(scoreArrows, effectiveAtk,
-            Math.max(0, room.monster.def * (1 - monsterStatMods(room.monsterStatuses || []).defDownPct / 100)),
+            Math.max(0, room.monster.def * (1 - monsterStatMods(room.monsterStatuses || []).defDownPct / 100) * (1 - wbFx.armorPiercePct / 100)),
             contract, dmgMult);
       const arrowBreakdown = (raw.arrowBreakdown || []).map((entry, index) => {
         const arrow = (m.arrows || [])[index];
@@ -327,6 +336,21 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
         inflict: members[id]?.inflict || {},
       })),
     );
+    // v2 YUMI burn is deterministic and resolved on the authoritative round,
+    // not in a client animation. Any scoring hit refreshes the three-round burn.
+    for (const id of aliveIds) {
+      const member = members[id];
+      if (Number(member?.wbBonus?.effectVersion) < 2) continue;
+      const fx = resolveWorldBossCardEffects({
+        equippedCardKeys:member.wbBonus?.equippedCardKeys || [],
+        enemyFamily:room.monster?.family,
+        enemyClass:["boss", "mythic"].includes(room.monster?.tier) ? "boss" : "monster",
+      }).modifiers;
+      const hit = (member.arrows || []).some(arrow => Number(arrow?.score ?? arrow?.label ?? arrow) > 0 || ["X", "x"].includes(arrow?.label ?? arrow));
+      if (fx.burn && hit) monsterStatuses = mergeMonsterStatus(monsterStatuses, {
+        id:"burn", strength:fx.burn.strengthPct, duration:fx.burn.duration,
+      });
+    }
     const memberHPNow = {};
     for (const id of aliveIds) memberHPNow[id] = members[id].hp || 0;
     const potionShieldNow = Object.fromEntries(aliveIds.map(id => [id, members[id].potionBuffs?.shield || 0]));
@@ -382,7 +406,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
     const healSupportLog = rearIds
       .filter(id => allData[id]?.rearHeal)
       .map(id => {
-        const pool = Math.round((members[id].maxHP || 100) * 0.15 * (allData[id].scorePct || 0) * (1 + (members[id].wbBonus?.healBonusPct || 0)));
+        const pool = Math.round((members[id].maxHP || 100) * 0.15 * (allData[id].scorePct || 0) * (1 + (members[id].wbBonus?.healBonusPct || 0) + resolveMemberWbFx(members[id], room.monster).healPct));
         const targets = frontIds.filter(targetId => memberHPNow[targetId] > 0);
         const perPerson = targets.length ? Math.round(pool / targets.length) : 0;
         return { id, name:members[id].name || "rear", kind:"heal", dmg:0, heal:pool, targets:targets.map(targetId => ({ id:targetId, name:members[targetId]?.name || "front", heal:perPerson })) };
@@ -551,7 +575,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
         if (memberHPNow[id] <= 0) continue;
         const m            = members[id];
         const effectiveDef = Math.round((m.def || 10) * (m.buffs?.defMult || 1) * (m.potionBuffs?.defMult || 1) * restDefMult(m));
-        const rawCtr       = Math.ceil(calcCtrFn(monsterAtk, effectiveDef, m.wbBonus?.dmgReducePct || 0) * (1 - (room.consumableEffects?.counterReducePct || 0) / 100));
+        const rawCtr       = Math.ceil(calcCtrFn(monsterAtk, effectiveDef, (m.wbBonus?.dmgReducePct || 0) + resolveMemberWbFx(m, room.monster).damageReducePct) * (1 - (room.consumableEffects?.counterReducePct || 0) / 100));
         const counterHit   = resolvePlayerCounter({ arrows:m.arrows || [], baseDamage:rawCtr, maxHP:m.maxHP || memberHPNow[id] });
         const absorbed     = Math.min(potionShieldNow[id] || 0, counterHit.damage);
         potionShieldNow[id] = Math.max(0, (potionShieldNow[id] || 0) - absorbed);
@@ -587,7 +611,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
     for (const id of aliveIds) {
       if (!allData[id]?.rearHeal) continue;
       const scorePct = allData[id]?.scorePct || 0;
-      const healBonusPct = members[id].wbBonus?.healBonusPct || 0;
+      const healBonusPct = (members[id].wbBonus?.healBonusPct || 0) + resolveMemberWbFx(members[id], room.monster).healPct;
       const pool    = Math.round((members[id].maxHP || 100) * 0.15 * scorePct * (1 + healBonusPct));
       healGivenBy[id] = pool;
       if (pool <= 0) continue;

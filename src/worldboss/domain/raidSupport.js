@@ -51,12 +51,16 @@ export function teamSupport(members = []) {
   const supporters = downed.map(m => ({
     memberId: m.memberId, name: m.name,
     perf: supportPerformance(m, avg),
+    healBonusPct: Math.max(0, Number(m.cardFx?.healPct) || 0),
   }));
   const totalPerf = Math.min(1, supporters.reduce((s, x) => s + x.perf, 0));
+  const weightedHeal = supporters.reduce((sum, item) => sum + item.perf * (1 + item.healBonusPct / 100), 0);
+  const basePerf = supporters.reduce((sum, item) => sum + item.perf, 0);
+  const healBonusMult = basePerf > 0 ? weightedHeal / basePerf : 1;
 
   return {
     atkMult: 1 + SUPPORT_MAX_ATK * totalPerf,
-    healPct: SUPPORT_MAX_HEAL * totalPerf,
+    healPct: SUPPORT_MAX_HEAL * totalPerf * healBonusMult,
     supporters, totalPerf,
   };
 }

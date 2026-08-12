@@ -12,6 +12,7 @@ import { getCardTalent } from "../../../lib/cardTalents";
 import { FAMILY_STATUS } from "../../../lib/monsterStatus";
 import { EFFECT_DISPLAY, effectCap, describeStatusFormula } from "../../../lib/cardTalentDisplay";
 import { getBreakRuleText } from "../../../lib/combatSkillEngine";
+import { describeWorldBossEffect } from "../../../lib/worldBossCards";
 
 const STAT_LABEL = { hp: "❤️ HP", atk: "⚔️ ATK", def: "🛡️ DEF" };
 
@@ -97,7 +98,16 @@ export default function CardDetailSheet({ view, onClose, onSeen, onEquip, onUpgr
               <div style={{ marginTop: 8, fontSize: 12, color: "#e2e8f0" }}>
                 <div style={{ color: "#facc15" }}>{"★".repeat(view.stars || 1)}{view.equipped && <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 900, color: "#34d399" }}>✓ 裝備中</span>}</div>
                 <div style={{ marginTop: 4 }}>重複張數：{view.duplicates || 0}</div>
-                {(() => {
+                {view.source === "wb" ? (
+                  <div style={{ marginTop: 6, padding: "8px 10px", borderRadius: 10, background: "rgba(250,204,21,.08)", border: "1px solid rgba(250,204,21,.24)" }}>
+                    <div style={{ color: "#fde68a", fontWeight: 900 }}>專屬被動</div>
+                    {(view.effects || []).map((effect, index) => (
+                      <div key={`${effect.kind}-${index}`} style={{ marginTop: 4, color: "#fef3c7", fontSize: 12, lineHeight: 1.5 }}>• {describeWorldBossEffect(effect)}</div>
+                    ))}
+                    {!(view.effects || []).length && <div style={{ marginTop: 4, color: "#94a3b8", fontSize: 12 }}>{view.effectText || "尚未設定專屬被動"}</div>}
+                    <div style={{ marginTop: 6, color: "#a1a1aa", fontSize: 10.5, lineHeight: 1.45 }}>世界王卡不再提供舊版 HP／ATK／DEF +25；能力依卡片專屬被動與作用條件生效。</div>
+                  </div>
+                ) : (() => {
                   const stat = getCardStat(view);
                   const bonus = calcCardBonus(view.tier, view.stars || 1);
                   const next = (view.stars || 1) < 5 ? calcCardBonus(view.tier, (view.stars || 1) + 1) : null;
@@ -105,7 +115,7 @@ export default function CardDetailSheet({ view, onClose, onSeen, onEquip, onUpgr
                     裝備效果：{STAT_LABEL[stat] || stat} +{bonus}{next != null && <span style={{ color: "#64748b", fontWeight: 400 }}>（升星後 +{next}）</span>}
                   </div>;
                 })()}
-                {(() => {
+                {view.source !== "wb" && (() => {
                   const talent = getCardTalent(view);
                   if (!talent) return null;
                   const meta = EFFECT_DISPLAY[talent.key];

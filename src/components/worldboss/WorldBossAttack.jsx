@@ -1976,7 +1976,13 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
               {/* 每日出戰獎勵 */}
               {result?.dailyReward && (
                 <div className="w-full bg-emerald-500/10 border border-emerald-400/30 rounded-2xl p-4 space-y-1">
-                  <div className="text-xs text-emerald-300 font-bold mb-2">🎁 出戰獎勵（已發放）</div>                    <BattleStatRow icon="💰" label="參與金幣" value={`+${result?.dailyReward?.coins || 0}`} valueColor="#fbbf24" />
+                  <div className="text-xs text-emerald-300 font-bold mb-2">🎁 出戰獎勵（已發放）</div>
+                  <BattleStatRow icon="💰" label="參與金幣" value={`+${result?.dailyReward?.coins || 0}`} valueColor="#fbbf24" />
+                  {result.dailyReward.arrowDew > 0 && <BattleStatRow icon="💧" label="箭露" value={`+${result.dailyReward.arrowDew}`} valueColor="#7dd3fc" />}
+                  {result.dailyReward.archerXP > 0 && <BattleStatRow icon="🏹" label="射手經驗" value={`+${result.dailyReward.archerXP}`} valueColor="#c4b5fd" />}
+                  {result.dailyReward.catXP > 0 && <BattleStatRow icon="🐾" label="貓咪經驗" value={`+${result.dailyReward.catXP}`} valueColor="#f9a8d4" />}
+                  {result.dailyReward.bond > 0 && <BattleStatRow icon="💞" label="羈絆" value={`+${result.dailyReward.bond}`} valueColor="#fda4af" />}
+                  {result.dailyReward.materialChests > 0 && <BattleStatRow icon="📦" label="普通材料寶箱" value={`×${result.dailyReward.materialChests}`} valueColor="#34d399" />}
                   {result?.dailyReward?.chest ? (                      <BattleStatRow icon="📦" label="傷害寶箱" value={result?.dailyReward?.chest === "gold" ? "🏆 金寶箱" : "⚙️ 鐵寶箱"} valueColor="#34d399" />
                   ) : (
                     <div className="text-xs text-slate-500">傷害達 Boss HP 1% 可獲鐵寶箱，2.5% 可獲金寶箱</div>

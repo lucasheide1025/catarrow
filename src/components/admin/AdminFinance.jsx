@@ -3,7 +3,7 @@ import { useState } from "react";
 import AdminMonthlyCard from "./AdminMonthlyCard";
 import BillingSystem    from "./BillingSystem";
 
-export default function AdminFinance({ adminProfile }) {
+export default function AdminFinance({ adminProfile, pendingRequests }) {
   const [tab, setTab] = useState("monthlycard");
 
   return (
@@ -20,7 +20,7 @@ export default function AdminFinance({ adminProfile }) {
           </button>
         ))}
       </div>
-      {tab === "monthlycard" && <AdminMonthlyCard adminProfile={adminProfile} />}
+      {tab === "monthlycard" && <AdminMonthlyCard adminProfile={adminProfile} pendingRequests={pendingRequests} />}
       {tab === "billing"     && <BillingSystem    profile={adminProfile} />}
     </div>
   );

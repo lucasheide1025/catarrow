@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { activeSpawnTypes, describeSpawnCycle, evaluateWorldBossSpawnCycle, requiredSpawnType, spawnProgressRatio, SPAWN_PROGRESS_LABEL } from "../../lib/worldBossSpawnCycle";
-import { subscribeLatestWorldBoss, subscribeWorldBossSpawnCycle, subscribeWorldBossStatus, getLatestWorldBossKill, getPendingWorldBossRewards, claimWorldBossKillReward, previewWorldBossKillReward, getWorldBossAttackDateKeys } from "../../lib/worldBossDb";
+import { subscribeLatestWorldBoss, subscribeWorldBossSpawnCycle, subscribeWorldBossStatus, getLatestWorldBossKill, getPendingWorldBossRewards, claimWorldBossKillReward, previewWorldBossKillReward, getWorldBossAttackDateKeys, recoverWorldBossParticipation } from "../../lib/worldBossDb";
 import { normalizeWorldBossState } from "../../lib/worldBossState";
 import { WORLD_BOSSES, getBossPhase, PHASE_LABELS, getParticipantBonus } from "../../lib/worldBossData";
 import WorldBossSVG from "./WorldBossSVG";
@@ -49,6 +49,10 @@ function ParticipantAvatar({ name, isGuest }) {
   );
 }
 
+function publicParticipantName(participant) {
+  return participant?.nickname || participant?.displayName || participant?.name || "匿名射手";
+}
+
 function CountdownTimer({ endAt }) {
   const [left, setLeft] = useState("");
   useEffect(() => {
@@ -78,7 +82,7 @@ function KillScreen({ event, myReward, rewardPreview, onClose, onClaim, canClaim
     if (replay && replayDone) setReplayDone(false);
   }, [replay]); // eslint-disable-line
   const parts  = Object.entries(event.participants || {})
-    .map(([id, p]) => ({ id, name: p.name, dmg: p.totalDmg || 0, isGuest: p.isGuest }))
+    .map(([id, p]) => ({ id, name: publicParticipantName(p), dmg: p.totalDmg || 0, isGuest: p.isGuest }))
     .sort((a, b) => b.dmg - a.dmg);
   if (replay && !replayDone) {
     // ⚠️ 大廳播過新版演出也算「看過」：同步消耗 wb_kill_seen_at，
@@ -110,7 +114,7 @@ function KillScreen({ event, myReward, rewardPreview, onClose, onClaim, canClaim
       {killer && (
         <div style={{ background:"rgba(251,191,36,0.12)", border:"1.5px solid #fbbf24", borderRadius:16, padding:"12px 28px", marginBottom:20, textAlign:"center", animation:"wb-death-killer 0.5s ease 0.95s both" }}>
           <div style={{ fontSize:"0.65rem", color:"rgba(255,255,255,0.45)", marginBottom:4, letterSpacing:2 }}>⚔️ 致命一擊</div>
-          <div style={{ fontSize:"1.5rem", fontWeight:900, color:"#fbbf24" }}>{killer.memberName}</div>
+          <div style={{ fontSize:"1.5rem", fontWeight:900, color:"#fbbf24" }}>{killer.nickname || killer.displayName || killer.memberName || "匿名射手"}</div>
           <div style={{ fontSize:"0.75rem", color:"#94a3b8", marginTop:2 }}>使用 {killer.weapon}</div>
         </div>
       )}
@@ -174,7 +178,7 @@ function KillScreen({ event, myReward, rewardPreview, onClose, onClaim, canClaim
   );
 }
 
-export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete, sharedData }) {
+export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete, sharedData, worldBossStatus }) {
   const { profile } = useAuth();
   const activeProfile = guestOverride || profile;
   const isGuestMode = !!guestOverride || ["guest", "kid"].includes(activeProfile?.accountType);
@@ -218,6 +222,12 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
   const [rewardPreview, setRewardPreview] = useState(null);
   const [spawnCycle, setSpawnCycle] = useState(null);
   const [nowMs, setNowMs] = useState(Date.now());
+  useEffect(()=>{
+    const participant=event?.participants?.[myId];
+    if(!isGuestMode&&event?.rewardSnapshot?.version===2&&participant?.participationClaimId&&!participant?.participationRewardClaimedAt){
+      recoverWorldBossParticipation(myId,event).catch(()=>{});
+    }
+  },[event,myId,isGuestMode]);
 
   // 🌙 冷卻倒數 ticker：resting 期間每 30 秒更新一次（跟首頁卡片同一套做法）
   const cycleResting = spawnCycle?.status === "resting";
@@ -238,9 +248,16 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
 
   // 新版擊倒演出：status 小文件才有 killReplay（event 文件沒有），
   // 訂閱它才能在大廳擊倒後播放新版 RaidKillCutscene（2026-08-06）。
-  useEffect(() => subscribeWorldBossStatus(ev => {
-    setKillReplay(ev?.status === "defeated" && isKillReplayForEvent(ev.killReplay, ev.id) ? ev.killReplay : null);
-  }), []);
+  useEffect(() => {
+    const applyStatus = ev => {
+      setKillReplay(ev?.status === "defeated" && isKillReplayForEvent(ev.killReplay, ev.id) ? ev.killReplay : null);
+    };
+    if (worldBossStatus !== undefined) {
+      applyStatus(worldBossStatus);
+      return undefined;
+    }
+    return subscribeWorldBossStatus(applyStatus);
+  }, [worldBossStatus]);
 
   useEffect(() => {
     const unsub = subscribeLatestWorldBoss(ev => {
@@ -428,30 +445,28 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
                 }
                 return (
                   <div>
-                    {[
-                      ["🏹 全體箭數","arrows"], ["🏰 六族地下城","dungeonClears"],
-                      ["⚔️ 七族擊倒","monsterKills"], ["🎲 探索骰子","villageDice"],
-                    ].map(([label,key]) => {
+                    {activeSpawnTypes(spawnCycle).map(key => {
+                      const label = ({
+                        arrows:"🏹 全體箭數", dungeonClears:"🏰 六族地下城",
+                        monsterKills:"⚔️ 七族擊倒", villageDice:"🎲 探索骰子",
+                      })[key] || SPAWN_PROGRESS_LABEL[key] || key;
                       const value = spawnCycle.progress?.[key] || 0;
                       const target = spawnCycle.targets?.[key] || 1;
                       const ratio = spawnProgressRatio(spawnCycle, key);
-                      // ⚠️ 這一輪只認抽中的那一種。沒抽中的要**明顯淡化**，
-                      //    不然玩家會白推一整天還以為有用。
-                      const active = activeSpawnTypes(spawnCycle).includes(key);
-                      return <div key={key} className={`mb-2 ${active ? "" : "opacity-35"}`}>
+                      return <div key={key} className="mb-2">
                         <div className="flex justify-between text-xs text-slate-300">
-                          <span>{active && required ? `🎯 ${label}` : label}</span>
+                          <span>{required ? `🎯 ${label}` : label}</span>
                           <span>{value.toLocaleString()} / {target.toLocaleString()}</span>
                         </div>
                         <div className="h-1.5 rounded-full bg-black/40 overflow-hidden">
-                          <div className={`h-full ${active ? "bg-violet-400" : "bg-slate-600"}`} style={{width:`${ratio*100}%`}}/>
+                          <div className="h-full bg-violet-400" style={{width:`${ratio*100}%`}}/>
                         </div>
                       </div>;
                     })}
                     <div className="text-[11px] text-slate-400 mt-2">
                       {required
-                        ? "🎯 這一輪的門檻是隨機抽出的，只有標記的那一項算數；就算沒推滿，最晚 48 小時後也會降臨。"
-                        : "任一條件達成即可開啟異界之門，最晚 48 小時後降臨。"}
+                        ? "🎯 這一輪的門檻是隨機抽出的，只有標記的那一項算數；達標後世界王才會降臨。"
+                        : "任一條件達成即可開啟異界之門；未達標時只能由教練從後台召喚。"}
                     </div>
                   </div>
                 );
@@ -486,11 +501,11 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
 
   // 傷害排行（前 5）
   const topDmg = partList
-    .map(([id, p]) => ({ id, name: p.name, dmg: p.totalDmg || 0, isGuest: p.isGuest }))
+    .map(([id, p]) => ({ id, name: publicParticipantName(p), dmg: p.totalDmg || 0, isGuest: p.isGuest }))
     .sort((a, b) => b.dmg - a.dmg)
     .slice(0, 5);
   const activityTopDmg = activityPartList
-    .map(([id, p]) => ({ id, name: p.name, dmg: p.totalDmg || 0, isGuest: p.isGuest }))
+    .map(([id, p]) => ({ id, name: publicParticipantName(p), dmg: p.totalDmg || 0, isGuest: p.isGuest }))
     .sort((a, b) => b.dmg - a.dmg)
     .slice(0, 5);
 
@@ -618,7 +633,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
             </div>
             <div className="flex gap-2 flex-wrap">
               {partList.slice(0, 8).map(([id, p]) => (
-                <ParticipantAvatar key={id} name={p.name} isGuest={p.isGuest}/>
+                <ParticipantAvatar key={id} name={publicParticipantName(p)} isGuest={p.isGuest}/>
               ))}
               {partList.length > 8 && (
                 <div className="flex flex-col items-center gap-0.5" style={{ minWidth: 36 }}>
@@ -729,6 +744,17 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
                 </div>
               </div>
             );
+          }
+          const snapshot=event.rewardSnapshot;
+          if(snapshot?.version===2){
+            const line=r=>[["coins","💰 金幣"],["arrowDew","💧 箭露"],["archerXP","🏹 射手 EXP"],["catXP","😻 貓咪 EXP"],["bond","💞 羈絆"],["materialChests","📦 材料箱"],["coinChests","🪙 金幣箱"],["mimiBoxes","😺 咪咪箱"],["cardPacks","🃏 卡包"],["scrolls","🗺️ 召喚卷"]].filter(([key])=>r?.[key]).map(([key,label])=>`${label} ${r[key]}`).join("・");
+            return <div className="bg-amber-500/10 border border-amber-400/30 rounded-2xl px-4 py-3 space-y-2">
+              <div className="text-xs text-amber-300 font-bold">🎁 本場固定獎勵</div>
+              <div className="text-xs text-slate-300"><b className="text-emerald-300">每次有效參戰：</b>{line(snapshot.participation)}</div>
+              <div className="text-xs text-slate-300"><b className="text-amber-300">共同擊殺：</b>{line(snapshot.kill)}・👑 王卡 {Math.round(snapshot.kill.wbCardChance*100)}%</div>
+              <div className="text-xs text-slate-300"><b className="text-sky-300">額外分潤池：</b>{line(snapshot.effortPool)}</div>
+              <div className="text-[11px] text-slate-400">前三名與尾刀為額外榮譽，可彼此疊加；尾刀不取代共同擊殺獎勵。本場數值已鎖定，重新整理不會改變。</div>
+            </div>;
           }
           const rw = event.reward || {};
           function rewardLine(r) {

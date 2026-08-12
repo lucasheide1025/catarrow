@@ -20,6 +20,7 @@ import { getMaterialPool } from "../../lib/monsterMaterials";
 import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
 import { getCatStatMult } from "../../lib/catData";
 import { WB_CARDS } from "../../lib/worldBossCards";
+import { buildWorldBossCardSnapshot } from "../../lib/worldBossCards";
 import { EQUIP_GRADES, EQUIP_SLOT_DEFS } from "../../lib/constants";
 import { EQUIP_ITEMS } from "../../lib/equipData";
 import { sfxTap, sfxArrowShoot, sfxCast, sfxBuff, sfxDebuff, sfxEpic, sfxCounter, sfxCounterCrit, sfxCritBoom, sfxRoundEnd, sfxPotionDrink, sfxMonsterDead, vibrate } from "../../lib/sound";
@@ -308,11 +309,15 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     // cardCollectionVersion written in waiting room stats effect deps; ensures card data loaded before stats write.
     return subscribeCardCollection(myId, data => {
       cardCollRef.current = data;
-      try { myInflictRef.current = calcCardCombatEffectsFromCollection(data || {}).inflict || {}; }
+      try { myInflictRef.current = calcCardCombatEffectsFromCollection(data || {}, { enemyFamily:room?.monster?.family, enemyClass:(room?.monster?.bossTagged || room?.monster?.encounter === "boss") ? "boss" : "monster" }).inflict || {}; }
       catch { myInflictRef.current = {}; }
       setCardCollectionVersion(v => v + 1);
     });
   }, [myId, isGuestMode]); // eslint-disable-line
+  useEffect(() => {
+    try { myInflictRef.current = calcCardCombatEffectsFromCollection(cardCollRef.current || {}, { enemyFamily:room?.monster?.family, enemyClass:(room?.monster?.bossTagged || room?.monster?.encounter === "boss") ? "boss" : "monster" }).inflict || {}; }
+    catch { myInflictRef.current = {}; }
+  }, [room?.monster?.family, room?.monster?.bossTagged, room?.monster?.encounter, cardCollectionVersion]);
 
   // 下一場重置：room 回到 waiting 時清掉所有 one-time ref 與本地狀態
   useEffect(() => {
@@ -490,7 +495,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     const catMult = getMyCatMult();
     const stats = getArcherStats(profile, [], cardBonus, catMult);
     updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def, localStorage.getItem("mb_archer_style") || "", hasCat ? (catATK || 0) : 0, hasCat ? (catName || "") : "", hasCat ? (catId || "") : "", profile?.avatarId || "",
-      { dmgBonusPct: cardBonus.dmgBonusPct || 0, dmgReducePct: cardBonus.dmgReducePct || 0, healBonusPct: cardBonus.healBonusPct || 0 }, profile?.nickname || profile?.name || "射手", archerLevelFromXP(profile?.archerXP || 0), getBattleCosmetics(profile, cardCollRef.current));
+      { dmgBonusPct: cardBonus.dmgBonusPct || 0, dmgReducePct: cardBonus.dmgReducePct || 0, healBonusPct: cardBonus.healBonusPct || 0, ...buildWorldBossCardSnapshot(cardCollRef.current) }, profile?.nickname || profile?.name || "射手", archerLevelFromXP(profile?.archerXP || 0), getBattleCosmetics(profile, cardCollRef.current));
   }, [room?.status, myId, cardCollectionVersion, isGuestMode]); // eslint-disable-line
 
   // 開戰後套入藥水 buff 重新寫入最終數值
@@ -505,7 +510,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     const catMult = getMyCatMult();
     const stats = getArcherStats(profile, selectedPotions, cardBonus, catMult);
     updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def, localStorage.getItem("mb_archer_style") || "", hasCat ? (catATK || 0) : 0, hasCat ? (catName || "") : "", hasCat ? (catId || "") : "", profile?.avatarId || "",
-      { dmgBonusPct: cardBonus.dmgBonusPct || 0, dmgReducePct: cardBonus.dmgReducePct || 0, healBonusPct: cardBonus.healBonusPct || 0 }, profile?.nickname || profile?.name || "射手", archerLevelFromXP(profile?.archerXP || 0), getBattleCosmetics(profile, cardCollRef.current));
+      { dmgBonusPct: cardBonus.dmgBonusPct || 0, dmgReducePct: cardBonus.dmgReducePct || 0, healBonusPct: cardBonus.healBonusPct || 0, ...buildWorldBossCardSnapshot(cardCollRef.current) }, profile?.nickname || profile?.name || "射手", archerLevelFromXP(profile?.archerXP || 0), getBattleCosmetics(profile, cardCollRef.current));
     if (selectedPotions.length > 0) usePotions(myId, selectedPotions).catch(() => {});
   }, [room?.status]); // eslint-disable-line
 
@@ -865,22 +870,26 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       }, 0);
       // 使用預覽時已 roll 好的值，保持顯示一致
       const reward   = previewReward || {};
-      const coins    = reward.coins    ?? rollCoins(room.monster?.tier || "common", room.mode || "student");
-      const material = reward.material ?? myExpansionReward?.material ?? rollMaterialDrop(room.monster);
-      const card     = myExpansionReward ? myExpansionReward.card : (reward.card ?? rollCardDrop(room.monster));
+      let coins    = reward.coins    ?? rollCoins(room.monster?.tier || "common", room.mode || "student");
+      let material = reward.material ?? myExpansionReward?.material ?? rollMaterialDrop(room.monster);
+      let card     = myExpansionReward ? myExpansionReward.card : (reward.card ?? rollCardDrop(room.monster));
       const monsterTier = room.monster?.tier || "common";
       const coinChest = makeCoinChest(monsterTier, "組隊戰鬥掉落");
       const bonusChest = Math.random() < PARTY_BONUS_CHEST_CHANCE ? makeCoinChest(monsterTier, "組隊加成寶箱") : null;
       // 金幣寶箱是「領取當下」才產生的，不在 myChests（那是戰鬥掉落的箱子）。
       // 不存起來的話結算頁就完全看不到它 —— 使用者實測「沒有顯示金幣寶箱掉落」。
       setClaimedCoinChests([coinChest, bonusChest].filter(Boolean));
-      const res = await claimBattleReward(roomId, myId, myChests, room.monster?.id, room.result, myDmg, { isGuest: isGuestPlayer });
+      const { claimPartyBattleRewardV2 } = await import("../../lib/partyRewardClaimDb");
+      const res = isLimitedAccount ? { ok:true, reward:{} } : await claimPartyBattleRewardV2({ roomId, battleInstanceId:room.battleInstanceId, memberId:myId });
+      if (!isLimitedAccount) {
+        const authoritative=res.reward||{};
+        coins=authoritative.coins||0; card=authoritative.card||null;
+        const entry=Object.entries(authoritative.materialTotals||{})[0]; material=entry?{id:entry[0],quantity:entry[1]}:null;
+        setClaimedCoinChests(authoritative.chests||[]);
+      }
       if (!res?.ok) throw new Error(res?.reason || "領取失敗");
       if (!isLimitedAccount) {
-        addCoins(myId, coins).catch(() => {});
-        addChests(myId, bonusChest ? [coinChest, bonusChest] : [coinChest]).catch(() => {});
-        if (material) addMaterials(myId, Array.from({ length:Math.max(1, material.quantity || 1) }, () => ({ id:material.id }))).catch(() => {});
-        if (card)     addMonsterCard(myId, card).catch(() => {});
+        // Authoritative party resources are committed atomically by the callable above.
       }
       if (!isLimitedAccount && !dexRecordedRef.current && room.monster?.id) {
         dexRecordedRef.current = true;
@@ -923,12 +932,10 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             shootingProfile, targetFormat:activeTargetFmt, arrowsPerEnd:lockedBattleSettings.arrowsPerRound,
             result:"win", sourceMode:"party", monster:room.monster, totalDamage:myDmg, finalMonsterHp:room.monsterHP,
           }).catch(error => console.warn("party shooting performance dual-write failed", error));
-          if (arrowCount > 0) addArrowdew(myId, arrowCount).catch(() => {});
         }
         // 組隊模式永遠給 50% XP 加成
         const xpMult = PARTY_XP_MULT;
         const xp = Math.round((MONSTER_TIER_XP[monsterTier] || 5) * xpMult);
-        addArcherXP(myId, xp).catch(() => {});
         // 冒險者 XP 已取消（改由世界王/公會任務取得）
         const _ptyCatId = authProfile?.equippedCat?.catId;
         const catXP = _ptyCatId ? Math.round((CAT_TIER_XP[monsterTier] || 5) * xpMult) : 0;

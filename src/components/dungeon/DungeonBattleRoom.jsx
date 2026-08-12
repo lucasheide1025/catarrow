@@ -428,8 +428,9 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
   // 遠征勝利畫面已改為過場（結算交給 DungeonKillResult），原本掛在「領取獎勵並回地圖」
   // 按鈕上的 handleClaimSelf 因此再也沒人觸發 —— 射箭表現寫入、今日練習紀錄、箭數
   // 里程碑、貓貓 XP/羈絆全部停止記錄。這些是道館的核心資料，每打一場就少一場。
-  // handleClaimSelf 的遠征分支本身就會在 isHost 時 returnToMapAfterBattle，
-  // 所以這裡不必再各做一次；非房主則走 setLocalClaimed(true)。
+  // 非終局 path_select 由 handleClaimSelf 推回 map_explore；但終局 completed+win
+  // 必須保留作為王房獎勵 Cloud Function 的權威勝利證據，等外層領獎完成後再 cleanup。
+  // 非房主仍走 setLocalClaimed(true) 等待房主／外層結算。
   const expeditionClaimedRef = useRef(false);
   useEffect(() => {
     if (!expeditionMode || !isMapMode) return;
@@ -868,9 +869,13 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
           addCatBond(myId, catId, "dungeon").catch(() => {});
         }
       }
-      if (isHost) {
+      // 遠征模式原本會在這裡直接 return，導致實際擊敗的小王／大王沒有寫入永久 monsterDex。
+      if (myId && !isLimitedAccount && room?.result !== "lose" && room.monster?.id) {
+        await recordBattleDex(myId, room.monster.id, "win").catch(() => {});
+      }
+      if (isHost && room?.status === "path_select") {
         await returnToMapAfterBattle(roomId, room.mapCurrentRoomId || "", room.mapClearedIds || []).catch(() => {});
-      } else {
+      } else if (!isHost) {
         setLocalClaimed(true);
       }
       return;
@@ -913,7 +918,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
     // 遠征（單人＋組隊）不直接掉素材，只給寶箱（2026-07-19 使用者拍板）：
     // 素材一律從寶箱開出，掉落來源單一化。王房的專屬獎勵 envelope 不受此規則影響。
     if (memberChests.length > 0) await addChests(myId, memberChests).catch(() => {});
-    if (room.monster?.id) await recordBattleDex(myId, room.monster.id).catch(() => {});
+    if (room.monster?.id) await recordBattleDex(myId, room.monster.id, "win").catch(() => {});
 
     // 練習紀錄 + 箭露 + XP
     const { rounds:practiceRounds, arrowPositions } = getDungeonPracticeData(room.log, myId, targetFmt);
@@ -1056,8 +1061,8 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
 
     // 遠征模式的勝利結算一律交給 DungeonKillResult（2026-07-19 使用者要求只保留新版）。
     // 舊的「房間通關！」/「地下城通關！」畫面會先擋在這裡，玩家因此連看兩次結算。
-    // 這裡只顯示過場，等 path_select 的自動 returnToMapAfterBattle 把狀態推進到
-    // map_explore，上層（ExpeditionBattleRoom / TeamBattleRoom）就會接手顯示新結算頁。
+    // 這裡只顯示過場。非終局 path_select 會自動推進 map_explore；終局 completed+win
+    // 保持不動，讓上層（ExpeditionBattleRoom / TeamBattleRoom）先完成權威王房領獎再清房。
     if (expeditionMode && won) {
       return (
         <div className="h-[100dvh] flex flex-col items-center justify-center gap-3 bg-[#0a0a0f] text-white/50">

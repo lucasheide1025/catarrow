@@ -13,7 +13,7 @@ import {
   planShopExchange,
   claimShopRushTime,
 } from "./villageShop";
-import { advanceManualShopClock, buildAutoShopSale, buildLiveShopSession, evaluateLiveShopMission, liveShopStateSignature } from "./villageShopLive";
+import { advanceManualShopClock, buildAutoShopSale, buildLiveShopSession, countCompletedLiveVisitors, evaluateLiveShopMission, liveShopStateSignature } from "./villageShopLive";
 import { SHOP_MANAGER_OPTIONS } from "./shopArt";
 
 const MEMBERS = "members";
@@ -239,11 +239,16 @@ export async function serveShop(memberId, village) {
 
 // ── V6 即時營運：動畫結束後一次權威結算 ────────────────────
 // 開店過程完全在前端演出，避免「每位顧客一次 Firestore write」。
-// lastVisitedAt 只推進到 startedAt，所以營業動畫期間新累積的客人會保留給下一輪。
+// 結算依真實經過時間重建客流，lastVisitedAt 只推進到實際完成接待的需求游標；
+// 尚未完成的顧客保留給下一輪。
 export async function completeLiveShopSession(memberId, session) {
   if (!memberId || !session || !Number.isFinite(session.startedAt) || !Number.isFinite(session.seed)) {
     throw new Error("營業場次參數錯誤");
   }
+  if (session.manualMode != null && !["rush_manual", "manual"].includes(session.manualMode)) {
+    throw new Error("invalid manual mode");
+  }
+  const manualMode = session.manualMode || "manual";
   const ref = doc(db, MEMBERS, memberId);
   return runTransaction(db, async transaction => {
     const snap = await transaction.get(ref);
@@ -278,12 +283,19 @@ export async function completeLiveShopSession(memberId, session) {
       now: session.startedAt,
       seed: session.seed,
       goodsMap,
+      mode:manualMode,
+      elapsedSeconds:session.manualElapsedSeconds,
     });
+    const authoritativeCompletedVisitors = countCompletedLiveVisitors(
+      fullLive.timeline,
+      Math.max(0, Number(session.manualElapsedSeconds) || 0) * 1000,
+    );
     const completedVisitors = Math.min(
       fullLive.result.events.length,
+      authoritativeCompletedVisitors,
       Number.isFinite(Number(session.completedVisitors))
         ? Math.max(0, Math.floor(Number(session.completedVisitors)))
-        : fullLive.result.events.length,
+        : authoritativeCompletedVisitors,
     );
     const live = completedVisitors === fullLive.result.events.length
       ? fullLive
@@ -291,6 +303,8 @@ export async function completeLiveShopSession(memberId, session) {
           now:session.startedAt,
           seed:session.seed,
           goodsMap,
+          mode:manualMode,
+          elapsedSeconds:session.manualElapsedSeconds,
           visitorLimit:completedVisitors,
         });
     const result = live.result;
@@ -309,16 +323,16 @@ export async function completeLiveShopSession(memberId, session) {
     const awardedTickets = result.totalTickets + missionBonus;
     const rushClock = advanceManualShopClock({
       rushSeconds:shop.rushSeconds, manualActive:true,
-      manualMode:session.manualMode,
+      manualMode,
       elapsedSeconds:session.manualElapsedSeconds,
     });
     const persistedStock = Object.fromEntries(Array.from(new Set([
       ...Object.keys(result.stockAfter || {}), ...Object.keys(allowedStockAdditions),
     ])).map(goodId => [goodId, Math.max(0, Number(result.stockAfter?.[goodId]) || 0) + (allowedStockAdditions[goodId] || 0)]));
     const rate = Math.max(0.0001, calcShopRate(sessionShop.furniture, sessionShop.level));
-    const consumedThroughMs = completedVisitors >= fullLive.result.events.length
-      ? session.startedAt
-      : Math.min(session.startedAt, actualLastVisitedAtMs + (completedVisitors / rate) * 60000);
+    const consumedThroughMs = completedVisitors >= fullLive.result.waiting
+      ? fullLive.authoritativeNow
+      : Math.min(fullLive.authoritativeNow, actualLastVisitedAtMs + (completedVisitors / rate) * 60000);
     const updates = {
       "village.shop.tickets": increment(awardedTickets),
       "village.shop.stock": persistedStock,
@@ -360,6 +374,7 @@ export async function completeLiveShopSession(memberId, session) {
       ok: true,
       rushSeconds:rushClock.rushSeconds,
       consumedRushSeconds:rushClock.consumedRushSeconds,
+      salesClock:fullLive.demandClock,
       result: { ...result, mission, missionBonus, awardedTickets },
       shopAfter,
     };

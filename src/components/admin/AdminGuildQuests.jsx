@@ -46,11 +46,12 @@ function deadlineDisplay(deadline) {
   return { expired: false, label: `${m} 分鐘後截止` };
 }
 
-export default function AdminGuildQuests({ defaultTab = "quests" }) {
+export default function AdminGuildQuests({ defaultTab = "quests", submissions }) {
   const { profile } = useAuth();
   const [tab, setTab]           = useState(defaultTab);
   const [quests, setQuests]     = useState([]);
-  const [subs, setSubs]         = useState([]);
+  const hasProvidedSubmissions = Array.isArray(submissions);
+  const [subscribedSubs, setSubscribedSubs] = useState([]);
   const [members, setMembers]   = useState([]);
   const [form, setForm]         = useState(EMPTY_FORM);
   const [showForm, setShowForm] = useState(false);
@@ -68,13 +69,15 @@ export default function AdminGuildQuests({ defaultTab = "quests" }) {
 
   useEffect(() => {
     const u1 = subscribeAllGuildQuests(setQuests);
-    const u2 = subscribeGuildSubmissions(setSubs);
+    const u2 = hasProvidedSubmissions ? null : subscribeGuildSubmissions(setSubscribedSubs);
     const u3 = subscribeCoachChallenges(setChallenges);
     const u4 = subscribeActiveGuildQuests(setActiveQuests);
     const u5 = subscribePromotionQuestConfig(setPromoConfig);
     getMembers().then(list => setMembers([...list].sort((a, b) => (b.adventurerXP || 0) - (a.adventurerXP || 0))));
     return () => { u1?.(); u2?.(); u3?.(); u4?.(); u5?.(); };
-  }, []);
+  }, [hasProvidedSubmissions]);
+
+  const subs = hasProvidedSubmissions ? submissions : subscribedSubs;
 
   async function handlePublish() {
     if (!form.title.trim()) { setMsg("請輸入任務名稱"); return; }

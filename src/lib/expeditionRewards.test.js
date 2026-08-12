@@ -53,10 +53,4 @@ describe("expedition route kill loot",()=>{
     expect(resolveExpeditionLootMultiplier(3, random)).toBe(3);
     expect(random).not.toHaveBeenCalled();
   });
-
-  test("只有全新且沒有倍率的地下城才抽取一次", () => {
-    const random = jest.fn(() => 0.99);
-    expect(resolveExpeditionLootMultiplier(undefined, random)).toBe(5);
-    expect(random).toHaveBeenCalledTimes(1);
-  });
 });

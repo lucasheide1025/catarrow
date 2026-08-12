@@ -60,6 +60,7 @@ const TIER_RECIPE_COUNTS = {
 const CATEGORY_DEFS = {
   weapon: {
     nouns: ["弓", "短劍", "長劍", "法杖", "投石索", "戰錘", "魚骨劍", "重弩"],
+    visualKeys: ["bow", "short-sword", "long-sword", "staff", "sling", "war-hammer", "fishbone-sword", "crossbow"],
     icons: ["🏹", "🗡️", "⚔️", "🪄", "🪃", "🔨", "🦴", "🎯"],
     adjs:  ["木製", "石製", "鐵製", "秘銀", "龍骨"],
     desc:  (n) => `貓貓冒險隊愛用的${n}，堅固耐用，擺上攤位總能吸引冒險系顧客。`,
@@ -67,6 +68,7 @@ const CATEGORY_DEFS = {
   },
   armor: {
     nouns: ["胸甲", "護符", "斗篷", "頭盔", "靴子", "手甲", "圓盾", "項圈"],
+    visualKeys: ["chest-armor", "amulet", "cloak", "helmet", "boots", "gloves", "shield", "collar"],
     icons: ["🦺", "🍀", "🧥", "⛑️", "🥾", "🧤", "🛡️", "🐾"],
     adjs:  ["布製", "皮製", "鎖甲", "精鋼", "傳說"],
     desc:  (n) => `保護貓貓遠征的${n}，輕巧又安心，裝扮系顧客看了就走不動。`,
@@ -74,6 +76,7 @@ const CATEGORY_DEFS = {
   },
   food: {
     nouns: ["蓋飯", "沙拉", "湯品", "烤肉串", "蛋糕", "壽司", "拉麵", "蒸餃"],
+    visualKeys: ["rice-bowl", "salad", "soup", "meat-skewer", "cake", "sushi", "ramen", "dumplings"],
     icons: ["🍱", "🥗", "🍲", "🍢", "🎂", "🍣", "🍜", "🥟"],
     adjs:  ["清爽", "香煎", "紅燒", "燉煮", "盛宴"],
     desc:  (n) => `村莊廚房現做${n}，香氣飄滿整條街，貪吃系顧客聞香而來。`,
@@ -83,8 +86,8 @@ const CATEGORY_DEFS = {
 
 // 料理放檯面有吸引力加成（spec §5.1）
 export const SHOP_GOOD_EXACT_ART = Object.freeze({
-  weapon_0: "/assets/cat_equip/bow.jpg",
-  armor_0: "/assets/cat_equip/armor.jpg",
+  bow: "/assets/cat_equip/bow.jpg",
+  "chest-armor": "/assets/cat_equip/armor.jpg",
 });
 
 // V5 視覺層：120 件商品共用 24 個穩定 visualKey。
@@ -144,9 +147,9 @@ function buildGoods() {
           category: cat.id,
           name,
           icon: def.icons[i],
-          visualKey: `${cat.id}_${i}`,
+          visualKey: def.visualKeys[i],
           visualLabel: noun,
-          art: SHOP_GOOD_EXACT_ART[`${cat.id}_${i}`] || null,
+          art: SHOP_GOOD_EXACT_ART[def.visualKeys[i]] || null,
           motifArt: recipe[0] ? `/ui/village/resource-${recipe[0].resource}${tier}.webp` : null,
           desc: def.desc(noun),
           tier,

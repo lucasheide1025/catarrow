@@ -57,7 +57,7 @@ export function activeSpawnTypes(cycle) {
  * 現在這個週期是什麼狀態。**唯讀**——不會、也不該觸發任何生成。
  *
  * 三個階段：休息中 resting → 蓄力中 charging → 可生成 ready
- * 可生成的兩種原因：任一項進度達標（reason = 該項目），或到了 deadline。
+ * 只有本輪有效條件達標才可生成；時間經過不會自動生成。
  */
 export function evaluateWorldBossSpawnCycle(cycle, nowMs = Date.now()) {
   if (!cycle || ["spawning", "spawned"].includes(cycle.status)) {
@@ -70,8 +70,7 @@ export function evaluateWorldBossSpawnCycle(cycle, nowMs = Date.now()) {
   const reached = activeSpawnTypes(cycle).find(
     key => (cycle.progress?.[key] || 0) >= (cycle.targets?.[key] || Infinity));
   if (reached) return { ready: true, reason: reached };
-  if (nowMs >= cycle.deadlineAtMs) return { ready: true, reason: "deadline" };
-  return { ready: false, reason: "charging", remainingMs: cycle.deadlineAtMs - nowMs };
+  return { ready: false, reason: "charging" };
 }
 
 /** 進度百分比（0~1，超過算滿）。大廳的進度條用。 */
@@ -88,7 +87,7 @@ export function describeSpawnCycle(cycle, nowMs = Date.now()) {
   if (ev.reason === "resting") return "🌌 異界正在沉寂——世界王剛被擊倒，還在休息";
   if (ev.reason === "spawning" || ev.reason === "spawned") return "🌀 新的世界王正在降臨…";
   if (ev.ready) {
-    return ev.reason === "deadline" ? "🌀 時間到了，世界王即將降臨" : "🌀 進度已達標，世界王即將降臨";
+    return "🌀 進度已達標，世界王即將降臨";
   }
   const required = requiredSpawnType(cycle);
   if (required) return `🌀 這一輪的門檻是【${SPAWN_PROGRESS_LABEL[required]}】——推滿它就會提早降臨`;

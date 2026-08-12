@@ -114,6 +114,7 @@ export function rosterFromRoom(room) {
       cats: Array.isArray(m.cats) ? m.cats : [],
       // ☠️ 這位成員的卡片能對王施加什麼異常（房間文件帶進來）
       inflict: m.inflict || {},
+      cardFx: m.cardFx || null,
       // ⚠️ 靶紙與射程是**各自的**（作者 2026-07-31）：有人射長有人射短，
       //    靶紙也不一定一樣。沒填就交給 createRaidState 用整場預設補。
       targetFmt: m.targetFmt || undefined,

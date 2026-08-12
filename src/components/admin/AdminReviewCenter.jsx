@@ -13,7 +13,7 @@ import { useAuth } from "../../hooks/useAuth";
 import { fmtDT, getCertLevelByScores, certLevelStyle } from "../../lib/constants";
 import { Card, Btn, Sel, Inp, TA, Modal, ST, Spinner, Empty, useToast } from "../shared/UI";
 
-export default function AdminReviewCenter({ pendingCert, messages, pendingExtItems, certTasks }) {
+export default function AdminReviewCenter({ pendingCert, messages, pendingExtItems, certTasks, pendingCheckins }) {
   const { profile } = useAuth();
   const { toast, ToastContainer } = useToast();
 
@@ -70,7 +70,7 @@ export default function AdminReviewCenter({ pendingCert, messages, pendingExtIte
       )}
       {showQuest && (
         <div className="border border-indigo-400/30 rounded-2xl overflow-hidden p-4">
-          <AdminDailyQuest mode="config" />
+          <AdminDailyQuest mode="config" pendingCheckins={pendingCheckins} />
         </div>
       )}
 
@@ -101,7 +101,7 @@ export default function AdminReviewCenter({ pendingCert, messages, pendingExtIte
       </section>
 
       {/* 每日任務審核（報到核准 + 達標確認，直接顯示）*/}
-      <AdminDailyQuest mode="list" />
+      <AdminDailyQuest mode="list" pendingCheckins={pendingCheckins} />
 
       {/* 射手證畢業考待審 */}
       <section>

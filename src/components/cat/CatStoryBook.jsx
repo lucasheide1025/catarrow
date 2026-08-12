@@ -220,7 +220,7 @@ function CatChapters({ catId, catData, memberId, memberName, onBack }) {
 }
 
 // ── 故事本目錄（主頁面）────────────────────────────────────
-export default function CatStoryBook({ onBack }) {
+export default function CatStoryBook({ onBack, sharedCats, sharedCatsReady = false }) {
   const { profile } = useAuth();
   const [myCats,  setMyCats]  = useState({});
   const [loading, setLoading] = useState(true);
@@ -230,13 +230,18 @@ export default function CatStoryBook({ onBack }) {
   const memberName = profile?.nickname || profile?.name || "射手";
 
   useEffect(() => {
+    if (sharedCats !== undefined) {
+      setMyCats(Object.fromEntries((sharedCats || []).map(cat => [cat.catId, cat])));
+      setLoading(!sharedCatsReady);
+      return undefined;
+    }
     if (!memberId) return;
     const unsub = subscribeMyCats(memberId, cats => {
       setMyCats(cats);
       setLoading(false);
     });
     return () => unsub();
-  }, [memberId]);
+  }, [memberId, sharedCats, sharedCatsReady]);
 
   if (loading) {
     return (

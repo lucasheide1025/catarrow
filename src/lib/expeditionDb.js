@@ -8,6 +8,7 @@ import {
 import { db } from "./firebase";
 import { normalizeDungeonRunSettings } from "./dungeonRunSettings";
 import { buildExpeditionBattleMemberSnapshot } from "./expeditionMemberData";
+import { createTrailingWriteQueue } from "./trailingWriteQueue";
 
 const D = "dungeonRooms";
 
@@ -211,9 +212,13 @@ export async function setActiveExpeditionProgress(memberId, {
     if (Number.isFinite(def))   data.def   = Math.max(0, Math.round(def));
     if (wbBonus && typeof wbBonus === "object") {
       data.wbBonus = {
+        effectVersion:Number(wbBonus.effectVersion) || 1,
+        equippedCardKeys:Array.isArray(wbBonus.equippedCardKeys) ? wbBonus.equippedCardKeys.filter(Boolean) : [],
         dmgBonusPct:Number(wbBonus.dmgBonusPct) || 0,
         dmgReducePct:Number(wbBonus.dmgReducePct) || 0,
         healBonusPct:Number(wbBonus.healBonusPct) || 0,
+        armorPiercePct:Number(wbBonus.armorPiercePct) || 0,
+        burn:wbBonus.burn || null,
       };
     }
     if (Number.isFinite(Number(combatSnapshotVersion))) {
@@ -252,8 +257,27 @@ export async function setActiveExpeditionProgress(memberId, {
   }
 }
 
+const activeExpeditionSaveQueue = createTrailingWriteQueue(
+  (memberId, payload) => setActiveExpeditionProgress(memberId, payload),
+  { delay: 5000 },
+);
+
+export function queueActiveExpeditionProgress(memberId, payload) {
+  return activeExpeditionSaveQueue.queue(memberId, payload);
+}
+
+export function flushActiveExpeditionProgress(memberId) {
+  return activeExpeditionSaveQueue.flush(memberId);
+}
+
+export function cancelActiveExpeditionProgressSave(memberId) {
+  return activeExpeditionSaveQueue.cancel(memberId);
+}
+
 export async function clearActiveExpeditionProgress(memberId) {
   if (!memberId) return { ok: false, reason: "缺少會員 id" };
+  // 清除代表這趟已結束；一定要先取消排隊中的舊 payload，否則 timer 之後會把存檔復活。
+  cancelActiveExpeditionProgressSave(memberId);
   try {
     await updateDoc(doc(db, "members", memberId), { activeExpedition: deleteField() });
     return { ok: true };

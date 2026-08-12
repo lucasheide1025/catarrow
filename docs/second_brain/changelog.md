@@ -5,6 +5,35 @@
 
 ---
 
+## 2026-08-12（🚀 本機完成項目整批正式部署）
+
+- 本次正式站整批納入已完成的本機工作：Achievement Dex V3（寶箱／戰鬥／世界王／貓小隊／貓貓村／商店）、252 怪物圖鑑與現行指定討伐、寶箱／素材獎池一致化、貓貓村商店 V6–V11 與棋盤事件 runtime／美術、現行世界王 lifecycle／reward／catalog／技能平衡、組隊獎勵結算、地下城 reward lifecycle（含 `dungeon_battle_not_rewardable` 舊卡房恢復）、公會遠征永久統計，以及已確認無 production 引用的 dead-code cleanup。
+- 後端同步部署 Firebase Functions 與 `firestore.rules`，避免只更新前端而漏掉權威結算／規則。
+- Release gate：Functions 全套 **74/74 PASS**；前端首次全套 **369/370 PASS**，唯一失敗為世界王 `COACH_BOSS` 測試 fixture 仍使用舊倍率／舊 skill id，已改成現行權威教練王 **1.8 / 2.5** 常數且**未改 runtime 平衡**；相關世界王 targeted tests 全綠，production build 通過。
+- 明確不納入 `.deploy-staging-2/**`、build/check 產物、`tmp/**`、`item.cat`、孤兒原型 `src/components/member/ShopSimulator.jsx`，以及僅供稽核／報告用途的未追蹤產物。
+- 本條隨本次 `main` 正式站部署一併提交。
+
+## 2026-08-12（🐛 地下城王房：dungeon_battle_not_rewardable／戰利品重新同步修復）
+
+- 根因：`DungeonBattleRoom` 的遠征自動領取在終局 `completed + result:"win"` 後仍呼叫 `returnToMapAfterBattle()`，把王房的 `result:"win"` 清成 `null`；外層接著呼叫 `createDungeonBossRewardClaim` 時，後端因此判定 `dungeon_battle_not_rewardable`。
+- 修正：房主只有非終局 `status:"path_select"` 才會回到 `map_explore`；最終王房 `completed + win` 保留為權威勝利證據，直到 Cloud Function 獎勵 claim 完成後再 cleanup。
+- 舊卡房恢復：後端只對舊流程已改成 `status:"map_explore" + result:null` 的房間提供嚴格恢復；必須同時滿足房間 `monsterHP <= 0`、最後一筆 battle log `monsterHPAfter <= 0`，以及原有會員、實際參戰、monster id 全部吻合，才允許重新同步。`result:null` 的一般 `path_select` 或非終局紀錄仍不可領獎。
+- 「重新同步獎勵」成功後現在會重建王房單場結算並帶入 authoritative `bossDrops`；若是舊 hot-reload 狀態缺少 `resultBase`，至少會直接進戰利品房，不再卡在 `boss_reward_retry` 空狀態。
+- 獎勵 claim 的冪等性維持不變；沒有新增 Firestore schema、listener 或額外讀取。
+- `functions/dungeonBossReward.test.js`、`rewardClaimLifecycle.test.js`、scoped `git diff --check`、production build 全部通過。
+- 本輪只在本機，未 commit / push / deploy。
+
+## 2026-08-12（⚔️ 成就圖鑑：戰鬥寶箱／世界王／貓貓村／商店擴充與語法修復）
+
+- 寶箱從「收藏」移到「戰鬥」；13 種現行寶箱維持同一張圖鑑疊加，里程碑延伸為 `1 / 5 / 10 / 20 / 50 / 100 / 250 / 500 / 1000`。
+- 世界王新增「參戰」與「擊殺」永久成就；V2 claim transaction 使用 `worldBossParticipations` / `worldBossKills` 冪等累加，重複 claim 不重複計數。
+- 「收藏」新增依 `WB_CARDS` family 分組的世界王卡收藏圖鑑。
+- 修正「村莊發展」舊邏輯誤用平均村莊等級：改為九大建築等級總和（最大 180），並新增九棟建築各自 `Lv.1 / 5 / 10 / 15 / 20` 成就；舊 `building_max` 退役。
+- 貓貓村新增「商店」分類：商店等級、累積成交、服務顧客、顧客圖鑑。
+- 修復本輪新增程式遺失字串引號及重複插入造成的 Babel `Unexpected character '⚔'`；保留單一合法成就定義區塊。
+- `achievementDexV3` targeted tests、scoped `git diff --check`、production build 均通過。
+- 本輪只在本機，未 commit / push / deploy。
+
 ## 2026-08-12（🎁 寶箱圖鑑＋素材獎池合併部署）
 
 **部署內容**
@@ -13,6 +42,105 @@
 - 修正單開寶箱時開箱統計重複計數，不新增 Firestore schema。
 - 本次刻意排除未授權的怪物卡包 36→126、252 怪圖鑑、九貓養成等其他 dirty 工作。
 - 本條隨本次 `main` 提交部署；push `main` 由 Vercel 自動觸發正式站部署。
+
+## 2026-08-12（🎁 成就圖鑑：寶箱開啟／收集系統重建）
+
+**根因**
+- 成就圖鑑的寶箱區仍停在早期 7 種，而且全部被塞在「怪物」分類；後來加入的金幣寶箱、貓貓箱、咪咪箱、世界秘寶箱與三種新版素材箱都沒有成就。
+- 寶箱是消耗品，不能拿目前背包數量當「收集」完成度；現行已有永久 `chestStats.opens[type]`，因此用「曾開過」作為收藏真本，開掉後進度不會倒退。
+
+**重建**
+- 新增獨立「🎁 寶箱」分類，歸到「收藏」主題。
+- 現行追蹤 13 種：通用材料木／鐵／金／史詩／神話箱、藥水箱、金幣寶箱、貓貓箱 (`cat_box`)、咪咪箱、世界秘寶箱、族系素材箱、小王素材箱、大王素材箱。
+- 每種箱統一開箱里程碑 `1 / 5 / 10 / 20 / 50 / 100`。
+- 新增「寶箱收藏圖鑑」：曾開啟過的不同現行箱型，里程碑 `1 / 3 / 5 / 8 / 10 / 全 13 種`；未知 key 與舊 `cat` 不灌進度。
+- 舊 `type=cat` 的 `chest_cat` 與舊 AUTO id 保留供歷史 seen/notified 相容，但標記退役；現行貓貓箱使用 `cat_box`。
+- `card_pack` 不列入寶箱圖鑑：現行卡包走獨立卡包流程，不是 `chestStats/openChest` 的寶箱開啟紀錄。
+
+**成本 / 相容**
+- 不新增 Firestore schema、讀取、listener 或寫入；MemberApp / MemberDex 原本就已訂閱 `chestStats`。
+- 不搬玩家資料、不改現有 chestStats key；舊通用箱／藥水箱紀錄會直接接續新里程碑。
+
+**驗證**
+- `achievementDexV3.test.js` 新增寶箱分類、13 種現行箱、特殊箱／金幣箱、legacy cat 退役與收藏過濾回歸。
+- targeted V3 tests、scoped `git diff --check`、production build 均通過。
+- 本次只在本機，**未 commit / push / deploy**。
+
+## 2026-08-12（🐈 成就圖鑑：九隻貓改為各自等級／羈絆／裝備養成）
+
+**最終設計**
+- 貓小隊不再用「任一貓最高值」代表全隊；依 `CATS` 九隻正式貓咪各自建立 3 條獨立階段成就：貓咪等級、羈絆等級、裝備等級，共 **9 × 3 = 27 張 active TIERED**。
+- 貓咪等級改讀真正的 `catLevelFromXP()`，里程碑 `10 / 50 / 100 / 200 / 300 / 500`；舊版誤用了冒險者 `levelFromXP()`，且只做到 Lv.200，已不符合現行貓咪 500 級上限。
+- 羈絆改讀 `getBondLevel()` 的**羈絆 Lv**，里程碑 `5 / 10 / 20 / 30 / 40 / 50`；不再拿原始 bond 點數直接當成羈絆等級。
+- 裝備成就讀七個 `CAT_EQUIP_SLOTS` 的 `catEquipEnhancement()`，以 **七件整套平均強化 = floor(總強化 / 7)** 計算，缺裝視為普通 +0；里程碑 `+5 / +10 / +20 / +30 / +40 / +50`。因此只衝一件神話 +0（可視強化 +50）整套只算 `floor(50/7)=+7`，不能冒充整套高強化。
+- 每隻貓只讀自己的 `catId`，未持有的貓三條進度都是 0，不會被其他貓的高等級／高羈絆／高裝備灌進度。
+
+**舊資料相容 / 邊界**
+- 舊聚合 `cat_level` / `cat_bond` id 保留但標記 retired，不刪歷史 seen/notified 相容資料；`cat_collect`、`cat_story`、`cat_all9` 維持原樣 active。
+- 沒有新增 Firestore schema、讀取、listener 或寫入，只重用既有 cats 子集合資料。
+
+**驗證**
+- `achievementDexV3.test.js`：13/13 PASS；新增鎖住 27 條結構、九貓隔離、正確貓咪等級公式、羈絆 Lv、七槽平均裝備與里程碑。
+- focused `no-undef`、scoped `git diff --check`、production build 均通過。
+- 本次仍只在本機，**未 commit / push / deploy**。
+
+## 2026-08-12（🎯 成就圖鑑：指定怪物討伐收斂為 42 普通怪群組＋84 小王＋42 大王）
+
+**最終設計**
+- 作者希望「不要讓圖鑑過多，但指定怪物討伐也不能少到失去辨識度」，因此不再為 252 隻怪全部各做一套討伐卡。
+- **普通怪**改成「七族 × T1～T6」分組，共 **42 張**；每張只合計該族、該 T 階的 **3 隻現行 normal 怪**，說明文字會直接列出三隻怪物名稱。
+- **小王**保留每隻獨立討伐，共 **84 張**；**大王**保留每隻獨立討伐，共 **42 張**。現行指定討伐卡總數因此固定為 **168 張**。
+- 每張現行指定討伐卡統一使用 `1 / 5 / 10 / 25 / 50 / 100` 里程碑；其中 **1 次＝首次討伐**，不再另外做一張重複的「首次擊倒」卡。
+- 新卡完全由 `MONSTER_DEX_CATALOG` / expansion catalog metadata 產生，不手寫現行 monster id；普通怪卡只吃自己的 3 隻 normal，小王／大王卡只吃自己的單一 monster id。
+
+**舊資料相容**
+- 原本 **36 個**舊 `dex_*` 首次擊倒 AUTO、**180 個**舊單怪 `5/10/25/50/100` AUTO，以及 **36 張**舊單怪 TIERED 定義都**保留 id、不刪資料**，但標記 inactive／retired，不再出現在玩家現行圖鑑。
+- `monster_catalog` 的 **252 全圖鑑**與七個 `monster_family_*` **族群圖鑑仍保持 active**；它們是收藏／種類進度，與這次「指定怪物累積討伐」並存，不互相取代。
+- ⚠️ **本條取代同日稍早「暫時恢復舊 36 隻個別怪物成就」的方案。** 那次恢復是修正誤刪後的過渡狀態；最終定案已改成本條 42＋84＋42 結構。後續維護不得因看到舊 id 還存在，就重新把那批 legacy 個別卡設成 active。
+
+**驗證 / 邊界**
+- `achievementDexV3.test.js` 已鎖住 42 normalGroup / 84 miniBoss / 42 boss、168 總數、`1/5/10/25/50/100` 門檻、普通怪三隻分組與小王／大王單怪隔離，以及 legacy id 存在但 inactive。
+- focused `no-undef`、scoped `git diff --check`、targeted V3 tests、production build 均通過。
+- 沒有新增 Firestore schema、讀取、listener 或寫入；本次仍只在本機，**未 commit / push / deploy**。
+
+## 2026-08-12（🎯 成就圖鑑：恢復個別怪物擊倒成就，252 圖鑑改為純新增）
+
+**修正**
+- 回復前一輪誤退役的原有個別怪物成就；原需求只是補上 252 怪總圖鑑，並沒有要求刪除或取代原本的個別怪物擊倒成就。
+- 舊 `MONSTERS` 36 隻的「首次擊倒」`dex_*_t1~t6` 全部恢復為 active。
+- 36 隻原有單怪累積擊倒卡全部恢復，每隻仍保留 5 / 10 / 25 / 50 / 100 五階里程碑。
+- `monster_catalog`（252 總圖鑑）與七族 `monster_family_*`（每族 36 種）維持新增成就；七族總覽不再用 `replacesIds` 隱藏任何首次擊倒成就。
+- 原有單怪 tiered 卡仍只取代同一隻怪的五個內部 auto milestone id，這是原本 UI 彙整機制，不是退役或刪除。
+- 沒有改 achievement id、玩家歷史資料、Firestore schema、讀取或 listener。
+
+**驗證**
+- `achievementDexV3.test.js` 新增回歸：36 個首次擊倒成就 active、36 個單怪 tiered 系列 active、里程碑維持 5 / 10 / 25 / 50 / 100、七族總覽不得取代個別成就。
+- targeted test：PASS。
+- production build：Compiled successfully。
+- 本次仍只在本機，未 commit / push / deploy。
+
+**邊界**
+- 本次是把誤砍的原有個別怪物成就恢復，不是把 252 隻全部擴成 252 套個別 5 / 10 / 25 / 50 / 100 成就；若之後要擴充到所有新版怪，需另行設計與確認。
+
+## 2026-08-12（Achievement Dex V3 怪物圖鑑 252 遷移：完整目錄切換 + 地下城勝利紀錄修正）
+
+**改了什麼**
+- 前一版 V3 雖已更新部分成就資料來源，但 `MemberMonsterDex` 仍直接使用 legacy 36 怪並硬編碼 `/36`；本輪將顯示層、成就層與戰鬥紀錄一次對齊現行擴充目錄。
+- 現行權威真本為 `EXPANSION_MONSTERS = 252`：7 族 × 6 階 × 每階 6 隻；遭遇分布為 126 一般怪、84 小王、42 大王，每族 36 隻。依目前正式 catalog 並非 254。
+- 重新稽核現行玩法後確認 252 隻皆已有正式遭遇來源：一般怪由一般戰鬥／地下城普通房提供，小王與大王由地下城王房的族群 × 階級池提供，寶箱族也包含在同一套七族規則。
+- `MemberMonsterDex.jsx` 改用 `EXPANSION_MONSTERS` 作唯一顯示目錄；總完成度改為 `已擊敗 X/252`、`已遭遇 X/252`；七族各顯示 `X/36`；保留族／階級篩選並新增一般怪／小王／大王遭遇類型篩選。
+- `achievementDex.js` 新增 `monster_catalog` 不同怪物里程碑 `1/10/25/50/100/150/200/252`；七族改為 `monster_family_*`，各自依正式 catalog 中不同已擊敗 ID 計數，里程碑 `1/6/12/18/24/30/36`。未知／legacy key 不會灌進 252 或 36 的完成度。
+- 252 總圖鑑與七族 36 種收集是新增聚合成就；原有 36 怪的首次擊倒與單怪 `5/10/25/50/100` 里程碑仍保留。這批個別成就曾在本輪誤標退役，已於同日修正並恢復。
+- 地下城勝利紀錄修正：遠征模式原本會在 early return 前漏掉 `monsterDex` 勝利寫入；非遠征勝利則曾呼叫 `recordBattleDex` 卻漏傳 `"win"`。兩條路徑都改為明確寫入勝利；`recordBattleDex` 也只接受 `"win"`／`"lose"`，缺值或非法結果直接 no-op，不再默認成 loss。
+- Firestore 成本：不新增 listener、不新增讀取、不改 schema，只沿用既有永久 `monsterDex`。
+
+**驗證**
+- Achievement Dex V3／monster expansion catalog／dungeon boss encounter／dungeon expansion：4 suites / 28 tests 全綠。
+- Production build 成功；scoped `git diff --check` 通過。
+- 本次仍只在本機，未 commit / push / deploy。
+
+**踩坑提醒**
+- 這取代較早「暫不建立 252 圖鑑成就」的保守結論；當時 playable pool 尚未完成稽核。現在 252 隻的正式遭遇來源與永久 `monsterDex` 寫入路徑都已確認／修正。
 
 ## 2026-08-12（裝備精練素材名稱／掉落來源一致化）
 
@@ -38,7 +166,7 @@
 - `useGuildRank` 沿用原本 5 分鐘快取＋一次性讀取；既有 `guildRank.expeditions` 仍維持 number 相容舊 UI，另外提供 `expeditionStats` 給成就系統。
 - 公會新增 5 條永久里程碑：遠征總次數、遠征勝場、危險度 3+ 勝場、危險度 5+ 勝場、危險度 6 神話勝場。
 - 地下城新增 `dungeon_clears`：1 / 5 / 20 / 50 / 100 次，直接讀永久 `member.dungeonClears`；單人與組隊通關本來都會累積這個欄位，因此不會因歷史紀錄裁切而倒退。
-- 地下城總數只計 `FAMILY_COLLECTIBLES` 的六個正式地城族群，忽略 `treasure` 或未知 legacy key，避免錯誤灌進度。
+- 地下城總數依現行玩法只計 `ghost / mountain / insect / workplace / exam / temple / treasure` 七個正式地城族群；未知 legacy key 不灌進度。`FAMILY_COLLECTIBLES` 是另一套六族收藏品資料，不能再當地下城玩法族群真本。
 - `MemberApp` 全站解鎖提示與 `MemberDex` 顯示 context 都已接入 `guildExpeditionStats`。
 
 **為什麼這樣做**

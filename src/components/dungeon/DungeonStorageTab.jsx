@@ -2,9 +2,7 @@
 // 已保存地下城清單 — 顯示玩家挖掘到的地下城儲存槽（最多 MAX_SAVED_DUNGEONS 個）
 // 2026-07-23：儲存槽 3→6、保存卡改用每族橫向外觀封面（public/assets/dungeon/cover_<family>.webp）
 
-import { useState, useEffect } from "react";
-import { doc, onSnapshot } from "firebase/firestore";
-import { db } from "../../lib/firebase";
+import { useState } from "react";
 import { removeSavedDungeon, MAX_SAVED_DUNGEONS } from "../../lib/dungeonExcavation";
 import { getExcavationDifficulty } from "../../lib/dungeonData";
 import { getDungeonFirstClearState } from "../../lib/dungeonFirstClear";
@@ -121,18 +119,8 @@ function SavedCard({ d, profile, onSelect, onRemove, removing }) {
 
 export default function DungeonStorageTab({ profile, onSelectDungeon }) {
   const myId = profile?.id;
-  const [saved, setSaved] = useState([]);
+  const saved = profile?.dungeonExcavation?.savedDungeons || [];
   const [removing, setRemoving] = useState(null);
-
-  useEffect(() => {
-    if (!myId) return;
-    const unsub = onSnapshot(doc(db, "members", myId), snap => {
-      if (!snap.exists()) return;
-      const data = snap.data();
-      setSaved(data.dungeonExcavation?.savedDungeons || []);
-    });
-    return unsub;
-  }, [myId]);
 
   async function handleRemove(dungeonId) {
     setRemoving(dungeonId);
