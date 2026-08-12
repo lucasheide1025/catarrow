@@ -232,7 +232,14 @@ async function contribute(db, request) {
     if (!cycleSnap.exists) return { ok:false, reason:"cycle_missing" };
     if (opSnap.exists) return { ok:true, duplicate:true };
     const cycle = cycleSnap.data();
-    if (Date.now() < Number(cycle.restEndsAtMs || 0)) return { ok:true, ignored:true, reason:"resting" };
+    if (Date.now() < Number(cycle.restEndsAtMs || 0)) {
+      tx.create(opRef, {
+        memberId, authUid:request.auth.uid, type, amount, operationId,
+        cyclePreviousEventId:cycle.previousEventId,
+        ignored:true, ignoreReason:"resting", createdAt:FieldValue.serverTimestamp(),
+      });
+      return { ok:true, ignored:true, reason:"resting" };
+    }
     tx.update(cycleRef, {
       status:"charging",
       [`progress.${type}`]:FieldValue.increment(amount),

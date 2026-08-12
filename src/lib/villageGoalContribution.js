@@ -6,6 +6,16 @@ export function isQualifyingMonsterKill(input = {}) {
   return Boolean(input.memberId && input.result === "win" && Number(input.finalMonsterHp) <= 0);
 }
 
+export function isWorldBossSpawnMonsterKill(input = {}) {
+  const sourceMode = String(input.sourceMode || "monster");
+  return Boolean(
+    input.memberId
+    && input.result === "win"
+    && Number(input.finalMonsterHp) <= 0
+    && ["monster", "party", "dungeon"].includes(sourceMode)
+  );
+}
+
 export function soloExplorationCompletionOperation({ memberId, mapId, journeySeed, completed } = {}) {
   if (!completed || !memberId || !mapId) return null;
   return `solo:${memberId}:${mapId}:${journeySeed || "legacy"}`;

@@ -1,5 +1,5 @@
 import {
-  isQualifyingMonsterKill, soloExplorationCompletionOperation,
+  isQualifyingMonsterKill, isWorldBossSpawnMonsterKill, soloExplorationCompletionOperation,
   teamExplorationCompletionOperation, villageGoalOperationKey,
 } from "./villageGoalContribution";
 
@@ -7,6 +7,19 @@ test("只有真正勝利且怪物 HP 歸零才算擊殺", () => {
   expect(isQualifyingMonsterKill({ memberId: "m1", result: "win", finalMonsterHp: 0 })).toBe(true);
   expect(isQualifyingMonsterKill({ memberId: "m1", result: "lose", finalMonsterHp: 0 })).toBe(false);
   expect(isQualifyingMonsterKill({ memberId: "m1", result: "win", finalMonsterHp: 1 })).toBe(false);
+});
+
+test("世界王誕生擊殺只計七族 PvE：單人、組隊、地下城", () => {
+  const base = { memberId:"m1", result:"win", finalMonsterHp:0 };
+  expect(isWorldBossSpawnMonsterKill(base)).toBe(true);
+  expect(isWorldBossSpawnMonsterKill({ ...base, sourceMode:"monster" })).toBe(true);
+  expect(isWorldBossSpawnMonsterKill({ ...base, sourceMode:"party" })).toBe(true);
+  expect(isWorldBossSpawnMonsterKill({ ...base, sourceMode:"dungeon" })).toBe(true);
+  expect(isWorldBossSpawnMonsterKill({ ...base, sourceMode:"duel" })).toBe(false);
+  expect(isWorldBossSpawnMonsterKill({ ...base, sourceMode:"worldBoss" })).toBe(false);
+  expect(isWorldBossSpawnMonsterKill({ ...base, sourceMode:"zombie" })).toBe(false);
+  expect(isWorldBossSpawnMonsterKill({ ...base, result:"lose" })).toBe(false);
+  expect(isWorldBossSpawnMonsterKill({ ...base, finalMonsterHp:1 })).toBe(false);
 });
 
 test("單人只有完成終點才產生一次穩定的探險完成操作", () => {

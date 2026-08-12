@@ -205,16 +205,23 @@ export async function flushPendingShootingSessions(memberId) {
 export async function finalizeMonsterShootingSession(input) {
   const record = buildMonsterShootingRecord(input);
   if (!record) return null;
-  const { isQualifyingMonsterKill } = await import("./villageGoalContribution");
+  const { isQualifyingMonsterKill, isWorldBossSpawnMonsterKill } = await import("./villageGoalContribution");
   const contributesKill = isQualifyingMonsterKill(input);
+  const contributesWorldBossKill = isWorldBossSpawnMonsterKill(input);
   const contributeVillageKill = () => contributesKill
     ? import("./villageGoalDb").then(m => m.contributeKillToGoal(input.memberId, `monster:${record.session.id}`))
+    : Promise.resolve();
+  const contributeWorldBossKill = () => contributesWorldBossKill
+    ? import("./worldBossLifecycleClient").then(module => module.contributeWorldBossSpawnProgress({
+      memberId:input.memberId, type:"monsterKills", amount:1, operationId:`monster:${record.session.id}`,
+    }))
     : Promise.resolve();
   // 一律先存 localStorage，下課或下次登入時才 flush 到 Firestore
   if (!input.__skipPendingQueue) {
     queuePendingShootingSession("game", input);
     await flushPendingArrowProgress(input.memberId).catch(() => {});
     contributeVillageKill().catch(() => {});
+    contributeWorldBossKill().catch(() => {});
     return record.session.id;
   }
   assertCostCapability(COST_CAPABILITIES.shootingHistorySync);
@@ -248,11 +255,7 @@ export async function finalizeMonsterShootingSession(input) {
   // This branch is the deferred queue flush. Await the idempotent contribution
   // so a transient failure keeps the shooting session queued for a later retry.
   await contributeVillageKill();
-  if (input.memberId && input.result === "win" && Number(input.finalMonsterHp) <= 0) {
-    import("./worldBossLifecycleClient").then(module => module.contributeWorldBossSpawnProgress({
-      memberId:input.memberId, type:"monsterKills", amount:1, operationId:`monster:${record.session.id}`,
-    })).catch(() => {});
-  }
+  await contributeWorldBossKill();
   return record.session.id;
 }
 
@@ -1126,6 +1129,96 @@ export async function updateCompetition(id, data, operatorId) {
   await updateDoc(doc(db, C.competitions, id), { ...data, updatedAt: serverTimestamp() });
   await writeAuditLog("UPDATE", id, "competition", before, data, operatorId);
   invalidateDexCompetitionCache();
+}
+
+// 外賽圖鑑是「教練登錄結果」，不是站內射箭賽事。
+// 儲存名單即直接寫入每位射手的 competitionDex；不建立 registrations/results，
+// 也不呼叫 settleCompetition，因此不會發站內 eventPoints。
+const EXTERNAL_COMP_FORMAT_IDS = new Set(["qualification", "mixed", "team", "head_to_head"]);
+function externalCompetitionRank(value) {
+  const rank = Number(value);
+  return Number.isInteger(rank) && rank >= 1 && rank <= 8 ? rank : null;
+}
+
+export async function saveExternalCompetitionCatalog(data, operatorId) {
+  const title = String(data?.title || "").trim();
+  const date = String(data?.date || "").trim();
+  const externalFormat = String(data?.externalFormat || "").trim();
+  if (!title || !date) throw new Error("外賽名稱與日期為必填");
+  if (!EXTERNAL_COMP_FORMAT_IDS.has(externalFormat)) throw new Error("外賽賽制不正確");
+
+  const rosterMap = new Map();
+  (Array.isArray(data?.roster) ? data.roster : []).forEach(entry => {
+    const memberId = String(entry?.memberId || "").trim();
+    if (!memberId) return;
+    rosterMap.set(memberId, {
+      memberId,
+      name: String(entry?.name || "").trim(),
+      nickname: String(entry?.nickname || "").trim(),
+      rank: externalCompetitionRank(entry?.rank),
+    });
+  });
+  const roster = [...rosterMap.values()];
+  if (roster.length === 0) throw new Error("請至少選擇 1 位參賽射手");
+
+  const previousMemberIds = new Set((Array.isArray(data?.previousMemberIds) ? data.previousMemberIds : [])
+    .map(id => String(id || "").trim()).filter(Boolean));
+  const removedMemberIds = [...previousMemberIds].filter(id => !rosterMap.has(id));
+  if (1 + roster.length + removedMemberIds.length > 450) throw new Error("單一外賽名單過大，請分批處理");
+
+  const compRef = data?.id ? doc(db, C.competitions, data.id) : doc(collection(db, C.competitions));
+  const beforeSnap = data?.id ? await getDoc(compRef) : null;
+  const before = beforeSnap && beforeSnap.exists() ? beforeSnap.data() : null;
+  const batch = writeBatch(db);
+  const compPayload = {
+    type: "外賽",
+    title,
+    date,
+    endDate: String(data?.endDate || "").trim(),
+    announcement: String(data?.announcement || "").trim(),
+    dexCatalog: true,
+    dexKind: "external",
+    externalFormat,
+    adminOnly: true,
+    status: "external_record",
+    participants: roster.map(entry => entry.memberId),
+    externalRoster: roster,
+    updatedAt: serverTimestamp(),
+    updatedBy: operatorId || null,
+    ...(!data?.id ? { createdAt:serverTimestamp(), createdBy:operatorId || null } : {}),
+  };
+  batch.set(compRef, compPayload, { merge:true });
+
+  roster.forEach(entry => {
+    batch.update(doc(db, C.members, entry.memberId), {
+      [`competitionDex.${compRef.id}`]: {
+        participated: true,
+        rank: entry.rank,
+        format: externalFormat,
+        title,
+        recordedAt: serverTimestamp(),
+      },
+    });
+  });
+  removedMemberIds.forEach(memberId => {
+    batch.update(doc(db, C.members, memberId), {
+      [`competitionDex.${compRef.id}`]: deleteField(),
+    });
+  });
+
+  await batch.commit();
+  invalidateMembersCache();
+  invalidateDexCompetitionCache();
+  await writeAuditLog(data?.id ? "UPDATE_EXTERNAL_COMP" : "CREATE_EXTERNAL_COMP", compRef.id, "competition", before, {
+    title,
+    date,
+    endDate: compPayload.endDate,
+    announcement: compPayload.announcement,
+    externalFormat,
+    participants: compPayload.participants,
+    externalRoster: roster,
+  }, operatorId);
+  return { id:compRef.id, participantCount:roster.length };
 }
 
 // ─── Results ───────────────────────────────────────────────

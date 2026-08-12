@@ -42,7 +42,7 @@ function HPBar({ current, max }) {
 
 const TYPE_LABEL = {
   arrows:"全體射箭箭數", dungeonClears:"地下城通關",
-  monsterKills:"全模式怪物擊倒", villageDice:"貓貓村骰子",
+  monsterKills:"七族 PvE 擊倒（單人／組隊／地下城）", villageDice:"貓貓村骰子",
 };
 
 export default function AdminWorldBoss() {
@@ -510,7 +510,7 @@ export default function AdminWorldBoss() {
             <div className="grid grid-cols-1 gap-2 text-xs">
               {[
                 ["arrows","全體射箭箭數"], ["dungeonClears","地下城通關"],
-                ["monsterKills","全模式怪物擊倒"], ["villageDice","貓貓村骰子"],
+                ["monsterKills","七族 PvE 擊倒（單人／組隊／地下城）"], ["villageDice","貓貓村骰子"],
               ].map(([key,label]) => (
                 <label key={key} className={`rounded-xl p-2 ${(cycleConfig.enabledTypes || []).includes(key) ? "bg-black/20" : "bg-black/10 opacity-50"}`}>
                   <span className="flex items-center gap-1.5 text-slate-400 mb-1">

@@ -448,7 +448,7 @@ export default function WorldBossLobby({ onBack, guestOverride, onBattleComplete
                     {activeSpawnTypes(spawnCycle).map(key => {
                       const label = ({
                         arrows:"🏹 全體箭數", dungeonClears:"🏰 六族地下城",
-                        monsterKills:"⚔️ 七族擊倒", villageDice:"🎲 探索骰子",
+                        monsterKills:"⚔️ 七族 PvE 擊倒", villageDice:"🎲 探索骰子",
                       })[key] || SPAWN_PROGRESS_LABEL[key] || key;
                       const value = spawnCycle.progress?.[key] || 0;
                       const target = spawnCycle.targets?.[key] || 1;
