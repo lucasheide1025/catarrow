@@ -4,12 +4,14 @@ import CertRuleFields, { defaultCertScores } from "./CertRuleFields";
 import { useState, useEffect, useRef } from "react";
 import {
   getCompetitions, createCompetition, updateCompetition,
-  getRegistrations, register, getResults, submitResult, settleCompetition,
+  getRegistrations, getMembers, submitResult, settleCompetition,
+  saveExternalCompetitionCatalog,
   subscribeCompResults, approveCertResult, rejectCertResult
 } from "../../lib/db";
 import { useAuth } from "../../hooks/useAuth";
 import { COMP_TYPES, COMP_TYPE_COLOR, today, fmtDT, getMonthRange, certLevelStyle } from "../../lib/constants";
 import { EXTERNAL_COMP_FORMATS } from "../../lib/achievementDex";
+import { dropLocal } from "../../lib/localCache";
 import { Card, Btn, Inp, TA, Sel, Modal, ST, Spinner, Empty, Pill, useToast, ConfirmModal } from "../shared/UI";
 
 const STATUS_OPTIONS = [
@@ -25,6 +27,9 @@ const PERIOD_OPTIONS = [
   { value: "monthly", label: "月週期" },
 ];
 
+const isExternalDexCompetition = comp => comp?.dexCatalog === true && comp?.dexKind === "external";
+const externalFormatLabel = id => EXTERNAL_COMP_FORMATS.find(item => item.id === id)?.label || "外賽";
+
 export default function AdminCompetitions() {
   const { profile } = useAuth();
   const { toast, ToastContainer } = useToast();
@@ -34,6 +39,8 @@ export default function AdminCompetitions() {
   const [detailModal, setDetailModal] = useState(null);
   const [filter, setFilter] = useState("全部");
   const [certModal, setCertModal] = useState(false);
+  const [mode, setMode] = useState("internal");
+  const [externalModal, setExternalModal] = useState(null);
 
   useEffect(() => { loadComps(); }, []);
 
@@ -44,7 +51,9 @@ export default function AdminCompetitions() {
     setLoading(false);
   }
 
-  const filtered = filter === "全部" ? comps : comps.filter(c => c.type === filter);
+  const internalComps = comps.filter(c => !isExternalDexCompetition(c));
+  const externalComps = comps.filter(isExternalDexCompetition);
+  const filtered = filter === "全部" ? internalComps : internalComps.filter(c => c.type === filter);
 
   async function handleSettle(compId) {
     await settleCompetition(compId, profile.id);
@@ -57,32 +66,54 @@ export default function AdminCompetitions() {
   return (
     <div className="p-4 flex flex-col gap-4">
       <ToastContainer />
-      <div className="flex gap-2">
-        <Btn v="primary" size="sm" onClick={() => setAddModal(true)}>+ 新增比賽</Btn>
-        <Btn v="secondary" size="sm" onClick={() => setCertModal(true)}>📋 新增檢定賽</Btn>
+      <div className="grid grid-cols-2 gap-2">
+        <button type="button" onClick={() => setMode("internal")}
+          className={`rounded-xl border px-3 py-2 text-sm font-black ${mode === "internal" ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-gray-200 text-gray-500"}`}>
+          🏆 館內賽事
+        </button>
+        <button type="button" onClick={() => setMode("external")}
+          className={`rounded-xl border px-3 py-2 text-sm font-black ${mode === "external" ? "bg-amber-500 border-amber-500 text-white" : "bg-white border-gray-200 text-gray-500"}`}>
+          🏅 外賽圖鑑
+        </button>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        {["全部", ...COMP_TYPES].map(t => (
-          <button key={t} onClick={() => setFilter(t)}
-            className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border transition-all ${filter === t ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-200"}`}>
-            {t}
-          </button>
+      {mode === "internal" ? <>
+        <div className="flex gap-2">
+          <Btn v="primary" size="sm" onClick={() => setAddModal(true)}>+ 新增比賽</Btn>
+          <Btn v="secondary" size="sm" onClick={() => setCertModal(true)}>📋 新增檢定賽</Btn>
+        </div>
+
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {["全部", ...COMP_TYPES].map(t => (
+            <button key={t} onClick={() => setFilter(t)}
+              className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border transition-all ${filter === t ? "bg-blue-600 text-white border-blue-600" : "bg-white text-gray-600 border-gray-200"}`}>
+              {t}
+            </button>
+          ))}
+        </div>
+
+        {filtered.length === 0 && <Empty message="尚無館內比賽" />}
+
+        {filtered.map(c => (
+          <CompCard key={c.id} comp={c}
+            onDetail={() => setDetailModal(c)}
+            onSettle={() => handleSettle(c.id)}
+            onStatusChange={async (status) => {
+              await updateCompetition(c.id, { status }, profile.id);
+              loadComps();
+            }}
+          />
         ))}
-      </div>
-
-      {filtered.length === 0 && <Empty message="尚無比賽" />}
-
-      {filtered.map(c => (
-        <CompCard key={c.id} comp={c}
-          onDetail={() => setDetailModal(c)}
-          onSettle={() => handleSettle(c.id)}
-          onStatusChange={async (status) => {
-            await updateCompetition(c.id, { status }, profile.id);
-            loadComps();
-          }}
-        />
-      ))}
+      </> : <>
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-6 text-amber-800">
+          外賽由外部主辦方進行，本系統不報名、不射箭、不結算。建立項目後由教練勾選參賽射手，儲存即自動核發參加圖鑑；有名次時再回來補第 1～8 名。
+        </div>
+        <Btn v="primary" size="sm" onClick={() => setExternalModal({})}>+ 建立外賽項目</Btn>
+        {externalComps.length === 0 && <Empty message="尚無外賽圖鑑項目" />}
+        {externalComps.map(comp => (
+          <ExternalCompCard key={comp.id} comp={comp} onEdit={() => setExternalModal(comp)} />
+        ))}
+      </>}
 
       {addModal && (
         <AddCompModal onClose={() => setAddModal(false)} onDone={loadComps}
@@ -96,7 +127,189 @@ export default function AdminCompetitions() {
         <AddCertModal onClose={() => setCertModal(false)} onDone={loadComps}
           operatorId={profile.id} toast={toast} />
       )}
+      {externalModal && (
+        <ExternalCompModal comp={externalModal?.id ? externalModal : null}
+          onClose={() => setExternalModal(null)} onDone={loadComps}
+          operatorId={profile.id} toast={toast} />
+      )}
     </div>
+  );
+}
+
+function ExternalCompCard({ comp, onEdit }) {
+  const roster = Array.isArray(comp.externalRoster) ? comp.externalRoster : [];
+  const rankedCount = roster.filter(entry => Number(entry.rank) >= 1 && Number(entry.rank) <= 8).length;
+  return (
+    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-amber-200 px-2 py-0.5 text-xs font-black text-amber-900">{externalFormatLabel(comp.externalFormat)}</span>
+            <span className="text-xs font-bold text-emerald-600">✓ 教練直接核發</span>
+          </div>
+          <div className="font-black text-gray-800">{comp.title}</div>
+          <div className="mt-1 text-xs text-gray-500">📅 {comp.date}{comp.endDate ? ` ～ ${comp.endDate}` : ""}</div>
+          <div className="mt-2 text-xs text-gray-600">
+            👥 已核發參加 {roster.length} 人{rankedCount ? `　🏅 已填名次 ${rankedCount} 人` : ""}
+          </div>
+        </div>
+        <Btn v="secondary" size="sm" onClick={onEdit}>✏️ 名單／名次</Btn>
+      </div>
+    </div>
+  );
+}
+
+function ExternalCompModal({ comp, onClose, onDone, operatorId, toast }) {
+  const [form, setForm] = useState({
+    title: comp?.title || "",
+    date: comp?.date || today(),
+    endDate: comp?.endDate || "",
+    externalFormat: comp?.externalFormat || "qualification",
+    announcement: comp?.announcement || "",
+  });
+  const [members, setMembers] = useState([]);
+  const [selected, setSelected] = useState({});
+  const [initialMemberIds, setInitialMemberIds] = useState([]);
+  const [search, setSearch] = useState("");
+  const [loadingMembers, setLoadingMembers] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    getMembers({ fresh:true }).then(list => {
+      if (!alive) return;
+      const officialIds = new Set(list.map(member => member.id));
+      const initial = {};
+      (comp?.externalRoster || []).forEach(entry => {
+        if (!entry?.memberId || !officialIds.has(entry.memberId)) return;
+        const rank = Number(entry.rank);
+        initial[entry.memberId] = Number.isInteger(rank) && rank >= 1 && rank <= 8 ? rank : null;
+      });
+      list.forEach(member => {
+        const saved = comp?.id ? member.competitionDex?.[comp.id] : null;
+        if (!saved?.participated) return;
+        const rank = Number(saved.rank);
+        initial[member.id] = Number.isInteger(rank) && rank >= 1 && rank <= 8 ? rank : null;
+      });
+      setMembers(list);
+      setSelected(initial);
+      setInitialMemberIds(Object.keys(initial));
+      setLoadingMembers(false);
+    }).catch(error => {
+      if (!alive) return;
+      setLoadError(error?.message || "讀取射手名單失敗");
+      setLoadingMembers(false);
+    });
+    return () => { alive = false; };
+  }, [comp]);
+
+  const queryText = search.trim().toLowerCase();
+  const visibleMembers = members.filter(member => !queryText || [member.name, member.nickname, member.archerNo]
+    .some(value => String(value || "").toLowerCase().includes(queryText)));
+  const selectedCount = Object.keys(selected).length;
+  const isSelected = memberId => Object.prototype.hasOwnProperty.call(selected, memberId);
+
+  function toggleMember(memberId) {
+    setSelected(prev => {
+      const next = { ...prev };
+      if (Object.prototype.hasOwnProperty.call(next, memberId)) delete next[memberId];
+      else next[memberId] = null;
+      return next;
+    });
+  }
+
+  async function save() {
+    if (!form.title.trim() || !form.date) { toast("請填寫外賽名稱與日期", "error"); return; }
+    if (selectedCount === 0) { toast("請至少選擇 1 位參賽射手", "error"); return; }
+    setSaving(true);
+    try {
+      const roster = members.filter(member => isSelected(member.id)).map(member => ({
+        memberId: member.id,
+        name: member.name || "",
+        nickname: member.nickname || "",
+        rank: selected[member.id],
+      }));
+      await saveExternalCompetitionCatalog({
+        ...(comp?.id ? { id:comp.id } : {}),
+        ...form,
+        roster,
+        previousMemberIds: initialMemberIds,
+      }, operatorId);
+      dropLocal("dex_competition_catalog_v1");
+      toast(comp?.id ? "外賽名單與名次已更新 ✓" : `外賽已建立，${roster.length} 位射手已自動取得參加圖鑑 ✓`);
+      await onDone();
+      onClose();
+    } catch (error) {
+      toast("儲存失敗：" + (error?.message || "請重試"), "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal open wide onClose={onClose} title={comp?.id ? "編輯外賽名單／名次" : "建立外賽項目"}>
+      <div className="flex flex-col gap-4">
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs leading-5 text-emerald-800">
+          勾選射手＝立即核發「參加」；名次可先留空，賽後再補第 1～8 名。同一場只會有一張圖鑑卡。
+        </div>
+        <Inp label="外賽名稱" value={form.title} onChange={e => setForm(prev => ({ ...prev, title:e.target.value }))} />
+        <div className="grid grid-cols-2 gap-3">
+          <Inp label="比賽日期" type="date" value={form.date} onChange={e => setForm(prev => ({ ...prev, date:e.target.value }))} />
+          <Inp label="結束日期（選填）" type="date" value={form.endDate} onChange={e => setForm(prev => ({ ...prev, endDate:e.target.value }))} />
+        </div>
+        <Sel label="外賽賽制" value={form.externalFormat}
+          onChange={e => setForm(prev => ({ ...prev, externalFormat:e.target.value }))}
+          options={EXTERNAL_COMP_FORMATS.map(item => ({ value:item.id, label:item.label }))} />
+        <TA label="備註（選填）" rows={2} value={form.announcement}
+          onChange={e => setForm(prev => ({ ...prev, announcement:e.target.value }))} />
+
+        <div className="border-t border-gray-200 pt-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="text-sm font-black text-gray-700">👥 參賽射手 <span className="text-amber-600">{selectedCount} 人</span></div>
+            {selectedCount > 0 && (
+              <button type="button" onClick={() => setSelected({})} className="text-xs font-bold text-gray-400 hover:text-red-500">清空名單</button>
+            )}
+          </div>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="搜尋姓名、暱稱、射手證號"
+            className="mb-2 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 outline-none focus:border-amber-400" />
+          {loadingMembers ? <Spinner /> : loadError ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600">{loadError}</div>
+          ) : (
+            <div className="max-h-[42vh] overflow-y-auto rounded-xl border border-gray-200">
+              {visibleMembers.map(member => {
+                const checked = isSelected(member.id);
+                return (
+                  <div key={member.id} className={`flex items-center gap-3 border-b border-gray-100 p-3 last:border-b-0 ${checked ? "bg-amber-50" : "bg-white"}`}>
+                    <input type="checkbox" checked={checked} onChange={() => toggleMember(member.id)} className="h-4 w-4 accent-amber-500" />
+                    <button type="button" onClick={() => toggleMember(member.id)} className="min-w-0 flex-1 text-left">
+                      <div className="truncate text-sm font-bold text-gray-800">{member.nickname || member.name || member.id}</div>
+                      <div className="text-xs text-gray-400">{member.name && member.nickname ? member.name : ""}{member.archerNo ? `　#${member.archerNo}` : ""}</div>
+                    </button>
+                    {checked && (
+                      <select value={selected[member.id] ?? ""}
+                        onChange={e => setSelected(prev => ({ ...prev, [member.id]:e.target.value ? Number(e.target.value) : null }))}
+                        className="rounded-lg border border-amber-200 bg-white px-2 py-1.5 text-xs font-bold text-gray-700">
+                        <option value="">僅參加</option>
+                        {[1,2,3,4,5,6,7,8].map(rank => <option key={rank} value={rank}>第 {rank} 名</option>)}
+                      </select>
+                    )}
+                  </div>
+                );
+              })}
+              {visibleMembers.length === 0 && <div className="p-5 text-center text-sm text-gray-400">找不到符合的正式射手</div>}
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-2">
+          <Btn v="secondary" className="flex-1" onClick={onClose}>取消</Btn>
+          <Btn v="primary" className="flex-1" onClick={save} disabled={saving || loadingMembers || !!loadError}>
+            {saving ? "儲存中…" : `儲存並核發（${selectedCount} 人）`}
+          </Btn>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -148,7 +361,6 @@ function AddCompModal({ onClose, onDone, operatorId, toast }) {
     type: "積分賽", title: "", date: today(), endDate: "",
     targetName: "", arrowCount: 6, roundCount: 5, maxScore: 10,
     hasMiss: true, period: "single", status: "upcoming",
-    dexCatalog: false, externalFormat: "qualification",
     announcement: "", rewards: { fatCat: false, score: false, achievement: false },
   });
   const [saving, setSaving] = useState(false);
@@ -172,8 +384,7 @@ function AddCompModal({ onClose, onDone, operatorId, toast }) {
   async function save() {
     if (!form.title || !form.date) { toast("請填寫標題和日期", "error"); return; }
     setSaving(true);
-    const payload = { ...form, target: targetImg, ...(form.dexCatalog ? { dexKind:"external", externalFormat:form.externalFormat } : {}) };
-    await createCompetition(payload, operatorId);
+    await createCompetition({ ...form, target: targetImg }, operatorId);
     toast("比賽已建立 ✓");
     onDone(); onClose();
     setSaving(false);
@@ -196,14 +407,6 @@ function AddCompModal({ onClose, onDone, operatorId, toast }) {
             options={PERIOD_OPTIONS} />
         </div>
         {f("title", "比賽標題")}
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 flex flex-col gap-2">
-          <label className="flex items-center gap-2 text-sm font-bold text-amber-900 cursor-pointer">
-            <input type="checkbox" checked={form.dexCatalog} onChange={e => setForm(p => ({ ...p, dexCatalog:e.target.checked }))} className="accent-amber-600" />
-            加入外賽圖鑑
-          </label>
-          <div className="text-xs text-amber-700">建立後自動產生外賽圖鑑；結算名單後自動解鎖參賽與第 1～8 名。</div>
-          {form.dexCatalog && <Sel label="外賽賽制" value={form.externalFormat} onChange={e => setForm(p => ({ ...p, externalFormat:e.target.value }))} options={EXTERNAL_COMP_FORMATS.map(item => ({ value:item.id, label:item.label }))} />}
-        </div>
         <div className="grid grid-cols-2 gap-3">
           {f("date", "開始日期", "date")}
           {f("endDate", "結束日期（選填）", "date")}

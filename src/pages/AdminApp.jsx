@@ -177,7 +177,7 @@ export default function AdminApp() {
     return()=>{unsubReviews();unsubInvites();};
   }, []);
   const [mfSub,     setMfSub]     = useState("members"); // "members" | "guests" | "kidmode" | "learn" | "messages"
-  const [eventsSub, setEventsSub] = useState("villagegoal"); // "villagegoal" | "worldboss" | "items" | "village" | "story"
+  const [eventsSub, setEventsSub] = useState("villagegoal"); // "villagegoal" | "comps" | "worldboss" | "items" | "village" | "story"
   const [sysSub,    setSysSub]    = useState("givetool");// "givetool" | "tierperms" | "archery" | "reset" | "website" | "testing"
 
   const [archerMode, setArcherMode] = useState(() => sessionStorage.getItem("admin_archerMode") === "1");
@@ -840,6 +840,10 @@ const adminNav = [
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${eventsSub === "villagegoal" ? "bg-gradient-to-r from-amber-600 to-yellow-600 text-white shadow-md" : "bg-slate-800/80 text-slate-400 hover:text-slate-200 border border-slate-700/50"}`}>
               🎯 村目標
             </button>
+            <button onClick={() => setEventsSub("comps")}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${eventsSub === "comps" ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md" : "bg-slate-800/80 text-slate-400 hover:text-slate-200 border border-slate-700/50"}`}>
+              🏆 賽事管理
+            </button>
             <button onClick={() => setEventsSub("worldboss")}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${eventsSub === "worldboss" ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md" : "bg-slate-800/80 text-slate-400 hover:text-slate-200 border border-slate-700/50"}`}>
               👑 世界王
@@ -908,6 +912,7 @@ const adminNav = [
 
         {/* 3. 遊戲與活動 */}
         {page === "game-events" && eventsSub === "villagegoal"   && <AdminVillageGoals />}
+        {page === "game-events" && eventsSub === "comps"         && <AdminCompetitions />}
         {page === "game-events" && eventsSub === "worldboss"     && <AdminWorldBoss />}
         {page === "game-events" && eventsSub === "items"         && <AdminEquipItems />}
         {page === "game-events" && eventsSub === "village"       && <AdminVillageManager />}

@@ -40,6 +40,7 @@ export default function MemberComps({ onSelectComp, onPageChange }) {
   }, []); // eslint-disable-line
 
   async function handleRegister(c) {
+    if (c?.adminOnly || (c?.dexCatalog === true && c?.dexKind === "external")) return;
     if (registering) return;
     setRegistering(c.id);
     try {
@@ -54,7 +55,9 @@ export default function MemberComps({ onSelectComp, onPageChange }) {
 
   const types = ["全部", "積分賽", "挑戰賽", "實體賽", "臨時任務賽", "年度檢定"];
 
-  const active = comps.filter(c => ACTIVE_STATUS.includes(c.status) || !c.status);
+  // 外賽圖鑑由教練直接登錄名單，不是站內可報名／可射箭賽事。
+  const playableComps = comps.filter(c => !(c?.adminOnly || (c?.dexCatalog === true && c?.dexKind === "external")));
+  const active = playableComps.filter(c => ACTIVE_STATUS.includes(c.status) || !c.status);
   const activeFiltered = (filter === "全部" ? active : active.filter(c => c.type === filter))
     .slice().sort((a, b) => {
       const aCert = a.type === "年度檢定" ? 1 : 0;
@@ -63,7 +66,7 @@ export default function MemberComps({ onSelectComp, onPageChange }) {
       return 0;
     });
 
-  const history = comps.filter(c => HISTORY_STATUS.includes(c.status));
+  const history = playableComps.filter(c => HISTORY_STATUS.includes(c.status));
   const historyByYear = {};
   history.forEach(c => {
     const y = (c.date || "").slice(0, 4) || "其他";

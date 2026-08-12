@@ -480,7 +480,7 @@ test("backend certification catalog creates exact competition cards while legacy
   expect(bare?.competitionId).toBe("cert-2026-h1");
   expect(bare.getValue({ certRecords:[{ compId:"other", year:2026, half:"first", bowType:"recurve_bare", level:"精英" }] })).toBe(0);
   expect(bare.getValue({ certRecords:[{ compId:"cert-2026-h1", year:2026, half:"first", bowType:"recurve_bare", level:"精英" }] })).toBe(5);
-  expect(bare.getValue({ certRecords:[{ year:2026, half:"first", bowType:"recurve_bare", level:"精英" }] })).toBe(5);
+  expect(bare.getValue({ certRecords:[{ year:2026, half:"first", bowType:"recurve_bare", level:"精英" }] })).toBe(0);
 });
 
 test("backend external competition catalog creates one card per event from compact member result", () => {
@@ -488,7 +488,11 @@ test("backend external competition catalog creates one card per event from compa
   const defs = buildExternalCompetitionAchievements(catalog);
   expect(defs).toHaveLength(1);
   expect(defs[0].id).toBe("external_comp_outside-1");
+  expect(defs[0].getValue({ member:{ competitionDex:{} } })).toBe(0);
+  expect(defs[0].getValue({ member:{ competitionDex:{ "outside-1":{ participated:true, rank:null } } } })).toBe(1);
+  expect(defs[0].getValue({ member:{ competitionDex:{ "outside-1":{ participated:true, rank:8 } } } })).toBe(2);
   expect(defs[0].getValue({ member:{ competitionDex:{ "outside-1":{ participated:true, rank:3 } } } })).toBe(7);
+  expect(defs[0].getValue({ member:{ competitionDex:{ "outside-1":{ participated:true, rank:1 } } } })).toBe(9);
   expect(defs[0].getValue({ member:{ competitionDex:{ "outside-1":{ participated:true, rank:12 } } } })).toBe(1);
 });
 

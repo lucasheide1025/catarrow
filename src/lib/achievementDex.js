@@ -1146,7 +1146,7 @@ function buildCertCard({ year, half, bow, competition = null }) {
     half,
     bowType: bow.id,
     getValue: c => (c.certRecords || []).reduce((best, record) => {
-      if (compId && record?.compId && record.compId !== compId) return best;
+      if (compId && record?.compId !== compId) return best;
       if (Number(record?.year) !== year) return best;
       if (normalizeAnnualHalf(record?.half) !== half) return best;
       if (normalizeAnnualBowType(record?.bowType) !== bow.id) return best;
