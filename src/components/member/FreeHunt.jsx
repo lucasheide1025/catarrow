@@ -1,0 +1,315 @@
+import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "../../hooks/useAuth";
+import { FAMILIES, TIER_LABEL } from "../../lib/monsterData";
+import { getBattleMonsterSources } from "../../lib/battleAssets";
+import { archerLevelFromXP } from "../../lib/archerLevel";
+import { createPartyRoom, joinPartyRoom, subscribeOpenPartyRooms, cleanupStalePartyRooms } from "../../lib/partyDb";
+import { filterPartyLobbyRooms } from "../../lib/partyLobbyRooms";
+import {
+  FREE_HUNT_FAMILIES,
+  FREE_HUNT_TIERS,
+  getFreeHuntMonsterById,
+  getFreeHuntMonsters,
+} from "../../lib/freeHuntCatalog";
+
+const PARTY_SIZE_GUIDE = Object.freeze([
+  { players:1, label:"獨自建立", pressure:"怪物基準強度", reward:"素材箱 1＋金幣箱 1" },
+  { players:2, label:"雙人小隊", pressure:"怪物能力 +10%", reward:"素材箱 2＋金幣箱 2" },
+  { players:3, label:"三人小隊", pressure:"怪物能力 +20%", reward:"素材箱 3＋金幣箱 3" },
+  { players:4, label:"四人小隊", pressure:"怪物能力 +30%", reward:"素材箱 4＋金幣箱 4" },
+  { players:"5～8", label:"大型隊伍", pressure:"每多 1 人再 +10%", reward:"每多 1 人，各多 1 箱" },
+]);
+
+function HuntMonsterArt({ monster }) {
+  const [sourceIndex, setSourceIndex] = useState(0);
+  const sources = getBattleMonsterSources(monster.id);
+  const family = FAMILIES[monster.family];
+  if (sourceIndex >= sources.length) {
+    return <div className="text-5xl" aria-label={monster.name}>{family?.icon || "👾"}</div>;
+  }
+  return (
+    <img
+      src={sources[sourceIndex]}
+      alt={monster.name}
+      onError={() => setSourceIndex(index => index + 1)}
+      className="h-24 w-24 object-contain drop-shadow-2xl"
+    />
+  );
+}
+
+export default function FreeHunt({ onBack, onSolo, onEnterPartyRoom, resumableBattle = null, onResumeBattle, onAbandonBattle }) {
+  const { profile } = useAuth();
+  const [family, setFamily] = useState(FREE_HUNT_FAMILIES[0]);
+  const [tierIndex, setTierIndex] = useState(1);
+  const [monsterId, setMonsterId] = useState(null);
+  const [showJoinRooms, setShowJoinRooms] = useState(false);
+  const [openRooms, setOpenRooms] = useState([]);
+  const [partyLoading, setPartyLoading] = useState(false);
+  const [partyError, setPartyError] = useState("");
+
+  const myId = profile?.id;
+  const myName = profile?.nickname || profile?.name || "射手";
+  const accountType = profile?.accountType || "official";
+  const level = archerLevelFromXP(profile?.archerXP || 0);
+
+  const monsters = useMemo(() => getFreeHuntMonsters(family, tierIndex), [family, tierIndex]);
+  const selected = monsters.find(monster => monster.id === monsterId) || null;
+  const tierMeta = selected ? TIER_LABEL[selected.tier] : null;
+  const familyMeta = FAMILIES[family];
+  const joinRooms = filterPartyLobbyRooms(openRooms, { huntMonsterId:"__free_hunt__", tab:"join" });
+
+  useEffect(() => {
+    if (!showJoinRooms) return undefined;
+    cleanupStalePartyRooms();
+    const unsub = subscribeOpenPartyRooms(setOpenRooms);
+    return () => { unsub?.(); setOpenRooms([]); };
+  }, [showJoinRooms]);
+
+  function chooseFamily(nextFamily) {
+    setFamily(nextFamily);
+    setMonsterId(null);
+  }
+
+  function chooseTier(nextTier) {
+    setTierIndex(nextTier);
+    setMonsterId(null);
+  }
+
+  async function createSelectedParty() {
+    if (!selected || !myId || partyLoading) return;
+    setPartyLoading(true); setPartyError("");
+    const res = await createPartyRoom(myId, myName, "battle", {
+      accountType, level,
+      huntMonsterId: selected.id,
+      monsterId: selected.id,
+      huntDistanceM: 5,
+      huntTargetFmt: "half_17",
+      bowType: "recurve_bare",
+      monsterSnapshot: {
+        id:selected.id, name:selected.name, icon:selected.icon || "👾",
+        hp:Number(selected.hp) || 1, atk:Number(selected.atk) || 0, def:Number(selected.def) || 0,
+        tier:selected.tier, tierIndex:Number(selected.tierIndex) || null,
+        family:selected.family, encounter:selected.encounter, artKey:selected.artKey || null,
+      },
+    });
+    setPartyLoading(false);
+    if (res.ok) onEnterPartyRoom?.(res.roomId, "battle", true, selected);
+    else setPartyError(res.reason || "建立房間失敗");
+  }
+
+  async function joinOpenRoom(room) {
+    if (!myId || partyLoading) return;
+    setPartyLoading(true); setPartyError("");
+    const roomMonster = room.monsterSnapshot || getFreeHuntMonsterById(room.monsterId || room.huntMonsterId);
+    const res = await joinPartyRoom(room.code, myId, myName, {
+      accountType, level,
+      huntDistanceM:5, huntTargetFmt:"half_17", bowType:"recurve_bare",
+    });
+    setPartyLoading(false);
+    if (res.ok) onEnterPartyRoom?.(res.roomId, "battle", false, roomMonster || null);
+    else setPartyError(res.reason || "加入房間失敗");
+  }
+
+  return (
+    <div className="min-h-screen px-4 pb-8 pt-4 text-white"
+      style={{ background:"radial-gradient(circle at 50% -10%, rgba(99,102,241,.28), transparent 38%), linear-gradient(180deg,#07101f 0%,#0f172a 48%,#050914 100%)" }}>
+      <div className="mx-auto flex w-full max-w-lg flex-col gap-4">
+        <div className="relative overflow-hidden rounded-3xl border border-indigo-400/20 bg-slate-950/70 p-5 shadow-2xl">
+          <button onClick={onBack} className="absolute left-4 top-4 rounded-xl bg-white/5 px-3 py-2 text-xs font-black text-slate-300">← 冒險</button>
+          <div className="pt-8 text-center">
+            <div className="text-4xl">🧭</div>
+            <h1 className="mt-2 text-2xl font-black text-indigo-100">自由狩獵</h1>
+            <p className="mt-1 text-xs leading-relaxed text-slate-400">指定族群、危險等級與討伐目標，不再隨機刷怪。</p>
+          </div>
+        </div>
+
+        {resumableBattle && <section className="rounded-3xl border border-amber-300/40 bg-amber-950/35 p-4 shadow-xl" data-hunt-resume-card="true">
+          <div className="text-[10px] font-black uppercase tracking-[.2em] text-amber-300">BATTLE IN PROGRESS</div>
+          <div className="mt-1 text-base font-black text-white">⚔️ 尚有一場狩獵戰鬥未完成</div>
+          <div className="mt-1 text-xs text-amber-100/70">戰鬥進度、護盾與同行貓咪狀態皆已保留。</div>
+          <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+            <button onClick={onResumeBattle} className="min-h-12 rounded-xl bg-gradient-to-r from-amber-300 to-orange-400 px-4 text-sm font-black text-amber-950">返回戰鬥</button>
+            <button onClick={onAbandonBattle} className="min-h-12 rounded-xl border border-white/15 bg-white/5 px-3 text-xs font-black text-slate-300">放棄</button>
+          </div>
+        </section>}
+
+        <details className="group rounded-3xl border border-cyan-400/20 bg-slate-950/70 shadow-xl">
+          <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 active:bg-white/[.03]">
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-[.2em] text-cyan-300">HOW TO PLAY</div>
+              <div className="mt-0.5 text-sm font-black text-white">📖 設定與組隊人數說明</div>
+            </div>
+            <span className="text-lg text-cyan-200 transition-transform group-open:rotate-180" aria-hidden="true">⌄</span>
+          </summary>
+          <div className="space-y-4 border-t border-cyan-400/15 px-4 pb-4 pt-3 text-xs leading-relaxed text-slate-300">
+            <div>
+              <div className="font-black text-indigo-200">狩獵目標設定</div>
+              <p className="mt-1 text-slate-400">先選七大族、第一至第六階，再指定該族的一般怪物。目標一旦建立隊伍便會鎖定；自由狩獵不會抽到小王、大王或世界王。</p>
+            </div>
+
+            <div>
+              <div className="font-black text-indigo-200">每位射手各自設定</div>
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <div className="rounded-xl bg-white/[.04] p-2"><b className="text-white">距離</b><br/><span className="text-slate-400">5 米為 ×1.00；距離越遠倍率越高，18 米約 ×1.90。</span></div>
+                <div className="rounded-xl bg-white/[.04] p-2"><b className="text-white">靶紙</b><br/><span className="text-slate-400">半靶 ×1.0、全靶 ×1.2、原野靶 ×1.4、三連靶 ×1.5。</span></div>
+                <div className="rounded-xl bg-white/[.04] p-2"><b className="text-white">弓種</b><br/><span className="text-slate-400">裸弓、反曲弓、獵弓／複合弓為 ×1；傳統弓為 ×2。</span></div>
+              </div>
+              <p className="mt-2 text-slate-500">距離 × 靶紙 × 弓種會形成你自己的傷害倍率，不會改變隊友。三連靶每張最多計入 2 箭，六箭需分配至三張靶。</p>
+            </div>
+
+            <div>
+              <div className="font-black text-amber-200">組隊人數有什麼差異？</div>
+              <p className="mt-1 text-slate-400">房間最多 8 人。每多一位隊員，怪物生命、攻擊與防禦再提高 10%；戰勝後，每位有參戰的玩家都會按本場隊伍人數取得同等數量的族系材料箱與金幣箱。</p>
+              <div className="mt-2 overflow-hidden rounded-xl border border-white/10">
+                {PARTY_SIZE_GUIDE.map((row, index) => (
+                  <div key={row.players} className={`grid grid-cols-[52px_1fr] gap-2 px-3 py-2 ${index ? "border-t border-white/5" : ""} ${index % 2 ? "bg-white/[.025]" : "bg-black/10"}`}>
+                    <div className="font-black text-cyan-200">{row.players} 人</div>
+                    <div><b className="text-white">{row.label}</b><span className="text-slate-500">・{row.pressure}</span><br/><span className="text-emerald-300">每人：{row.reward}</span></div>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2 text-[10px] text-slate-500">前衛／後衛位置不影響寶箱數量；必須實際參戰並完成戰鬥，才具有領獎資格。</p>
+            </div>
+          </div>
+        </details>
+
+        <section className="rounded-3xl border border-white/10 bg-slate-950/60 p-4 shadow-xl">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-[.22em] text-indigo-300">STEP 1</div>
+              <div className="text-base font-black">選擇七大族</div>
+            </div>
+            <div className="text-xs font-bold" style={{ color:familyMeta?.color }}>{familyMeta?.icon} {familyMeta?.label}</div>
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            {FREE_HUNT_FAMILIES.map(id => {
+              const meta = FAMILIES[id];
+              const active = id === family;
+              return (
+                <button key={id} onClick={() => chooseFamily(id)}
+                  className="min-h-16 rounded-2xl border px-2 py-2 text-center transition-all active:scale-95"
+                  style={{ borderColor: active ? meta?.color : "rgba(255,255,255,.08)", background: active ? `${meta?.color}22` : "rgba(255,255,255,.025)" }}>
+                  <div className="text-2xl">{meta?.icon || "👾"}</div>
+                  <div className="mt-1 truncate text-[10px] font-black" style={{ color: active ? meta?.color : "#94a3b8" }}>{meta?.label}</div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-white/10 bg-slate-950/60 p-4 shadow-xl">
+          <div className="mb-3">
+            <div className="text-[10px] font-black uppercase tracking-[.22em] text-amber-300">STEP 2</div>
+            <div className="text-base font-black">選擇危險等級</div>
+          </div>
+          <div className="grid grid-cols-6 gap-2">
+            {FREE_HUNT_TIERS.map(tier => {
+              const sample = getFreeHuntMonsters(family, tier)[0];
+              const meta = sample ? TIER_LABEL[sample.tier] : null;
+              const active = tier === tierIndex;
+              return (
+                <button key={tier} onClick={() => chooseTier(tier)}
+                  className="rounded-xl border py-3 text-center active:scale-95"
+                  style={{ borderColor: active ? meta?.color : "rgba(255,255,255,.08)", background: active ? `${meta?.color}20` : "rgba(255,255,255,.025)" }}>
+                  <div className="text-sm font-black" style={{ color: active ? meta?.color : "#94a3b8" }}>T{tier}</div>
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-2 text-[10px] text-slate-500">T5 的資料階級名稱雖為「頭目」，自由狩獵只依 encounter=normal 收錄，因此不包含任何真正的王。</div>
+        </section>
+
+        <section className="rounded-3xl border border-white/10 bg-slate-950/60 p-4 shadow-xl">
+          <div className="mb-3">
+            <div className="text-[10px] font-black uppercase tracking-[.22em] text-emerald-300">STEP 3</div>
+            <div className="text-base font-black">指定討伐怪物</div>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {monsters.map(monster => {
+              const active = monster.id === monsterId;
+              const tier = TIER_LABEL[monster.tier];
+              return (
+                <button key={monster.id} onClick={() => setMonsterId(monster.id)}
+                  className="rounded-2xl border p-3 text-left transition-all active:scale-[.98]"
+                  style={{ borderColor: active ? "#818cf8" : "rgba(255,255,255,.09)", background: active ? "rgba(79,70,229,.22)" : "rgba(15,23,42,.72)", boxShadow: active ? "0 0 28px rgba(99,102,241,.18)" : "none" }}>
+                  <div className="flex items-center gap-3 sm:flex-col">
+                    <HuntMonsterArt monster={monster} />
+                    <div className="min-w-0 flex-1 sm:text-center">
+                      <div className="truncate text-sm font-black text-white">{monster.name}</div>
+                      <div className="mt-1 text-[10px] font-black" style={{ color:tier?.color }}>T{monster.tierIndex} · {tier?.label}</div>
+                      <div className="mt-1 flex gap-2 text-[10px] text-slate-400 sm:justify-center"><span>HP {monster.hp}</span><span>ATK {monster.atk}</span><span>DEF {monster.def}</span></div>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-indigo-400/20 bg-gradient-to-b from-indigo-950/55 to-slate-950/80 p-4 shadow-2xl">
+          <div className="mb-3">
+            <div className="text-[10px] font-black uppercase tracking-[.22em] text-cyan-300">STEP 4</div>
+            <div className="text-base font-black">選擇入場方式</div>
+          </div>
+          {selected ? (
+            <>
+              <div className="flex items-center gap-3">
+                <HuntMonsterArt monster={selected} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[10px] font-black uppercase tracking-[.2em] text-indigo-300">TARGET LOCKED</div>
+                  <div className="text-lg font-black">{selected.name}</div>
+                  <div className="mt-1 text-xs font-bold" style={{ color:tierMeta?.color }}>{familyMeta?.label} · T{selected.tierIndex} {tierMeta?.label}</div>
+                  <div className="mt-2 text-[11px] leading-relaxed text-slate-400">{selected.signatureSummary || "一般討伐目標"}</div>
+                  <div className="mt-1 text-[11px] text-amber-300">掉落：{selected.material?.name || "族群素材"}</div>
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <button onClick={() => onSolo?.(selected)} className="min-h-12 rounded-2xl bg-gradient-to-r from-violet-500 to-indigo-500 px-3 font-black text-white shadow-lg active:scale-95">⚔️ 單人狩獵</button>
+                <button onClick={createSelectedParty} disabled={partyLoading || !myId} className="min-h-12 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 px-3 font-black text-slate-950 shadow-lg active:scale-95 disabled:opacity-50">{partyLoading ? "建立中…" : "🤝 建立隊伍"}</button>
+                <button onClick={() => { setShowJoinRooms(v => !v); setPartyError(""); }}
+                  className="min-h-12 rounded-2xl border border-cyan-400/35 bg-cyan-500/10 px-3 font-black text-cyan-100 active:scale-95">
+                  🔎 {showJoinRooms ? "收起隊伍" : "加入隊伍"}
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="grid grid-cols-1 gap-2">
+              <div className="py-3 text-center text-sm font-bold text-slate-500">單人狩獵與建立隊伍需先指定討伐目標。</div>
+              <button onClick={() => { setShowJoinRooms(v => !v); setPartyError(""); }}
+                className="min-h-12 rounded-2xl border border-cyan-400/35 bg-cyan-500/10 px-3 font-black text-cyan-100 active:scale-95">
+                🔎 {showJoinRooms ? "收起隊伍" : "加入現有隊伍"}
+              </button>
+            </div>
+          )}
+          {showJoinRooms && (
+            <div className="mt-4 flex flex-col gap-2 border-t border-cyan-400/15 pt-4">
+              <div className="px-1 text-[10px] font-black uppercase tracking-[.18em] text-cyan-300">等待中的自由狩獵隊伍（{joinRooms.length}）</div>
+              {joinRooms.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-white/10 bg-white/[.03] p-5 text-center text-xs font-bold text-slate-500">目前沒有等待中的隊伍</div>
+              ) : joinRooms.map(room => {
+                const memberCount = Object.keys(room.members || {}).length;
+                const hostName = room.members?.[room.hostId]?.name || "未知射手";
+                const roomMonster = room.monsterSnapshot || getFreeHuntMonsterById(room.monsterId || room.huntMonsterId);
+                const full = memberCount >= 8;
+                return (
+                  <div key={room.id} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-950/65 p-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-black text-white">{hostName} 的隊伍</div>
+                      <div className="mt-0.5 truncate text-[11px] font-bold text-violet-300">🎯 {roomMonster ? `T${roomMonster.tierIndex}・${roomMonster.name}` : "自由狩獵"}</div>
+                      <div className="mt-0.5 text-[10px] text-slate-400">👤 {memberCount}/8 人</div>
+                    </div>
+                    <button onClick={() => joinOpenRoom(room)} disabled={partyLoading || full}
+                      className="rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 px-4 py-2 text-xs font-black text-slate-950 disabled:opacity-40">
+                      {full ? "已滿" : partyLoading ? "…" : "加入"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {partyError && <div className="mt-3 rounded-xl border border-red-500/30 bg-red-950/35 p-2 text-center text-xs font-bold text-red-300">{partyError}</div>}
+        </section>
+      </div>
+    </div>
+  );
+}

@@ -1,6 +1,31 @@
+## 自由狩獵弓種倍率（2026-08-13）
+- `freeHuntEnvironment.js` 最終倍率 = **距離倍率 × 靶紙倍率 × 弓種倍率**。
+- 裸弓 `recurve_bare` ×1、獵弓／既有複合弓 `compound` ×1、傳統弓 `traditional` ×2；`recurve_full` 與未知/舊資料回退 ×1。
+- 單人使用本場 `BattleShootingProfile.bowType`；組隊送箭時保存每位玩家 `bowType`，`processPartyRound()` 逐人權威重算，不共享弓種倍率。
+- 只乘正常計分箭傷；藥水直傷、毒、貓攻擊、後衛支援與反擊不加倍。
+
+## 自由狩獵環境倍率（2026-08-13）
+- `src/lib/freeHuntEnvironment.js`：自由狩獵不自建倍率，直接共用 `src/worldboss/domain/raidFaces.js` + `raidRange.js`。
+- `getFreeHuntEnvironment({ distanceM, targetFmt })`：回傳距離倍率、靶紙倍率、最終倍率與 `faceCap`。
+- `applyFreeHuntFaceCap(arrows, faceCap)`：組隊 Firestore 權威結算的三連靶箭數限制；每個 `faceIndex` 超過上限的箭保留紀錄但 `dmg=0`。
+- 自由狩獵組隊：房間保留 `huntMonsterId` 與舊的 `huntDistanceM` / `huntTargetFmt` 作 fallback；**實際戰鬥以每位成員自己的** `members.{id}.huntDistanceM`、`members.{id}.huntTargetFmt`、`members.{id}.bowType` 為準。`getPartyMemberFreeHuntEnvironment()` 統一解析個人設定 → 房間舊值 → 預設值，`processPartyRound()` 逐人權威重算倍率與 `faceCap`。
+- `BattleScreen.onSubmit(scores, arrowDetails)`：第二參數保留 `faceIndex/overFaceCap` 給組隊權威驗證；舊只收一參數 consumer 相容。
+
 # ⚡ quick-ref — Claude 工作速查表
 > 讀這份，3 秒掌握上下文，不再重複掃源碼。
 > 最後更新：2026-07-11
+
+## 🧭 自由狩獵（2026-08-13 Phase 1）
+
+- 正式會員冒險 Hub 的「RPG打怪／組隊打怪」已合併成 `hunt`「自由狩獵」。流程固定：**七族 → T1~T6 → 精確普通怪 → 單人／建立隊伍／加入隊伍**。
+- 真本：`src/lib/freeHuntCatalog.js` 直接讀 `EXPANSION_MONSTERS`，只接受 `encounter === "normal"`；七族為 ghost/mountain/insect/workplace/exam/temple/treasure，每族每階 3 隻，共 126 隻。
+- ⚠️ `tier === "boss"` 是舊 T5 階級名稱，不代表 encounter 大王；**T5 normal 必須保留**，排王永遠看 `encounter`。
+- 單人：`MonsterBattle` 接 `huntMonsterId`，用 `getFreeHuntBattleMonster()` 固定怪物並直接進 prebattle；公會 `questContext` 優先。
+- 組隊：`FreeHunt.jsx` 內可直接「建立隊伍」或展開「直接加入隊伍」列表；建立按一次即寫入 `partyRooms` 並進房，不再經舊 `PartyLobby` 二次建立。`partyRooms` 可存 `huntMonsterId/monsterId/monsterSnapshot`；固定目標不再隨機抽怪、不可重抽。**MemberApp/AdminApp 已移除 `PartyLobby` import、preload、`page="party"` 舊路由；目前只在 GuestApp 保留舊 Lobby 作訪客相容。**
+- `MonsterBattle` 收到 `huntMonsterId` 時，所有「換對手／返回選怪」動作都必須回父層 `FreeHunt`；不得再進 `MonsterBattle phase="select"` 的 legacy 怪物介面。
+- `PartyBattleRoom` 的 Free Hunt 固定目標使用元件層 `fixedHuntMonster`，開始戰鬥直接吃該固定目標；不得使用 legacy `drawnMonsters/setupMonster/challengeLevel` 決定自由狩獵怪物。
+- 自由狩獵組隊的**距離／靶紙／弓種由每位隊員獨立設定**，只影響自己的倍率與靶紙箭數限制；用 `updatePartyMemberHuntEnvironment()` 寫入自己的 member map。**3/6 箭仍是房間共用 `arrowsPerRound`，只有房主可改**，隊友只讀顯示「由隊長設定」。
+- Phase 1 **只統一入口與 data contract**；solo 仍是本機 `MonsterBattle`，尚未改成 Firestore `partySize=1`。
 
 🔗 **在 Obsidian 中開啟**：`obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Fquick-ref`
 
@@ -1419,3 +1444,21 @@ LANE_CAPACITY = 8   // 全場固定 8 個靶位
 - `test-booking-concurrency.js` Test E（07-10-booking-multihour-and-stats 新增）：兩個 3 小時預約併發搶同一個瓶頸時段格——同樣只做到程式碼靜態走查+`node --check`語法驗證，**沒有實際對 Firestore 跑過**。斷言重點：輸家不能在起點/終點格留下任何殘留寫入（起點/終點格若變成非預期的數字就代表「N格全有全無」保證破了）。
 - 3小時預約跨時段統計正確性（PRD驗收2）：9:00起3小時預約→10:00/11:00時段格的count/newCount/returningCount要正確算入→12:00不算入——已用程式碼邏輯走查確認（見下方推演），沒有即時 Firestore 驗證。
 - 完整新生自助註冊+預約流程、教練後台完整跑一輪、學生完整跑一輪（選時段→送出→查看→改期→取消，含1小時與3小時兩種方案）——都只做到 `CI=true npx react-scripts build` 通過 + 程式碼審查，沒有對真實 Firestore 資料即時操作驗證。
+
+## 2026-08-13 自由狩獵 Phase 2 — 狩獵環境
+- 自由狩獵戰前頁移除舊「分數靶紙／學生模式／固定距離／每回合箭數」摘要，改為手機優先「狩獵環境」卡。
+- `src/lib/freeHuntEnvironment.js` 直接引用世界王 `src/worldboss/domain/raidFaces.js` 與 `raidRange.js`，維持單一倍率真本。
+- 距離 5–18m；半靶 ×1.0、全靶 ×1.2、原野靶 ×1.4、三連靶 ×1.5；三連靶每張最多 2 箭產生有效傷害。
+- 最終環境倍率沿用 `rangeMultiplier()`（距離倍率 × 靶紙倍率），只在單人自由狩獵透過 `BattleScreen.outgoingDamageMultiplier` 套入既有最終箭傷；其他模式預設 ×1。
+- 靶紙與距離沿用 `targetFmt`／`selectedDistance`、`mb_defaults` 與 battle snapshot，不建立平行設定。
+
+- 自由狩獵組隊加入房：PartyLobby 的 Join 模式會列出所有 status=waiting 且具有 huntMonsterId 或 monsterId 的狩獵房，不再依加入者目前選中的怪物 ID 做精確過濾；建立房間仍鎖定建立者選定的怪物。篩選 helper：src/lib/partyLobbyRooms.js。
+
+
+## Email Campaign system (2026-08-14)
+- Admin path: members-finance > Email notification; UI: src/components/admin/AdminMarketingEmail.jsx.
+- Delivery reuses Firebase Trigger Email mail collection.
+- Audience is members accountType official/guest only; kid excluded; marketingOptIn must be true (fail-closed).
+- Default throttle: 20/hour and 100/day; queue, suppression and run counters are server-only.
+- Unsubscribe uses GET confirmation then POST update; open analytics use opaque token and are trend-only because privacy/image proxies can distort results.
+

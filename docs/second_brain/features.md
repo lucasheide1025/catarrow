@@ -251,3 +251,11 @@ src/battle/
 - [ ] 組隊／地下城權威端異常：只有單元測試，Firestore 讀寫層沒開過真房間
 - [ ] 練習模式的設定與參數研究（作者 2026-07-31 交代，未開始）
 
+
+
+## Email Campaign notification (2026-08-14)
+- Status: local implementation complete; Functions and Firestore Rules deployment still required.
+- Admin can preview eligible counts, create drafts, start/pause/resume campaigns, and view queued/sent/failed/opened/unsubscribed/suppressed totals.
+- Consent is fail-closed: only marketingOptIn=true official/guest records are eligible; existing records are not auto-opted-in.
+- Uses hourly scheduler, daily/hourly caps, deterministic queue/mail ids, max 3 delivery attempts, unsubscribe suppression and optional open analytics.
+

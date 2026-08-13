@@ -1,16 +1,19 @@
-import { useState, useEffect, useRef, useMemo, lazy, Suspense, startTransition, useCallback } from "react";
+﻿import { useState, useEffect, useRef, useMemo, lazy, Suspense, startTransition, useCallback } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { useCostControl } from "../hooks/useCostControl";
-import { subscribeResults, getRegistrations, subscribePendingCertResults, subscribeAllMessages, subscribePendingCertTasks, subscribePendingCheckins, subscribeNotifications, subscribePendingMonthlyRequests, subscribeCertification, subscribeDexGrants, getDexConfig, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection, submitGuildQuestCompletion, subscribeActiveGuildQuests, subscribeGuildSubmissions, subscribeMyCheckin, submitCheckin, approveCheckin, subscribeAppVersion, isMemberRegistered, flushPendingShootingSessions, flushPendingArrowProgress, subscribeLocalTodayArrows, initializeTodayArrows } from "../lib/db";
+import { subscribeResults, getRegistrations, subscribePendingCertResults, subscribeAllMessages, subscribePendingCertTasks, subscribePendingCheckins, subscribeNotifications, subscribePendingMonthlyRequests, subscribeCertification, subscribeDexGrants, getDexConfig, subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex, subscribeCardCollection, submitGuildQuestCompletion, subscribeActiveGuildQuests, subscribeGuildSubmissions, subscribeMyCheckin, submitCheckin, approveCheckin, submitClassEnd, addArrowdew, checkAndGrantArrowMilestones, subscribeAppVersion, isMemberRegistered, flushPendingShootingSessions, flushPendingArrowProgress, subscribeLocalTodayArrows, initializeTodayArrows } from "../lib/db";
 import { getDuelStats } from "../lib/duelDb";
 import { collection, limit, onSnapshot, query, where } from "firebase/firestore";
-import { sfxNotify, sfxCheckinAlert } from "../lib/sound";
+import { sfxNotify, sfxCheckinAlert, sfxLevelUp } from "../lib/sound";
+import { markDailyPromptShown, wasDailyPromptShown } from "../lib/dailyPrompt";
 import { CatBuddyProvider } from "../components/cat/CatBuddyContext";
 import { db } from "../lib/firebase";
 import { certLevelStyle } from "../lib/constants";
 import { getAppTheme, saveAppTheme, APP_THEMES } from "../lib/theme";
 import { levelFromXP, rankFromLevel } from "../lib/adventurerSystem";
 import { archerLevelFromXP } from "../lib/archerLevel";
+import { readHuntBattleResume, clearHuntBattleResume } from "../lib/huntBattleResume";
+import { getFreeHuntMonsterById } from "../lib/freeHuntCatalog";
 import { APP_VERSION } from "../lib/version";
 import { subscribeWorldBossStatus } from "../lib/worldBossDb";
 import { initGoalTracker } from "../lib/villageGoalDb";
@@ -43,6 +46,7 @@ const AdminBattleTest   = lazy(() => import("../components/admin/AdminBattleTest
 const AdminKidMode       = lazy(() => import("../components/admin/AdminKidMode"));
 const AdminGuestAccounts = lazy(() => import("../components/admin/AdminGuestAccounts"));
 const AdminGuestReviews = lazy(() => import("../components/admin/AdminGuestReviews"));
+const AdminMarketingEmail = lazy(() => import("../components/admin/AdminMarketingEmail"));
 const AdminTierPermissions = lazy(() => import("../components/admin/AdminTierPermissions"));
 const AdminWebsiteCms    = lazy(() => import("../components/admin/AdminWebsiteCms"));
 const EquipmentPage      = lazy(() => import("../components/member/EquipmentPage"));
@@ -66,6 +70,7 @@ const MemberMonsterDex   = lazy(() => import("../components/member/MemberMonster
 const MemberGuide        = lazy(() => import("../components/member/MemberGuide"));
 const MemberBowSettings  = lazy(() => import("../components/member/MemberBowSettings"));
 const MemberAdventureHub = lazy(() => import("../components/member/MemberAdventureHub"));
+const FreeHunt           = lazy(() => import("../components/member/FreeHunt"));
 const MemberTrainingHub  = lazy(() => import("../components/member/MemberTrainingHub"));
 const MemberInventoryHub = lazy(() => import("../components/member/MemberInventoryHub"));
 const MemberRecordsHub   = lazy(() => import("../components/member/MemberRecordsHub"));
@@ -78,7 +83,6 @@ const CatVillage         = lazy(() => import("../components/member/CatVillage"))
 const CatCollection      = lazy(() => import("../components/cat/CatCollection"));
 const CatStoryBook       = lazy(() => import("../components/cat/CatStoryBook"));
 const StoryBook          = lazy(() => import("../components/story/StoryBook"));
-const PartyLobby         = lazy(() => import("../components/party/PartyLobby"));
 const PartyQuestRoom     = lazy(() => import("../components/party/PartyQuestRoom"));
 const PartyBattleRoom    = lazy(() => import("../components/party/PartyBattleRoom"));
 const DuelLobby          = lazy(() => import("../components/duel/DuelLobby"));
@@ -103,6 +107,7 @@ const ADMIN_NAV_PRELOADS = {
     import("../components/admin/AdminKidMode");
     import("../components/admin/AdminLearn");
     import("../components/admin/AdminMessages");
+    import("../components/admin/AdminMarketingEmail");
   },
   "game-events": () => {
     import("../components/admin/AdminCompetitions");
@@ -124,6 +129,7 @@ const ADMIN_NAV_PRELOADS = {
 const ARCHER_NAV_PRELOADS = {
   "adventure-hub": () => {
     import("../components/member/MemberAdventureHub");
+    import("../components/member/FreeHunt");
     import("../components/member/MonsterBattle");
     import("../components/dungeon/DungeonLobby");
   },
@@ -158,6 +164,7 @@ export default function AdminApp() {
   const [page, setPageState]        = useState(() => {
     const isArcher = sessionStorage.getItem("admin_archerMode") === "1";
     const s = sessionStorage.getItem("admin_page");
+    if (isArcher && readHuntBattleResume()) return "hunt";
     if (isArcher) return (s && !VALID_PAGES.has(s)) ? s : "home";
     return (s && VALID_PAGES.has(s)) ? s : "daily";
   });
@@ -183,6 +190,10 @@ export default function AdminApp() {
   const [archerMode, setArcherMode] = useState(() => sessionStorage.getItem("admin_archerMode") === "1");
   const [questCtx, setQuestCtx]     = useState(null);
   const [fromGuild, setFromGuild]   = useState(false);
+  const [huntContext, setHuntContext] = useState(null);
+  const [huntResume, setHuntResume] = useState(() => readHuntBattleResume());
+  const [autoResumeHuntBattle, setAutoResumeHuntBattle] = useState(false);
+  useEffect(() => { if (page === "hunt") setHuntResume(readHuntBattleResume()); }, [page]);
   const [specialAlert, setSpecialAlert] = useState(null);
   const seenQuestIds = useRef(null);
   const [badgePopup, setBadgePopup] = useState(null);
@@ -224,7 +235,20 @@ export default function AdminApp() {
   const [todayCheckin, setTodayCheckin] = useState(undefined);
   const [showCheckinPopup, setShowCheckinPopup] = useState(false);
   const [checkinBusy, setCheckinBusy] = useState(false);
-  const checkinPopupShownRef = useRef(!!sessionStorage.getItem("admin_checkin_popup_shown"));
+  const checkinPopupShownRef = useRef(false);
+  const [coachLevelUp, setCoachLevelUp] = useState(null);
+  const lastCoachLevelRef = useRef(null);
+  const coachArcherLevel = archerLevelFromXP(profile?.archerXP || 0);
+
+  useEffect(() => {
+    if (profile?.archerXP === undefined) return;
+    if (lastCoachLevelRef.current === null) { lastCoachLevelRef.current = coachArcherLevel; return; }
+    if (coachArcherLevel > lastCoachLevelRef.current) {
+      setCoachLevelUp({ oldLevel:lastCoachLevelRef.current, newLevel:coachArcherLevel });
+      lastCoachLevelRef.current = coachArcherLevel;
+      sfxLevelUp();
+    } else if (coachArcherLevel < lastCoachLevelRef.current) lastCoachLevelRef.current = coachArcherLevel;
+  }, [coachArcherLevel, profile?.archerXP]);
 
   // 射手模式共用狀態（與 MemberApp 一致）
   const [certification, setCertification] = useState(null);
@@ -246,6 +270,7 @@ export default function AdminApp() {
 
   useEffect(() => {
     if (!profile?.id) return;
+    checkinPopupShownRef.current = wasDailyPromptShown(localStorage, "coach-checkin", profile.id);
     return subscribeNotifications(profile.id, setNotifications, profile.createdAt);
   }, [profile?.id]); // eslint-disable-line
 
@@ -256,7 +281,7 @@ export default function AdminApp() {
       setTodayCheckin(c);
       if (c === null && !checkinPopupShownRef.current) {
         checkinPopupShownRef.current = true;
-        sessionStorage.setItem("admin_checkin_popup_shown", "1");
+        markDailyPromptShown(localStorage, "coach-checkin", profile.id);
         setShowCheckinPopup(true);
       }
     });
@@ -273,6 +298,27 @@ export default function AdminApp() {
     } catch (e) { console.error("checkin:", e?.message); }
     setCheckinBusy(false);
     setShowCheckinPopup(false);
+  }
+
+  const [classEndBusy, setClassEndBusy] = useState(false);
+  async function handleHomeClassEnd() {
+    if (!profile?.id || !todayCheckin?.id || classEndBusy) return;
+    if (!window.confirm("確定要下課嗎？下課後會結算今天的箭數與獎勵。")) return;
+    setClassEndBusy(true);
+    try {
+      await submitClassEnd(profile.id, todayCheckin.id);
+      if (todayArrowsGlobal > 0) {
+        await Promise.allSettled([
+          addArrowdew(profile.id, todayArrowsGlobal),
+          checkAndGrantArrowMilestones(profile.id, todayArrowsGlobal),
+        ]);
+      }
+    } catch (e) {
+      console.error("class end:", e?.message);
+      window.alert("下課結算失敗，請稍後再試。");
+    } finally {
+      setClassEndBusy(false);
+    }
   }
 
   // 今日箭數以 localStorage 即時累加；載入時只做一次有上限的 Firestore 補值，不開 listener
@@ -382,7 +428,21 @@ export default function AdminApp() {
   function handleLeaveParty() {
     sessionStorage.removeItem("admin_party_room");
     setPartyRoomId(null); setPartyRoomType(null); setPartyIsHost(false);
-    setPage("profile");
+    setPage(huntContext ? "hunt" : "profile");
+  }
+  function openHuntMonster(monster, intent) {
+    setAutoResumeHuntBattle(false);
+    setQuestCtx(null);
+    setFromGuild(false);
+    setHuntContext({ monster, intent });
+    setPage("monster");
+  }
+
+  function enterFreeHuntParty(roomId, type, host, monster = null) {
+    setQuestCtx(null);
+    setFromGuild(false);
+    setHuntContext({ monster, intent: host ? "create" : "join" });
+    handleEnterPartyRoom(roomId, type, host);
   }
 
   const _savedDuel = (() => { try { return JSON.parse(sessionStorage.getItem("admin_duel_room") || "null"); } catch { return null; } })();
@@ -490,7 +550,7 @@ const adminNav = [
     { id:"booking",       icon:"📅", label:"約課"  },
     { id:"profile",       icon:"👤", label:"我的"  },
   ];
-  const ADMIN_ADVENTURE = ["adventure-hub","monster","party","party-quest","party-battle","duel","duel-room","dungeon","worldboss","guild","monsterdex"];
+  const ADMIN_ADVENTURE = ["adventure-hub","monster","party-quest","party-battle","duel","duel-room","dungeon","worldboss","guild","monsterdex"];
   const ADMIN_TRAINING  = ["training-hub","comps","comp-detail","practice","performance"];
   const ADMIN_INVENTORY = ["inventory-hub","coinshop","materials","cats","catbook","story","equipment","specialization-runes","cards","gacha"];
   const ADMIN_PROFILE   = ["profile","learn","msgs","history","external","achievements","certexam","notifications","dex","guide","leaderboard","bowsetting"];
@@ -522,6 +582,22 @@ const adminNav = [
         <MustReadGate memberId={profile?.id} notifications={notifications} />
         <HonorCelebration memberId={profile?.id} notifications={notifications} onGoPage={setPage} />
         {badgePopup && <BadgeEarnPopup badge={badgePopup} onClose={() => setBadgePopup(null)} />}
+
+        {/* 教練帳號也會累積射手等級；使用獨立卡面，避免被誤認成學生通知。 */}
+        <OverlayModal open={!!coachLevelUp} onClose={() => setCoachLevelUp(null)} zIndex={99998} bg="rgba(2,6,23,0.82)">
+          <div style={{ background:"linear-gradient(145deg,#082f49,#0f172a 62%,#312e81)", borderRadius:24, padding:"30px 24px", width:"100%", maxWidth:330, textAlign:"center", border:"2px solid rgba(34,211,238,.55)", boxShadow:"0 0 60px rgba(34,211,238,.24)" }}>
+            <div style={{ fontSize:52, marginBottom:8 }}>🏹</div>
+            <div style={{ color:"#67e8f9", fontWeight:900, fontSize:13, letterSpacing:".12em", marginBottom:8 }}>教練射手模式</div>
+            <div style={{ color:"white", fontWeight:900, fontSize:23, marginBottom:10 }}>射手等級提升！</div>
+            <div style={{ color:"rgba(255,255,255,.7)", fontSize:14, marginBottom:20 }}>
+              Lv.{coachLevelUp?.oldLevel} <span style={{ color:"#67e8f9", padding:"0 8px" }}>→</span> <b style={{ color:"#fef08a", fontSize:20 }}>Lv.{coachLevelUp?.newLevel}</b>
+            </div>
+            <div style={{ background:"rgba(255,255,255,.08)", borderRadius:12, padding:"11px 14px", color:"#cbd5e1", fontSize:13, lineHeight:1.6, marginBottom:20 }}>
+              教練帳號的射手戰鬥能力已更新。
+            </div>
+            <button onClick={() => setCoachLevelUp(null)} style={{ width:"100%", padding:14, border:0, borderRadius:14, background:"linear-gradient(135deg,#06b6d4,#4f46e5)", color:"white", fontWeight:900, fontSize:15, cursor:"pointer" }}>確認</button>
+          </div>
+        </OverlayModal>
 
         {/* 📋 今日報到浮動視窗（教練射手模式） */}
         <OverlayModal open={showCheckinPopup}>
@@ -595,8 +671,21 @@ const adminNav = [
               certification={certification} dexConfig={dexConfig} dexGrants={dexGrants}
               duelStats={duelStats} monsterDex={monsterDex} craftStats={craftStats} chestStats={chestStats}
               potionDex={potionDex} cardData={cardData} todayArrows={todayArrowsGlobal}
-              todayCheckin={todayCheckin} worldBoss={activeWorldBoss} />}
-          {page==="adventure-hub" && <MemberAdventureHub onPageChange={setPage} />}
+              todayCheckin={todayCheckin} worldBoss={activeWorldBoss} accountView="coach"
+              onCheckin={handleCheckinSubmit} checkinBusy={checkinBusy}
+              onClassEnd={handleHomeClassEnd} classEndBusy={classEndBusy}
+              onReturnAdmin={() => { setArcherMode(false); setPage("daily"); setDailySub("booking"); }} />}
+          {page==="adventure-hub" && <MemberAdventureHub onPageChange={(nextPage) => {
+            if (nextPage !== "hunt") setHuntContext(null);
+            setPage(nextPage);
+          }} />}
+          {page==="hunt" && <FreeHunt
+            onBack={() => { setHuntContext(null); setPage("adventure-hub"); }}
+            onSolo={(monster) => openHuntMonster(monster, "solo")}
+            resumableBattle={huntResume}
+            onResumeBattle={() => { const monster=getFreeHuntMonsterById(huntResume?.monsterId); if(monster){ setAutoResumeHuntBattle(true); setHuntContext({monster,intent:"solo"}); setPage("monster"); } }}
+            onAbandonBattle={() => { if(window.confirm("確定放棄這場狩獵戰鬥？進度將無法復原。")){ clearHuntBattleResume(sessionStorage,{clearBattle:true}); setHuntResume(null); } }}
+            onEnterPartyRoom={enterFreeHuntParty} />}
           {page==="training-hub"  && <MemberTrainingHub  onPageChange={setPage} onJoinParty={handleEnterPartyRoom} showPerformance={archerMode} />}
           {archerMode && page==="performance" && <MemberPerformance />}
           {page==="inventory-hub" && <MemberInventoryHub onPageChange={setPage} />}
@@ -635,13 +724,16 @@ const adminNav = [
           {page==="handbook"    && <MonsterHandbook onBack={() => setPage("adventure-hub")} />}
           {page==="monster"     && <MonsterBattle
             onBack={() => {
+              setAutoResumeHuntBattle(false);
               if (fromGuild) { setFromGuild(false); setPage("guild"); }
-              else { setQuestCtx(null); setPage("adventure-hub"); }
+              else if (huntContext?.intent === "solo") { setQuestCtx(null); setPage("hunt"); }
+              else { setQuestCtx(null); setHuntContext(null); setPage("adventure-hub"); }
             }}
             questContext={questCtx} onKillForQuest={handleQuestKill}
+            huntMonsterId={huntContext?.intent === "solo" ? huntContext.monster?.id : null}
+            autoResumeBattle={autoResumeHuntBattle}
             monsterDex={monsterDex} craftStats={craftStats} chestStats={chestStats}
             potionDex={potionDex} duelStats={duelStats} sharedData={sharedPlayerData} />}
-          {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom}/>}
           {page==="party-quest" && partyRoomId && (
             <PartyQuestRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty}/>
           )}
@@ -831,6 +923,10 @@ const adminNav = [
               💬 學生留言
               {pendingMsgN > 0 && <span className="bg-red-500 text-white text-[10px] rounded-full px-1.5">{pendingMsgN}</span>}
             </button>
+            <button onClick={() => setMfSub("marketing-email")}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${mfSub === "marketing-email" ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md" : "bg-slate-800/80 text-slate-400 hover:text-slate-200 border border-slate-700/50"}`}>
+              📧 Email 通知
+            </button>
           </>
         )}
 
@@ -909,6 +1005,7 @@ const adminNav = [
         {page === "members-finance" && mfSub === "kidmode"   && <AdminKidMode />}
         {page === "members-finance" && mfSub === "learn"     && <AdminLearn />}
         {page === "members-finance" && mfSub === "messages"  && <AdminMessages messages={allMessages} />}
+        {page === "members-finance" && mfSub === "marketing-email" && <AdminMarketingEmail />}
 
         {/* 3. 遊戲與活動 */}
         {page === "game-events" && eventsSub === "villagegoal"   && <AdminVillageGoals />}

@@ -1,4 +1,4 @@
-// src/components/party/PartyBattleRoom.jsx — 組隊打怪房間
+﻿// src/components/party/PartyBattleRoom.jsx — 組隊打怪房間
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
@@ -10,21 +10,20 @@ import {
   submitArrows, processPartyRound, leavePartyRoom,
   forceSkipPlayer, storeBattleRewards, claimBattleReward, confirmBattleResult,
   resetPartyRoom, sendPartyCheer, clearPartyProcessing,
-  applyPartyCarryPotion, applyPartyUtilityPotion,
+  applyPartyCarryPotion, applyPartyUtilityPotion, updatePartyMemberHuntEnvironment,
 } from "../../lib/partyDb";
 import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, useCoinShopSpecialTicket, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs, addArrowdew, addArcherXP, recordPotionUsed, addRoundArrows, recordGuestBattleStats, finalizeGameShootingSession, addPartyDamage } from "../../lib/db";
 import { MONSTER_TIER_XP, PARTY_XP_MULT, PARTY_BONUS_CHEST_CHANCE, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_TIER_XP } from "../../lib/catLevel";
 import { getMaterialPool } from "../../lib/monsterMaterials";
-import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
+import { calcEquippedBonus, resolveBattleBonus, resolveEquippedCards } from "../../lib/monsterCards";
 import { getCatStatMult } from "../../lib/catData";
 import { WB_CARDS } from "../../lib/worldBossCards";
 import { buildWorldBossCardSnapshot } from "../../lib/worldBossCards";
 import { EQUIP_GRADES, EQUIP_SLOT_DEFS } from "../../lib/constants";
 import { EQUIP_ITEMS } from "../../lib/equipData";
-import { sfxTap, sfxArrowShoot, sfxCast, sfxBuff, sfxDebuff, sfxEpic, sfxCounter, sfxCounterCrit, sfxCritBoom, sfxRoundEnd, sfxPotionDrink, sfxMonsterDead, vibrate } from "../../lib/sound";
-import { playBattleSound } from "../../lib/battleSound";
+import { sfxTap, sfxArrowShoot, sfxCast, sfxBuff, sfxDebuff, sfxCounter, sfxCounterCrit, sfxCritBoom, sfxRoundEnd, sfxPotionDrink, sfxMonsterDead, vibrate } from "../../lib/sound";
 import BattleSoundIndicator from "../shared/BattleSoundIndicator";
 import { calcArcherStats, calcArcherPower, drawMatchedMonsters, TIER_LABEL, FAMILIES } from "../../lib/monsterData";
 import { calcRoundDamage, calcPartyCounter } from "../../lib/damage";
@@ -43,10 +42,16 @@ import { collectBattleArrows } from "../../lib/expeditionRewards";
 import WorldBossCardBadge from "../shared/WorldBossCardBadge";
 import BattleScreen from "../battle/BattleScreen";
 import { calcCardCombatEffectsFromCollection } from "../../lib/cardTalents";
+import { buildCombatModifiers } from "../../lib/combatModifiers";
+import { getEquipSpecializations, toEquipSpecSlots } from "../../lib/equipSpecializationDb";
+import { normalizePlayerStatusResistance } from "../../lib/familyPlayerStatus";
 import { getBattleBackgroundUrl, getBattleMonsterSources } from "../../lib/battleAssets";
 import { normalizePartyBattleSettings } from "../../lib/partyBattleSettings";
 import { isMonsterExpansionEnabled } from "../../lib/monsterExpansionFeature";
 import { SOLO_CHALLENGE_LEVELS, getPartyChallengeProfile } from "../../lib/monsterExpansionAdapter";
+import { getFreeHuntBattleMonster } from "../../lib/freeHuntCatalog";
+import { FREE_HUNT_FACES, FREE_HUNT_DISTANCES, getFreeHuntEnvironment, getPartyMemberFreeHuntEnvironment } from "../../lib/freeHuntEnvironment";
+import { buildBattleStatProvenance } from "../../lib/battleStatProvenance";
 
 // SCORE_MAP/SCORE_LABELS/SCORE_COLORS 統一由 ../../lib/score 管理
 const ARROWS_PER_ROUND = 6;
@@ -55,20 +60,19 @@ const ARROWS_PER_ROUND = 6;
 function getArcherStats(profile, potionIds = [], cardBonus = { hp: 0, atk: 0, def: 0 }, catMult = 1.0) {
   const base  = calcArcherStats({ member: profile, certification: null, certRecords: [], dexStats: null });
   const lvBon = archerLevelBonus(archerLevelFromXP(profile?.archerXP || 0));
-  let hp  = base.hp  + (cardBonus.hp  || 0) + lvBon.hp;
-  let atk = base.atk + (cardBonus.atk || 0) + lvBon.atk;
-  let def = base.def + (cardBonus.def || 0) + lvBon.def;
+  const provenance=buildBattleStatProvenance({base,level:lvBon,card:cardBonus,catMultiplier:1});
+  let hp  = provenance.total.hp;
+  let atk = provenance.total.atk;
+  let def = provenance.total.def;
+  const rows=[...provenance.rows];
   if (potionIds.length) {
     const buffs = calcPotionBuffs(potionIds);
-    hp  = Math.round(hp  * buffs.hpMult);
-    atk = Math.round(atk * buffs.atkMult);
+    const nextHp=Math.round(hp*buffs.hpMult),nextAtk=Math.round(atk*buffs.atkMult);
+    rows.push({id:"potion",label:"攜帶藥水",hp:nextHp-hp,atk:nextAtk-atk,def:0});
+    hp=nextHp;atk=nextAtk;
   }
-  if (catMult !== 1.0) {
-    hp  = Math.round(hp  * catMult);
-    atk = Math.round(atk * catMult);
-    def = Math.round(def * catMult);
-  }
-  return { hp, atk, def };
+  if(catMult!==1){const nextHp=Math.round(hp*catMult),nextAtk=Math.round(atk*catMult),nextDef=Math.round(def*catMult);rows.push({id:"cat",label:`貓咪羈絆 ×${catMult.toFixed(2)}`,hp:nextHp-hp,atk:nextAtk-atk,def:nextDef-def});hp=nextHp;atk=nextAtk;def=nextDef;}
+  return { hp, atk, def, statProvenance:{rows,total:{hp,atk,def}} };
 }
 
 function getBattleCosmetics(profile, collection = {}) {
@@ -180,8 +184,9 @@ function getPartyMvpId(log) {
 export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride }) {
   const { profile: authProfile } = useAuth();
   const profile = guestOverride || authProfile;
-  const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catId, catName, catType, bondLv, catATK } = useCatCompanion(guestOverride || null);
+  const { catMsg, clearCatMsg, triggerCatAction, saveBond, hasCat, catId, catName, catType, catLevel, bondLv, catATK } = useCatCompanion(guestOverride || null);
   const myId = guestOverride?.id || authProfile?.id;
+  const [shootingBowType, setShootingBowType] = useState(() => loadBattleShootingProfile(myId || "guest")?.bowType || "recurve_bare");
   const isGuestMode = !!guestOverride || ["guest", "kid"].includes(profile?.accountType);
   // 僅 kid（QR/一次性）才限制獎勵與功能；guest（有記憶訪客）比照正式會員
   const isLimitedAccount = false; // 訪客/兒童皆比照正式會員
@@ -211,7 +216,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     subscribe: subscribePartyRoom,
     // ☠️ 把「我的卡片能施加什麼異常」一起送上去——傷害在權威端算，判定也在那裡
     submit: (roomId, id, arrows, role, rearChoice) =>
-      submitArrows(roomId, id, arrows, role, rearChoice, myInflictRef.current),
+      submitArrows(roomId, id, arrows, role, rearChoice, myInflictRef.current, loadBattleShootingProfile(id || "guest")?.bowType || shootingBowType),
     processRound: processPartyRound,
     getMembers: (r) => Object.entries(r?.members || {}).map(([id, m]) => ({ id, ...m })),
     isProcessing: (r) => r?.processing,
@@ -232,11 +237,26 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     targetFormat: targetFmt,
     targetInputMode: targetMode ? "target" : "button",
   });
-  const activeTargetFmt = lockedBattleSettings.targetFormat;
+  const isFreeHuntParty = !!room?.huntMonsterId;
+  // 自由狩獵的討伐目標由建房時鎖定，不再借用舊組隊的抽怪/setupMonster 狀態。
+  const fixedHuntMonster = isFreeHuntParty
+    ? (getFreeHuntBattleMonster(room?.huntMonsterId || room?.monsterId) || room?.monsterSnapshot || room?.monster || null)
+    : null;
+  const myHuntMember = room?.members?.[myId] || {};
+  const huntTargetFmt = myHuntMember.huntTargetFmt || room?.huntTargetFmt || "half_17";
+  const huntDistanceM = Number(myHuntMember.huntDistanceM ?? room?.huntDistanceM) || 5;
+  const myHuntEnvironment = getPartyMemberFreeHuntEnvironment(myHuntMember, room || {}, shootingBowType);
+  const activeTargetFmt = isFreeHuntParty ? myHuntEnvironment.targetFmt : lockedBattleSettings.targetFormat;
   const activeTargetMode = lockedBattleSettings.targetInputMode === "target";
 
   const setupMode = "student";
   const [starting,        setStarting]        = useState(false);
+
+  useEffect(() => {
+    const next = loadBattleShootingProfile(myId || "guest");
+    shootingProfileRef.current = next;
+    setShootingBowType(next?.bowType || "recurve_bare");
+  }, [myId]);
   const [copied,          setCopied]          = useState(false);
   const [potionInv,       setPotionInv]       = useState({});
   const [selectedPotions, setSelectedPotions] = useState([]);
@@ -284,6 +304,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const rewardStoredRef   = useRef(false); // 防重複存獎勵
   const cardCollRef       = useRef({ cards: {}, equipped: [] }); // 怪物卡片裝備（ref 避免影響 effect 依賴）
   const [cardCollectionVersion, setCardCollectionVersion] = useState(0);
+  const [equipSpecSlots, setEquipSpecSlots] = useState(null);
   const partyRecordedRef  = useRef(false); // 每日次數記錄（只記一次）
   const dexRecordedRef    = useRef(false); // 圖鑑記錄（每場只記一次）
   const lossPracticeRecordedRef = useRef(false);
@@ -315,6 +336,12 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     });
   }, [myId, isGuestMode]); // eslint-disable-line
   useEffect(() => {
+    if (!myId || isGuestMode) { setEquipSpecSlots(null); return; }
+    let active = true;
+    getEquipSpecializations(myId).then(spec => { if (active) setEquipSpecSlots(toEquipSpecSlots(spec)); });
+    return () => { active = false; };
+  }, [myId, isGuestMode]);
+  useEffect(() => {
     try { myInflictRef.current = calcCardCombatEffectsFromCollection(cardCollRef.current || {}, { enemyFamily:room?.monster?.family, enemyClass:(room?.monster?.bossTagged || room?.monster?.encounter === "boss") ? "boss" : "monster" }).inflict || {}; }
     catch { myInflictRef.current = {}; }
   }, [room?.monster?.family, room?.monster?.bossTagged, room?.monster?.encounter, cardCollectionVersion]);
@@ -322,6 +349,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   // 下一場重置：room 回到 waiting 時清掉所有 one-time ref 與本地狀態
   useEffect(() => {
     if (room?.status !== "waiting") return;
+    const fixedPresetMonster = !isFreeHuntParty ? getFreeHuntBattleMonster(room?.monsterId) : null;
     statsWrittenRef.current  = false;
     statsWaitingVersionRef.current = -1;
     rewardStoredRef.current  = false;
@@ -333,7 +361,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     logInitializedRef.current = false;
     setLocalCompleted(false);
     setArrows([]);
-    setSetupMonster(null);
+    // Free Hunt 有自己的固定目標；舊 setup/draw 狀態只留給仍在使用的訪客舊組隊相容流程。
+    setSetupMonster(fixedPresetMonster || null);
+    setDrawnMonsters(fixedPresetMonster ? [fixedPresetMonster] : []);
     setSelectedPotions([]);
     setGuestLoot(null);
     setGuestAlreadyWon(false);
@@ -346,7 +376,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setLogInited(false);
     setScoringReady(false);
     shootingProfileRef.current = null;
-  }, [room?.status]); // eslint-disable-line
+  }, [room?.status, isFreeHuntParty, room?.monsterId]); // eslint-disable-line
 
   // Rooms created before the level field existed must be repaired without
   // resetting their battle stats or current HP.
@@ -382,7 +412,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       totalArrows:rounds.flat().length,
       bowType:shootingProfile.bowType,
       distance:shootingProfile.distance,
-      battleDistance:room.distance || null,
+      battleDistance:isFreeHuntParty ? myHuntEnvironment.distanceM : (room.distance || null),
       targetFormat:activeTargetFmt,
       inputMode:arrowPositions.length ? "target" : "button",
       role:room.members?.[myId]?.role || "front",
@@ -439,6 +469,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   // 房主：依自身戰力抽出 6 隻怪物候選（每族1隻）
   useEffect(() => {
     if (!isHost || !room || room.status !== "waiting" || drawnMonsters.length > 0) return;
+    if (room.monsterId || room.huntMonsterId) return;
     const stats = getArcherStats(profile, [], getMyCardBonus(), getMyCatMult());
     const power = calcArcherPower(stats);
     let cancelled = false;
@@ -474,6 +505,20 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     return calcEquippedBonus(resolveEquippedCards(cardCollRef.current));
   }
 
+  function getMyScopedCardBonus() {
+    const bonus=getMyCardBonus();
+    return {...bonus,...resolveBattleBonus(bonus,room?.monster?.family)};
+  }
+
+  function getMyStatusResistance() {
+    const cardFx = calcCardCombatEffectsFromCollection(cardCollRef.current || {}, {
+      enemyFamily:room?.monster?.family,
+      enemyClass:(room?.monster?.bossTagged || room?.monster?.encounter === "boss") ? "boss" : "monster",
+    });
+    return normalizePlayerStatusResistance(buildCombatModifiers({ cardFx, equipSpec:equipSpecSlots }));
+  }
+  function getMyCatModifiers(){const cardFx=calcCardCombatEffectsFromCollection(cardCollRef.current||{});const mods=buildCombatModifiers({cardFx,equipSpec:equipSpecSlots});return{companionAttackPct:mods.companionAttackPct,companionHealingPct:mods.companionHealingPct};}
+
   // 計算貓貓羈絆加乘倍率（未裝備貓貓或羈絆 0 級回傳 1.0）
   function getMyCatMult() {
     if (!hasCat) return 1.0;
@@ -491,12 +536,12 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     const me = room.members?.[myId];
     if (!me) return;
     statsWaitingVersionRef.current = cardCollectionVersion;
-    const cardBonus = getMyCardBonus();
+    const cardBonus = getMyScopedCardBonus();
     const catMult = getMyCatMult();
     const stats = getArcherStats(profile, [], cardBonus, catMult);
     updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def, localStorage.getItem("mb_archer_style") || "", hasCat ? (catATK || 0) : 0, hasCat ? (catName || "") : "", hasCat ? (catId || "") : "", profile?.avatarId || "",
-      { dmgBonusPct: cardBonus.dmgBonusPct || 0, dmgReducePct: cardBonus.dmgReducePct || 0, healBonusPct: cardBonus.healBonusPct || 0, ...buildWorldBossCardSnapshot(cardCollRef.current) }, profile?.nickname || profile?.name || "射手", archerLevelFromXP(profile?.archerXP || 0), getBattleCosmetics(profile, cardCollRef.current));
-  }, [room?.status, myId, cardCollectionVersion, isGuestMode]); // eslint-disable-line
+      { dmgBonusPct: cardBonus.dmgBonusPct || 0, dmgReducePct: cardBonus.dmgReducePct || 0, healBonusPct: cardBonus.healBonusPct || 0, ...buildWorldBossCardSnapshot(cardCollRef.current) }, profile?.nickname || profile?.name || "射手", archerLevelFromXP(profile?.archerXP || 0), getBattleCosmetics(profile, cardCollRef.current), getMyStatusResistance(), stats.statProvenance, bondLv||0, catLevel||1,getMyCatModifiers());
+  }, [room?.status, myId, cardCollectionVersion, isGuestMode, equipSpecSlots]); // eslint-disable-line
 
   // 開戰後套入藥水 buff 重新寫入最終數值
   useEffect(() => {
@@ -506,11 +551,11 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     statsWrittenRef.current = true;
     // 若已有 HP（中途重連），不覆蓋——避免戰鬥中途重連時把 HP 重置回滿血
     if (me.hp > 0 && me.maxHP > 0 && (room.round || 1) > 1) return;
-    const cardBonus = getMyCardBonus();
+    const cardBonus = getMyScopedCardBonus();
     const catMult = getMyCatMult();
     const stats = getArcherStats(profile, selectedPotions, cardBonus, catMult);
     updateBattleMemberStats(roomId, myId, stats.hp, stats.hp, stats.atk, stats.def, localStorage.getItem("mb_archer_style") || "", hasCat ? (catATK || 0) : 0, hasCat ? (catName || "") : "", hasCat ? (catId || "") : "", profile?.avatarId || "",
-      { dmgBonusPct: cardBonus.dmgBonusPct || 0, dmgReducePct: cardBonus.dmgReducePct || 0, healBonusPct: cardBonus.healBonusPct || 0, ...buildWorldBossCardSnapshot(cardCollRef.current) }, profile?.nickname || profile?.name || "射手", archerLevelFromXP(profile?.archerXP || 0), getBattleCosmetics(profile, cardCollRef.current));
+      { dmgBonusPct: cardBonus.dmgBonusPct || 0, dmgReducePct: cardBonus.dmgReducePct || 0, healBonusPct: cardBonus.healBonusPct || 0, ...buildWorldBossCardSnapshot(cardCollRef.current) }, profile?.nickname || profile?.name || "射手", archerLevelFromXP(profile?.archerXP || 0), getBattleCosmetics(profile, cardCollRef.current), getMyStatusResistance(), stats.statProvenance, bondLv||0, catLevel||1,getMyCatModifiers());
     if (selectedPotions.length > 0) usePotions(myId, selectedPotions).catch(() => {});
   }, [room?.status]); // eslint-disable-line
 
@@ -616,14 +661,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     }, 5000);
     return () => { clearInterval(tick); clearTimeout(autoId); };
   }, [showEvent]); // eslint-disable-line
-
-  // 勝利音效：等動畫播完（liveEntry 清除）再播，讓玩家先看到擊殺動畫
-  useEffect(() => {
-    if (room?.status === "pending_confirm" && !liveEntry && logInited) {
-      playBattleSound("victory_cheer", {}); setTimeout(() => sfxEpic(), 350);
-    }
-    if (room?.result === "lose") playBattleSound("soft_fail", { monsterName: room?.monster?.name, playerName: myId, round: room?.round });
-  }, [room?.status, room?.result, liveEntry]); // eslint-disable-line
 
   // processing 卡住防護：processing: true 超過 15 秒自動清除（網路不順時可能殘留）
   useEffect(() => {
@@ -758,8 +795,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     let defMult = 1;
     for (const status of me?.combatStatuses || []) {
       if (!status || (status.duration || 0) <= 0) continue;
-      if (status.id === "atkDown") atkMult *= Math.max(0, 1 - (status.strength || 0) / 100);
-      if (status.id === "defDown") defMult *= Math.max(0, 1 - (status.strength || 0) / 100);
+      if (status.id === "atkDown" || status.id === "fear") atkMult *= Math.max(0, 1 - (status.strength || 0) / 100);
+      if (status.id === "defDown" || status.id === "armorBreak") defMult *= Math.max(0, 1 - (status.strength || 0) / 100);
     }
     return {
       atk: Math.round(baseAtk * atkMult),
@@ -805,13 +842,16 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setTargetPending(true);
     setTimeout(() => { setTargetPending(false); handleSubmit(); }, 2000);
   }
-  async function handlePartyScoringSubmit(scores) {
+  async function handlePartyScoringSubmit(scores, arrowDetails = []) {
     if (postSubmitted || myReady || submitting) return;
     if (effectiveMyRole === "rear" && !myRearChoice) return;
     const labelMap = {10:"X",9:"9",8:"8",7:"7",6:"6",5:"5",4:"4",3:"3",2:"2",1:"1",0:"M"};
-    const newArrows = scores.map(s => ({
+    const newArrows = scores.map((s, index) => ({
       score: s,
       label: labelMap[s] || String(s),
+      faceIndex: Math.max(0, Math.floor(Number(arrowDetails[index]?.faceIndex) || 0)),
+      overFaceCap: !!arrowDetails[index]?.overFaceCap,
+      targetFormat: activeTargetFmt,
     }));
     setArrows(newArrows);
     const ok = await fsHandleSubmit(newArrows, effectiveMyRole, myRearChoice);
@@ -825,7 +865,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     if (ok) setArrows([]);
   }
   async function handleStart() {
-    if (!setupMonster || starting) return;
+    const startMonster = isFreeHuntParty ? fixedHuntMonster : setupMonster;
+    if (!startMonster || starting) return;
     if (memberList.length < 1 || (memberList.length < 2 && !hasCat)) {
       setStartError("組隊打怪至少需要 2 位玩家！（或裝備貓咪陪你獨自出戰）");
       return;
@@ -836,7 +877,17 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     }
     setStartError("");
     setStarting(true);
-    await startPartyBattle(roomId, { ...room, challengeLevel }, setupMonster, setupMode, "preset", 18, targetFmt, pickBg(setupMonster.family), targetMode ? "target" : "button");
+    await startPartyBattle(
+      roomId,
+      isFreeHuntParty ? room : { ...room, challengeLevel },
+      startMonster,
+      setupMode,
+      "preset",
+      isFreeHuntParty ? huntDistanceM : 18,
+      isFreeHuntParty ? huntTargetFmt : targetFmt,
+      pickBg(startMonster.family),
+      targetMode ? "target" : "button"
+    );
     setStarting(false);
   }
   async function handleLeave() {
@@ -909,7 +960,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             totalArrows: arrowCount,
             bowType:shootingProfile.bowType,
             distance:shootingProfile.distance,
-            battleDistance:room.distance || null,
+            battleDistance:isFreeHuntParty ? myHuntEnvironment.distanceM : (room.distance || null),
             targetFormat:activeTargetFmt,
             inputMode:arrowPositions.length ? "target" : "button",
             role:room.members?.[myId]?.role || "front",
@@ -970,6 +1021,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     setTimeout(() => setCopied(false), 1500);
   }
   async function handleRedrawMonsters() {
+    if (room?.monsterId || room?.huntMonsterId) return;
     const stats = getArcherStats(profile, [], getMyCardBonus(), getMyCatMult());
     const power = calcArcherPower(stats);
     if (isMonsterExpansionEnabled()) {
@@ -987,6 +1039,132 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const myEquip  = equipSummary(profile);
 
   // ── 等待/大廳畫面 ──────────────────────────────────────────
+  if (room.status === "waiting" && isFreeHuntParty) {
+    const huntMonster = fixedHuntMonster;
+    return (
+      <div className="min-h-screen flex flex-col px-4 py-6 gap-4 max-w-lg mx-auto relative overflow-hidden text-white" style={{backgroundImage:"linear-gradient(180deg,rgba(7,11,22,.68),rgba(10,15,28,.9) 45%,rgba(15,23,42,.97)),url(/assets/dungeon/dungeon_team_lobby_bg.jpg)",backgroundSize:"cover",backgroundPosition:"center"}}>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-white font-black text-lg">🏹 自由狩獵・組隊房間</div>
+            <div className="text-[11px] text-slate-400">房間 {room.code} · {memberList.length}/8 人</div>
+          </div>
+          <button onClick={handleLeave} className="px-3 py-1.5 bg-slate-700 text-slate-300 text-xs font-bold rounded-lg">離開</button>
+        </div>
+
+        <div className="rounded-3xl border border-rose-400/25 bg-slate-950/75 p-4 shadow-2xl backdrop-blur-md">
+          <div className="mb-3 text-[10px] font-black uppercase tracking-[.2em] text-rose-300">狩獵目標</div>
+          {huntMonster ? (
+            <div className="flex items-center gap-4">
+              <PartyMonsterImg id={huntMonster.id} icon={huntMonster.icon} charge={false} size={76} variant={huntMonster.variant}/>
+              <div className="min-w-0 flex-1">
+                <div className="text-lg font-black text-white">{huntMonster.name}</div>
+                <div className="mt-1 text-xs font-bold text-slate-400">{FAMILIES[huntMonster.family]?.label || "自由狩獵"} · {TIER_LABEL[huntMonster.tier]?.label || `T${huntMonster.tierIndex || ""}`}</div>
+                <div className="mt-2 flex gap-3 text-[11px] text-slate-300"><span>❤️ {huntMonster.hp}</span><span>⚔️ {huntMonster.atk}</span><span>🛡️ {huntMonster.def}</span></div>
+              </div>
+            </div>
+          ) : <div className="py-4 text-center text-xs font-bold text-slate-500">讀取狩獵目標中…</div>}
+        </div>
+
+        <div className="rounded-3xl border border-sky-400/20 bg-slate-950/75 p-4 shadow-2xl backdrop-blur-md">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="text-xs font-black uppercase tracking-widest text-slate-400">隊伍成員</div>
+            <div className="text-xs font-black text-sky-300">{memberList.length}/8</div>
+          </div>
+          <div className="flex flex-col gap-2">
+            {memberList.map(m => (
+              <div key={m.id} className="flex items-center gap-2 rounded-xl border border-white/10 bg-slate-900/70 px-3 py-2">
+                <span>{m.id === room.hostId ? "👑" : "🏹"}</span>
+                <span className={`min-w-0 flex-1 truncate text-sm font-black ${m.id === myId ? "text-indigo-200" : "text-white"}`}>{m.name}{m.id === myId ? " (我)" : ""}</span>
+                <span className="text-[10px] font-bold text-slate-500">Lv.{m.level || 1}</span>
+              </div>
+            ))}
+            {memberList.length < 8 && <div className="py-1 text-center text-xs text-slate-500">等待夥伴加入…</div>}
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-violet-400/30 bg-violet-950/45 p-4 shadow-2xl">
+          <div>
+            <div className="text-base font-black text-white">🎯 我的射擊設定</div>
+            <div className="mt-1 text-[11px] text-slate-400">距離、靶紙、弓種只影響你自己的傷害倍率。</div>
+          </div>
+          <div className="mt-4">
+            <div className="mb-2 text-[11px] font-black text-slate-400">靶紙</div>
+            <div className="grid grid-cols-2 gap-2">
+              {FREE_HUNT_FACES.map(face => {
+                const env = getFreeHuntEnvironment({ distanceM:huntDistanceM, targetFmt:face.id, bowType:shootingBowType });
+                return <button key={face.id} type="button" onClick={() => updatePartyMemberHuntEnvironment(roomId, myId, { targetFmt:face.id })}
+                  className={`rounded-xl border px-3 py-2 text-left ${huntTargetFmt === face.id ? "border-violet-400 bg-violet-500/25 text-white" : "border-white/10 bg-slate-900/60 text-slate-300"}`}>
+                  <div className="text-xs font-black">{face.label}</div>
+                  <div className="text-[10px] text-violet-300">×{env.faceMult.toFixed(2)}{env.faceCap ? ` · 每靶最多 ${env.faceCap} 箭` : ""}</div>
+                </button>;
+              })}
+            </div>
+          </div>
+          <div className="mt-4">
+            <div className="mb-2 text-[11px] font-black text-slate-400">距離</div>
+            <div className="flex flex-wrap gap-2">
+              {FREE_HUNT_DISTANCES.map(distanceM => {
+                const env = getFreeHuntEnvironment({ distanceM, targetFmt:huntTargetFmt, bowType:shootingBowType });
+                return <button key={distanceM} type="button" onClick={() => updatePartyMemberHuntEnvironment(roomId, myId, { distanceM })}
+                  className={`rounded-lg border px-3 py-2 text-xs font-black ${huntDistanceM === distanceM ? "border-amber-400 bg-amber-400/20 text-amber-200" : "border-white/10 bg-slate-900/60 text-slate-300"}`}>
+                  {distanceM}m <span className="text-[10px] opacity-75">×{env.distanceMult.toFixed(2)}</span>
+                </button>;
+              })}
+            </div>
+          </div>
+          <div className="mt-4 rounded-2xl border border-white/10 bg-slate-900/50 p-3">
+            <BattleShootingProfile memberId={myId} onChange={next => {
+              shootingProfileRef.current = next;
+              const nextBowType = next?.bowType || "recurve_bare";
+              setShootingBowType(nextBowType);
+              updatePartyMemberHuntEnvironment(roomId, myId, { bowType:nextBowType });
+            }} showDistance={false} />
+          </div>
+          <div className="mt-3 grid grid-cols-4 gap-2 text-center text-[10px] font-bold">
+            <div className="rounded-lg bg-slate-950/60 p-2 text-slate-300">距離<br/><span className="text-white">×{myHuntEnvironment.distanceMult.toFixed(2)}</span></div>
+            <div className="rounded-lg bg-slate-950/60 p-2 text-slate-300">靶紙<br/><span className="text-white">×{myHuntEnvironment.faceMult.toFixed(2)}</span></div>
+            <div className="rounded-lg bg-slate-950/60 p-2 text-slate-300">弓種<br/><span className="text-white">×{myHuntEnvironment.bowMult.toFixed(2)}</span></div>
+            <div className="rounded-lg bg-violet-500/20 p-2 text-violet-200">最終<br/><span className="text-white">×{myHuntEnvironment.multiplier.toFixed(2)}</span></div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-amber-400/20 bg-slate-950/75 p-4">
+          <div className="text-xs font-black text-slate-400">每回合箭數</div>
+          {isHost ? (
+            <div className="mt-2 flex gap-2">
+              {[3, 6].map(n => (
+                <button key={n} onClick={() => import("firebase/firestore").then(({ updateDoc, doc:fsDoc }) => import("../../lib/firebase").then(({ db:fsDb }) => updateDoc(fsDoc(fsDb, "partyRooms", roomId), { arrowsPerRound:n })))}
+                  className={`flex-1 rounded-xl border py-2 text-sm font-black ${(room?.arrowsPerRound ?? 6) === n ? "border-amber-300 bg-amber-400 text-slate-950" : "border-white/10 bg-slate-900 text-slate-400"}`}>
+                  {n} 箭
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-2 rounded-xl bg-slate-900/70 px-3 py-2 text-sm font-black text-amber-200">{room?.arrowsPerRound || 6} 箭 <span className="text-[11px] font-bold text-slate-500">（由隊長設定）</span></div>
+          )}
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-3">
+          <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v === "target"; setTargetMode(t); setBattleInputMode(v); }} />
+        </div>
+
+        {isHost ? (
+          <div className="flex flex-col gap-2">
+            {partyBattleLeft !== null && <div className={`text-center text-xs font-bold ${partyBattleLeft > 0 ? "text-emerald-400" : "text-red-400"}`}>今日組隊剩餘 {partyBattleLeft}/5 次</div>}
+            {startError && <div className="rounded-xl border border-red-500/50 bg-red-900/50 px-3 py-2 text-center text-xs font-bold text-red-300">{startError}</div>}
+            <button onClick={handleStart}
+              disabled={!huntMonster || starting || (memberList.length < 1 || (memberList.length < 2 && !hasCat)) || (partyBattleLeft !== null && partyBattleLeft <= 0)}
+              className="w-full rounded-2xl bg-gradient-to-r from-rose-500 to-orange-500 py-4 text-base font-black text-white shadow-lg active:scale-95 disabled:opacity-50">
+              {starting ? "開始中…" : memberList.length < 2 && !hasCat ? `等待更多玩家（${memberList.length}/2）` : memberList.length < 2 && hasCat ? `⚔️ 與 🐱${catName} 出戰` : `⚔️ 開始狩獵（${memberList.length}人）`}
+            </button>
+          </div>
+        ) : (
+          <div className="py-5 text-center text-sm font-bold text-slate-400 animate-pulse">等待隊長開始戰鬥…</div>
+        )}
+      </div>
+    );
+  }
+
   if (room.status === "waiting") {
     return (
       <div className="min-h-screen flex flex-col px-4 py-6 gap-5 max-w-lg mx-auto relative overflow-hidden" style={{backgroundImage:"linear-gradient(180deg,rgba(7,11,22,.6),rgba(10,15,28,.8) 45%,rgba(15,23,42,.94)),url(/assets/dungeon/dungeon_team_lobby_bg.jpg)",backgroundSize:"cover",backgroundPosition:"center"}}>
@@ -1053,10 +1231,10 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <div className="text-xs font-black text-slate-400 uppercase tracking-widest">系統抽出候選怪物（七族各1，包含寶箱怪）</div>
-              <button onClick={handleRedrawMonsters}
+              {!room?.monsterId && !room?.huntMonsterId && <button onClick={handleRedrawMonsters}
                 className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600/60 text-indigo-200 text-xs font-black rounded-lg active:scale-95 transition-transform">
                 🎲 重新抽取
-              </button>
+              </button>}
             </div>
 
             {drawnMonsters.length === 0 ? (
@@ -1139,7 +1317,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 {startError}
               </div>
             )}
-            {/* 每回合箭數選擇 */}
             <div className="bg-slate-800/60 border border-slate-600/40 rounded-xl p-3">
               <div className="text-xs font-bold text-slate-400 mb-2">每回合箭數</div>
               <div style={{ display:"flex", gap:8 }}>
@@ -1161,9 +1338,55 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 ))}
               </div>
             </div>
+            {isFreeHuntParty && (
+              <div className="rounded-2xl border border-violet-400/30 bg-violet-500/10 p-3 flex flex-col gap-3">
+                <div>
+                  <div className="text-sm font-black text-white">🎯 我的狩獵環境</div>
+                  <div className="mt-1 text-[11px] text-slate-400">每位隊員各自選擇距離、靶紙與弓種，倍率只套用自己。</div>
+                </div>
+                <div>
+                  <div className="mb-1.5 text-[11px] font-black text-slate-400">靶紙</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {FREE_HUNT_FACES.map(face => {
+                      const env = getFreeHuntEnvironment({ distanceM:huntDistanceM, targetFmt:face.id });
+                      return <button key={face.id} type="button"
+                        onClick={() => updatePartyMemberHuntEnvironment(roomId, myId, { targetFmt:face.id })}
+                        className={`rounded-xl border px-2 py-2 text-left ${huntTargetFmt === face.id ? "border-violet-400 bg-violet-500/25 text-white" : "border-white/10 bg-slate-900/60 text-slate-300"}`}>
+                        <div className="text-xs font-black">{face.label}</div>
+                        <div className="text-[10px] text-violet-300">靶紙 ×{env.faceMult.toFixed(2)}{env.faceCap ? ` ・ 每靶最多 ${env.faceCap} 箭` : ""}</div>
+                      </button>;
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-1.5 text-[11px] font-black text-slate-400">距離</div>
+                  <div className="flex flex-wrap gap-2">
+                    {FREE_HUNT_DISTANCES.map(distanceM => {
+                      const env = getFreeHuntEnvironment({ distanceM, targetFmt:huntTargetFmt });
+                      return <button key={distanceM} type="button"
+                        onClick={() => updatePartyMemberHuntEnvironment(roomId, myId, { distanceM })}
+                        className={`rounded-lg border px-2.5 py-1.5 text-xs font-black ${huntDistanceM === distanceM ? "border-amber-400 bg-amber-400/20 text-amber-200" : "border-white/10 bg-slate-900/60 text-slate-300"}`}>
+                        {distanceM}m <span className="text-[10px] opacity-75">×{env.distanceMult.toFixed(2)}</span>
+                      </button>;
+                    })}
+                  </div>
+                </div>
+                <div className="grid grid-cols-4 gap-2 text-center text-[10px] font-bold">
+                  <div className="rounded-lg bg-slate-950/50 p-2 text-slate-300">距離<br/><span className="text-white">×{myHuntEnvironment.distanceMult.toFixed(2)}</span></div>
+                  <div className="rounded-lg bg-slate-950/50 p-2 text-slate-300">靶紙<br/><span className="text-white">×{myHuntEnvironment.faceMult.toFixed(2)}</span></div>
+                  <div className="rounded-lg bg-slate-950/50 p-2 text-slate-300">弓種<br/><span className="text-white">×{myHuntEnvironment.bowMult.toFixed(2)}</span></div>
+                  <div className="rounded-lg bg-violet-500/20 p-2 text-violet-200">最終<br/><span className="text-white">×{myHuntEnvironment.multiplier.toFixed(2)}</span></div>
+                </div>
+              </div>
+            )}
             <div className="bg-slate-800/60 border border-slate-600/40 rounded-xl p-3 flex flex-col gap-3">
-              <BattleShootingProfile memberId={myId} />
-              <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
+              <BattleShootingProfile memberId={myId} onChange={next => {
+                shootingProfileRef.current = next;
+                const nextBowType = next?.bowType || "recurve_bare";
+                setShootingBowType(nextBowType);
+                if (isFreeHuntParty) updatePartyMemberHuntEnvironment(roomId, myId, { bowType:nextBowType });
+              }} showDistance={!isFreeHuntParty} />
+              {!isFreeHuntParty && <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />}
               <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v === "target"; setTargetMode(t); setBattleInputMode(v); }} />
             </div>
             {/* 挑戰強度（方案A,房主選;人數加成即時顯示） */}
@@ -1212,9 +1435,54 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         )}
         {!isHost && (
           <div className="flex flex-col gap-3">
-            <div style={{ fontSize:12, color:"#94a3b8" }}>
-              每回合：{room?.arrowsPerRound || 6} 箭（由隊長設定）
-            </div>
+            {isFreeHuntParty && (
+              <div className="rounded-2xl border border-violet-400/30 bg-violet-500/10 p-3 flex flex-col gap-3">
+                <div>
+                  <div className="text-sm font-black text-white">🎯 我的狩獵環境</div>
+                  <div className="mt-1 text-[11px] text-slate-400">距離、靶紙、弓種都由你自己設定；不會改到隊友。</div>
+                </div>
+                <div>
+                  <div className="mb-1.5 text-[11px] font-black text-slate-400">靶紙</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {FREE_HUNT_FACES.map(face => {
+                      const env = getFreeHuntEnvironment({ distanceM:huntDistanceM, targetFmt:face.id });
+                      return <button key={face.id} type="button"
+                        onClick={() => updatePartyMemberHuntEnvironment(roomId, myId, { targetFmt:face.id })}
+                        className={`rounded-xl border px-2 py-2 text-left ${huntTargetFmt === face.id ? "border-violet-400 bg-violet-500/25 text-white" : "border-white/10 bg-slate-900/60 text-slate-300"}`}>
+                        <div className="text-xs font-black">{face.label}</div>
+                        <div className="text-[10px] text-violet-300">靶紙 ×{env.faceMult.toFixed(2)}{env.faceCap ? ` ・ 每靶最多 ${env.faceCap} 箭` : ""}</div>
+                      </button>;
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-1.5 text-[11px] font-black text-slate-400">距離</div>
+                  <div className="flex flex-wrap gap-2">
+                    {FREE_HUNT_DISTANCES.map(distanceM => {
+                      const env = getFreeHuntEnvironment({ distanceM, targetFmt:huntTargetFmt });
+                      return <button key={distanceM} type="button"
+                        onClick={() => updatePartyMemberHuntEnvironment(roomId, myId, { distanceM })}
+                        className={`rounded-lg border px-2.5 py-1.5 text-xs font-black ${huntDistanceM === distanceM ? "border-amber-400 bg-amber-400/20 text-amber-200" : "border-white/10 bg-slate-900/60 text-slate-300"}`}>
+                        {distanceM}m <span className="text-[10px] opacity-75">×{env.distanceMult.toFixed(2)}</span>
+                      </button>;
+                    })}
+                  </div>
+                </div>
+                <BattleShootingProfile memberId={myId} onChange={next => {
+                  shootingProfileRef.current = next;
+                  const nextBowType = next?.bowType || "recurve_bare";
+                  setShootingBowType(nextBowType);
+                  updatePartyMemberHuntEnvironment(roomId, myId, { bowType:nextBowType });
+                }} showDistance={false} />
+                <div className="grid grid-cols-4 gap-2 text-center text-[10px] font-bold">
+                  <div className="rounded-lg bg-slate-950/50 p-2 text-slate-300">距離<br/><span className="text-white">×{myHuntEnvironment.distanceMult.toFixed(2)}</span></div>
+                  <div className="rounded-lg bg-slate-950/50 p-2 text-slate-300">靶紙<br/><span className="text-white">×{myHuntEnvironment.faceMult.toFixed(2)}</span></div>
+                  <div className="rounded-lg bg-slate-950/50 p-2 text-slate-300">弓種<br/><span className="text-white">×{myHuntEnvironment.bowMult.toFixed(2)}</span></div>
+                  <div className="rounded-lg bg-violet-500/20 p-2 text-violet-200">最終<br/><span className="text-white">×{myHuntEnvironment.multiplier.toFixed(2)}</span></div>
+                </div>
+              </div>
+            )}
+            <div style={{ fontSize:12, color:"#94a3b8" }}>每回合：{room?.arrowsPerRound || 6} 箭（由隊長設定）</div>
             <div className="text-center text-slate-400 text-sm py-8 animate-pulse">
               等待房主選擇怪物並開始戰鬥…
             </div>
@@ -1738,6 +2006,15 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         catId:   room?.members?.[p.id]?.catId || room?.members?.[p.id]?.archerStyle || "baobao",
         catName: (p.name || "").replace(/^🐱/, "") || "貓貓",
         dmg:     p.dmg || 0,
+        skillTriggered: !!p.skillTriggered,
+        skillName: p.skillName,
+        heal: p.heal || 0,
+        shield: p.shield || 0,
+        teamHeal: p.teamHeal || 0,
+        teamShield: p.teamShield || 0,
+        cleanseCount: p.cleanseCount || 0,
+        defBonusPct: p.defBonusPct || 0,
+        statusApplied: p.statusApplied || null,
       }))
     : [];
   const curMiniDmgMap  = liveEntry
@@ -1865,7 +2142,12 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                   lines.push({ key:`c${entry.round}_${mini.miniRound}`, type:"counter", text:`  ⚡ 反擊 -${ctr}` });
                 } else if (mini.isCat) {
                   const dmg = (mini.playerLog||[]).reduce((s,p)=>s+(p.dmg||0),0);
-                  lines.push({ key:`k${entry.round}_${mini.miniRound}`, type:"cat", text:`  🐱 貓咪 -${dmg}` });
+                  const effects=(mini.playerLog||[]).flatMap(p=>[
+                    p.heal>0?`治療 ${p.heal}`:null,p.shield>0?`護盾 ${p.shield}`:null,
+                    p.teamHeal>0?`全隊治療 ${p.teamHeal}`:null,p.teamShield>0?`全隊護盾 ${p.teamShield}`:null,
+                    p.cleanseCount>0?"全隊淨化":null,p.statusApplied?.name?`造成${p.statusApplied.name}`:null,
+                  ]).filter(Boolean);
+                  lines.push({ key:`k${entry.round}_${mini.miniRound}`, type:"cat", text:`  🐱 貓咪${dmg>0?` -${dmg}`:""}${effects.length?`・${effects.join("・")}`:""}` });
                 } else {
                   for (const p of (mini.playerLog||[])) {
                     if ((p.dmg||0) > 0) lines.push({ key:`a${entry.round}_${mini.miniRound}_${p.id}`, type: p.crits>0?"hit_crit":"hit", text:`  🏹 ${(p.name||"").slice(0,4)} -${p.dmg}${p.crits>0?"💥":""}` });
@@ -2122,6 +2404,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
                 lv: me?.level || 1,
                 atk: myEffectiveStats.atk,
                 def: myEffectiveStats.def,
+                baseAtk: myEffectiveStats.baseAtk,
+                baseDef: myEffectiveStats.baseDef,
+                statProvenance: me?.statProvenance || null,
                 hp: me?.hp || 100,
                 maxHp: me?.maxHP || 100,
                 cardFrame: me?.battleCosmetics?.wbFrame ? "worldboss" : "none",
@@ -2145,6 +2430,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               battleMode={activeTargetMode ? "zombie" : "score"}
               scoreInput={activeTargetMode ? "target" : "keypad"}
               targetFormat={activeTargetFmt}
+              outgoingDamageMultiplier={isFreeHuntParty ? myHuntEnvironment.multiplier : 1}
+              maxDamageArrowsPerFace={isFreeHuntParty ? myHuntEnvironment.faceCap : null}
               difficulty={{hp:1, atk:1, def:1}}
               arrowsPerRound={lockedBattleSettings.arrowsPerRound}
               bgImage={room?.battleBackground || battleBgRef.current || "/ui/dungeon-bg.webp"}
@@ -2235,6 +2522,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               lv: me?.level || 1,
               atk: myEffectiveStats.atk,
               def: myEffectiveStats.def,
+              baseAtk: myEffectiveStats.baseAtk,
+              baseDef: myEffectiveStats.baseDef,
+              statProvenance: me?.statProvenance || null,
               hp: me?.hp || 100,
               maxHp: me?.maxHP || 100,
               cardFrame: me?.battleCosmetics?.wbFrame ? "worldboss" : "none",
@@ -2251,6 +2541,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               def: room.monster?.def,
               tier: room.monster?.tier,
               variant: room.monster?.variant,
+              variantMult: room.monster?.variantMult,
               icon: room.monster?.icon,
               tierIndex: room.monster?.tierIndex,
               encounter: room.monster?.encounter,
@@ -2262,12 +2553,15 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             battleMode="score"
             scoreInput={activeTargetMode ? "target" : "keypad"}
             targetFormat={activeTargetFmt}
+            outgoingDamageMultiplier={isFreeHuntParty ? myHuntEnvironment.multiplier : 1}
+            maxDamageArrowsPerFace={isFreeHuntParty ? myHuntEnvironment.faceCap : null}
             difficulty={{hp:1, atk:1, def:1}}
             arrowsPerRound={lockedBattleSettings.arrowsPerRound}
             bgImage={room?.battleBackground || battleBgRef.current || "/ui/dungeon-bg.webp"}
             autoStart
             fullScreen
             partyMode
+            partyHuntMode={isFreeHuntParty}
             partySubmitted={myReady || postSubmitted}
             partyRound={room?.round || 1}
             partyRoundEvent={room?.roundEvent || null}
@@ -2289,6 +2583,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
               hp: m.hp || 0,
               maxHp: m.maxHP || 0,
               combatStatuses: m.combatStatuses || [],
+              shield: Math.max(0, Number(m.potionBuffs?.shield) || 0),
               battleCosmetics: m.battleCosmetics || null,
               isSelf: m.id === myId,
             }))}
@@ -2303,6 +2598,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             partyResolutionKey={room?.log?.length || 0}
             partyPlayerId={myId}
             partyMonsterMaxHp={room?.monsterMaxHP || room?.monster?.hp || 0}
+            partyMonsterShield={room?.monsterSignatureState?.shield || 0}
+            partyMonsterStatuses={room?.monsterStatuses || []}
             partyResult={room?.result || null}
             onConfirmPartyResult={handleConfirmResult}
             cat={hasCat ? { catId, catName, type:"allround", catXP:0, bond:0 } : null}

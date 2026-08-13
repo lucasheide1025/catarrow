@@ -1,3 +1,52 @@
+## 2026-08-13 — 自由狩獵 legacy 怪物／組隊入口清除
+- 修正直接建立自由狩獵隊伍時 `PartyBattleRoom` 的 `fixedHuntMonster is not defined`：固定怪物改在元件層解析，Free Hunt 等待室與 `handleStart()` 直接使用固定目標，不再依賴舊 `setupMonster/drawnMonsters/challengeLevel`。
+- 修正單人自由狩獵結算按「換對手」會跳回舊怪物介面：`MonsterBattle` 新增 `returnToOpponentSelection()`；只要有 `huntMonsterId`，所有返回選怪動作一律交回父層 `FreeHunt`，不再進 legacy `phase="select"`。
+- `MemberApp.jsx` / `AdminApp.jsx` 已移除舊 `PartyLobby` lazy import、預載、`page="party"` 路由與 adventure page 標記；正式會員／後台不再有可進舊 PartyLobby 的 runtime 路徑。
+- `GuestApp` 仍保留 `PartyLobby`，因訪客目前仍實際使用該相容流程；本次不硬砍以免破壞訪客組隊。
+- 清理前完整備份：`backups/free-hunt-legacy-2026-08-13/`，包含 FreeHunt、MonsterBattle、PartyBattleRoom、MemberApp、AdminApp 修改前版本；備份位於 `src` 外，不會被正式 bundle import。
+- 狀態：本機修改，未 commit / push / deploy；驗證結果見本條後續 build/test 紀錄。
+
+## 2026-08-13 — 自由狩獵組隊直連＋隊員個人射擊環境
+- `FreeHunt.jsx` 新增「直接加入隊伍」等待房列表；不需先選到與房主相同怪物即可看到並加入所有自由狩獵等待房。
+- 選定怪物後按「建立隊伍」會直接呼叫 `createPartyRoom()` 並進入該房，移除自由狩獵流程中舊 `PartyLobby` 的第二次「建立房間」操作；舊 Lobby 仍保留給一般相容入口。
+- 自由狩獵隊伍中每位成員可獨立選擇**距離／靶紙／弓種**；資料寫入 `members.{id}.huntDistanceM / huntTargetFmt / bowType`，不再由房主設定後全隊共用。
+- 新增 `getPartyMemberFreeHuntEnvironment()` 與 `updatePartyMemberHuntEnvironment()`；`partyDb.processPartyRound()` 逐人成員套用自己的距離、靶紙、弓種倍率與 `faceCap`，舊房間層設定只做 fallback。
+- 3／6 箭維持房間共用 `arrowsPerRound`，**只有房主可操作**；隊友僅顯示目前箭數與「由隊長設定」。
+- `BattleShootingProfile` 新增 `showDistance`，自由狩獵等待室隱藏重複的練習距離欄，只保留明確的狩獵距離控制。
+- 驗證：自由狩獵環境＋房間列表 focused tests 15/15 PASS；完整 196 suites、2206 tests PASS；production build PASS。尚未 commit / push / deploy。
+
+## 2026-08-13 — 修正自由狩獵隊友看不到房間
+- 原因：加入頁用加入者目前選中的 huntMonsterId 精確過濾開放房，因此選不同怪物時會顯示 0 間。
+- 修正：Join 模式改列出所有等待中的自由狩獵房；房卡顯示房主與怪物，玩家自行選擇加入。建立模式與一般組隊邏輯維持原行為。
+- 新增 src/lib/partyLobbyRooms.js 與回歸測試。
+
+## 2026-08-13 — 自由狩獵弓種加成
+- 新增弓種倍率：裸弓 ×1、獵弓／複合弓 ×1、傳統弓 ×2；其他/舊資料 ×1。
+- `getFreeHuntEnvironment()` 新增弓種資訊，最終倍率改為距離 × 靶紙 × 弓種。
+- `BattleShootingProfile` 新增 `onChange`，單人與組隊切換本場弓種後可即時更新倍率。
+- 組隊送箭會保存每位成員 bowType，`processPartyRound()` 逐人權威套用，混合弓種隊伍不會共用錯誤加成。
+- targeted tests 12/12 PASS；production build Compiled successfully。
+
+## 2026-08-13 — 自由狩獵戰前 UI / 世界王環境倍率
+- 自由狩獵戰前畫面移除舊「分數靶紙、學生固定距離、3/6 箭」規則顯示，改為「狩獵環境」。
+- 單人與組隊直接共用世界王的靶紙、距離與 `rangeMultiplier` 計算。
+- （後續已改版）當時為房主調整 `huntTargetFmt` / `huntDistanceM`、隊員唯讀同步；**現行規則已改為每位成員各自選距離／靶紙／弓種，房間值只做舊資料 fallback**。
+- `BattleScreen.onSubmit` 新增可選第二參數 arrow details，保留三連靶 `faceIndex`。
+- `partyDb.processPartyRound()` 新增自由狩獵權威倍率與 `faceCap` 驗證；只放大正常箭矢傷害，不放大投擲、毒或貓攻擊。
+- 新增 `applyFreeHuntFaceCap()` 回歸測試；自由狩獵相關 targeted tests 10/10 PASS，production build PASS。
+
+## 2026-08-13（🧭 自由狩獵：單人／組隊入口統一）
+
+- 冒險 Hub 原本「RPG打怪」與「組隊打怪」合併為單一「自由狩獵」入口。
+- 新增 `FreeHunt.jsx`＋`freeHuntCatalog.js`：玩家依 **七族 → T1~T6 → 精確普通怪物** 選擇目標，再選單人狩獵／建立隊伍／加入隊伍。怪物真本直接使用現行 252 expansion catalog，狩獵池只收 126 隻 `encounter === "normal"`。
+- 特別鎖住 T5 邊界：legacy tier 字串 `boss` 只是第五階名稱，不是 encounter 大王；T5 normal 仍可選。測試同時鎖定七族、六階、每族每階 3 隻、miniBoss/boss 不可進池。
+- `MonsterBattle` 新增 `huntMonsterId` 固定目標入口，直接轉現行 battle monster 後進 prebattle；既有公會 `questContext` 保持優先，舊直接打怪入口相容。
+- 組隊建房新增 `huntMonsterId / monsterId / monsterSnapshot`；`PartyBattleRoom` 偵測固定目標後不再隨機抽怪、也不允許房主重抽，加入者沿用房間目標。舊房間無固定目標欄位時維持原流程。
+- 沒有修改傷害、掉落、卡片異常、party reward、Functions 或 Firestore rules。
+- Phase 1 決策：先統一 UI 與 data contract；solo 仍使用本機 `MonsterBattle`，尚未改成 Firestore `partySize=1`。
+- 驗證：`freeHuntCatalog.test.js` 5/5 PASS；scoped `git diff --check` PASS（僅換行格式 warning）；CRA production build `Compiled successfully`。
+- 狀態：僅本機完成，未 commit / push / deploy。
+
 ## 2026-08-12（🛡️ 地下城組隊：隊友 HP／前衛轉後衛同步修復）
 
 - 權威結算確認：前衛倒地但仍有其他前衛存活時會轉為 `rear`、恢復約 50% Max HP 且 `alive` 保持 true；下一回合仍可送出後衛行動。後衛 `heal` 維持 `MaxHP × 15% × 命中分數%` 治療池，`dmg` 維持 `命中分數% × 25%` 前衛助攻增傷；本輪未改玩法公式。
@@ -5825,4 +5874,44 @@ match /systemBroadcasts/{id} { allow read: if request.auth != null; allow write:
 
 **範圍**
 - 未修改尚未完成的世界王戰鬥畫面流程。
+
+
+
+## 2026-08-13 (World Boss monsterKills audit/fix)
+- monsterKills is event-driven via contributeWorldBossSpawnProgress(), not a scan of all battle records.
+- Count scope is seven-family PvE only: solo monster, party, dungeon. Duel, worldBoss, zombie, exams and external competitions are excluded.
+- Fixed pending shooting-session early return so qualifying kills contribute immediately; deferred flush retries the same monster:<sessionId> operation idempotently.
+- Resting-cycle contributions now consume an ignored worldBossSpawnOps operation so retries cannot leak into a later charging window.
+- Admin/lobby labels now describe seven-family PvE scope consistently.
+- Focused tests, worldBossLifecycle syntax check, scoped diff check and production build passed. Not committed/pushed/deployed.
+
+## 2026-08-13（外賽直接核發／年度檢定場次綁定收尾）
+- 外賽流程確認維持教練權威名單：建立外賽項目 → 教練勾選參賽射手 → 儲存即直接寫入 competitionDex 核發參賽圖鑑；外賽不建立玩家報名、射箭或本系統計分流程。
+- 玩家比賽頁持續隱藏 adminOnly 外賽 catalog，避免把外部賽事誤當館內可報名／可射箭賽事。
+- 年度檢定由後台建立 catalog 後即在圖鑑生成鎖定卡；通過後的 certRecords 必須以相同 compId 對應該場檢定才會亮起，避免同年度／半年／弓種的舊 legacy 成績提前解鎖新檢定。
+- 沒有任何檢定 catalog 時仍保留 legacy 年份 × 半年 × 弓種相容顯示。
+- 驗證：achievementDexV3 focused tests PASS、scoped git diff --check PASS、production build PASS。
+- 本批外賽／檢定仍為本機修改，尚未 commit / push / deploy。
+
+## 2026-08-13 自由狩獵 Phase 2 — 狩獵環境
+- 自由狩獵戰前頁移除舊「分數靶紙／學生模式／固定距離／每回合箭數」摘要，改為手機優先「狩獵環境」卡。
+- `src/lib/freeHuntEnvironment.js` 直接引用世界王 `src/worldboss/domain/raidFaces.js` 與 `raidRange.js`，維持單一倍率真本。
+- 距離 5–18m；半靶 ×1.0、全靶 ×1.2、原野靶 ×1.4、三連靶 ×1.5；三連靶每張最多 2 箭產生有效傷害。
+- 最終環境倍率沿用 `rangeMultiplier()`（距離倍率 × 靶紙倍率），只在單人自由狩獵透過 `BattleScreen.outgoingDamageMultiplier` 套入既有最終箭傷；其他模式預設 ×1。
+- 靶紙與距離沿用 `targetFmt`／`selectedDistance`、`mb_defaults` 與 battle snapshot，不建立平行設定。
+
+
+## 2026-08-13｜狩獵模式組隊 Phase UI 第一版
+- 新增 Hunt 專用 input / waiting / resolution 呈現狀態與測試。
+- 修正等待 overlay 可能遮住權威結算動畫：processing / pending resolution 時立即切出演出。
+- 新增手機 compact HUD 與權威怪物異常、自身護盾資訊。
+- 驗證：195 suites / 2192 tests PASS、production build PASS、localhost:3000 正常。
+
+
+## 2026-08-14 - Email Campaign admin feature
+- Added AdminMarketingEmail and AdminApp members-finance entry.
+- Added functions/marketingEmail.js helpers and campaign callables/scheduler/delivery/open/unsubscribe endpoints in functions/index.js.
+- Added Firestore server-only boundaries for campaign queue, suppression and run counters.
+- Validation: marketingEmail node checks PASS; node:test 5/5 PASS; React production build PASS.
+- Not deployed yet. Existing Firebase Trigger Email extension must remain active.
 

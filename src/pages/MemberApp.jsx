@@ -4,23 +4,16 @@ import { useAuth } from "../hooks/useAuth";
 import { useCostControl } from "../hooks/useCostControl";
 import { COST_CAPABILITIES } from "../lib/costControl";
 import { subscribeResults, subscribeNotifications, subscribeAppVersion, isMemberRegistered,
-  subscribeCertification, getDexConfig, subscribeDexGrants, getCertRecords, createNotification,
+  subscribeCertification, getDexConfig, subscribeDexGrants, getCertRecords,
   subscribeMonsterDex, subscribeCraftStats, subscribeChestStats, subscribePotionDex,
   subscribeCardCollection, submitGuildQuestCompletion,
   subscribeActiveGuildQuests,
-  subscribeMyCheckin, submitCheckin, flushPendingShootingSessions, flushPendingArrowProgress,
+  subscribeMyCheckin, submitCheckin, submitClassEnd, addArrowdew, checkAndGrantArrowMilestones, flushPendingShootingSessions, flushPendingArrowProgress,
   subscribeLocalTodayArrows, initializeTodayArrows,
   subscribeMaintenanceConfig, subscribeTierPermissions,
   getCompetitions, getDexCompetitions } from "../lib/db";
 import { subscribeMyCats, repairNegativeVillageResources } from "../lib/catDb";
-import { getUnlockedKeys, describeKey } from "../lib/achievementDex";
 import { useGuildRank } from "../guild/useGuildRank";
-import { seedNotifiedIfFirstRun, getUnnotifiedKeys, markNotified, seedSeenIfFirstRun, countUnseen } from "../lib/dexSeen";
-import DexUnlockToast from "../components/member/DexUnlockToast";
-
-// 成就即時提醒用：稀有度排序（挑代表）＋需另發站內通知的稀有度
-const ACH_RARITY_RANK = { common:0, uncommon:1, rare:2, epic:3, legendary:4, mythic:5 };
-const ACH_ANNOUNCE = new Set(["epic", "legendary", "mythic"]);
 import { getAllowedPages, isAutoLocked } from "../lib/accessControl";
 import { MaintenanceScreen, FrozenScreen, LockedFeatureCard } from "../components/member/AccessLockScreens";
 import { subscribeWorldBossStatus } from "../lib/worldBossDb";
@@ -33,6 +26,7 @@ import { getAppTheme, APP_THEMES, saveAppTheme } from "../lib/theme";
 import { OverlayModal, Card } from "../components/shared/UI";
 import { ProgressRing, CountUp, SectionHeader } from "../components/shared/Widgets";
 import { sfxSwitch, sfxLevelUp } from "../lib/sound";
+import { markDailyPromptShown, wasDailyPromptShown } from "../lib/dailyPrompt";
 import CatBuddy from "../components/cat/CatBuddy";
 import { CatBuddyProvider } from "../components/cat/CatBuddyContext";
 import { certLevelStyle } from "../lib/constants";
@@ -40,6 +34,8 @@ import { activeCertComp, certPeriodAllDone } from "../lib/certStatus";
 import { cachedFetch } from "../lib/localCache";
 import { levelFromXP, rankFromLevel } from "../lib/adventurerSystem";
 import { archerLevelFromXP, archerXPProgress } from "../lib/archerLevel";
+import { readHuntBattleResume, clearHuntBattleResume } from "../lib/huntBattleResume";
+import { getFreeHuntMonsterById } from "../lib/freeHuntCatalog";
 import MemberHome         from "../components/member/MemberHome";
 import MustReadGate       from "../components/member/MustReadGate";
 import HonorCelebration   from "../components/member/HonorCelebration";
@@ -64,6 +60,7 @@ const MemberMonsterDex   = lazy(() => import("../components/member/MemberMonster
 const MemberGuide        = lazy(() => import("../components/member/MemberGuide"));
 const MemberBowSettings  = lazy(() => import("../components/member/MemberBowSettings"));
 const MemberAdventureHub = lazy(() => import("../components/member/MemberAdventureHub"));
+const FreeHunt           = lazy(() => import("../components/member/FreeHunt"));
 const MemberTrainingHub  = lazy(() => import("../components/member/MemberTrainingHub"));
 const MemberInventoryHub = lazy(() => import("../components/member/MemberInventoryHub"));
 const MemberRecordsHub   = lazy(() => import("../components/member/MemberRecordsHub"));
@@ -80,7 +77,6 @@ const CatVillage         = lazy(() => import("../components/member/CatVillage"))
 const CatCollection      = lazy(() => import("../components/cat/CatCollection"));
 const CatStoryBook       = lazy(() => import("../components/cat/CatStoryBook"));
 const StoryBook          = lazy(() => import("../components/story/StoryBook"));
-const PartyLobby         = lazy(() => import("../components/party/PartyLobby"));
 const PartyQuestRoom     = lazy(() => import("../components/party/PartyQuestRoom"));
 const PartyBattleRoom    = lazy(() => import("../components/party/PartyBattleRoom"));
 const DuelLobby          = lazy(() => import("../components/duel/DuelLobby"));
@@ -92,7 +88,7 @@ const RaidKillCutscene   = lazy(() => import("../worldboss/ui/RaidKillCutscene")
 const MemberBooking      = lazy(() => import("../components/member/MemberBooking"));
 
 const CAN_SCORE = ["upcoming","open","ongoing"];
-const ADVENTURE_PAGES = ["adventure-hub","monster","party","party-quest","party-battle","duel","duel-room","dungeon","worldboss","guild","monsterdex"];
+const ADVENTURE_PAGES = ["adventure-hub","hunt","monster","party-quest","party-battle","duel","duel-room","dungeon","worldboss","guild","monsterdex"];
 const TRAINING_PAGES  = ["training-hub","comps","comp-detail","practice","performance"];
 const INVENTORY_PAGES = ["inventory-hub","coinshop","materials","cats","catbook","story","equipment","specialization-runes","cards","gacha"];
 const PROFILE_PAGES   = ["profile","learn","msgs","history","external","achievements","certexam","notifications","dex","guide","records-hub","leaderboard","bowsetting"];
@@ -101,8 +97,13 @@ const PROFILE_PAGES   = ["profile","learn","msgs","history","external","achievem
 const NAV_PRELOADS = {
   "adventure-hub": () => {
     import("../components/member/MemberAdventureHub");
+    import("../components/member/FreeHunt");
     import("../components/member/MonsterBattle");
     import("../components/dungeon/DungeonLobby");
+  },
+  "hunt": () => {
+    import("../components/member/FreeHunt");
+    import("../components/member/MonsterBattle");
   },
   "training-hub": () => {
     import("../components/member/MemberTrainingHub");
@@ -141,7 +142,7 @@ export default function MemberApp() {
   // ⚠️ 這個能力旗標本來就定義在 costControl.js，但一直沒有任何地方真的用它——等於警報升級了
   //    也沒省到。核心功能（通知/報到/認證/存檔）不在此列，永遠保留。
   const liveExtras = costAllows(COST_CAPABILITIES.nonessentialListeners);
-  const [page, setPageState]   = useState(()=>sessionStorage.getItem("member_page")||"home");
+  const [page, setPageState]   = useState(()=>readHuntBattleResume() ? "hunt" : (sessionStorage.getItem("member_page")||"home"));
   const setPage = useCallback((p) => startTransition(() => setPageState(p)), []);
   // 學生分級與系統鎖定（2026-07-04）
   const [maintenanceConfig, setMaintenanceConfig] = useState({ enabled:false, message:"" });
@@ -225,10 +226,13 @@ export default function MemberApp() {
   const [dexCompetitions, setDexCompetitions] = useState([]);
   // 年度檢定紅點：用已載入的 certActive＋certRecords 計算（成就偵測本來就要載），不加讀取。
   const [certActive,    setCertActive]    = useState(null);
-  const [dexUnlockToast, setDexUnlockToast] = useState(null); // App 層成就解鎖提示
   const [dexSeenTick,   setDexSeenTick]   = useState(0);    // 圖鑑看過後 bump，重算紅點
   const [questCtx,     setQuestCtx]      = useState(null); // 公會任務導航上下文
   const [fromGuild,    setFromGuild]     = useState(false); // 是否從公會進入打怪
+  const [huntContext,  setHuntContext]   = useState(null); // { monster, intent:"solo"|"create"|"join" }
+  const [huntResume, setHuntResume] = useState(() => readHuntBattleResume());
+  const [autoResumeHuntBattle, setAutoResumeHuntBattle] = useState(false);
+  useEffect(() => { if (page === "hunt") setHuntResume(readHuntBattleResume()); }, [page]);
   const [specialAlert, setSpecialAlert]  = useState(null);  // 緊急任務浮動通知
   const [badgePopup,   setBadgePopup]   = useState(null);  // 徽章獲得彈窗
   const [todayArrowsGlobal, setTodayArrowsGlobal] = useState(0); // 今日全域練箭數（含所有來源）
@@ -246,7 +250,7 @@ export default function MemberApp() {
   const [checkinBusy, setCheckinBusy] = useState(false);
   const prevAchRef = useRef(null);
   const seenQuestIds = useRef(null); // null = 尚未完成首次載入
-  const checkinPopupShownRef = useRef(!!sessionStorage.getItem("member_checkin_popup_shown")); // 一天只彈一次（跨重整）
+  const checkinPopupShownRef = useRef(false);
 
   // 地下城首殺全系統播報（防重複：lastBroadcastIdRef 過濾 onSnapshot 重複觸發）
   useEffect(() => {
@@ -270,6 +274,7 @@ export default function MemberApp() {
   useEffect(() => {
     setCatsReady(false);
     if (!profile?.id) return;
+    checkinPopupShownRef.current = wasDailyPromptShown(localStorage, "member-checkin", profile.id);
     setCardDataReady(false);
     // 歷史負值一次性修復（村莊資源被舊 increment(-n) 競態扣成負數）
     if (profile.village?.resources) repairNegativeVillageResources(profile.id, profile.village.resources).catch(() => {});
@@ -278,7 +283,7 @@ export default function MemberApp() {
       // 未報到且今天還沒彈過 → 彈出視窗
       if (c === null && !checkinPopupShownRef.current) {
         checkinPopupShownRef.current = true;
-        sessionStorage.setItem("member_checkin_popup_shown", "1");
+        markDailyPromptShown(localStorage, "member-checkin", profile.id);
         setShowCheckinPopup(true);
       }
     });
@@ -293,6 +298,27 @@ export default function MemberApp() {
     } catch (e) { console.error("checkin:", e?.message); }
     setCheckinBusy(false);
     setShowCheckinPopup(false);
+  }
+
+  const [classEndBusy, setClassEndBusy] = useState(false);
+  async function handleHomeClassEnd() {
+    if (!profile?.id || !todayCheckin?.id || classEndBusy) return;
+    if (!window.confirm("確定要下課嗎？下課後會結算今天的箭數與獎勵。")) return;
+    setClassEndBusy(true);
+    try {
+      await submitClassEnd(profile.id, todayCheckin.id);
+      if (todayArrowsGlobal > 0) {
+        await Promise.allSettled([
+          addArrowdew(profile.id, todayArrowsGlobal),
+          checkAndGrantArrowMilestones(profile.id, todayArrowsGlobal),
+        ]);
+      }
+    } catch (e) {
+      console.error("class end:", e?.message);
+      window.alert("下課結算失敗，請稍後再試。");
+    } finally {
+      setClassEndBusy(false);
+    }
   }
 
   // 今日箭數以 localStorage 即時累加；載入時只做一次有上限的 Firestore 補值，不開 listener
@@ -447,6 +473,9 @@ export default function MemberApp() {
 
   useEffect(() => {
     if (!profile?.id) return;
+    // 首頁只使用 members 上已反正規化的圖鑑摘要；完整圖鑑資料按實際頁面載入。
+    const needsDexData = ["dex", "monster", "monsterdex", "profile", "cards", "cats", "catbook", "gacha", "dungeon", "worldboss"].includes(page);
+    if (!needsDexData) return;
     getDexConfig().then(setDexConfig).catch(() => {});
     getDuelStats(profile.id).then(setDuelStats).catch(() => {});
     getCertRecords(profile.id).then(setCertRecords).catch(() => {});
@@ -465,56 +494,14 @@ export default function MemberApp() {
       setCatsReady(true);
     });
     return () => { u1?.(); u2?.(); u3?.(); u4?.(); u5?.(); u6?.(); u7?.(); u8?.(); };
-  }, [profile?.id]); // eslint-disable-line
-
-  // ── 成就即時偵測（App 層，全站有效）──────────────────────────
-  // 打怪/練習/裝備任何地方解鎖成就都能即時跳提示 + 亮「我的」紅點，不再只在圖鑑頁才觸發。
-  const achCtx = useMemo(() => {
-    const cards = cardData?.cards || {};
-    return {
-      member: profile, certification, certRecords,
-      checkinCount: profile?.dailyQuestCount || 0,
-      monsterDex, craftStats, chestStats, potionDex, cardData,
-      cardCount: Object.keys(cards).length,
-      mythicCards: Object.values(cards).filter(c => c.tier === "mythic").length,
-      cardFamilies: [...new Set(Object.values(cards).map(c => c.family).filter(Boolean))],
-      duelStats: duelStats || {}, cats, guildRep: guildRankInfo.rep,
-      guildExpeditionStats: guildRankInfo.expeditionStats,
-      dexCompetitions,
-    };
-  }, [profile, certification, certRecords, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats, cats, guildRankInfo.rep, guildRankInfo.expeditionStats, dexCompetitions]);
-
-  const unlockedKeys = useMemo(() => (profile?.id ? getUnlockedKeys(achCtx) : []), [achCtx, profile?.id]);
-
-  useEffect(() => {
-    const uid = profile?.id;
-    if (!uid || !unlockedKeys.length) return;
-    const firstRun = seedNotifiedIfFirstRun(uid, unlockedKeys); // 首次基準：既有成就不提醒（修洪水 bug）
-    seedSeenIfFirstRun(uid, unlockedKeys);
-    if (firstRun) { setDexSeenTick(t => t + 1); return; }
-    const fresh = getUnnotifiedKeys(uid, unlockedKeys);
-    if (!fresh.length) return;
-    markNotified(uid, fresh);
-    const infos = fresh.map(describeKey).filter(Boolean);
-    if (!infos.length) return;
-    const best = infos.slice().sort((a, b) => (ACH_RARITY_RANK[b.rarity] || 0) - (ACH_RARITY_RANK[a.rarity] || 0))[0];
-    setDexUnlockToast({ best, count: infos.length });
-    setDexSeenTick(t => t + 1); // 亮紅點
-    infos.filter(i => ACH_ANNOUNCE.has(i.rarity)).forEach(i => {
-      createNotification({
-        type: "achievement", title: "🏅 新成就解鎖！",
-        content: `【${i.name}】${i.desc}`,
-        targetMemberId: uid, subjectMemberId: uid,
-        subjectInfo: { nickname: profile.nickname || profile.name, archerNo: profile.archerNo || "", item: i.name, level: i.rarity },
-      }, uid).catch(() => {});
-    });
-  }, [unlockedKeys, profile?.id]); // eslint-disable-line
+  }, [profile?.id, page]); // eslint-disable-line
 
   // 未看過的已解鎖成就數 → 「我的」紅點（dexSeenTick 變動時重算：進圖鑑看過會清）
-  const dexUnseenCount = useMemo(
-    () => (profile?.id ? countUnseen(profile.id, unlockedKeys) : 0),
-    [unlockedKeys, profile?.id, dexSeenTick],
-  );
+  const dexUnseenCount = useMemo(() => {
+    if (!profile?.id) return 0;
+    try { return Number(sessionStorage.getItem(`dex_unseen_count_${profile.id}`) || 0); }
+    catch { return 0; }
+  }, [profile?.id, dexSeenTick]);
 
   // 年度檢定：進行中那場（與首頁/「我的」共用快取，已抓過就 0 讀取）
   useEffect(() => {
@@ -547,7 +534,22 @@ export default function MemberApp() {
   function handleLeaveParty() {
     sessionStorage.removeItem("party_room");
     setPartyRoomId(null); setPartyRoomType(null); setPartyIsHost(false);
-    setPage("profile");
+    setPage(huntContext ? "hunt" : "profile");
+  }
+
+  function openHuntMonster(monster, intent) {
+    setAutoResumeHuntBattle(false);
+    setQuestCtx(null);
+    setFromGuild(false);
+    setHuntContext({ monster, intent });
+    setPage("monster");
+  }
+
+  function enterFreeHuntParty(roomId, type, host, monster = null) {
+    setQuestCtx(null);
+    setFromGuild(false);
+    setHuntContext({ monster, intent: host ? "create" : "join" });
+    handleEnterPartyRoom(roomId, type, host);
   }
 
   const _savedDuel = (() => { try { return JSON.parse(sessionStorage.getItem("duel_room") || "null"); } catch { return null; } })();
@@ -729,11 +731,6 @@ export default function MemberApp() {
       )}
 
       {badgePopup && <BadgeEarnPopup badge={badgePopup} onClose={() => setBadgePopup(null)} />}
-      {dexUnlockToast && (
-        <DexUnlockToast info={dexUnlockToast.best} count={dexUnlockToast.count}
-          onView={() => { setDexUnlockToast(null); setPage("dex"); }}
-          onClose={() => setDexUnlockToast(null)} />
-      )}
 
       {/* 📋 今日報到浮動視窗 */}
       <OverlayModal open={showCheckinPopup}>
@@ -866,6 +863,8 @@ export default function MemberApp() {
             duelStats={duelStats} monsterDex={monsterDex} craftStats={craftStats} chestStats={chestStats}
             potionDex={potionDex} cardData={cardData} todayArrows={todayArrowsGlobal}
             todayCheckin={todayCheckin} worldBoss={activeWorldBoss} dexUnseenCount={dexUnseenCount}
+            onCheckin={handleCheckinSubmit} checkinBusy={checkinBusy}
+            onClassEnd={handleHomeClassEnd} classEndBusy={classEndBusy}
             onOpenVillageBoard={() => { setGachaInitTab("board"); setPage("gacha"); }} />}
         {page==="comps"       && <MemberComps onSelectComp={handleSelectComp} onPageChange={setPage} />}
         {page==="comp-detail" && selComp && !scoring && (
@@ -894,7 +893,17 @@ export default function MemberApp() {
         {page==="dex"         && <MemberDex onBack={()=>setPage("profile")} onDexViewed={()=>setDexSeenTick(t=>t+1)}
           sharedData={sharedPlayerData} />}
         {/* ── 冒險 Hub ── */}
-        {page==="adventure-hub" && <MemberAdventureHub onPageChange={setPage} />}
+        {page==="adventure-hub" && <MemberAdventureHub onPageChange={(nextPage) => {
+          if (nextPage !== "hunt") setHuntContext(null);
+          setPage(nextPage);
+        }} />}
+        {page==="hunt" && <FreeHunt
+          onBack={() => { setHuntContext(null); setPage("adventure-hub"); }}
+          onSolo={(monster) => openHuntMonster(monster, "solo")}
+          resumableBattle={huntResume}
+          onResumeBattle={() => { const monster=getFreeHuntMonsterById(huntResume?.monsterId); if(monster){ setAutoResumeHuntBattle(true); setHuntContext({monster,intent:"solo"}); setPage("monster"); } }}
+          onAbandonBattle={() => { if(window.confirm("確定放棄這場狩獵戰鬥？進度將無法復原。")){ clearHuntBattleResume(sessionStorage,{clearBattle:true}); setHuntResume(null); } }}
+          onEnterPartyRoom={enterFreeHuntParty} />}
         {page==="training-hub"  && <MemberTrainingHub  onPageChange={setPage} onJoinParty={handleEnterPartyRoom} />}
         {page==="inventory-hub" && <MemberInventoryHub onPageChange={setPage} />}
         {page==="records-hub"   && <MemberRecordsHub   onPageChange={setPage} />}
@@ -903,11 +912,15 @@ export default function MemberApp() {
         {page==="handbook"    && <MonsterHandbook onBack={() => setPage("adventure-hub")} />}
         {page==="monster"     && <MonsterBattle
           onBack={() => {
+            setAutoResumeHuntBattle(false);
             if (fromGuild) { setFromGuild(false); setPage("guild"); }
-            else { setQuestCtx(null); setPage("adventure-hub"); }
+            else if (huntContext?.intent === "solo") { setQuestCtx(null); setPage("hunt"); }
+            else { setQuestCtx(null); setHuntContext(null); setPage("adventure-hub"); }
           }}
           onImmersiveChange={setBattleImmersive}
           questContext={questCtx} onKillForQuest={handleQuestKill}
+          huntMonsterId={huntContext?.intent === "solo" ? huntContext.monster?.id : null}
+          autoResumeBattle={autoResumeHuntBattle}
           monsterDex={monsterDex} craftStats={craftStats} chestStats={chestStats}
           potionDex={potionDex} duelStats={duelStats} sharedData={sharedPlayerData} />}
         {page==="duel"        && <DuelLobby profile={profile} onEnterRoom={handleEnterDuelRoom} onBack={()=>setPage("adventure-hub")} />}
@@ -937,7 +950,6 @@ export default function MemberApp() {
             提交完成（`submitGuildQuestCompletion` 本來就在 MemberApp，不在舊元件裡）。
             教練後台的懸賞管理在 AdminApp，不受影響。*/}
         {page==="guild"       && <GuildExpedition onBack={()=>setPage("adventure-hub")} onImmersiveChange={setBattleImmersive} />}
-        {page==="party"       && <PartyLobby onEnterRoom={handleEnterPartyRoom} onBack={()=>setPage("adventure-hub")} />}
         {page==="party-quest" && partyRoomId && (
           <PartyQuestRoom roomId={partyRoomId} isHost={partyIsHost} onLeave={handleLeaveParty} />
         )}

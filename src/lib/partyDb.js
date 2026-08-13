@@ -6,7 +6,7 @@ import {
 import { db } from "./firebase";
 import { resolveWorldBossCardEffects } from "./worldBossCards";
 import {
-  mergeAllStatuses, monsterStatMods, rollInflictForArrows, tickMonsterStatuses,
+  mergeAllStatuses, mergeMonsterStatus, monsterStatMods, rollInflictForArrows, tickMonsterStatuses,
 } from "./monsterStatus";
 import { assertCostCapability, COST_CAPABILITIES } from "./costControl";
 import { addChests, recordBattleDex } from "./db";
@@ -18,7 +18,12 @@ import { addPartyCombatStatus, applyPartyStatusesForRound, buildPartyAbilityPrev
 import { buildPartyExpansionReward } from "./partyRewardEngine";
 import { getPartyChallengeProfile } from "./monsterExpansionAdapter";
 import { makeCoinChest } from "./lootTable";
+import { consumeCatDeathGuard, getCatGuardAtkBonus, recordCatShieldAbsorption, resolveAuthoritativeCatRound } from "./catBattleEngine";
 import { stripUndefinedDeep } from "./firestoreSafeWrite";
+import { getPartyMemberFreeHuntEnvironment, applyFreeHuntFaceCap } from "./freeHuntEnvironment";
+import { applyGlareToDamageBreakdown, applyIncomingHealing, deterministicStatusRoll, getPlayerStatusModifiers, removeBleedOnEffectiveHeal, resolveFamilyOrdinaryStatusForParty } from "./familyPlayerStatus";
+import { applyPartySignatureAfterAbility, applyPartySignatureBeforeDamage, tickPartySignatureState } from "./partySignatureState";
+import { applyStatusResist } from "./combatModifiers";
 
 const PARTY = "partyRooms";
 
@@ -32,7 +37,7 @@ const BREAK_TEXT = {
 };
 
 // 異常狀態轉成「玩家看得懂的實際數字」。只寫百分比玩家無感，要換算成實際扣了幾點。
-const STATUS_LABEL = { atkDown:"攻擊力下降", defDown:"防禦力下降", poison:"中毒" };
+const STATUS_LABEL = { atkDown:"攻擊力下降", fear:"恐懼", defDown:"防禦力下降", armorBreak:"破甲", poison:"中毒", fatigue:"疲勞", pressure:"壓力", bleed:"流血", glare:"眩光" };
 
 function describeStatus(status, targetStats) {
   const label = status.name || STATUS_LABEL[status.id] || status.id;
@@ -40,13 +45,13 @@ function describeStatus(status, targetStats) {
   const rounds = status.duration || 1;
   if (pct === null) return `${label}（${rounds} 回合）`;
   // 換算實際點數：atkDown 看 ATK、defDown 看 DEF、poison 看最大 HP
-  const base = status.id === "atkDown" ? targetStats?.atk
-    : status.id === "defDown" ? targetStats?.def
-    : status.id === "poison" ? targetStats?.maxHP
+  const base = ["atkDown","fear"].includes(status.id) ? targetStats?.atk
+    : ["defDown","armorBreak"].includes(status.id) ? targetStats?.def
+    : ["poison","bleed"].includes(status.id) ? targetStats?.maxHP
     : null;
   const points = Number.isFinite(base) ? Math.round(base * pct / 100) : null;
   const pointText = points > 0
-    ? (status.id === "poison" ? `每回合 -${points} HP` : `-${points} 點`)
+    ? (["poison","bleed"].includes(status.id) ? `每回合 -${points} HP` : `-${points} 點`)
     : null;
   return `${label} -${pct}%${pointText ? `（${pointText}）` : ""}・${rounds} 回合`;
 }
@@ -115,7 +120,8 @@ export async function createPartyRoom(hostId, hostName, type, extraData = {}) {
       members: {
         [hostId]: type === "quest"
           ? { name: hostName, accountType: extraData.accountType || "official", done: false, doneAt: null }
-          : { name: hostName, accountType: extraData.accountType || "official", level: Number(extraData.level) || 1, hp: 0, maxHP: 0, atk: 0, def: 0, arrows: [], ready: false, skipped: false, alive: true, role: "front", rearChoice: null }
+          : { name: hostName, accountType: extraData.accountType || "official", level: Number(extraData.level) || 1, hp: 0, maxHP: 0, atk: 0, def: 0, arrows: [], ready: false, skipped: false, alive: true, role: "front", rearChoice: null,
+              ...(extraData.huntMonsterId ? { huntDistanceM:Number(extraData.huntDistanceM) || 5, huntTargetFmt:extraData.huntTargetFmt || "half_17", bowType:extraData.bowType || "recurve_bare" } : {}) }
       },
     };
     if (type === "quest") {
@@ -124,6 +130,13 @@ export async function createPartyRoom(hostId, hostName, type, extraData = {}) {
     }
     if (type === "battle") {
       Object.assign(base, {
+        huntMonsterId: extraData.huntMonsterId || null,
+        monsterId: extraData.monsterId || extraData.huntMonsterId || null,
+        monsterSnapshot: stripUndefinedDeep(extraData.monsterSnapshot || null),
+        ...(extraData.huntMonsterId ? {
+          huntDistanceM: Number(extraData.huntDistanceM) || 5,
+          huntTargetFmt: extraData.huntTargetFmt || "half_17",
+        } : {}),
         monster: null,
         monsterHP: 0,
         monsterMaxHP: 0,
@@ -160,7 +173,8 @@ export async function joinPartyRoom(code, memberId, memberName, extraData = {}) 
 
     const memberData = room.type === "quest"
       ? { name: memberName, accountType: extraData.accountType || "official", done: false, doneAt: null }
-      : { name: memberName, accountType: extraData.accountType || "official", level: Number(extraData.level) || 1, hp: 0, maxHP: 0, atk: 0, def: 0, arrows: [], ready: false, skipped: false, alive: true, role: "front", rearChoice: null };
+      : { name: memberName, accountType: extraData.accountType || "official", level: Number(extraData.level) || 1, hp: 0, maxHP: 0, atk: 0, def: 0, arrows: [], ready: false, skipped: false, alive: true, role: "front", rearChoice: null,
+          ...(room.huntMonsterId ? { huntDistanceM:Number(extraData.huntDistanceM ?? room.huntDistanceM) || 5, huntTargetFmt:extraData.huntTargetFmt || room.huntTargetFmt || "half_17", bowType:extraData.bowType || "recurve_bare" } : {}) };
 
     await updateDoc(doc(db, PARTY, roomDoc.id), {
       [`members.${memberId}`]: memberData,
@@ -324,6 +338,7 @@ export async function startPartyBattle(roomId, room, monster, mode, distanceMode
       // 舊的 60 隻怪沒有 tierIndex / encounter / signature* 這些擴充欄位，一律補 null。
       monster: { id: monster.id, name: monster.name, icon: monster.icon || "👾",
                  hp:  scaledHP,
+                 maxHp: scaledHP,
                  atk: Math.round(monster.atk * ms.atk * monAtkMult),
                  def: Math.round(monster.def * ms.def * monDefMult),
                  tier: monster.tier || "common",
@@ -360,6 +375,7 @@ export async function startPartyBattle(roomId, room, monster, mode, distanceMode
       consumableEffects: {},
       status: "active",
       monsterAbilityPreview: null,
+      monsterSignatureState: null,
     }));
     return { ok: true };
   } catch (e) {
@@ -368,7 +384,7 @@ export async function startPartyBattle(roomId, room, monster, mode, distanceMode
 }
 
 // ── Battle：各玩家更新自己的 archerStats ─────────────────────
-export async function updateBattleMemberStats(roomId, memberId, hp, maxHP, atk, def, archerStyle = "", catATK = 0, catName = "", catId = "", avatarId = "", wbBonus = null, displayName = "", level = 1, battleCosmetics = null) {
+export async function updateBattleMemberStats(roomId, memberId, hp, maxHP, atk, def, archerStyle = "", catATK = 0, catName = "", catId = "", avatarId = "", wbBonus = null, displayName = "", level = 1, battleCosmetics = null, statusResistance = null, statProvenance = null, catBond = 0, catLevel = 1, catModifiers = null) {
   try {
     await updateDoc(doc(db, PARTY, roomId), {
       [`members.${memberId}.hp`]:      hp,
@@ -381,11 +397,16 @@ export async function updateBattleMemberStats(roomId, memberId, hp, maxHP, atk, 
       ...(archerStyle ? { [`members.${memberId}.archerStyle`]: archerStyle } : {}),
       [`members.${memberId}.catATK`]:  catATK || 0,
       [`members.${memberId}.catName`]: catName || "",
+      [`members.${memberId}.catBond`]:catBond||0,
+      [`members.${memberId}.catLevel`]:catLevel||1,
+      [`members.${memberId}.catModifiers`]:catModifiers||null,
       [`members.${memberId}.catId`]:   catId || "",
       [`members.${memberId}.avatarId`]: avatarId || "",
       ...(displayName ? { [`members.${memberId}.name`]: displayName } : {}),
       ...(wbBonus ? { [`members.${memberId}.wbBonus`]: wbBonus } : {}),
       ...(battleCosmetics ? { [`members.${memberId}.battleCosmetics`]: battleCosmetics } : {}),
+      ...(statusResistance ? { [`members.${memberId}.statusResistance`]: statusResistance } : {}),
+      ...(statProvenance ? { [`members.${memberId}.statProvenance`]: statProvenance } : {}),
     });
     return { ok: true };
   } catch (e) {
@@ -434,15 +455,21 @@ export async function applyPartyCarryPotion(roomId, memberId, potionId) {
       if (!current || (potion.level || 0) >= (current.level || 0)) families[potion.family] = potion.id;
       const buffs = calcPotionBuffs(Object.values(families));
       const maxHP = member.maxHP || 100;
+      const statusMods = getPlayerStatusModifiers(member.combatStatuses || []);
+      const shield = Math.round(maxHP * (buffs.shieldPct || 0) / 100 * statusMods.shieldReceivedMultiplier);
       const updates = {
         [`members.${memberId}.potionUsedRound`]:round,
         [`members.${memberId}.potionBuffs`]:{
           families, atkMult:buffs.atkMult, defMult:buffs.defMult, dmgMult:buffs.dmgMult,
           regenPct:buffs.regenPct,
-          shield:Math.max(member.potionBuffs?.shield || 0, Math.round(maxHP * (buffs.shieldPct || 0) / 100)),
+          shield:Math.max(member.potionBuffs?.shield || 0, shield),
         },
       };
-      if (potion.effect?.hpPct) updates[`members.${memberId}.hp`] = Math.min(maxHP, (member.hp || 0) + Math.round(maxHP * potion.effect.hpPct / 100));
+      if (potion.effect?.hpPct) {
+        const recovery=applyIncomingHealing({hp:member.hp,maxHp:maxHP,amount:maxHP*potion.effect.hpPct/100,statuses:member.combatStatuses || []});
+        updates[`members.${memberId}.hp`] = recovery.hp;
+        updates[`members.${memberId}.combatStatuses`] = recovery.statuses;
+      }
       tx.update(ref, updates);
     });
     return { ok:true };
@@ -476,12 +503,13 @@ export async function applyPartyUtilityPotion(roomId, memberId, potionId) {
 }
 
 // ── Battle：送出箭分 ──────────────────────────────────────────
-export async function submitArrows(roomId, memberId, arrows, role = "front", rearChoice = null, inflict = null) {
+export async function submitArrows(roomId, memberId, arrows, role = "front", rearChoice = null, inflict = null, bowType = null) {
   try {
     await updateDoc(doc(db, PARTY, roomId), {
       [`members.${memberId}.arrows`]:     arrows,
       // ☠️ 玩家的卡片能施加什麼異常——傷害在權威端算，判定也必須在這裡
       ...(inflict && Object.keys(inflict).length ? { [`members.${memberId}.inflict`]: inflict } : {}),
+      ...(bowType ? { [`members.${memberId}.bowType`]: bowType } : {}),
       [`members.${memberId}.ready`]:      true,
       // 曾被房主略過的旗標不能殘留到下一輪；正常送分一律清除。
       [`members.${memberId}.skipped`]:    false,
@@ -491,6 +519,27 @@ export async function submitArrows(roomId, memberId, arrows, role = "front", rea
     return { ok: true };
   } catch (e) {
     return { ok: false, reason: e.message };
+  }
+}
+
+export async function updatePartyMemberHuntEnvironment(roomId, memberId, { distanceM, targetFmt, bowType } = {}) {
+  try {
+    const patch = {};
+    const parsedDistance = Number(distanceM);
+    if (Number.isFinite(parsedDistance) && parsedDistance > 0) {
+      patch[`members.${memberId}.huntDistanceM`] = parsedDistance;
+    }
+    if (typeof targetFmt === "string" && targetFmt.trim()) {
+      patch[`members.${memberId}.huntTargetFmt`] = targetFmt.trim();
+    }
+    if (typeof bowType === "string" && bowType.trim()) {
+      patch[`members.${memberId}.bowType`] = bowType.trim();
+    }
+    if (!Object.keys(patch).length) return { ok:false, reason:"no valid hunt environment fields" };
+    await updateDoc(doc(db, PARTY, roomId), patch);
+    return { ok:true };
+  } catch (e) {
+    return { ok:false, reason:e.message };
   }
 }
 
@@ -545,10 +594,12 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
     const aliveIds = Object.keys(members).filter(id => members[id].alive);
     const round    = room.round || 1;
     const arrowsPerRound = room.arrowsPerRound || 6;
+    const isFreeHuntRoom = !!room.huntMonsterId;
     const partyAbility = room.monster?.expansionVersion === 1
-      ? resolvePartyMonsterAbility({ roomId, monster:room.monster, round, members:room.members || {}, targetFmt: room.targetFormat || "full_110" })
+      ? resolvePartyMonsterAbility({ roomId, monster:{...room.monster,hp:room.monsterHP,maxHp:room.monsterMaxHP}, round, members:room.members || {}, targetFmt: room.targetFormat || "full_110" })
       : null;
     const statusRoundByMember = Object.fromEntries(Object.entries(room.members || {}).map(([id, member]) => [id, applyPartyStatusesForRound(member)]));
+    const statusCombatByMember = Object.fromEntries(Object.entries(room.members || {}).map(([id, member]) => [id, getPlayerStatusModifiers(member.combatStatuses || [])]));
 
     // 前後衛分類（undefined / "front" 都算前衛）
     const frontIds = aliveIds.filter(id => (members[id].role || "front") === "front");
@@ -601,7 +652,8 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
         };
         continue;
       }
-      const buffedAtk = Math.max(1, Math.round((m.baseAtk || m.atk || 10) * (statusRoundByMember[id]?.atkMultiplier || 1) * (m.potionBuffs?.atkMult || 1) * (1 + atkBuffPctForFront) * eventAtkMult));
+      const catGuardAtk=getCatGuardAtkBonus(m.catBattleState,round);
+      const buffedAtk = Math.max(1, Math.round((m.baseAtk || m.atk || 10) * (statusRoundByMember[id]?.atkMultiplier || 1) * (m.potionBuffs?.atkMult || 1) * (1 + atkBuffPctForFront) * eventAtkMult)+catGuardAtk);
       const damageItems = (m.arrows || []).filter(arrow => getPotion(arrow?.label || arrow)?.actionCost === "arrow");
       const scoreArrows = (m.arrows || []).filter(arrow => !getPotion(arrow?.label || arrow));
       const directDmg = damageItems.reduce((sum, arrow) => sum + (resolveConsumable(arrow?.label || arrow, {
@@ -615,10 +667,48 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
         ? resolveWorldBossCardEffects({ equippedCardKeys:m.wbBonus?.equippedCardKeys || [], enemyFamily:room.monster?.family, enemyClass:(room.monster?.bossTagged || room.monster?.encounter === "boss") ? "boss" : "monster" }).modifiers
         : { damagePct:0, damageReducePct:0, healPct:0, armorPiercePct:0 };
       const piercedDef = Math.max(0, statusedDef * (1 - wbFx.armorPiercePct / 100));
-      const raw = calcDmgFn(scoreArrows, buffedAtk, piercedDef, (m.wbBonus?.dmgBonusPct || 0) + wbFx.damagePct);
-      const rawDmg = typeof raw === "number" ? raw : (raw.dmg || 0);
+      const memberHuntEnvironment = isFreeHuntRoom
+        ? getPartyMemberFreeHuntEnvironment(m, room)
+        : null;
+      const cappedScoreArrows = memberHuntEnvironment
+        ? applyFreeHuntFaceCap(scoreArrows, memberHuntEnvironment.faceCap)
+        : scoreArrows;
+      const damageScoreArrows = memberHuntEnvironment
+        ? cappedScoreArrows.filter(arrow => !arrow.overFaceCap)
+        : scoreArrows;
+      const raw = calcDmgFn(damageScoreArrows, buffedAtk, piercedDef, (m.wbBonus?.dmgBonusPct || 0) + wbFx.damagePct);
+      const rawBaseDmg = typeof raw === "number" ? raw : (raw.dmg || 0);
+      let rawDmg = memberHuntEnvironment ? Math.round(rawBaseDmg * memberHuntEnvironment.multiplier) : rawBaseDmg;
+      const calculatedBreakdown = typeof raw === "object" ? (raw.arrowBreakdown || []) : [];
+      let eligibleBreakdownIndex = 0;
+      const scoreBreakdown = memberHuntEnvironment
+        ? cappedScoreArrows.map(arrow => {
+            if (arrow.overFaceCap) {
+              return {
+                label: arrow?.label || arrow?.score || arrow,
+                dmg: 0,
+                isCrit: false,
+                faceIndex: arrow.faceIndex || 0,
+                overFaceCap: true,
+                ...(Number.isFinite(arrow?.nx) && Number.isFinite(arrow?.ny) ? { nx:arrow.nx, ny:arrow.ny } : {}),
+                targetFormat: arrow?.targetFormat || memberHuntEnvironment.targetFmt,
+              };
+            }
+            const resolved = calculatedBreakdown[eligibleBreakdownIndex++] || { label:arrow?.label || arrow?.score || arrow, dmg:0, isCrit:false };
+            return {
+              ...resolved,
+              dmg: Math.round((resolved.dmg || 0) * memberHuntEnvironment.multiplier),
+              faceIndex: arrow.faceIndex || 0,
+              overFaceCap: false,
+              ...(Number.isFinite(arrow?.nx) && Number.isFinite(arrow?.ny) ? { nx:arrow.nx, ny:arrow.ny } : {}),
+              targetFormat: arrow?.targetFormat || memberHuntEnvironment.targetFmt,
+            };
+          })
+        : calculatedBreakdown;
+      const adjustedScoreBreakdown = applyGlareToDamageBreakdown(scoreBreakdown, statusCombatByMember[id]?.bonusDamageReductionPct);
+      if (adjustedScoreBreakdown.length) rawDmg = adjustedScoreBreakdown.reduce((sum,hit)=>sum+(Number(hit.dmg)||0),0);
       const rawBreakdown = [
-        ...(typeof raw === "object" ? (raw.arrowBreakdown || []) : []),
+        ...adjustedScoreBreakdown,
         ...damageItems.map(arrow => ({ label:arrow?.label || arrow, dmg:resolveConsumable(arrow?.label || arrow, { mode:"party", playerAtk:buffedAtk, enemyHp:room.monsterHP, enemyMaxHp:room.monster?.hp, isBoss:["boss","mythic"].includes(room.monster?.tier) }).damage || 0, partName:"投擲道具", partIcon:getPotion(arrow?.label || arrow)?.icon || "💣" })),
       ];
       allPlayerData[id] = {
@@ -656,6 +746,8 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
     ];
     const miniRounds  = [];
     let   monsterHP   = room.monsterHP || 0;
+    let monsterSignatureState = room.monsterSignatureState || null;
+    const authoritativeDamageByMember={};
     // ☠️ 玩家施加的異常：每位成員用自己的箭與卡片判定，合併到怪物身上
     let monsterStatuses = mergeAllStatuses(
       room.monsterStatuses || [],
@@ -673,8 +765,11 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
     // 若 hp 尚未寫入（stats 還沒到位），預設用 maxHP；避免誤判為陣亡
     for (const id of aliveIds) {
       const currentHp = statusRoundByMember[id]?.hp ?? (members[id].hp > 0 ? members[id].hp : (members[id].maxHP || 500));
-      const adjustedHp = currentHp + (eff.archerHP || 0) + (eff.healArcher || 0);
-      memberHPNow[id] = Math.max(0, Math.min(members[id].maxHP || adjustedHp, adjustedHp));
+      const eventDamage=Math.min(0,Number(eff.archerHP)||0);
+      const eventHealing=Math.max(0,Number(eff.archerHP)||0)+Math.max(0,Number(eff.healArcher)||0);
+      const recovery=applyIncomingHealing({hp:Math.max(0,currentHp+eventDamage),maxHp:members[id].maxHP || currentHp,amount:eventHealing,statuses:statusRoundByMember[id]?.remainingStatuses || []});
+      memberHPNow[id] = recovery.hp;
+      statusRoundByMember[id].remainingStatuses = recovery.statuses;
     }
     // 後衛支援先結算：治療在前衛出手前回復 HP，助攻已在前方 atkBuffPctForFront 套入。
     const receivedHeal = {};
@@ -689,11 +784,16 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
         healGivenBy[id] = pool;
         const targets = frontIds.filter(tid => memberHPNow[tid] > 0);
         const perPerson = targets.length ? Math.round(pool / targets.length) : 0;
+        const healedTargets=[];
         for (const tid of targets) {
-          receivedHeal[tid] = (receivedHeal[tid] || 0) + perPerson;
-          memberHPNow[tid] = Math.min(members[tid].maxHP || 9999, memberHPNow[tid] + perPerson);
+          const adjustedHeal=Math.round(perPerson*(statusCombatByMember[tid]?.healingReceivedMultiplier || 1));
+          const before=memberHPNow[tid];
+          memberHPNow[tid] = Math.min(members[tid].maxHP || 9999, before + adjustedHeal);
+          const healed=Math.max(0,memberHPNow[tid]-before);
+          receivedHeal[tid] = (receivedHeal[tid] || 0) + healed;
+          healedTargets.push({id:tid,name:members[tid]?.name||"前衛",heal:healed});
         }
-        supportLog.push({ id, name: members[id].name || "後衛", kind:"heal", dmg:0, heal:pool, targets:targets.map(tid=>({id:tid,name:members[tid]?.name||"前衛",heal:perPerson})) });
+        supportLog.push({ id, name: members[id].name || "後衛", kind:"heal", dmg:0, heal:healedTargets.reduce((sum,target)=>sum+target.heal,0), targets:healedTargets });
       } else {
         supportLog.push({ id, name: members[id].name || "後衛", kind:"buff", dmg:0, buffPct:Math.round(scorePct * 25), targets:frontIds.map(tid=>({id:tid,name:members[tid]?.name||"前衛"})) });
       }
@@ -701,6 +801,7 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
     const ctrAccum    = {};
     let   bossKilled  = false;
     let   catRoundDmg = 0;
+    const catDefBonusByMember = {};
 
     const healSupportLog = supportLog.filter(item => item.kind === "heal");
     const buffSupportLog = supportLog.filter(item => item.kind === "buff");
@@ -718,43 +819,70 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       // round total when building the per-player animation log.
       const totalDmgP  = pd.totalDmg;
       const totalCrits = allArrows.filter(a => a.isCrit).length;
-      monsterHP = Math.max(0, monsterHP - totalDmgP);
+      const signatureDamage=applyPartySignatureBeforeDamage({damage:totalDmgP,...(monsterSignatureState||{})});
+      monsterSignatureState=signatureDamage.state;
+      const dealtDamage=signatureDamage.damage;
+      authoritativeDamageByMember[id]=dealtDamage;
+      monsterHP = Math.max(0, monsterHP - dealtDamage);
+      const reflected=monsterSignatureState?.reflectDuration>0
+        ? Math.min(Math.round(dealtDamage*(monsterSignatureState.reflectPct||0)/100),Math.round((members[id].maxHP||100)*0.15),Math.max(0,memberHPNow[id]-1))
+        : 0;
+      if(reflected>0)memberHPNow[id]=Math.max(1,memberHPNow[id]-reflected);
       miniRounds.push({
         miniRound:      miniRounds.length + 1,
         isCounter:      false,
         attackerId:     id,
-        playerLog:      [{ id, name: pd.name, role: members[id].role || "front", dmg: totalDmgP, ctr: 0, arrowBreakdown: allArrows, crits: totalCrits }],
-        totalDmg:       totalDmgP,
+        playerLog:      [{ id, name: pd.name, role: members[id].role || "front", dmg: dealtDamage, absorbed:signatureDamage.absorbed, reflected, ctr: 0, arrowBreakdown: allArrows, crits: totalCrits }],
+        totalDmg:       dealtDamage,
         monsterHPAfter: monsterHP,
       });
       if (monsterHP <= 0) { bossKilled = true; break; }
     }
 
+    const memberUpdates = {};
     // 貓咪攻擊（三輪結束後 Boss 仍存活時）
     if (!bossKilled) {
       const catAttackers = aliveIds.filter(id => (members[id].catATK || 0) > 0 && memberHPNow[id] > 0);
       if (catAttackers.length > 0) {
         const catLog = [];
+        let teamShieldMax = 0;
+        let teamHealMax = 0;
+        let teamCleanseMax = 0;
         for (const id of catAttackers) {
-          const cATK  = members[id].catATK || 0;
           const cName = members[id].catName || "貓貓";
-          let cDmg = 0;
-          const cArrows = [];
-          for (let i = 0; i < 2; i++) {
-            const sc   = Math.max(5, Math.min(10, Math.round(7 + (Math.random() * 6 - 3))));
-            const base = 8 + cATK * 0.7 + sc * 1.2 - (room.monster.def || 0) * 0.35;
-            const mult = 0.85 + Math.random() * 0.3;
-            const d    = Math.max(1, Math.round(base * mult));
-            cDmg += d;
-            cArrows.push({ label: String(sc), dmg: d, isCrit: mult > 1.1, partName: "貓爪", partIcon: "🐾" });
-          }
-          const skillTriggered = Math.random() < 0.25;
-          const skillName = skillTriggered ? "連環貓掌" : null;
-          const skillBonus = skillTriggered ? Math.max(1, Math.round(cDmg * 0.25)) : 0;
-          cDmg += skillBonus;
+          const outcome=resolveAuthoritativeCatRound({member:members[id],monster:{...room.monster,currentHp:monsterHP,maxHp:room.monsterMaxHP||room.monster.hp},round,state:members[id].catBattleState,battleId:room.battleInstanceId||roomId,memberId:id});
+          const cDmg=outcome.monsterDamage;
+          const cArrows=[{label:"🐾",dmg:cDmg,isCrit:outcome.strongTriggered,partName:outcome.events[0]?.name||"貓咪協戰",partIcon:"🐾"}];
+          const skillTriggered=outcome.strongTriggered;
+          const skillName=skillTriggered?outcome.events.find(e=>e.kind==="strong_skill")?.name:null;
+          const attackEvent=outcome.events.find(event=>event.kind==="cat_attack");
+          const skillBonus=Math.max(0,(attackEvent?.hitCount||1)-1);
+          memberUpdates[`members.${id}.catBattleState`]=outcome.state;
+          if(outcome.playerHeal>0)memberHPNow[id]=Math.min(members[id].maxHP||memberHPNow[id],memberHPNow[id]+outcome.playerHeal);
+          if(outcome.playerShield>0)memberUpdates[`members.${id}.potionBuffs.shield`]=(members[id].potionBuffs?.shield||0)+outcome.playerShield;
+          teamShieldMax=Math.max(teamShieldMax,outcome.teamShield||0);
+          teamHealMax=Math.max(teamHealMax,outcome.teamHeal||0);
+          teamCleanseMax=Math.max(teamCleanseMax,outcome.teamCleanseCount||0);
+          catDefBonusByMember[id]=outcome.playerShield>0?(outcome.playerDefBonusPct||0):0;
+          if(outcome.monsterStatus)monsterStatuses=mergeMonsterStatus(monsterStatuses,outcome.monsterStatus);
           catRoundDmg += cDmg;
-          catLog.push({ id, catId: members[id].catId || "diandian", name: `🐱${cName}`, dmg: cDmg, ctr: 0, arrowBreakdown: cArrows, crits: 0, isCat: true, skillTriggered, skillName, skillBonus });
+          catLog.push({
+            id, catId: members[id].catId || "diandian", name: `🐱${cName}`,
+            dmg: cDmg, ctr: 0, arrowBreakdown: cArrows, crits: 0, isCat: true,
+            skillTriggered, skillName, skillBonus, hitCount: attackEvent?.hitCount || 1,
+            statusApplied: outcome.monsterStatus || null,
+            heal: outcome.playerHeal || 0, shield: outcome.playerShield || 0,
+            teamHeal: outcome.teamHeal || 0, teamShield: outcome.teamShield || 0,
+            cleanseCount: outcome.teamCleanseCount || 0,
+            defBonusPct: outcome.playerDefBonusPct || 0,
+          });
         }
+        if(teamShieldMax>0)for(const targetId of aliveIds){const key=`members.${targetId}.potionBuffs.shield`;memberUpdates[key]=Math.max(Number(memberUpdates[key])||0,(members[targetId].potionBuffs?.shield||0)+teamShieldMax);}
+        if(teamHealMax>0)for(const targetId of aliveIds){const before=memberHPNow[targetId];memberHPNow[targetId]=Math.min(members[targetId].maxHP||before,before+teamHealMax);receivedHeal[targetId]=(receivedHeal[targetId]||0)+Math.max(0,memberHPNow[targetId]-before);}
+        if(teamCleanseMax>0)for(const targetId of aliveIds)statusRoundByMember[targetId].remainingStatuses=(statusRoundByMember[targetId].remainingStatuses||[]).slice(teamCleanseMax);
+        const signatureDamage=applyPartySignatureBeforeDamage({damage:catRoundDmg,...(monsterSignatureState||{})});
+        monsterSignatureState=signatureDamage.state;
+        catRoundDmg=signatureDamage.damage;
         monsterHP = Math.max(0, monsterHP - catRoundDmg);
         if (monsterHP <= 0) bossKilled = true;
         miniRounds.push({
@@ -769,7 +897,7 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       }
     }
 
-    const memberUpdates = {};
+    let familyStatusResults = [];
     // 最後怪物反擊：只打前衛；前衛全滅時才打全體
     if (!skipAllCtr && monsterHP > 0) {
       const allFrontDead = frontIds.every(id => memberHPNow[id] <= 0);
@@ -779,19 +907,24 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       const ctrLog = [];
       for (const id of ctrTargets) {
         const mem = members[id];
-        const effectiveDef = Math.round((mem?.baseDef || mem?.def || 10) * (statusRoundByMember[id]?.defMultiplier || 1) * (mem?.potionBuffs?.defMult || 1));
+        const effectiveDef = Math.round((mem?.baseDef || mem?.def || 10) * (statusRoundByMember[id]?.defMultiplier || 1) * (mem?.potionBuffs?.defMult || 1)*(1+(catDefBonusByMember[id]||0)/100));
         const ctrCrit = Math.random() < 0.1;
         const abilityTargetsMember = !partyAbility?.targetId || partyAbility.targetId === id;
+        const signatureDelayed=abilityTargetsMember ? (monsterSignatureState?.delayedMult||0) : 0;
         const skillMult = abilityTargetsMember && partyAbility?.resolved?.skillDamageMult > 0 ? partyAbility.resolved.skillDamageMult : 1;
         const wbReduce = Number(mem?.wbBonus?.effectVersion) >= 2
           ? resolveWorldBossCardEffects({ equippedCardKeys:mem.wbBonus?.equippedCardKeys || [], enemyFamily:room.monster?.family, enemyClass:(room.monster?.bossTagged || room.monster?.encounter === "boss") ? "boss" : "monster" }).modifiers.damageReducePct : 0;
-        const rawCtr = Math.ceil(calcCtrFn(room.monster.atk, effectiveDef, (mem?.wbBonus?.dmgReducePct || 0) + wbReduce, ctrCrit) * skillMult * (1 - (room.consumableEffects?.counterReducePct || 0) / 100));
+        const rawCtr = Math.ceil(calcCtrFn(room.monster.atk, effectiveDef, (mem?.wbBonus?.dmgReducePct || 0) + wbReduce, ctrCrit) * (skillMult+signatureDelayed) * (statusCombatByMember[id]?.damageTakenMultiplier || 1) * (1 - (room.consumableEffects?.counterReducePct || 0) / 100));
         const counterHit = resolvePlayerCounter({ arrows:mem?.arrows || [], baseDamage:rawCtr, maxHP:mem?.maxHP || memberHPNow[id] });
-        const absorbed = Math.min(mem?.potionBuffs?.shield || 0, counterHit.damage);
+        const shieldKey=`members.${id}.potionBuffs.shield`;
+        const shieldBefore=Number(memberUpdates[shieldKey])||mem?.potionBuffs?.shield||0;
+        const absorbed = Math.min(shieldBefore, counterHit.damage);
         const ctr = counterHit.damage - absorbed;
-        memberUpdates[`members.${id}.potionBuffs.shield`] = Math.max(0, (mem?.potionBuffs?.shield || 0) - absorbed);
+        memberUpdates[shieldKey] = Math.max(0,shieldBefore-absorbed);
+        if(absorbed>0){const stateKey=`members.${id}.catBattleState`;memberUpdates[stateKey]=recordCatShieldAbsorption(memberUpdates[stateKey]||mem.catBattleState,{catId:mem.catId,bondLevel:mem.catBond,catAtk:mem.catATK||mem.catAtk,absorbed,round});}
         ctrAccum[id]    = (ctrAccum[id] || 0) + ctr;
         memberHPNow[id] = Math.max(0, memberHPNow[id] - ctr);
+        if(memberHPNow[id]<=0){const stateKey=`members.${id}.catBattleState`;const guard=consumeCatDeathGuard(memberUpdates[stateKey]||mem.catBattleState,{catId:mem.catId,maxHp:mem.maxHP,mode:"normal"});if(guard.triggered){memberHPNow[id]=guard.hp;memberUpdates[stateKey]=guard.state;}}
         ctrLog.push({ id, name: mem.name || "射手", dmg: 0, ctr, ctrCrit, hitPart:counterHit.part, averageScore:counterHit.averageScore });
       }
       miniRounds.push({
@@ -801,6 +934,16 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
         totalDmg:       0,
         monsterHPAfter: monsterHP,
       });
+      familyStatusResults = resolveFamilyOrdinaryStatusForParty({
+        family:room.monster?.family,
+        tierIndex:room.monster?.tierIndex,
+        members:aliveIds.map(id=>({
+          id,alive:members[id].alive,role:members[id].role,
+          mods:members[id].statusResistance || {},
+        })),
+        random:member=>deterministicStatusRoll(room.battleInstanceId || roomId,round,member.id,room.monster?.family),
+      });
+      monsterSignatureState={...(monsterSignatureState||{}),delayedMult:0};
     }
 
     // 後衛治癒：池子 = maxHP × 15% × 命中分數%，均分給存活隊友（比照地下城系統）
@@ -838,10 +981,11 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
     // 支援已在前衛出手前加入 miniRounds；這裡不再重複結算。
 
     // Step 4: 套用事件額外效果（作用於大回合總結）
-    const totalDmg = Object.values(allPlayerData).reduce((s, p) => s + p.totalDmg, 0) + catRoundDmg;
+    const totalDmg = Object.values(authoritativeDamageByMember).reduce((sum,damage)=>sum+damage,0) + catRoundDmg;
 
     let   liveAfter     = 0;
     const demotedMembers = [];
+    const appliedAbilityStatusesByMember={};
     for (const id of aliveIds) {
       let hp = memberHPNow[id];
       // 後衛治癒
@@ -865,16 +1009,29 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
         liveAfter++;
       }
       memberUpdates[`members.${id}.hp`] = hp;
-      const incomingStatus = partyAbility?.targetId === id ? partyAbility?.resolved?.status : null;
-      memberUpdates[`members.${id}.combatStatuses`] = addPartyCombatStatus(statusRoundByMember[id]?.remainingStatuses || [], incomingStatus);
-      if (members[id]?.potionBuffs?.regenPct && hp > 0) memberUpdates[`members.${id}.hp`] = Math.min(members[id]?.maxHP || 9999, hp + Math.round((members[id]?.maxHP || 100) * members[id].potionBuffs.regenPct / 100));
+      const abilityTargetsMember=!!partyAbility?.resolved&&(!partyAbility.targetId||partyAbility.targetId===id);
+      const incomingStatuses=abilityTargetsMember
+        ? (partyAbility.resolved.statuses?.length?partyAbility.resolved.statuses:partyAbility.resolved.status?[partyAbility.resolved.status]:[])
+          .map(status=>applyStatusResist(status,members[id].statusResistance||{})).filter(status=>status&&Number(status.strength)!==0)
+        : [];
+      if(incomingStatuses.length)appliedAbilityStatusesByMember[id]=incomingStatuses;
+      const ordinaryStatus = familyStatusResults.find(result=>result.targetId===id)?.finalStatus || null;
+      const remainingStatuses = removeBleedOnEffectiveHeal(statusRoundByMember[id]?.remainingStatuses || [], {healed:receivedHeal[id] || 0});
+      let nextCombatStatuses=remainingStatuses;
+      for(const incomingStatus of incomingStatuses)nextCombatStatuses=addPartyCombatStatus(nextCombatStatuses,incomingStatus);
+      memberUpdates[`members.${id}.combatStatuses`] = addPartyCombatStatus(nextCombatStatuses, ordinaryStatus);
+      if (members[id]?.potionBuffs?.regenPct && hp > 0) {
+        const recovery=applyIncomingHealing({hp,maxHp:members[id]?.maxHP || hp,amount:(members[id]?.maxHP || 100)*members[id].potionBuffs.regenPct/100,statuses:memberUpdates[`members.${id}.combatStatuses`]});
+        memberUpdates[`members.${id}.hp`] = recovery.hp;
+        memberUpdates[`members.${id}.combatStatuses`] = recovery.statuses;
+      }
     }
 
     // Step 5: 聚合 playerLog（歷史記錄用）
     const playerLog = aliveIds.map(id => ({
       id,
       name:           allPlayerData[id].name,
-      dmg:            allPlayerData[id].totalDmg,
+      dmg:            authoritativeDamageByMember[id] || 0,
       ctr:            ctrAccum[id] || 0,
       crits:          allPlayerData[id].crits,
       arrowBreakdown: allPlayerData[id].arrowBreakdown,
@@ -891,6 +1048,8 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       monsterHPAfter:  monsterHP,
       counterRound:    !skipAllCtr,
       demotedMembers,
+      familyStatusResults,
+      appliedAbilityStatusesByMember,
       ...(partyAbility?.scheduled ? {
         monsterAbility:partyAbility,
         // 給左上角戰鬥訊息用的一行敘述（權威端產生，雙端看到的文字才會一致）
@@ -904,6 +1063,8 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       } : {}),
       statusTicks:Object.fromEntries(aliveIds.filter(id => statusRoundByMember[id]?.ticks?.length).map(id => [id, statusRoundByMember[id].ticks])),
     };
+    monsterSignatureState=tickPartySignatureState(monsterSignatureState);
+    if(partyAbility?.resolved)monsterSignatureState=applyPartySignatureAfterAbility(monsterSignatureState,partyAbility.resolved,{monsterMaxHp:room.monsterMaxHP});
 
     // 前衛全滅＝全體判輸：後衛沒有攻擊力，只剩後衛會打不死怪又不算輸而卡死（2026-07-12）。
     const frontLiveAfter = frontIds.filter(id => (memberHPNow[id] || 0) > 0).length;
@@ -949,6 +1110,7 @@ export async function processPartyRound(roomId, room, calcDmgFn, calcCtrFn) {
       // makeRoundEvent 保留供未來正式事件系統使用，但不再於每回合擲骰。
       roundEvent: null,
       monsterAbilityPreview: nextAbilityPreview,
+      monsterSignatureState,
       "consumableEffects.counterReducePct": 0,
       "consumableEffects.skipCounterRound": null,
       "consumableEffects.poisonByMember": poisonByMember,
