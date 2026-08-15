@@ -83,6 +83,7 @@ export function useFirestoreRound({
   const retryCountRef = useRef(0);  // 連續失敗次數
   const retryRoundRef = useRef(0);  // retryCount 所屬回合
   const confirmNowRef = useRef(null); // { timer, interval, doProcess, processDelayMs }
+  const submitLockRef = useRef(false);
 
   const onBeforeSubmitRef = useRef(onBeforeSubmit);
   onBeforeSubmitRef.current = onBeforeSubmit;
@@ -115,14 +116,19 @@ export function useFirestoreRound({
   // processing/log 更新、稍後才收到 round 更新；直接監看自己的 ready 才能
   // 保證下一輪不會殘留「已送出」鎖定狀態。
   // 注意：當 round 結算後 status 同時變成 "resolving" 時，不能擋掉此重置。
+  // 依賴 room 物件本身而非 myReady 值：Firestore onSnapshot 可能直接從
+  // ready=false（送箭前）跳到 ready=false（結算後），myReady 全程無變化不會
+  // 觸發 effect——用 room 每次更新都檢查才能保證重置。
+  // getMembers 不能用 room.members：決鬥房是 teamA/teamB 結構。
   useEffect(() => {
     if (!room) return;
     const me = getMembersRef.current(room).find(member => member.id === myId);
     if (me && !me.ready) {
       setSubmitted(false);
       setLocalProcessing(false);
+      submitLockRef.current = false;
     }
-  }, [room?.status, room?.members?.[myId]?.ready, myId]);
+  }, [room, myId]); // eslint-disable-line
 
   // 同回合的房間快照更新不能取消已開始的房主確認倒數；僅在卸載時統一清除。
   useEffect(() => () => {
@@ -135,12 +141,14 @@ export function useFirestoreRound({
 
   // ── 2. Submit ────────────────────────────────────────────
   const handleSubmit = useCallback(async (...extraArgs) => {
-    if (localProcessing || submitted) return false;
+    if (submitLockRef.current || localProcessing || submitted) return false;
+    submitLockRef.current = true;
     onBeforeSubmitRef.current?.();
     setLocalProcessing(true);
     try {
       const res = await submit(roomId, myId, ...extraArgs);
       if (res?.ok === false) {
+        submitLockRef.current = false;
         onSubmitErrorRef.current?.(res.reason || "送出失敗");
         return false;
       }
@@ -148,6 +156,7 @@ export function useFirestoreRound({
       onSubmitSuccessRef.current?.(...extraArgs);
       return true;
     } catch (e) {
+      submitLockRef.current = false;
       onSubmitErrorRef.current?.(e.message);
       return false;
     } finally {

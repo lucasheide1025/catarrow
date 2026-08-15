@@ -1,4 +1,34 @@
+## 自由狩獵：弓種加成（2026-08-13）
+- 最終倍率公式：`distanceMult × faceMult × bowMult`。
+- `bowMult`：裸弓 ×1、獵弓／複合弓 ×1、傳統弓 ×2；其他或缺值 ×1。
+- 單人由本場射擊設定檔決定；組隊為 **每位玩家各自倍率**，`submitArrows()` 保存 `members.{id}.bowType`，權威端依成員 bowType 計算正常箭傷。
+- 傳統弓玩家 ×2 不會讓隊友一起 ×2；原作用範圍不變，不放大投擲道具、毒、貓攻擊、後衛支援與反擊。
+
+## 自由狩獵：狩獵環境（2026-08-13）
+- 戰前頁不再顯示已廢止的「分數靶紙／學生固定距離／每回合固定箭數」作為自由狩獵規則。
+- 單人與組隊自由狩獵都改成「靶紙 + 距離」環境選擇，倍率直接沿用世界王 `RAID_FACES / RAID_DISTANCES / rangeMultiplier`，避免兩套平衡分叉。
+- 組隊環境由每位成員各自設定並寫入 `members.{id}.huntDistanceM / huntTargetFmt / bowType`；房間 hunt 值只做舊資料 fallback。開始戰鬥與權威結算都以成員個人環境為準。
+- 組隊權威結算只把環境倍率乘在前衛的正常射箭傷害；投擲藥水直接傷害、毒傷、貓攻擊不乘環境倍率。
+- 三連靶的每靶箭數上限不只靠 UI：`BattleScreen` 會保留 `faceIndex`，`partyDb.processPartyRound()` 再以 `applyFreeHuntFaceCap()` 驗證，超額箭傷害為 0。
+- 非自由狩獵 party room 繼續使用原本 arrowsPerRound / targetFormat 流程，不套自由狩獵倍率。
+
 # 🎮 game-systems — 遊戲化規格
+
+## 🧭 自由狩獵（2026-08-13 Phase 1）
+
+正式會員的一般怪物戰鬥統一從「自由狩獵」進入。玩家先選七族，再選 T1~T6，再從該族該階 **3 隻 `encounter=normal` 怪物**中指定目標，最後決定單人、建立隊伍或加入隊伍。
+
+- 怪物池單一真本：`EXPANSION_MONSTERS` → `freeHuntCatalog.js`；不可退回 legacy 36 怪。
+- Boss 過濾只看 `encounter`。T5 的 legacy tier key 叫 `boss`，但 T5 仍有正常 `encounter=normal` 怪物。
+- 單人指定目標由 `MonsterBattle.huntMonsterId` 固定，不重新抽怪；既有傷害、掉落、異常、藥水、卡片、獎勵公式全部不變。
+- 組隊建立時把指定目標寫進 `partyRooms`；等待室偵測固定目標後直接鎖怪，不顯示重新抽取。加入者沿用房間目標，不能自行改怪。
+- 自由狩獵組隊入口已內嵌在 `FreeHunt.jsx`：選定怪物後按「建立隊伍」會直接建房並進等待室；「直接加入隊伍」會列出所有等待中的自由狩獵房，不再繞舊 `PartyLobby` 再按一次建立／加入。
+- 組隊射擊環境採**成員個人設定**：`members.{id}.huntDistanceM`、`huntTargetFmt`、`bowType` 各自獨立；距離／靶紙／弓種倍率與 `faceCap` 都在 `processPartyRound()` 逐人成員權威重算。房間層 `huntDistanceM/huntTargetFmt` 僅做舊房 fallback。
+- `arrowsPerRound`（3／6 箭）仍是**整房共用且僅房主可設定**；非房主沒有 3/6 操作，只能看到目前每回合箭數。
+- 正式會員／後台的舊 `party` 直接路由已移除；`MemberApp` / `AdminApp` 不再 import 或渲染 `PartyLobby`。舊 PartyLobby 目前只保留在 `GuestApp` 作訪客相容，非 Free Hunt 舊房仍可走原候選怪流程。
+- Free Hunt 單人即使共用 `MonsterBattle` 戰鬥核心，也禁止進 legacy `phase="select"`：勝敗結算「換對手」、戰鬥離開、模式返回都透過 `returnToOpponentSelection()`，有 `huntMonsterId` 時回 `FreeHunt`。
+- Free Hunt 組隊房的怪物真本是 `fixedHuntMonster`（由 `huntMonsterId/monsterSnapshot` 解析）；不讀 `drawnMonsters`、不重抽，也不讓 `challengeLevel` 決定 Free Hunt 開戰目標。
+- 架構決策：Phase 1 不把 solo 強制改成 Firestore room。未來若要真正統一底層，再把 solo 視為 `partySize=1` 的 hunt room；本階段先避免重寫穩定戰鬥核心。
 > 最後更新：2026-07-25（補記大富翁/裝備專精/殭屍三系統，實查原始碼；成本控制歸 ai-guide 鐵律）
 
 🔗 **在 Obsidian 中開啟**：`obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Fgame-systems`
@@ -874,3 +904,18 @@ team_boost     ATK ×1.5  (單人特強，原有)
 - **公會商店**（`data/guildShop.js`，CAT幣唯一去處）：①主線材料六族 t1~t3（10/25/60，高階不賣）②公會裝 3 個貨架層級（35~380）。調價只改這張表；購買驗證在 `domain/guildShopPurchase.js` 純函數。
 - **貓貓參戰**（`domain/guildCats.js`）：真貓（`members/{id}/cats`）→ 戰鬥單位，**沿用主線 `calcCatCombatStats`**（貓村養貓＝遠征變強，這就是融合點）。一趟最多 3 隻，存 `guildProfiles.partyCats`；**`null`=未設定→自動帶最強前3隻、`[]`=刻意不帶貓**（兩者不可混用，否則取消最後一隻會被自動補回）。公會**只讀貓不寫貓**（不呼叫 `addCatBond`/`addCatXP`）。
 - **未做（下次接）**：稱號/可分享冒險者證、大廳+委託板+公會長貓（P4）、ComfyUI 2.5D 美術（目前全是 emoji 佔位）、公會裝強化/詞綴。
+
+## 2026-08-13 自由狩獵 Phase 2 — 狩獵環境
+- 自由狩獵戰前頁移除舊「分數靶紙／學生模式／固定距離／每回合箭數」摘要，改為手機優先「狩獵環境」卡。
+- `src/lib/freeHuntEnvironment.js` 直接引用世界王 `src/worldboss/domain/raidFaces.js` 與 `raidRange.js`，維持單一倍率真本。
+- 距離 5–18m；半靶 ×1.0、全靶 ×1.2、原野靶 ×1.4、三連靶 ×1.5；三連靶每張最多 2 箭產生有效傷害。
+- 最終環境倍率沿用 `rangeMultiplier()`（距離倍率 × 靶紙倍率），只在單人自由狩獵透過 `BattleScreen.outgoingDamageMultiplier` 套入既有最終箭傷；其他模式預設 ×1。
+- 靶紙與距離沿用 `targetFmt`／`selectedDistance`、`mb_defaults` 與 battle snapshot，不建立平行設定。
+
+
+### 狩獵模式：組隊戰鬥手機 Phase UI（2026-08-13 第一版）
+- 僅套用狩獵模式組隊房；非狩獵 Party 流程維持原樣。
+- 顯示層拆為 INPUT / WAITING / RESOLUTION。送出後隱藏輸入；processing 或 pending resolution 時立即讓出演出畫面，等待 overlay 不再遮住動畫。
+- 手機 compact HUD 顯示怪物 HP、階段、隊伍完成數、最多 3 個怪物權威異常 +N；輸入階段顯示最多 4 位隊員極簡 HP/ready 與自己的護盾/狀態。
+- 怪物異常使用 partyRooms.monsterStatuses；玩家護盾使用 members.*.potionBuffs.shield。
+- 不變更傷害公式、processPartyRound、3/6 箭、距離/靶紙/弓種倍率、後衛支援與藥水。

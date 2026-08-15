@@ -23,7 +23,8 @@ const CSS = `
 
 export default function CouncilHall({ profile, village, myCats, onBack, initialTab = "expedition" }) {
   const [tab, setTab] = useState(initialTab === "collect" ? "collect" : "expedition");
-  const [boardTeam, setBoardTeam] = useState(false);
+  // 探索地圖模式入口：null＝先選模式，"solo"＝單人，"team"＝組隊（取代舊的 boardTeam 布林）
+  const [boardMode, setBoardMode] = useState(null);
   const [boardChecking, setBoardChecking] = useState(false);
   const [reconnectBoardRoomId, setReconnectBoardRoomId] = useState(null);
   const [activeSite, setActiveSite] = useState(null);
@@ -47,17 +48,17 @@ export default function CouncilHall({ profile, village, myCats, onBack, initialT
     return () => { cancelled = true; };
   }, [profile?.id]);
 
-  // 進入探索分頁時偵測進行中的團隊房間 → 自動切團隊模式（重整後房主/隊員才回得去）。
-  // boardTeam 是本地 state，重整後會重置成 false，若不主動偵測，玩家會卡在單人畫面回不去房間。
+  // 進入探索分頁且尚未選模式時，偵測進行中的團隊房間 → 自動進組隊模式（重整後房主/隊員才回得去）。
+  // boardMode 是本地 state，重整後會重置成 null，若不主動偵測，玩家會卡在單人畫面回不去房間。
   useEffect(() => {
-    if (tab !== "collect" || boardTeam || !profile?.id) return;
+    if (tab !== "collect" || boardMode || !profile?.id) return;
     let cancelled = false;
     setBoardChecking(true);
     findReconnectableBoardRoom(profile.id)
-      .then(r => { if (!cancelled && r.room) { setReconnectBoardRoomId(r.room.id); setBoardTeam(true); } })
+      .then(r => { if (!cancelled && r.room) { setReconnectBoardRoomId(r.room.id); setBoardMode("team"); } })
       .finally(() => { if (!cancelled) setBoardChecking(false); });
     return () => { cancelled = true; };
-  }, [tab, profile?.id]);
+  }, [tab, profile?.id, boardMode]);
 
   useEffect(() => {
     if (!profile?.id || activeSite) return;
@@ -265,9 +266,15 @@ export default function CouncilHall({ profile, village, myCats, onBack, initialT
 
       {tab === "collect" && (boardChecking
         ? <div style={{ padding: "48px 0", textAlign: "center", color: "rgba(255,255,255,0.6)", fontWeight: 700 }}>🔄 重新連線中…</div>
-        : boardTeam
-          ? <CatVillageBoardTeam profile={profile} initialRoomId={reconnectBoardRoomId} onClose={() => { setReconnectBoardRoomId(null); setBoardTeam(false); setTab("expedition"); }} />
-          : <CatVillageBoard profile={profile} onClose={() => setTab("expedition")} onTeam={() => setBoardTeam(true)} />
+        : boardMode === "team"
+          ? <CatVillageBoardTeam profile={profile} initialRoomId={reconnectBoardRoomId} onClose={() => { setReconnectBoardRoomId(null); setBoardMode(null); }} />
+          : boardMode === "solo"
+            ? <CatVillageBoard profile={profile} onClose={() => setBoardMode(null)} onTeam={() => setBoardMode("team")} />
+            : <BoardModeSelect
+                onSolo={() => setBoardMode("solo")}
+                onTeam={() => setBoardMode("team")}
+                onBack={() => setTab("expedition")}
+              />
       )}
 
       {false && (
@@ -396,6 +403,75 @@ export default function CouncilHall({ profile, village, myCats, onBack, initialT
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+// ── 探索地圖模式選擇（單人／組隊的新入口）────────────────────
+function BoardModeSelect({ onSolo, onTeam, onBack }) {
+  return (
+    <div style={{ animation: "gather-in .3s ease-out both" }}>
+      <div style={{ textAlign: "center", padding: "26px 0 4px" }}>
+        <div style={{ fontSize: 26 }}>🗺️</div>
+        <div style={{ fontSize: 20, fontWeight: 950, color: "#facc15", marginTop: 6 }}>探索地圖</div>
+        <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 6 }}>先選擇進行方式，單人隨時出發・組隊與夥伴同行</div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 16 }}>
+        <button
+          onClick={onSolo}
+          style={{
+            border: "none", borderRadius: 12, cursor: "pointer", minHeight: 168,
+            background: "linear-gradient(160deg,#1e293b,#0f172a)",
+            border: "1px solid rgba(251,191,36,.35)",
+            boxShadow: "0 8px 20px rgba(0,0,0,.35)",
+            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8,
+            padding: "18px 12px", transition: "transform .15s",
+          }}
+          onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; }}
+          onMouseLeave={e => { e.currentTarget.style.transform = "none"; }}
+        >
+          <span style={{ fontSize: 40, filter: "drop-shadow(0 3px 6px rgba(0,0,0,.4))" }}>🐱</span>
+          <span style={{ fontSize: 16, fontWeight: 950, color: "#fbbf24" }}>單人進行</span>
+          <span style={{ fontSize: 11, color: "#94a3b8", fontWeight: 700, lineHeight: 1.6 }}>
+            自己出發
+            隨時開始
+            進度個人保存
+          </span>
+        </button>
+
+        <button
+          onClick={onTeam}
+          style={{
+            border: "none", borderRadius: 12, cursor: "pointer", minHeight: 168,
+            background: "linear-gradient(160deg,#064e3b,#022c22)",
+            border: "1px solid rgba(52,211,153,.45)",
+            boxShadow: "0 8px 20px rgba(0,0,0,.35)",
+            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8,
+            padding: "18px 12px", transition: "transform .15s",
+          }}
+          onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; }}
+          onMouseLeave={e => { e.currentTarget.style.transform = "none"; }}
+        >
+          <span style={{ fontSize: 40, filter: "drop-shadow(0 3px 6px rgba(0,0,0,.4))" }}>👥</span>
+          <span style={{ fontSize: 16, fontWeight: 950, color: "#34d399" }}>組隊進行</span>
+          <span style={{ fontSize: 11, color: "#6ee7b7", fontWeight: 700, lineHeight: 1.6 }}>
+            建立或搜尋房間
+            最多 8 人同行
+            全隊共享旅程進度
+          </span>
+        </button>
+      </div>
+
+      <button
+        onClick={onBack}
+        style={{
+          width: "100%", marginTop: 14, padding: "11px 0", border: "none", borderRadius: 8,
+          background: "rgba(255,255,255,0.08)", color: "#cbd5e1", fontWeight: 900, fontSize: 13, cursor: "pointer",
+        }}
+      >
+        ← 返回議事廳
+      </button>
     </div>
   );
 }

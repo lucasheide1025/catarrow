@@ -12,6 +12,10 @@ import { drawDungeonFloorMonsters, drawDungeonFallbackMonster } from "../../lib/
 import { resolveDungeonBossEncounter } from "../../lib/dungeonBossEncounter";
 import { getRestoredExpeditionPhase, isRestorableExpeditionMapState } from "../../lib/expeditionMapState";
 import { buildExpeditionMemberData } from "../../lib/expeditionMemberData";
+import { buildCombatModifiers } from "../../lib/combatModifiers";
+import { getEquipSpecializations, toEquipSpecSlots } from "../../lib/equipSpecializationDb";
+import { calcCardCombatEffectsFromCollection } from "../../lib/cardTalents";
+import { normalizePlayerStatusResistance } from "../../lib/familyPlayerStatus";
 import { preloadDungeonUiAssets } from "../../lib/dungeonAssetCache";
 import { subscribeCardCollection } from "../../lib/db";
 import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
@@ -352,6 +356,7 @@ export default function DungeonExpedition({
   const myId = profile?.id;
   // 卡片裝備加成（世界王卡等，地下城遠征本來沒串接，2026-07-09 補上）
   const [cardColl, setCardColl] = useState({ cards: {}, wbCards: {}, equipped: [] });
+  const [equipSpecSlots,setEquipSpecSlots]=useState(null);
   const [cardReady, setCardReady] = useState(() => cardCollection !== undefined || isGuest || !myId);
   useEffect(() => {
     if (cardCollection !== undefined) {
@@ -371,6 +376,9 @@ export default function DungeonExpedition({
     });
   }, [myId, isGuest, cardCollection]);
   const cardBonus = calcEquippedBonus(resolveEquippedCards(cardColl));
+  useEffect(()=>{if(!myId||isGuest){setEquipSpecSlots(null);return undefined;}let active=true;getEquipSpecializations(myId).then(spec=>{if(active)setEquipSpecSlots(toEquipSpecSlots(spec));});return()=>{active=false;};},[myId,isGuest]);
+  const battleModifiers=useMemo(()=>buildCombatModifiers({cardFx:calcCardCombatEffectsFromCollection(cardColl||{}),equipSpec:equipSpecSlots}),[cardColl,equipSpecSlots]);
+  const buildCurrentMemberData=useCallback(()=>buildExpeditionMemberData(profile,cardBonus,cardColl,normalizePlayerStatusResistance(battleModifiers),{companionAttackPct:battleModifiers.companionAttackPct,companionHealingPct:battleModifiers.companionHealingPct}),[profile,cardBonus,cardColl,battleModifiers]);
   // 難度封頂第二層防禦：訪客/兒童一律夾在 1~tierCap（不完全信任上游 GuestDungeonEntry 傳來的值）
   // 見 .trellis/tasks/07-10-guest-kid-dungeon-parity/design.md §3
   const difficultyTier = isGuest
@@ -584,7 +592,7 @@ export default function DungeonExpedition({
   // 初始化玩家狀態 + 樓層/地圖還原
   useEffect(() => {
     if (phase === "intro" && cardReady) {
-      const base = buildExpeditionMemberData(profile, cardBonus, cardColl);
+      const base = buildCurrentMemberData();
       const isResume = resumeFromFloor > 0 || resumeHp > 0 || excavation?.mapState;
       const hasTrustedCombatSnapshot = Number(excavation?.combatSnapshotVersion) >= 2;
       const lockedMaxHP = isResume && hasTrustedCombatSnapshot && Number.isFinite(Number(excavation?.resumeMaxHP))
@@ -1479,7 +1487,7 @@ export default function DungeonExpedition({
       <ExpeditionBattleRoom
         key={pendingRoom.id}
         memberData={{
-          ...buildExpeditionMemberData(profile, cardBonus),
+          ...buildCurrentMemberData(),
           id: myId,
           hp: playerState.hp,
           maxHP: playerState.maxHP,

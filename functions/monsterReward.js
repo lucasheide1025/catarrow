@@ -9,10 +9,20 @@ const COIN_RANGE = Object.freeze({
 });
 const MODE_MULT = Object.freeze({ novice:1, student:2, veteran:3, match:4, expedition:0 });
 const SOLO_CHALLENGE = Object.freeze({
-  easy:{ materialQty:3, cardChance:0.12, coinMult:0.8 },
-  standard:{ materialQty:5, cardChance:0.20, coinMult:1 },
-  hard:{ materialQty:7, cardChance:0.30, coinMult:1.5 },
+  easy:{ materialQty:3, cardChance:0.12, coinMult:0.8, coinChestChance:0.2 },
+  standard:{ materialQty:5, cardChance:0.20, coinMult:1, coinChestChance:0.5 },
+  hard:{ materialQty:7, cardChance:0.30, coinMult:1.5, coinChestChance:1 },
 });
+const POTION_CHEST_CHANCE=Object.freeze({common:.02,rare:.03,elite:.05,fierce:.08,boss:.12,mythic:.18});
+const COIN_CHEST_RANGE=Object.freeze({common:[20,50],rare:[60,120],elite:[150,250],fierce:[300,500],boss:[600,1000],mythic:[1200,2000]});
+function stableTimestamp(key){return 1700000000000+Math.floor(seededRoll(`${key}:timestamp`)*31536000000);}
+function buildSoloChests({battleId,memberId,monster,challenge}){
+  const key=`${battleId}:${memberId}:${monster.id}:solo`,now=stableTimestamp(key),tierIndex=monster.tierIndex||1;
+  const chests=[{id:`${key}:material`,type:"family_mat",family:monster.family,tierIndex,tier:monster.tier,name:`T${tierIndex} 族系素材箱`,icon:"📦",from:"單人狩獵",ts:now}];
+  if(seededRoll(`${key}:coin-chest`)<challenge.coinChestChance){const range=COIN_CHEST_RANGE[monster.tier]||COIN_CHEST_RANGE.common;chests.push({id:`${key}:coin`,type:"coin",family:"coin",tier:monster.tier,coinTier:monster.tier,name:`${monster.tier} 金幣寶箱`,icon:"🪙",min:range[0],max:range[1],from:"單人狩獵",ts:now+1});}
+  if(seededRoll(`${key}:potion-chest`)<(POTION_CHEST_CHANCE[monster.tier]||.02))chests.push({id:`${key}:potion`,type:"potion",family:monster.family,tier:monster.tier,name:"藥水寶箱",icon:"🧪",from:"單人狩獵",ts:now+2});
+  return chests;
+}
 const REWARD_TYPES = new Set(["solo_hunt"]);
 
 function seededRoll(key) {
@@ -46,10 +56,11 @@ function buildTrustedMonsterReward(input) {
   const coins = Math.round(rawCoins * MODE_MULT[mode] * challenge.coinMult);
   const cardChance = resolveCardDropChance({ mode:"solo", encounter:monster.encounter, baseChance:challenge.cardChance });
   const cardDropped = seededRoll(`${battleId}:${memberId}:${monsterId}:card`) < cardChance;
+  const chests=buildSoloChests({battleId,memberId,monster,challenge});
   const claimId = [battleId, memberId, rewardType].map(encodeURIComponent).join("~");
   return {
     claimId, battleId, memberId, monsterId, rewardType, mode, coins,
-    challengeLevel, cardChance,
+    challengeLevel, cardChance, chests,
     materialTotals:{ [monster.material.id]:challenge.materialQty },
     card:cardDropped ? {
       monsterId:monster.card.id || monster.id, name:monster.name, icon:monster.icon || "👾",

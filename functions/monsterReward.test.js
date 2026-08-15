@@ -26,6 +26,13 @@ test("solo challenge controls trusted material quantity", () => {
   assert.throws(() => buildTrustedMonsterReward({ ...base, challengeLevel:"fake" }), /invalid_challenge_level/);
 });
 
+test("solo reward chests are deterministic and include one material chest",()=>{
+  const input={battleId:"chest_battle",memberId:"m1",monsterId:"ghost_t1_normal_a",rewardType:"solo_hunt",mode:"student",challengeLevel:"standard"};
+  const first=buildTrustedMonsterReward(input),second=buildTrustedMonsterReward(input);
+  assert.deepEqual(first.chests,second.chests);
+  assert.equal(first.chests.filter(chest=>chest.type==="family_mat").length,1);
+});
+
 test("new monster reward keeps its expansion material and card ids", () => {
   const reward = buildTrustedMonsterReward({ battleId:"rock_2", memberId:"m1", monsterId:"mountain_t2_normal_b", rewardType:"solo_hunt", mode:"novice", challengeLevel:"hard" });
   assert.deepEqual(reward.materialTotals, { mat_mountain_t2_normal_b:7 });

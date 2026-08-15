@@ -89,10 +89,11 @@ function publicEnvelope(envelope) {
 }
 
 function buildFamilyMaterialChests({ claimId, optionId, family, tierIndex, quantity, now=Date.now() }) {
+  const familyLabel={ghost:"鬼怪族",mountain:"山林族",insect:"毒蟲族",workplace:"職場族",exam:"考試族",temple:"西方怪物族",treasure:"寶箱族"}[family]||family;
   return Array.from({length:Math.max(0,Number(quantity)||0)},(_,index)=>({
     id:`${claimId}:${optionId}:${index}`,type:"family_mat",family,tierIndex,
     tier:["common","rare","elite","fierce","boss","mythic"][tierIndex-1]||"common",
-    name:`T${tierIndex} ${family} 族系素材箱`,icon:"📦",color:"#a16207",from:"dungeon_boss_choice",ts:now,
+    name:`T${tierIndex} ${familyLabel}素材箱`,icon:"📦",color:"#a16207",from:"dungeon_boss_choice",ts:now,
   }));
 }
 
@@ -110,8 +111,22 @@ function hasDungeonWinProof(room){
 }
 
 function isRewardableDungeonRoom(room,memberId,monsterId){
-  const participated=(room?.log||[]).some(entry=>(entry.playerLog||[]).some(player=>player.id===memberId));
-  return Boolean(room?.members?.[memberId]&&hasDungeonWinProof(room)&&Number(room.monsterHP)<=0&&participated&&(room.monster?.id||room.monsterId)===monsterId);
+  // Team membership is the participation proof. A rear/support member may
+  // legitimately have no playerLog entry in the killing round, but must still
+  // receive the same boss reward as the attacking members.
+  return Boolean(room?.members?.[memberId]&&hasDungeonWinProof(room)&&Number(room.monsterHP)<=0&&(room.monster?.id||room.monsterId)===monsterId);
 }
 
-module.exports = { buildDungeonBossEnvelope, buildFamilyMaterialChests, isRewardableDungeonRoom, publicEnvelope, validateChoices };
+function isRewardableTeamDungeonBossRoom(teamRoom,battleId,memberId,monsterId){
+  const eligible=Array.isArray(teamRoom?.bossRewardEligibleMemberIds)
+    ? teamRoom.bossRewardEligibleMemberIds.includes(memberId)
+    : Boolean(teamRoom?.members?.[memberId]);
+  return Boolean(
+    teamRoom?.members?.[memberId]
+    && eligible
+    && teamRoom?.bossRewardBattleId===battleId
+    && teamRoom?.bossRewardMonsterId===monsterId
+  );
+}
+
+module.exports = { buildDungeonBossEnvelope, buildFamilyMaterialChests, isRewardableDungeonRoom, isRewardableTeamDungeonBossRoom, publicEnvelope, validateChoices };

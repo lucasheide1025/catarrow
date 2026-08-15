@@ -5,7 +5,7 @@ const { FieldPath, FieldValue, Timestamp, getFirestore } = require("firebase-adm
 const { logger } = require("firebase-functions");
 const { onMessagePublished } = require("firebase-functions/v2/pubsub");
 const { onDocumentWritten } = require("firebase-functions/v2/firestore");
-const { onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const worldBossLifecycle = require("./worldBossLifecycle");
 const { buildWorldBossRewardSnapshot, rewardCategoryForBoss, largestRemainderAllocation, stableUnit, materialChest, coinChest, mergeNumeric } = require("./worldBossRewardSnapshot");
@@ -20,13 +20,14 @@ const {
 const { buildReminderCycle, reminderMailId, inactivityVariables, shouldReplaceReminderCycle } = require("./bookingReminder");
 const { buildDungeonNormalCardClaim, buildTrustedMonsterReward } = require("./monsterReward");
 const { buildPartyReward } = require("./partyReward");
-const { buildDungeonBossEnvelope, buildFamilyMaterialChests, isRewardableDungeonRoom, publicEnvelope, validateChoices } = require("./dungeonBossReward");
+const { buildDungeonBossEnvelope, buildFamilyMaterialChests, isRewardableDungeonRoom, isRewardableTeamDungeonBossRoom, publicEnvelope, validateChoices } = require("./dungeonBossReward");
 const { GUEST_COMMON_EQUIPMENT, assertActiveGuest, starterPatch, purchasePatch } = require("./guestEquipment");
 const {
   taipeiDateOffset, isDayBeforeCandidate, dayBeforeRecipientDecision,
   dayBeforeMailId, dayBeforeVariables, boundedDayBeforeCandidates,
 } = require("./bookingDayBefore");
 const guestReviews = require("./guestReviews");
+const marketingEmail = require("./marketingEmail");
 
 initializeApp();
 
@@ -274,9 +275,10 @@ exports.claimMonsterBattleReward = onCall({ region:"asia-east1" }, async request
   const memberRef = db.doc(`members/${reward.memberId}`);
   const claimRef = db.doc(`monsterRewardClaims/${reward.claimId}`);
   const inventoryRef = db.doc(`materialInventory/${reward.memberId}`);
+  const chestRef = db.doc(`chestInventory/${reward.memberId}`);
   const cardRef = db.doc(`cardCollections/${reward.memberId}`);
   return db.runTransaction(async transaction => {
-    const [memberSnap, claimSnap, inventorySnap, cardSnap] = await transaction.getAll(memberRef, claimRef, inventoryRef, cardRef);
+    const [memberSnap, claimSnap, inventorySnap, chestSnap, cardSnap] = await transaction.getAll(memberRef, claimRef, inventoryRef, chestRef, cardRef);
     if (!memberSnap.exists) throw new HttpsError("not-found", "member_not_found");
     const member = memberSnap.data();
     const ownsMember = member.uid === request.auth.uid || (request.auth.token.email && member.email === request.auth.token.email);
@@ -285,6 +287,7 @@ exports.claimMonsterBattleReward = onCall({ region:"asia-east1" }, async request
     const items = { ...(inventorySnap.data()?.items || {}) };
     for (const [materialId, quantity] of Object.entries(reward.materialTotals)) items[materialId] = Math.max(0, Number(items[materialId]) || 0) + quantity;
     transaction.set(inventoryRef, { items, updatedAt:FieldValue.serverTimestamp() }, { merge:true });
+    transaction.set(chestRef,{chests:[...(chestSnap.data()?.chests||[]),...(reward.chests||[])],updatedAt:FieldValue.serverTimestamp()},{merge:true});
     if (reward.coins > 0) transaction.update(memberRef, { coins:FieldValue.increment(reward.coins), updatedAt:FieldValue.serverTimestamp() });
     if (reward.card) {
       const collection = cardSnap.data() || {};
@@ -295,7 +298,7 @@ exports.claimMonsterBattleReward = onCall({ region:"asia-east1" }, async request
         : { ...reward.card, stars:1, duplicates:0, chosenStat:null, ts:Date.now() };
       transaction.set(cardRef, { cards, wbCards:collection.wbCards || {}, equipped:collection.equipped || [], updatedAt:FieldValue.serverTimestamp() }, { merge:true });
     }
-    const publicReward = { coins:reward.coins, materialTotals:reward.materialTotals, card:reward.card };
+    const publicReward = { coins:reward.coins, materialTotals:reward.materialTotals, chests:reward.chests||[], card:reward.card };
     transaction.create(claimRef, {
       battleId:reward.battleId, memberId:reward.memberId, rewardType:reward.rewardType,
       materialTotals:reward.materialTotals, coins:reward.coins, cardId:reward.card?.monsterId || null,
@@ -334,16 +337,21 @@ exports.claimPartyBattleRewardV2=onCall({region:"asia-east1"},async request=>{
 
 exports.createDungeonBossRewardClaim = onCall({ region:"asia-east1" }, async request => {
   if (!request.auth?.uid) throw new HttpsError("unauthenticated", "請先登入");
-  const battleId=String(request.data?.battleId||""), memberId=String(request.data?.memberId||""), monsterId=String(request.data?.monsterId||"");
-  if (!battleId || !memberId || !monsterId || [battleId,memberId,monsterId].some(value=>value.includes("/")||value.length>240)) throw new HttpsError("invalid-argument","invalid_dungeon_reward_identity");
+  const battleId=String(request.data?.battleId||""), memberId=String(request.data?.memberId||""), monsterId=String(request.data?.monsterId||""), teamRoomId=String(request.data?.teamRoomId||"");
+  if (!battleId || !memberId || !monsterId || [battleId,memberId,monsterId,teamRoomId].some(value=>value.includes("/")||value.length>240)) throw new HttpsError("invalid-argument","invalid_dungeon_reward_identity");
   const claimId=[battleId,memberId,"dungeonBoss"].map(encodeURIComponent).join("~");
-  const db=getFirestore(), roomRef=db.doc(`dungeonRooms/${battleId}`),memberRef=db.doc(`members/${memberId}`), claimRef=db.doc(`monsterRewardClaims/${claimId}`), choiceRef=db.doc(`dungeonBossChoiceClaims/${claimId}`), inventoryRef=db.doc(`materialInventory/${memberId}`), cardRef=db.doc(`cardCollections/${memberId}`);
+  const db=getFirestore(), roomRef=db.doc(`dungeonRooms/${battleId}`),teamRoomRef=teamRoomId?db.doc(`dungeonRooms/${teamRoomId}`):null,memberRef=db.doc(`members/${memberId}`), claimRef=db.doc(`monsterRewardClaims/${claimId}`), choiceRef=db.doc(`dungeonBossChoiceClaims/${claimId}`), inventoryRef=db.doc(`materialInventory/${memberId}`), cardRef=db.doc(`cardCollections/${memberId}`);
   return db.runTransaction(async transaction=>{
+    const teamRoomSnap=teamRoomRef?await transaction.get(teamRoomRef):null;
     const [roomSnap,memberSnap,claimSnap,choiceSnap,inventorySnap,cardSnap]=await transaction.getAll(roomRef,memberRef,claimRef,choiceRef,inventoryRef,cardRef);
     if(!memberSnap.exists) throw new HttpsError("not-found","member_not_found");
     const member=memberSnap.data();
     if(!(member.uid===request.auth.uid||(request.auth.token.email&&member.email===request.auth.token.email))) throw new HttpsError("permission-denied","reward_owner_mismatch");
-    const room=roomSnap.data();if(!roomSnap.exists||!isRewardableDungeonRoom(room,memberId,monsterId))throw new HttpsError("failed-precondition","dungeon_battle_not_rewardable");
+    const room=roomSnap.data();
+    const rewardable=teamRoomId
+      ? Boolean(teamRoomSnap?.exists&&isRewardableTeamDungeonBossRoom(teamRoomSnap.data(),battleId,memberId,monsterId))
+      : Boolean(roomSnap.exists&&isRewardableDungeonRoom(room,memberId,monsterId));
+    if(!rewardable)throw new HttpsError("failed-precondition","dungeon_battle_not_rewardable");
     if(claimSnap.exists) return {ok:true,duplicate:true,claimId,envelope:{...publicEnvelope(claimSnap.data().envelope),revealedRewards:choiceSnap.data()?.revealedRewards||[]}};
     let envelope;
     try{envelope=buildDungeonBossEnvelope({battleId,memberId,monsterId});}
@@ -850,4 +858,396 @@ exports.initializeBookingInactivityHistory = onCall({ region:"asia-east1" }, asy
     if (didInitialize) initialized += 1;
   }
   return { ok:true, initialized };
+});
+
+// ---------------------------------------------------------------------------
+// Admin marketing / competition email campaigns.
+// Sending is opt-in only. The hourly/daily limits are operational throttles,
+// not a mechanism for bypassing provider anti-spam controls.
+// ---------------------------------------------------------------------------
+
+function assertMarketingAudience(value) {
+  const audience = String(value || "all");
+  if (!["official", "guest", "all"].includes(audience)) {
+    throw new HttpsError("invalid-argument", "audience_invalid");
+  }
+  return audience;
+}
+
+function matchesMarketingAudience(accountType, audience) {
+  if (accountType !== "official" && accountType !== "guest") return false;
+  return audience === "all" || audience === accountType;
+}
+
+async function collectMarketingAudience(db, audience) {
+  const [membersSnap, suppressionsSnap] = await Promise.all([
+    db.collection("members").get(),
+    db.collection("emailSuppressions").get(),
+  ]);
+  const suppressedHashes = new Set(suppressionsSnap.docs.map(doc => doc.id));
+  const recipients = new Map();
+  const stats = { scanned:0, eligible:0, invalid:0, notOptedIn:0, suppressed:0, duplicate:0 };
+
+  for (const memberDoc of membersSnap.docs) {
+    const member = memberDoc.data() || {};
+    const accountType = marketingEmail.normalizeMarketingAccountType(member.accountType);
+    if (!matchesMarketingAudience(accountType, audience)) continue;
+    stats.scanned += 1;
+    const email = marketingEmail.normalizeEmail(member.email || member.gmail || member.contactEmail);
+    if (!email) { stats.invalid += 1; continue; }
+    if (member.marketingOptIn !== true) { stats.notOptedIn += 1; continue; }
+    const emailHash = marketingEmail.hashEmail(email);
+    if (suppressedHashes.has(emailHash)) { stats.suppressed += 1; continue; }
+    const existing = recipients.get(email);
+    if (existing) {
+      stats.duplicate += 1;
+      existing.memberIds.push(memberDoc.id);
+      continue;
+    }
+    recipients.set(email, {
+      email,
+      emailHash,
+      memberIds:[memberDoc.id],
+      displayName:String(member.nickname || member.name || member.displayName || "").trim(),
+      accountType,
+    });
+  }
+  stats.eligible = recipients.size;
+  return { recipients:[...recipients.values()], stats };
+}
+
+function marketingCampaignStats(queued = 0, initiallySuppressed = 0) {
+  return { queued, sent:0, failed:0, opened:0, unsubscribed:0, suppressed:initiallySuppressed, processed:0 };
+}
+
+function marketingCampaignId(value) {
+  const id = String(value || "");
+  if (!id || id.length > 1500 || id.includes("/")) throw new HttpsError("invalid-argument", "campaign_id_invalid");
+  return id;
+}
+
+exports.saveMarketingEmailConfig = onCall({ region:"asia-east1" }, async request => {
+  const uid = await requireAdmin(request);
+  const config = marketingEmail.normalizeConfig(request.data || {});
+  await getFirestore().doc("marketingEmailConfig/main").set({ ...config, updatedAt:FieldValue.serverTimestamp(), updatedBy:uid }, { merge:true });
+  return { ok:true, config };
+});
+
+exports.previewMarketingAudience = onCall({ region:"asia-east1", timeoutSeconds:120 }, async request => {
+  await requireAdmin(request);
+  const audience = assertMarketingAudience(request.data?.audience);
+  const { stats } = await collectMarketingAudience(getFirestore(), audience);
+  return { ok:true, audience, stats };
+});
+
+exports.createMarketingCampaign = onCall({ region:"asia-east1" }, async request => {
+  const uid = await requireAdmin(request);
+  let input;
+  try { input = marketingEmail.validateCampaignInput(request.data || {}); }
+  catch (error) { throw new HttpsError("invalid-argument", error.message || "campaign_invalid"); }
+  const ref = getFirestore().collection("marketingCampaigns").doc();
+  await ref.set({
+    ...input,
+    status:"draft",
+    stats:marketingCampaignStats(),
+    createdBy:uid,
+    createdAt:FieldValue.serverTimestamp(),
+    updatedAt:FieldValue.serverTimestamp(),
+  });
+  return { ok:true, campaignId:ref.id };
+});
+
+exports.startMarketingCampaign = onCall({ region:"asia-east1", timeoutSeconds:540 }, async request => {
+  await requireAdmin(request);
+  const campaignId = marketingCampaignId(request.data?.campaignId);
+  const db = getFirestore();
+  const campaignRef = db.doc(`marketingCampaigns/${campaignId}`);
+  const campaignSnap = await campaignRef.get();
+  if (!campaignSnap.exists) throw new HttpsError("not-found", "campaign_not_found");
+  const campaign = campaignSnap.data() || {};
+  if (campaign.status !== "draft") throw new HttpsError("failed-precondition", "campaign_not_draft");
+  const audience = assertMarketingAudience(campaign.audience);
+
+  // Lock the draft before materialising the deterministic queue. If this call
+  // fails, it is returned to draft; deterministic queue ids make a retry safe.
+  await campaignRef.update({ status:"queued", updatedAt:FieldValue.serverTimestamp() });
+  try {
+    const { recipients, stats } = await collectMarketingAudience(db, audience);
+    for (let offset = 0; offset < recipients.length; offset += 400) {
+      const batch = db.batch();
+      for (const recipient of recipients.slice(offset, offset + 400)) {
+        const id = marketingEmail.queueId(campaignId, recipient.emailHash);
+        batch.set(db.doc(`marketingEmailQueue/${id}`), {
+          campaignId,
+          email:recipient.email,
+          emailHash:recipient.emailHash,
+          memberIds:recipient.memberIds,
+          displayName:recipient.displayName,
+          accountType:recipient.accountType,
+          status:"pending",
+          attempts:0,
+          nextAttemptAt:Timestamp.now(),
+          trackingToken:marketingEmail.makeToken(),
+          unsubscribeToken:marketingEmail.makeToken(),
+          openedAt:null,
+          unsubscribedAt:null,
+          mailId:null,
+          lastError:null,
+          createdAt:FieldValue.serverTimestamp(),
+          updatedAt:FieldValue.serverTimestamp(),
+        }, { merge:false });
+      }
+      await batch.commit();
+    }
+    await campaignRef.update({
+      status:recipients.length ? "running" : "completed",
+      stats:marketingCampaignStats(recipients.length, stats.suppressed),
+      audienceStats:stats,
+      startedAt:FieldValue.serverTimestamp(),
+      updatedAt:FieldValue.serverTimestamp(),
+    });
+    return { ok:true, queued:recipients.length, stats };
+  } catch (error) {
+    await campaignRef.set({ status:"draft", lastError:String(error?.message || error), updatedAt:FieldValue.serverTimestamp() }, { merge:true });
+    throw error;
+  }
+});
+
+exports.pauseMarketingCampaign = onCall({ region:"asia-east1" }, async request => {
+  await requireAdmin(request);
+  const ref = getFirestore().doc(`marketingCampaigns/${marketingCampaignId(request.data?.campaignId)}`);
+  await getFirestore().runTransaction(async tx => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new HttpsError("not-found", "campaign_not_found");
+    if (snap.data()?.status !== "running") throw new HttpsError("failed-precondition", "campaign_not_running");
+    tx.update(ref, { status:"paused", pausedAt:FieldValue.serverTimestamp(), updatedAt:FieldValue.serverTimestamp() });
+  });
+  return { ok:true };
+});
+
+exports.resumeMarketingCampaign = onCall({ region:"asia-east1" }, async request => {
+  await requireAdmin(request);
+  const ref = getFirestore().doc(`marketingCampaigns/${marketingCampaignId(request.data?.campaignId)}`);
+  await getFirestore().runTransaction(async tx => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new HttpsError("not-found", "campaign_not_found");
+    if (snap.data()?.status !== "paused") throw new HttpsError("failed-precondition", "campaign_not_paused");
+    tx.update(ref, { status:"running", resumedAt:FieldValue.serverTimestamp(), updatedAt:FieldValue.serverTimestamp() });
+  });
+  return { ok:true };
+});
+
+function taipeiRunKeys(date = new Date()) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+    timeZone:"Asia/Taipei", year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", hourCycle:"h23",
+  }).formatToParts(date).filter(p => p.type !== "literal").map(p => [p.type, p.value]));
+  const day = `${parts.year}-${parts.month}-${parts.day}`;
+  return { day, hour:`${day}-${parts.hour}` };
+}
+
+function marketingMailContent(campaign, queue, config) {
+  const unsubscribeUrl = `${marketingEmail.publicFunctionUrl("marketingEmailUnsubscribe")}?token=${encodeURIComponent(queue.unsubscribeToken)}`;
+  const openUrl = `${marketingEmail.publicFunctionUrl("marketingEmailOpen")}?token=${encodeURIComponent(queue.trackingToken)}`;
+  const tracking = campaign.trackingEnabled !== false && config.trackingEnabled !== false;
+  const baseHtml = campaign.html?.trim() || marketingEmail.textToHtml(campaign.text || "");
+  const footer = `<hr style="margin:28px 0 16px;border:0;border-top:1px solid #ddd"><p style="font-size:12px;color:#666;line-height:1.6">您收到這封信是因為曾同意接收貓小隊射箭場的通知。<a href="${marketingEmail.escapeHtml(unsubscribeUrl)}">取消接收通知</a>${tracking ? "；本郵件可能透過圖片載入統計整體開信成效。" : ""}</p>`;
+  const pixel = tracking ? `<img src="${marketingEmail.escapeHtml(openUrl)}" width="1" height="1" alt="" style="display:block;width:1px;height:1px;border:0" />` : "";
+  const textFooter = `\n\n---\n若不再希望收到通知：${unsubscribeUrl}`;
+  return { subject:campaign.subject, text:`${campaign.text || ""}${textFooter}`, html:`${baseHtml}${footer}${pixel}` };
+}
+
+async function reserveAndQueueMarketingMail(db, queueDoc, config, keys) {
+  const queueRef = queueDoc.ref;
+  return db.runTransaction(async tx => {
+    const queueSnap = await tx.get(queueRef);
+    if (!queueSnap.exists) return "skip";
+    const queue = queueSnap.data() || {};
+    if (queue.status !== "pending" || (queue.nextAttemptAt?.toMillis?.() || 0) > Date.now()) return "skip";
+    const campaignRef = db.doc(`marketingCampaigns/${queue.campaignId}`);
+    const suppressionRef = db.doc(`emailSuppressions/${queue.emailHash}`);
+    const dayRef = db.doc(`marketingEmailRuns/day-${keys.day}`);
+    const hourRef = db.doc(`marketingEmailRuns/hour-${keys.hour}`);
+    const [campaignSnap, suppressionSnap, daySnap, hourSnap] = await Promise.all([
+      tx.get(campaignRef), tx.get(suppressionRef), tx.get(dayRef), tx.get(hourRef),
+    ]);
+    if (!campaignSnap.exists || campaignSnap.data()?.status !== "running") return "skip";
+    const campaign = campaignSnap.data() || {};
+    if (suppressionSnap.exists) {
+      const nextProcessed = Number(campaign.stats?.processed || 0) + 1;
+      const queued = Number(campaign.stats?.queued || 0);
+      tx.update(queueRef, { status:"suppressed", updatedAt:FieldValue.serverTimestamp() });
+      tx.update(campaignRef, {
+        "stats.suppressed":FieldValue.increment(1),
+        "stats.processed":FieldValue.increment(1),
+        ...(queued > 0 && nextProcessed >= queued ? { status:"completed", completedAt:FieldValue.serverTimestamp() } : {}),
+        updatedAt:FieldValue.serverTimestamp(),
+      });
+      return "suppressed";
+    }
+    const dayCount = Number(daySnap.data()?.queuedCount || 0);
+    const hourCount = Number(hourSnap.data()?.queuedCount || 0);
+    if (dayCount >= config.dailyLimit || hourCount >= config.hourlyLimit) return "limit";
+    const attempt = Number(queue.attempts || 0) + 1;
+    const id = marketingEmail.mailId(queueRef.id, attempt);
+    const mailRef = db.doc(`mail/${id}`);
+    const mailSnap = await tx.get(mailRef);
+    if (mailSnap.exists) return "skip";
+    const message = marketingMailContent(campaign, queue, config);
+    tx.set(mailRef, {
+      to:queue.email,
+      message,
+      marketingEmail:{ queueId:queueRef.id, campaignId:queue.campaignId, attempt },
+      createdAt:FieldValue.serverTimestamp(),
+    });
+    tx.update(queueRef, {
+      status:"sending", attempts:attempt, mailId:id, lastAttemptAt:FieldValue.serverTimestamp(), updatedAt:FieldValue.serverTimestamp(),
+    });
+    tx.set(dayRef, { queuedCount:dayCount + 1, day:keys.day, updatedAt:FieldValue.serverTimestamp() }, { merge:true });
+    tx.set(hourRef, { queuedCount:hourCount + 1, hour:keys.hour, updatedAt:FieldValue.serverTimestamp() }, { merge:true });
+    return "queued";
+  });
+}
+
+exports.processMarketingEmailQueue = onSchedule({
+  region:"asia-east1", schedule:"0 * * * *", timeZone:"Asia/Taipei", timeoutSeconds:540,
+}, async () => {
+  const db = getFirestore();
+  const configSnap = await db.doc("marketingEmailConfig/main").get();
+  const config = marketingEmail.normalizeConfig(configSnap.data() || {});
+  if (!config.enabled) return;
+  const candidatesSnap = await db.collection("marketingEmailQueue").where("status", "==", "pending").limit(Math.max(100, config.hourlyLimit * 5)).get();
+  const candidates = candidatesSnap.docs
+    .filter(doc => (doc.data()?.nextAttemptAt?.toMillis?.() || 0) <= Date.now())
+    .sort((a, b) => (a.data()?.nextAttemptAt?.toMillis?.() || 0) - (b.data()?.nextAttemptAt?.toMillis?.() || 0));
+  const keys = taipeiRunKeys();
+  let queued = 0;
+  for (const doc of candidates) {
+    const result = await reserveAndQueueMarketingMail(db, doc, config, keys);
+    if (result === "queued") queued += 1;
+    if (result === "limit" || queued >= config.hourlyLimit) break;
+  }
+  logger.info("marketing email hourly queue processed", { candidates:candidates.length, queued, day:keys.day, hour:keys.hour });
+});
+
+exports.handleMarketingEmailMailDelivery = onDocumentWritten({ region:"asia-east1", document:"mail/{mailId}" }, async event => {
+  const after = event.data?.after;
+  if (!after?.exists) return;
+  const mail = after.data() || {};
+  const meta = mail.marketingEmail;
+  if (!meta?.queueId || !meta?.campaignId) return;
+  const success = mail.delivery?.state === "SUCCESS";
+  const deliveryError = mail.delivery?.error;
+  if (!success && !deliveryError) return;
+  const db = getFirestore();
+  const queueRef = db.doc(`marketingEmailQueue/${meta.queueId}`);
+  const campaignRef = db.doc(`marketingCampaigns/${meta.campaignId}`);
+  await db.runTransaction(async tx => {
+    const [queueSnap, campaignSnap] = await Promise.all([tx.get(queueRef), tx.get(campaignRef)]);
+    if (!queueSnap.exists || !campaignSnap.exists) return;
+    const queue = queueSnap.data() || {};
+    const campaign = campaignSnap.data() || {};
+    if (queue.status !== "sending" || queue.mailId !== event.params.mailId) return;
+    if (success) {
+      const nextProcessed = Number(campaign.stats?.processed || 0) + 1;
+      const total = Number(campaign.stats?.queued || 0);
+      tx.update(queueRef, { status:"sent", sentAt:FieldValue.serverTimestamp(), updatedAt:FieldValue.serverTimestamp(), lastError:null });
+      tx.update(campaignRef, {
+        "stats.sent":FieldValue.increment(1), "stats.processed":FieldValue.increment(1),
+        ...(total > 0 && nextProcessed >= total ? { status:"completed", completedAt:FieldValue.serverTimestamp() } : {}),
+        updatedAt:FieldValue.serverTimestamp(),
+      });
+      return;
+    }
+    const attempts = Number(queue.attempts || 0);
+    const errorText = String(deliveryError?.message || deliveryError || "delivery_error").slice(0, 1000);
+    if (attempts < 3) {
+      tx.update(queueRef, {
+        status:"pending", mailId:null, lastError:errorText,
+        nextAttemptAt:Timestamp.fromMillis(Date.now() + Math.max(1, attempts) * 60 * 60 * 1000),
+        updatedAt:FieldValue.serverTimestamp(),
+      });
+      return;
+    }
+    const nextProcessed = Number(campaign.stats?.processed || 0) + 1;
+    const total = Number(campaign.stats?.queued || 0);
+    tx.update(queueRef, { status:"failed", lastError:errorText, updatedAt:FieldValue.serverTimestamp() });
+    tx.update(campaignRef, {
+      "stats.failed":FieldValue.increment(1), "stats.processed":FieldValue.increment(1),
+      ...(total > 0 && nextProcessed >= total ? { status:"completed", completedAt:FieldValue.serverTimestamp() } : {}),
+      updatedAt:FieldValue.serverTimestamp(),
+    });
+  });
+});
+
+function sendTrackingGif(res) {
+  res.set("Content-Type", "image/gif");
+  res.set("Cache-Control", "no-store, private, max-age=0");
+  res.status(200).send(marketingEmail.transparentGif);
+}
+
+exports.marketingEmailOpen = onRequest({ region:"asia-east1" }, async (req, res) => {
+  const token = String(req.query?.token || "");
+  if (!/^[A-Za-z0-9_-]{40,100}$/.test(token)) return sendTrackingGif(res);
+  try {
+    const db = getFirestore();
+    const snap = await db.collection("marketingEmailQueue").where("trackingToken", "==", token).limit(1).get();
+    if (!snap.empty) {
+      const queueRef = snap.docs[0].ref;
+      await db.runTransaction(async tx => {
+        const queueSnap = await tx.get(queueRef);
+        const queue = queueSnap.data() || {};
+        if (!queueSnap.exists || queue.openedAt) return;
+        const campaignRef = db.doc(`marketingCampaigns/${queue.campaignId}`);
+        const campaignSnap = await tx.get(campaignRef);
+        tx.update(queueRef, { openedAt:FieldValue.serverTimestamp(), updatedAt:FieldValue.serverTimestamp() });
+        if (campaignSnap.exists) tx.update(campaignRef, { "stats.opened":FieldValue.increment(1), updatedAt:FieldValue.serverTimestamp() });
+      });
+    }
+  } catch (error) {
+    logger.warn("marketing open tracking failed", { error:String(error?.message || error) });
+  }
+  return sendTrackingGif(res);
+});
+
+function unsubscribeConfirmationHtml(token) {
+  const safe = marketingEmail.escapeHtml(token);
+  return `<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>取消 Email 通知</title><body style="font-family:Arial,'Noto Sans TC',sans-serif;max-width:560px;margin:60px auto;padding:0 20px;line-height:1.7"><h1>取消 Email 通知</h1><p>按下確認後，這個 Email 將不再接收貓小隊射箭場的優惠與比賽通知。</p><form method="post" action="?token=${safe}"><button type="submit" style="font-size:16px;padding:10px 18px">確認取消通知</button></form></body></html>`;
+}
+
+exports.marketingEmailUnsubscribe = onRequest({ region:"asia-east1" }, async (req, res) => {
+  const token = String(req.query?.token || "");
+  res.set("Content-Type", "text/html; charset=utf-8");
+  res.set("Cache-Control", "no-store");
+  if (!/^[A-Za-z0-9_-]{40,100}$/.test(token)) return res.status(400).send("無效的取消通知連結。");
+  if (req.method === "GET") return res.status(200).send(unsubscribeConfirmationHtml(token));
+  if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
+  try {
+    const db = getFirestore();
+    const match = await db.collection("marketingEmailQueue").where("unsubscribeToken", "==", token).limit(1).get();
+    if (match.empty) return res.status(400).send("無效或已失效的取消通知連結。");
+    const queueRef = match.docs[0].ref;
+    await db.runTransaction(async tx => {
+      const queueSnap = await tx.get(queueRef);
+      if (!queueSnap.exists) return;
+      const queue = queueSnap.data() || {};
+      const campaignRef = db.doc(`marketingCampaigns/${queue.campaignId}`);
+      const campaignSnap = await tx.get(campaignRef);
+      const now = Timestamp.now();
+      tx.set(db.doc(`emailSuppressions/${queue.emailHash}`), {
+        emailHash:queue.emailHash, reason:"unsubscribe", sourceCampaignId:queue.campaignId,
+        createdAt:now, updatedAt:now,
+      }, { merge:true });
+      if (!queue.unsubscribedAt) {
+        tx.update(queueRef, { unsubscribedAt:now, updatedAt:now });
+        if (campaignSnap.exists) tx.update(campaignRef, { "stats.unsubscribed":FieldValue.increment(1), updatedAt:now });
+      }
+      for (const memberId of [...new Set(Array.isArray(queue.memberIds) ? queue.memberIds : [])].slice(0, 50)) {
+        if (memberId && !String(memberId).includes("/")) tx.set(db.doc(`members/${memberId}`), { marketingOptIn:false, marketingOptOutAt:now }, { merge:true });
+      }
+    });
+    return res.status(200).send("<!doctype html><html lang=\"zh-Hant\"><meta charset=\"utf-8\"><body style=\"font-family:Arial,'Noto Sans TC',sans-serif;max-width:560px;margin:60px auto;padding:0 20px\"><h1>已取消通知</h1><p>之後不會再寄送優惠與比賽 Email 到這個地址。</p></body></html>");
+  } catch (error) {
+    logger.error("marketing unsubscribe failed", error);
+    return res.status(500).send("取消通知時發生錯誤，請稍後再試。");
+  }
 });

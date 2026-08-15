@@ -7,11 +7,15 @@ export const PARTY_BOT_STATS = {
   hard:   { hp: 480, atk: 15, def: 12, label: "🔥 強力" },
 };
 
-// 決鬥模式（PvP）：對齊 balanceDuelStats 輸出範圍，ATK 不低於 8
+// 決鬥模式（PvP）：對齊玩家真實三圍範圍（balanceDuelStats 不再壓縮）
+// 2026-08-13：玩家直接帶真實 HP/ATK/DEF 進決鬥，Bot 同步調到合理量級
+//   easy ≈ 最低練度玩家水準（HP~200，給新手練手）
+//   normal ≈ 中練度（HP~280）、hard ≈ 高練度（HP~380）
+//   ⚠️ 決鬥房會再做 ±25% 隨機浮動（DuelLobby rnd）
 export const DUEL_BOT_STATS = {
-  easy:   { hp: 220, atk: 8,  def: 4,  label: "🐣 練習" },
-  normal: { hp: 248, atk: 11, def: 6,  label: "🤖 普通" },
-  hard:   { hp: 272, atk: 14, def: 7,  label: "🔥 強力" },
+  easy:   { hp: 210, atk: 17, def: 10, label: "🐣 練習" },
+  normal: { hp: 280, atk: 24, def: 14, label: "🤖 普通" },
+  hard:   { hp: 380, atk: 34, def: 21, label: "🔥 強力" },
 };
 
 // 向下相容（組隊用）

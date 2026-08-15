@@ -1,4 +1,0 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `py -3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
-{"file": "docs/monster-art-progression.md", "reason": "獨立身份與 Tier/Encounter 規則"}
-{"file": ".trellis/tasks/07-27-remake-mountain-t1-t6-gpt-art/identity-matrix.md", "reason": "身分矩陣模板"}
-{"file": ".trellis/tasks/07-16-monster-specialization-expansion/signature-skill-mappings.md", "reason": "毒蟲族現行技能表"}

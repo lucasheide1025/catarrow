@@ -4673,7 +4673,10 @@ export async function grantKingVaultReward(memberId, reward = {}) {
 
 // 派遣遠征：扣射手資源、寫入 expeditions.{slotIdx} 狀態
 // archerCost: { archer_t1: 50, archer_t2: 30, ... }（從客戶端傳入）
-export async function startExpedition(memberId, slotIdx, catId, catName, missionTier, hours, archerCost) {
+// 派遣遠征（2.0：含投資檔位＋事件路線＋士氣起點 100）
+// archerCost 應為「投資後總射手花費」；investArrowdew 為投資追加的箭露
+// route = [{ id, at, resolved }]（見 src/lib/expeditionEvents.js）
+export async function startExpedition(memberId, slotIdx, catId, catName, missionTier, hours, archerCost, investTier = 1, investArrowdew = 0, route = []) {
   if (!memberId || !catId || !missionTier) return { ok: false, reason: "參數錯誤" };
   try {
     // 一隻貓同時只能在一個地方工作
@@ -4688,11 +4691,17 @@ export async function startExpedition(memberId, slotIdx, catId, catName, mission
         endsAt: Timestamp.fromDate(endsAt),
         status: "active",
         archerCost,
+        invest: investTier,
+        morale: 100,
+        route,
       },
       updatedAt: serverTimestamp(),
     };
     for (const [key, count] of Object.entries(archerCost)) {
       updates[`village.resources.${key}`] = increment(-count);
+    }
+    if (investArrowdew > 0) {
+      updates["village.resources.arrowdew"] = increment(-investArrowdew);
     }
     await updateDoc(doc(db, C.members, memberId), updates);
     return { ok: true };
@@ -4702,12 +4711,57 @@ export async function startExpedition(memberId, slotIdx, catId, catName, mission
   }
 }
 
+// 解決遠征途中事件（2.0）：寫入該事件結果＋更新士氣
+// resolved = { choice, success, rewards, moraleDelta }；moraleAfter 為新士氣值
+// 客戶端已先算好（專案慣例：獎勵隨機在客戶端計算後入庫）
+export async function resolveExpeditionEvent(memberId, slotIdx, eventIdx, resolved, moraleAfter) {
+  if (!memberId || slotIdx == null || eventIdx == null || !resolved) {
+    return { ok: false, reason: "參數錯誤" };
+  }
+  try {
+    // ⚠️ 不能用欄位路徑寫陣列元素（`route.0.resolved`）——Firestore 會把整個陣列
+    // 轉成 map（key=index）並摧毀其他元素。必須整條 route 讀出→改→寫回。
+    const memberRef = doc(db, C.members, memberId);
+    const snap = await getDoc(memberRef);
+    const exp = snap.data()?.expeditions?.[slotIdx];
+    const route = Array.isArray(exp?.route) ? exp.route.map(r => ({ ...r })) : [];
+    if (!route[eventIdx]) {
+      return { ok: false, reason: "事件不存在或路線已失效" };
+    }
+    route[eventIdx] = {
+      ...route[eventIdx],
+      resolved: {
+        choice: resolved.choice,
+        success: !!resolved.success,
+        rewards: resolved.rewards || {},
+        moraleDelta: Number(resolved.moraleDelta) || 0,
+      },
+    };
+    const updates = {
+      [`expeditions.${slotIdx}.route`]: route,
+      updatedAt: serverTimestamp(),
+    };
+    if (typeof moraleAfter === "number") {
+      updates[`expeditions.${slotIdx}.morale`] = Math.max(0, Math.min(100, Math.round(moraleAfter)));
+    }
+    await updateDoc(memberRef, updates);
+    return { ok: true };
+  } catch (e) {
+    console.warn("resolveExpeditionEvent:", e?.message);
+    return { ok: false, reason: e?.message || "系統錯誤" };
+  }
+}
+
 // 領取遠征獎勵：寫入資源、清除 expeditions.{slotIdx}
-// rewards: { fur_t1: 3, potion_t2: 2, arrowdew: 20, catXP: 400, catBond: 8, ... }
+// rewards: { fur_t1: 3, potion_t2: 2, arrowdew: 20, catXP: 400, catBond: 8,
+//            chests: [寶箱物件], shopGoods: { goodId: count }, ... }
 // catId：本趟出征的貓，用來發 catXP/catBond（沒傳則跳過貓獎勵）
 export async function collectExpedition(memberId, slotIdx, rewards, catId = null) {
   if (!memberId || !rewards) return { ok: false, reason: "參數錯誤" };
   try {
+    // 探險戰利品：寶箱進 chestInventory、商店商品進 village.shop.stock
+    const chests = Array.isArray(rewards.chests) ? rewards.chests : [];
+    const shopGoods = (rewards.shopGoods && typeof rewards.shopGoods === "object") ? rewards.shopGoods : {};
     const updates = {
       [`expeditions.${slotIdx}`]: null,
       updatedAt: serverTimestamp(),
@@ -4716,13 +4770,26 @@ export async function collectExpedition(memberId, slotIdx, rewards, catId = null
       if (!count) continue;
       // catXP/catBond 不是村莊資源，另外處理（見下方），這裡略過
       if (key === "catXP" || key === "catBond") continue;
+      if (key === "chests" || key === "shopGoods") continue;
       if (key === "gachaToken") {
         updates["gachaCoins"] = increment(count);
       } else {
         updates[`village.resources.${key}`] = increment(count);
       }
     }
+    // 商店商品入庫（village.shop.stock.{goodId} += count）
+    if (Object.keys(shopGoods).length) {
+      // 確保 village.shop 已初始化（玩家可能從未開過商店）
+      const { initVillageShopIfNeeded } = await import("./villageShopDb");
+      await initVillageShopIfNeeded(memberId, null);
+      for (const [goodId, count] of Object.entries(shopGoods)) {
+        if (!goodId || !Number.isFinite(Number(count)) || Number(count) <= 0) continue;
+        updates[`village.shop.stock.${goodId}`] = increment(Number(count));
+      }
+    }
     await updateDoc(doc(db, C.members, memberId), updates);
+    // 寶箱進 chestInventory（獨立 collection，另外寫入）
+    if (chests.length) await addChests(memberId, chests);
 
     // 貓咪 XP / 羈絆：導向專用寫入函式（clamp 與採集結算一致）
     if (catId) {
@@ -5211,6 +5278,9 @@ export async function listCardForSale(memberId, memberName, cardId, cardData, pr
   const batch = writeBatch(db);
   batch.update(memberRef, { [`catCards.${cardId}`]: increment(-1) });
   const listingRef = doc(collection(db, C_CARD_MARKET));
+  // 快照賣家當下收藏（卡 id 清單），供買家換卡時判斷「賣家是否缺這張」
+  // （firestore.rules 只允許會員讀自己的文件，買家無法直接讀賣家收藏）
+  const sellerCardIds = Object.keys(snap.data()?.catCards || {});
   batch.set(listingRef, {
     sellerId: memberId, sellerName: memberName,
     cardId, cardName: cardData.name, cardEmoji: cardData.emoji,
@@ -5219,6 +5289,7 @@ export async function listCardForSale(memberId, memberName, cardId, cardData, pr
     status: "active",
     listedAt: serverTimestamp(),
     expiredAt: Timestamp.fromDate(new Date(Date.now() + 7 * 24 * 3600000)),
+    sellerCardIds,
   });
   await batch.commit();
 }

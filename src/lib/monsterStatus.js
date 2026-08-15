@@ -125,13 +125,16 @@ export function mergeMonsterStatus(list = [], incoming = null) {
   const rest = (list || []).filter(s => s.id !== incoming.id);
   const old = (list || []).find(s => s.id === incoming.id);
   if (!old) return [...rest, { ...incoming }];
+  const scalesWithHits = !!MONSTER_STATUSES[incoming.id]?.scalesWithHits;
   return [...rest, {
     ...incoming,
     strength: Math.max(num(old.strength), num(incoming.strength)),
     duration: Math.max(num(old.duration), num(incoming.duration)),
     // 流血特別：命中越多層數越高（唯一會累積的量）
-    stacks: MONSTER_STATUSES[incoming.id]?.scalesWithHits
-      ? Math.min(5, num(old.stacks, 1) + 1) : undefined,
+    // Firestore 不接受 undefined。非流血狀態若留下 stacks: undefined，
+    // 同一異常在一輪內重複觸發（全 X 最容易發生）時，整個地下城
+    // round 的 updateDoc 會失敗，畫面只會停在等待且沒有任何 log 動畫。
+    ...(scalesWithHits ? { stacks: Math.min(5, num(old.stacks, 1) + 1) } : {}),
   }];
 }
 

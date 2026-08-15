@@ -84,6 +84,7 @@ export default function PublicBookingApp() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [marketingOptIn, setMarketingOptIn] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
   const [authErr, setAuthErr]   = useState("");
   // 忘記密碼：寄出重設信後顯示的提示訊息
@@ -115,6 +116,7 @@ export default function PublicBookingApp() {
   const [memberDoc, setMemberDoc]     = useState(null); // 完整會員資料（accountType/hasPassword/socialProvider…）
   const [editName, setEditName]       = useState("");
   const [editPhone, setEditPhone]     = useState("");
+  const [editMarketingOptIn, setEditMarketingOptIn] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileMsg, setProfileMsg]   = useState("");
   const [oldPw, setOldPw]             = useState("");
@@ -152,7 +154,7 @@ export default function PublicBookingApp() {
     if (authTab === "register") {
       if (!name.trim() || !email.trim() || !phone.trim() || !password) { setAuthErr("姓名／Email／電話／密碼皆為必填"); return; }
       setAuthBusy(true);
-      const res = await registerGuestWithPassword(name, email, phone, password);
+      const res = await registerGuestWithPassword(name, email, phone, password, { marketingOptIn });
       setAuthBusy(false);
       if (!res.ok) { setAuthErr(res.reason || "註冊失敗，請稍後再試"); return; }
       finishAuth(res);
@@ -206,6 +208,7 @@ export default function PublicBookingApp() {
       name: googleInfo.name, email: googleInfo.email,
       phone: googlePhone, uid: googleInfo.uid,
       usedTempApp: googleInfo.usedTempApp,
+      marketingOptIn,
     });
     setAuthBusy(false);
     if (!res.ok) { setAuthErr(res.reason || "登入失敗"); return; }
@@ -226,6 +229,7 @@ export default function PublicBookingApp() {
     setMemberDoc(mDoc);
     setEditName(mDoc?.name || profile.name || "");
     setEditPhone(mDoc?.phone || profile.phone || "");
+    setEditMarketingOptIn(mDoc?.marketingOptIn === true);
     setLoadingMine(false);
   }
   useEffect(() => { if (showMine) loadMemberCenter(); }, [showMine]); // eslint-disable-line
@@ -249,7 +253,7 @@ export default function PublicBookingApp() {
   async function handleSaveProfile() {
     setProfileMsg("");
     setSavingProfile(true);
-    const res = await updateGuestProfile(profile.id, { name: editName, phone: editPhone });
+    const res = await updateGuestProfile(profile.id, { name: editName, phone: editPhone, marketingOptIn: editMarketingOptIn });
     setSavingProfile(false);
     if (!res.ok) { setProfileMsg(res.reason || "更新失敗"); return; }
     setProfileMsg("已更新 ✓");
@@ -291,7 +295,7 @@ export default function PublicBookingApp() {
     setSelectedSlot(null); setSlotConfirmed(false); setDone(false);
     setGoogleInfo(null);
     setCancelTarget(null); setRescheduleTarget(null);
-    setName(""); setEmail(""); setPhone(""); setPassword(""); setGooglePhone("");
+    setName(""); setEmail(""); setPhone(""); setPassword(""); setGooglePhone(""); setMarketingOptIn(false);
   }
 
   async function handleSubmitOrAuth() {
@@ -539,6 +543,12 @@ export default function PublicBookingApp() {
             <label style={{ ...labelStyle, marginTop: 8 }}>電話
               <input value={editPhone} onChange={e => { setEditPhone(e.target.value); setProfileMsg(""); }} name="phone" autoComplete="tel" inputMode="tel" style={inputStyle} />
             </label>
+            {memberDoc?.accountType !== "kid" && (
+              <label style={{ display:"flex", flexDirection:"row", alignItems:"flex-start", gap:9, marginTop:12, color:"rgba(255,255,255,.72)", fontSize:12.5, lineHeight:1.55, cursor:"pointer" }}>
+                <input type="checkbox" checked={editMarketingOptIn} onChange={e => { setEditMarketingOptIn(e.target.checked); setProfileMsg(""); }} style={{ marginTop:3 }} />
+                <span>接收貓小隊射箭場的優惠、活動與比賽通知。可隨時取消，取消後不再寄送行銷通知。</span>
+              </label>
+            )}
             {profileMsg && <div style={{ color: profileMsg.includes("✓") ? "#86efac" : "#f87171", fontSize: 12, fontWeight: 700, marginTop: 6 }}>{profileMsg}</div>}
             <button onClick={handleSaveProfile} disabled={savingProfile} style={{ ...smallBtn, marginTop: 10 }}>{savingProfile ? "儲存中…" : "儲存個人資料"}</button>
           </div>
@@ -624,6 +634,10 @@ export default function PublicBookingApp() {
               </div>
               <input value={googlePhone} onChange={e => setGooglePhone(e.target.value)} name="phone" autoComplete="tel" inputMode="tel"
                 aria-label="聯絡電話" placeholder="聯絡電話（必填）" style={inputStyle} autoFocus />
+              <label style={{ display:"flex", alignItems:"flex-start", gap:9, color:"rgba(255,255,255,.7)", fontSize:12.5, lineHeight:1.55, cursor:"pointer" }}>
+                <input type="checkbox" checked={marketingOptIn} onChange={e => setMarketingOptIn(e.target.checked)} style={{ marginTop:3 }} />
+                <span>接收貓小隊射箭場的優惠、活動與比賽通知（選填，可隨時取消）</span>
+              </label>
               {authErr && <div style={{ color: "#f87171", fontSize: 13, fontWeight: 700 }}>{authErr}</div>}
               <button onClick={handleGooglePhoneConfirm} disabled={authBusy} style={submitButtonStyle(authBusy)}>
                 {authBusy ? "處理中…" : "✅ 完成並預約"}
@@ -648,6 +662,10 @@ export default function PublicBookingApp() {
                   <label style={labelStyle}>Email<input value={email} onChange={e => setEmail(e.target.value)} name="email" autoComplete="email" inputMode="email" placeholder="name@example.com" type="email" style={inputStyle} /></label>
                   <label style={labelStyle}>電話<input value={phone} onChange={e => setPhone(e.target.value)} name="phone" autoComplete="tel" inputMode="tel" placeholder="聯絡電話" style={inputStyle} /></label>
                   <label style={labelStyle}>設定密碼<input value={password} onChange={e => setPassword(e.target.value)} name="new-password" autoComplete="new-password" placeholder="至少 6 碼" type="password" style={inputStyle} /></label>
+                  <label style={{ display:"flex", alignItems:"flex-start", gap:9, color:"rgba(255,255,255,.7)", fontSize:12.5, lineHeight:1.55, cursor:"pointer" }}>
+                    <input type="checkbox" checked={marketingOptIn} onChange={e => setMarketingOptIn(e.target.checked)} style={{ marginTop:3 }} />
+                    <span>接收貓小隊射箭場的優惠、活動與比賽通知（選填，可隨時取消）</span>
+                  </label>
                 </>
               ) : (
                 <>

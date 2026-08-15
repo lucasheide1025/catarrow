@@ -1,3 +1,10 @@
+## 2026-08-15 — 專案正本化：本機現行工作區改為唯一候選真本
+- 在任何清理前先建立 `D:\射箭系統備份\codebase-canonicalization-2026-08-15_112229\`；包含工作樹快照、完整主 repo Git bundle、狀態／diff 記錄，另為 `.hotfix-shop-deploy` 建立獨立完整 Git bundle，兩份 bundle 均已 `git bundle verify` 通過。
+- 清除只會造成版本來源混亂的非正式產物：`.hotfix-shop-deploy/`、`build/`、`tmp/`、repo 內 `backups/`、既有 `.deploy-*` 暫存目錄與明顯命令誤產物；`src/`、`public/`、`functions/`、`website/` 明確保留，不進行死碼大掃除。
+- `.gitignore` / `.vercelignore` 新增 `.deploy-*`、`.hotfix-*`、`.worktrees/`、prepared hotfix artifact 的永久隔離規則，避免暫存版本再次被 Git 或 Vercel 當成部署來源。
+- 正本策略：先以**目前本機經 build/test 驗證的工作區**建立新的 canonical baseline，再讓 Git `main` 對齊；目前 `origin/main` 比本機多出的臨時部署 hotfix commits **不得直接 merge / pull 覆蓋本機現行功能**。
+- 本次正本化本身 **不 push、不 deploy、不 rollback**；正式站維持原狀，待本機完整驗證與 canonical commit 完成後再另外處理 Production。
+
 ## 2026-08-13 — 自由狩獵 legacy 怪物／組隊入口清除
 - 修正直接建立自由狩獵隊伍時 `PartyBattleRoom` 的 `fixedHuntMonster is not defined`：固定怪物改在元件層解析，Free Hunt 等待室與 `handleStart()` 直接使用固定目標，不再依賴舊 `setupMonster/drawnMonsters/challengeLevel`。
 - 修正單人自由狩獵結算按「換對手」會跳回舊怪物介面：`MonsterBattle` 新增 `returnToOpponentSelection()`；只要有 `huntMonsterId`，所有返回選怪動作一律交回父層 `FreeHunt`，不再進 legacy `phase="select"`。
@@ -5915,3 +5922,4 @@ match /systemBroadcasts/{id} { allow read: if request.auth != null; allow write:
 - Validation: marketingEmail node checks PASS; node:test 5/5 PASS; React production build PASS.
 - Not deployed yet. Existing Firebase Trigger Email extension must remain active.
 
+- 2026-08-14：修正狩獵模式組隊戰鬥送出分數後卡在等待。PartyBattleRoom 移除獨立 postSubmitted useState，統一使用 useFirestoreRound.submitted；Firestore 將 member.ready 清回 false 後 UI 自動解鎖，避免下一回合永久等待。新增 PartyBattleRoom.submittedState.contract.test.js 防回歸。

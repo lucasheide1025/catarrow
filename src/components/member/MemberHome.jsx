@@ -14,20 +14,20 @@ import { useGuildRank } from "../../guild/useGuildRank";
 import { activeCertComp, certProgress, CERT_STATE_LABEL, halfShortLabel, CERT_SHOW_BOWS, certPeriodApprovedBows, certPeriodAllDone, normCertBow } from "../../lib/certStatus";
 import { archerLevelFromXP, archerXPProgress, archerLevelBonus, MAX_ARCHER_LEVEL, getLevelStyle } from "../../lib/archerLevel";
 import { catLevelFromXP, catXPProgress } from "../../lib/catLevel";
-import { getBondLevel, calcCatEquipBonus, CAT_SKILL_GROUPS, CAT_TYPES } from "../../lib/catData";
+import { getBondLevel, calcCatEquipBonus, CAT_TYPES } from "../../lib/catData";
+import { getCatBattleArchetype } from "../../lib/catBattleArchetypes";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
 import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
 import { calcArcherStats } from "../../lib/monsterData";
 import { COLLECTIBLE_MAP } from "../../lib/dungeonCollectibles";
 import { CAT_CARDS } from "../../lib/catCardData";
-import { ALL_MILESTONES } from "../../lib/arrowMilestone";
 import { EXPEDITION_MISSIONS, fmtCountdown } from "../../lib/expeditionData";
 import { subscribeActiveGoal } from "../../lib/villageGoalDb";
 import { GOAL_TYPE_MAP, buildGoalTitle } from "../../lib/villageGoalData";
 import { subscribeWorldBossSpawnCycle } from "../../lib/worldBossDb";
 import { activeSpawnTypes } from "../../lib/worldBossSpawnCycle";
 import { Card, ST } from "../shared/UI";
-import { SectionHeader, StatBar, ProgressRing, HubTile } from "../shared/Widgets";
+import { SectionHeader, StatBar, HubTile } from "../shared/Widgets";
 import ShareCard from "./ShareCard";
 import HomeLeaderboardBlock from "./HomeLeaderboardBlock";
 import MemberFeatureArt from "./MemberFeatureArt";
@@ -91,9 +91,15 @@ export default function MemberHome({
   duelStats = null, monsterDex = {}, craftStats = {}, chestStats = {},
   potionDex = {}, cardData = { cards:{}, equipped:[] }, todayArrows = 0,
   todayCheckin,       // 今日報到（MemberApp/AdminApp 既有訂閱下傳；undefined=載入中, null=未報到）
+  accountView = "student",
   worldBoss = null,   // 世界王事件（MemberApp/AdminApp 既有訂閱下傳）
   dexUnseenCount = 0,
   onOpenVillageBoard = null,   // 跳到貓貓村探索地圖（大富翁）；預設 null＝沒有入口
+  onCheckin = null,
+  onClassEnd = null,
+  checkinBusy = false,
+  classEndBusy = false,
+  onReturnAdmin = null,
 }) {
   const { profile } = useAuth();
   const [worldBossCycle, setWorldBossCycle] = useState(null);
@@ -122,6 +128,15 @@ export default function MemberHome({
   // 探索地圖有骰子才能玩（每日 15 顆）。profile 快照可能過時，保守起見沒資料也當可玩。
   const boardDice = profile?.villageBoard?.dice;
   const boardOpen = boardDice === undefined ? true : Number(boardDice) > 0;
+  const checkinMeta = (() => {
+    if (todayCheckin === undefined) return { icon:"⏱", label:"讀取今日狀態…", action:null };
+    if (todayCheckin === null || todayCheckin?.status === "rejected" || todayCheckin?.status === "cancelled") {
+      return { icon:"○", label:todayCheckin?.status === "rejected" ? "報到未通過，可重新報到" : "今天尚未報到", action:"checkin" };
+    }
+    if (todayCheckin?.classEnded) return { icon:"✓", label:"今日已下課", action:null };
+    if (todayCheckin?.status === "pending") return { icon:"⏳", label:"等待教練確認", action:null };
+    return { icon:"●", label:"上課中", action:"classEnd" };
+  })();
 
   // 村目標（重用 villageGoalDb 既有訂閱函式）
   useEffect(() => subscribeActiveGoal(setVillageGoal), []);
@@ -230,7 +245,7 @@ export default function MemberHome({
       }}>
         <div style={{ position:"relative", display:"flex", justifyContent:"space-between", gap:12, alignItems:"flex-start" }}>
           <div style={{ minWidth:0 }}>
-            <div style={{ color:"rgba(236,254,255,.72)", fontSize:11, fontWeight:800 }}>今日訓練狀態</div>
+            <div style={{ color:"rgba(236,254,255,.72)", fontSize:11, fontWeight:800 }}>今天想做什麼？</div>
             <div style={{ color:"#fff", fontSize:22, lineHeight:1.25, fontWeight:900, marginTop:3, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
               {profile?.nickname || profile?.name || "射手"}
             </div>
@@ -249,30 +264,25 @@ export default function MemberHome({
               </span>
             </div>
           </div>
-          <button onClick={() => onPageChange("notifications")} aria-label="查看通知" style={{ position:"relative", width:38, height:38, borderRadius:10, border:"1px solid rgba(255,255,255,.2)", background:"rgba(15,23,42,.35)", color:"#fff", fontSize:18, cursor:"pointer" }}>
-            🔔
-            {unreadNotif > 0 && <span style={{ position:"absolute", top:-5, right:-5, minWidth:17, height:17, padding:"0 4px", display:"grid", placeItems:"center", borderRadius:999, background:"#f43f5e", color:"#fff", fontSize:9, fontWeight:900, border:"2px solid #164e63" }}>{Math.min(unreadNotif, 99)}</span>}
-          </button>
+          <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+            {accountView === "coach" && onReturnAdmin && <button onClick={onReturnAdmin} style={{ minHeight:38, padding:"0 10px", borderRadius:10, border:"1px solid rgba(255,255,255,.2)", background:"rgba(15,23,42,.52)", color:"#fff", fontSize:11, fontWeight:900, cursor:"pointer" }}>⚙️ 返回後台</button>}
+            <button onClick={() => onPageChange("notifications")} aria-label="查看通知" style={{ position:"relative", width:38, height:38, borderRadius:10, border:"1px solid rgba(255,255,255,.2)", background:"rgba(15,23,42,.35)", color:"#fff", fontSize:18, cursor:"pointer" }}>
+              🔔
+              {unreadNotif > 0 && <span style={{ position:"absolute", top:-5, right:-5, minWidth:17, height:17, padding:"0 4px", display:"grid", placeItems:"center", borderRadius:999, background:"#f43f5e", color:"#fff", fontSize:9, fontWeight:900, border:"2px solid #164e63" }}>{Math.min(unreadNotif, 99)}</span>}
+            </button>
+          </div>
         </div>
-        {(() => {
-          const dex = computeDexStats({ member: profile, certification, certRecords, checkinCount: profile?.dailyQuestCount || 0, granted: dexGrants, physicalMax: dexConfig.physicalMax, pointMax: dexConfig.pointMax, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats });
-          const guildRank = guildRankInfo.current;
-          return <div style={{ position:"relative", display:"flex", gap:6, flexWrap:"wrap", marginTop:12 }}>
-            <span style={{ fontSize:11, color:"#e0f2fe", fontWeight:800 }}>{formatArcherNo(profile?.archerNo)}　射齡 {calcAge(profile?.joinDate)}　{getCohort(profile?.joinDate) != null ? cohortLabel(getCohort(profile.joinDate)) : ""}</span>
-            <span style={{ fontSize:11, color: certification?.level === "gold" ? "#fde68a" : "#bfdbfe", fontWeight:900 }}>🏅 {certification?.level === "gold" ? "金證" : certification?.level === "blue" ? "藍證" : "未認證"}</span>
-            <span style={{ fontSize:11, color:guildRank.color, fontWeight:900 }}>
-              🏛️ 公會 {guildRank.name}　🏅{guildRankInfo.rep}
-              {guildRankInfo.next && <span style={{ color:"rgba(255,255,255,.45)", fontWeight:700 }}>（距{guildRankInfo.next.name} {guildRankInfo.need}）</span>}
-            </span>
-            <span style={{ fontSize:11, color:"#fef3c7", fontWeight:900 }}>🎖️ 圖鑑 {dex.totalUnlocked}/{dex.totalAll}</span>
-          </div>;
-        })()}
-        <div style={{ position:"relative", display:"grid", gridTemplateColumns:"repeat(2, minmax(0, 1fr))", gap:8, marginTop:15 }}>
-          <button onClick={() => onPageChange("training-hub")} style={{ minHeight:44, border:0, borderRadius:8, background:"#ecfeff", color:"#155e75", fontSize:13, fontWeight:900, cursor:"pointer" }}>開始練習</button>
-          <button onClick={() => onPageChange("adventure-hub")} style={{ minHeight:44, border:"1px solid rgba(255,255,255,.25)", borderRadius:8, background:"rgba(15,23,42,.32)", color:"#fff", fontSize:13, fontWeight:900, cursor:"pointer" }}>前往冒險</button>
+        <div style={{ position:"relative", display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginTop:12, padding:"10px 12px", borderRadius:12, background:"rgba(2,6,23,.48)", border:"1px solid rgba(255,255,255,.1)" }}>
+          <div><div style={{ color:"#fff", fontSize:13, fontWeight:900 }}>{checkinMeta.icon} {checkinMeta.label}</div><div style={{ color:"rgba(236,254,255,.62)", fontSize:10, marginTop:2 }}>今日 {todayArrows} 箭</div></div>
+          {checkinMeta.action === "checkin" && <button onClick={onCheckin} disabled={!onCheckin || checkinBusy} style={{ minHeight:40, padding:"0 15px", border:0, borderRadius:10, background:"#0d9488", color:"#fff", fontSize:12, fontWeight:900, cursor:"pointer", opacity:checkinBusy ? .6 : 1 }}>{checkinBusy ? "報到中…" : "報到"}</button>}
+          {checkinMeta.action === "classEnd" && <button onClick={onClassEnd} disabled={!onClassEnd || classEndBusy} style={{ minHeight:40, padding:"0 15px", border:"1px solid rgba(251,191,36,.45)", borderRadius:10, background:"rgba(120,53,15,.72)", color:"#fef3c7", fontSize:12, fontWeight:900, cursor:"pointer", opacity:classEndBusy ? .6 : 1 }}>{classEndBusy ? "下課中…" : "下課"}</button>}
+        </div>
+        <div style={{ position:"relative", display:"grid", gridTemplateColumns:"minmax(0, 1.45fr) minmax(0, 1fr)", gap:8, marginTop:10 }}>
+          <button onClick={() => onPageChange("adventure-hub")} style={{ minHeight:48, border:0, borderRadius:10, background:"linear-gradient(135deg,#fbbf24,#f97316)", color:"#431407", fontSize:14, fontWeight:900, cursor:"pointer", boxShadow:"0 8px 18px rgba(249,115,22,.22)" }}>🗺️ 選擇冒險</button>
+          <button onClick={() => onPageChange("gacha")} style={{ minHeight:48, border:"1px solid rgba(255,255,255,.25)", borderRadius:10, background:"rgba(15,23,42,.52)", color:"#fff", fontSize:13, fontWeight:900, cursor:"pointer" }}>🐾 貓貓村</button>
         </div>
         <div style={{ position:"relative", display:"flex", gap:12, marginTop:12, color:"rgba(236,254,255,.78)", fontSize:11, fontWeight:800 }}>
-          <span>今日 {todayArrows} 箭</span><span>金幣 {(profile?.coins || 0).toLocaleString()}</span><span>貓夥伴 {hasCat ? "同行中" : "尚未同行"}</span>
+          <span>🎖️ 圖鑑 {profile?.dexTotalUnlocked ?? 0}/{profile?.dexTotalAll ?? 0}</span><span>金幣 {(profile?.coins || 0).toLocaleString()}</span><span>貓夥伴 {hasCat ? "同行中" : "尚未同行"}</span>
         </div>
         <button onClick={() => setShowShare(true)} style={{ position:"relative", marginTop:10, border:0, background:"transparent", color:"#a5f3fc", fontSize:11, fontWeight:900, padding:0, cursor:"pointer" }}>分享射手名片</button>
       </section>
@@ -326,57 +336,6 @@ export default function MemberHome({
           <span className="text-xs font-bold flex-shrink-0" style={{ color:"var(--warn-fg)" }}>查看 →</span>
         </button>
       )}
-
-      {/* ── 今日卡：報到狀態＋今日箭數＋下一里程碑 ─────────────── */}
-      {(() => {
-        const checkinMeta = (() => {
-          if (todayCheckin === undefined) return { icon:"⏱", label:"讀取中…",      fg:"var(--text-muted)",     bg:"rgba(255,255,255,0.06)" };
-          if (todayCheckin === null)      return { icon:"⚪", label:"尚未報到",     fg:"var(--text-secondary)", bg:"rgba(255,255,255,0.06)" };
-          if (todayCheckin.classEnded)    return { icon:"🏁", label:"今日已下課",   fg:"var(--info-fg)",        bg:"var(--info-bg)" };
-          if (todayCheckin.status === "pending")  return { icon:"⏳", label:"等待教練確認", fg:"var(--warn-fg)",   bg:"var(--warn-bg)" };
-          if (todayCheckin.status === "rejected") return { icon:"❌", label:"報到未通過",   fg:"var(--danger-fg)", bg:"var(--danger-bg)" };
-          return { icon:"✅", label:"上課中", fg:"var(--success-fg)", bg:"var(--success-bg)" };
-        })();
-        const nextDaily = ALL_MILESTONES.find(m => m.arrows > todayArrows) || null;
-        const prevDailyArrows = [...ALL_MILESTONES].reverse().find(m => m.arrows <= todayArrows)?.arrows || 0;
-        const ringVal = nextDaily ? todayArrows - prevDailyArrows : 1;
-        const ringMax = nextDaily ? nextDaily.arrows - prevDailyArrows : 1;
-        return (
-          <Card className="relative isolate overflow-hidden p-4" style={{ background:"linear-gradient(145deg,#10231f,#101827 70%)", border:"1px solid rgba(45,212,191,.28)", boxShadow:"0 14px 30px rgba(0,0,0,.28)" }}>
-            <MemberFeatureArt name="training" size={126} style={{ position:"absolute", right:-20, bottom:-28, opacity:.16, zIndex:-1 }} />
-            <div className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-teal-300 to-emerald-600" />
-            <SectionHeader icon="🎯" title="今日狀態" action={
-              <button onClick={() => onPageChange("training-hub")}
-                style={{ fontSize:11, color:"var(--text-accent)", fontWeight:700, background:"none", border:"none", cursor:"pointer", padding:0 }}>
-                前往練箭 →
-              </button>
-            } />
-            <div style={{ display:"flex", alignItems:"center", gap:14 }}>
-              <div className="rounded-full bg-slate-950/45 p-1 shadow-lg" style={{ flexShrink:0 }}>
-                <ProgressRing value={ringVal} max={ringMax} size={72} stroke={6} color="var(--success-fg)">
-                  <div style={{ textAlign:"center", lineHeight:1.1 }}>
-                    <div style={{ fontSize:18, fontWeight:900, color:"var(--text-primary)" }}>{todayArrows}</div>
-                    <div style={{ fontSize:9, color:"var(--text-muted)" }}>箭</div>
-                  </div>
-                </ProgressRing>
-              </div>
-              <div style={{ flex:1, minWidth:0 }}>
-                <span style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:12, fontWeight:800, color:checkinMeta.fg, background:checkinMeta.bg, borderRadius:999, padding:"3px 10px" }}>
-                  {checkinMeta.icon} {checkinMeta.label}
-                </span>
-                <div style={{ fontSize:11, color:"var(--text-secondary)", marginTop:6 }}>
-                  {nextDaily
-                    ? <>下一里程碑 <b style={{ color:"var(--success-fg)" }}>{nextDaily.arrows} 箭</b>（還差 {nextDaily.arrows - todayArrows} 箭）</>
-                    : "🏆 今日里程碑全數達成！"}
-                </div>
-                {nextDaily?.catBoxes > 0 && (
-                  <div style={{ fontSize:10, color:"var(--text-gold)", marginTop:2 }}>🎁 達成可獲得貓貓禮盒！</div>
-                )}
-              </div>
-            </div>
-          </Card>
-        );
-      })()}
 
       {/* ── 進行中卡：世界王現身／遠征倒數／村目標（有內容才顯示）────
           ⚠️ 世界王的「冷卻中／誕生徵兆」**不在這裡**——拆成下方獨立卡片。
@@ -900,11 +859,11 @@ export default function MemberHome({
               const xpProg = catXPProgress(catXP);
               const bondLv = getBondLevel(ec.bond || 0);
               const equipBonus = calcCatEquipBonus(ec.equip || {});
-              const skillGroup = CAT_SKILL_GROUPS[ec.catId] || null;
+              const skillGroup = getCatBattleArchetype(ec.catId).type;
               const typeInfo = CAT_TYPES[ec.type] || CAT_TYPES.allround;
               const typeColors = { attack: "#ef4444", defense: "#3b82f6", allround: "#22c55e" };
               const tColor = typeColors[ec.type] || "#22c55e";
-              const skillLabels = { heal: "💚 治療", atk: "⚡ 攻擊", def: "🛡️ 防禦" };
+              const skillLabels = { heal: "💚 侵蝕治療", attack: "⚡ 狩獵攻擊", defense: "🛡️ 守護反攻" };
               const totalEquip = equipBonus.atkBonus + equipBonus.defBonus + equipBonus.hpBonus;
               return (
                 <div style={{ marginTop: 10, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.08)" }}>

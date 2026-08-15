@@ -12,7 +12,7 @@ import {
   clearDungeonProcessing, claimDungeonReward, returnToMapAfterBattle, confirmDungeonResolution,
   trySetDungeonWorldFirstClear, claimDungeonPersonalFirstClear, addDungeonBroadcast, setDungeonMemberRole,
 } from "../../lib/dungeonDb";
-import { resolveHitPart, MONSTERS, TIER_LABEL, monsterTierNumber } from "../../lib/monsterData";
+import { resolveHitPart, MONSTERS, TIER_LABEL } from "../../lib/monsterData";
 import { VARIANT_LABEL } from "../../lib/monsterRegistry";
 import { calcDungeonContractDmg, getContractDesc, CONTRACT_TYPES, DUNGEON_MAPS } from "../../lib/dungeonData";
 import { normalizeDungeonDifficultyTier } from "../../lib/dungeonFirstClear";
@@ -49,6 +49,7 @@ import { SCORE_MAP, SCORE_LABELS, SCORE_COLORS, SCORE_GATE_LABELS } from "../../
 import { getDungeonTargetLabel } from "../../lib/dungeonRunSettings";
 import WorldBossCardBadge from "../shared/WorldBossCardBadge";
 import { getBattleBackgroundUrl, getBattleMonsterSources } from "../../lib/battleAssets";
+import { getMonsterTaxonomyPresentation } from "../../lib/monsterDisplayText";
 import { WB_CARDS } from "../../lib/worldBossCards";
 import { calculateDungeonDisplayedStats } from "../../lib/dungeonDisplayedStats";
 
@@ -132,15 +133,14 @@ function getMonsterVariantStyle(variant) {
 //    連色碼都同樣是 #f97316 —— 兩顆徽章並排都寫「強悍」，玩家分不出哪個是階級。
 //    作者因此把 T4 的晶尾小蠍誤認成 T3（2026-08-06）。中文只留給變體，階級走數字。
 function MonsterTierBadge({ monster }) {
-  const tierNo = monsterTierNumber(monster);
-  if (!tierNo) return null;
+  const {tierLabel}=getMonsterTaxonomyPresentation(monster);
   const color = TIER_LABEL[monster?.tier]?.color || "#6b7280";
   return (
     <span style={{
       fontSize:10, fontWeight:900, color:"white", background:color,
       borderRadius:4, padding:"1px 6px", flexShrink:0, letterSpacing:0.3,
     }}>
-      T{tierNo}
+      {tierLabel}
     </span>
   );
 }
@@ -153,8 +153,9 @@ function formatVariantDelta(mult) {
     const pct = Math.round(((Number(value) || 1) - 1) * 100);
     if (pct !== 0) parts.push(`${label} ${pct > 0 ? "+" : ""}${pct}%`);
   };
-  push("HP", mult.hp);
-  push("ATK", mult.atk);
+  push("生命", mult.hp);
+  push("攻擊", mult.atk);
+  push("防禦", mult.def);
   return parts.length ? parts.join("　") : null;
 }
 
@@ -1601,7 +1602,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
           catId: battleCatId || "diandian",
           archerStyle: me?.archerStyle || profile?.archerStyle || "baobao",
         }}
-        monster={{ id:room.monster?.id, name:room.monster?.name, family:room.monster?.family, hp:room.monsterHP || 0, atk:room.monster?.atk || 10, def:room.monster?.def || 5, tier:room.monster?.tier, variant:room.monster?.variant, icon:room.monster?.icon }}
+        monster={{ id:room.monster?.id, name:room.monster?.name, family:room.monster?.family, hp:room.monsterHP || 0, atk:room.monster?.atk || 10, def:room.monster?.def || 5, tier:room.monster?.tier, tierIndex:room.monster?.tierIndex, variant:room.monster?.variant, variantMult:room.monster?.variantMult, encounter:room.monster?.encounter, icon:room.monster?.icon }}
         renderMonster={(_, target) => <DungeonMonsterImg id={target?.id || room.monster?.id} icon={target?.icon || room.monster?.icon} variant={target?.variant || room.monster?.variant} />}
         battleMode="score"
         scoreInput={targetMode ? "target" : "keypad"}
@@ -1669,6 +1670,15 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
         catId:   members[p.id]?.catId || "baobao",
         catName: p.catName || p.name || "貓貓",
         dmg:     p.dmg || 0,
+        skillTriggered: !!p.skillTriggered,
+        skillName: p.skillName,
+        heal: p.heal || 0,
+        shield: p.shield || 0,
+        teamHeal: p.teamHeal || 0,
+        teamShield: p.teamShield || 0,
+        cleanseCount: p.cleanseCount || 0,
+        defBonusPct: p.defBonusPct || 0,
+        statusApplied: p.statusApplied || null,
       }))
     : [];
 
@@ -1911,7 +1921,7 @@ export default function DungeonBattleRoom({ roomId, onExit, isMapMode = true, on
             (room.log || []).map((entry, i) => (
               <div key={i} style={{ marginBottom:8, borderBottom:"1px solid rgba(255,255,255,0.04)", paddingBottom:6 }}>
                 <div style={{ color:"#fbbf24", fontWeight:700, fontSize:11, marginBottom:2 }}>
-                  第 {entry.round} 回合 · 傷害 {entry.totalDmg} · HP {entry.monsterHPBefore}→{entry.monsterHPAfter}
+                  第 {entry.round} 回合 · 傷害 {entry.totalDmg} · 生命 {entry.monsterHPBefore}→{entry.monsterHPAfter}
                 </div>
                 {(entry.playerLog || []).map((p, j) => (
                   <div key={j} style={{ paddingLeft:6, color:"#cbd5e1", marginBottom:1, lineHeight:1.5 }}>

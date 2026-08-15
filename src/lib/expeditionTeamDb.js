@@ -75,6 +75,7 @@ export async function createTeamExpeditionRoom({
       wbBonus: memberData?.wbBonus || null,
       avatarId: memberData?.avatarId || null,
       battleCosmetics: memberData?.battleCosmetics || null,
+      statusResistance: memberData?.statusResistance || null,
       joinedAt: serverTimestamp(),
     };
     const ref = await addDoc(collection(db, D), {
@@ -137,6 +138,7 @@ export async function joinTeamExpeditionRoom(code, memberId, memberName, memberD
       wbBonus: memberData?.wbBonus || null,
       avatarId: memberData?.avatarId || null,
       battleCosmetics: memberData?.battleCosmetics || null,
+      statusResistance: memberData?.statusResistance || null,
       joinedAt: serverTimestamp(),
     };
     const roomRef = doc(db, D, roomDoc.id);
@@ -396,6 +398,7 @@ export async function createTeamExpeditionBattleRoom({
         wbBonus: m.wbBonus || null,
         avatarId: m.avatarId || null,
         battleCosmetics: m.battleCosmetics || null,
+        statusResistance: m.statusResistance || null,
       };
     }
 

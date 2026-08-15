@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { addExternalComp, subscribeExternalComps } from "../../lib/db";
 import { useAuth } from "../../hooks/useAuth";
 import { today, fmtDT } from "../../lib/constants";
+import { EXTERNAL_COMP_FORMATS } from "../../lib/achievementDex";
 import { Card, Btn, Inp, Sel, TA, ST, Spinner, Empty, useToast } from "../shared/UI";
 
 const CATEGORIES = [
@@ -19,9 +20,12 @@ const CATEGORIES = [
 ].map(v => ({ value: v, label: v }));
 
 const RANKS = [
-  "第1名", "第2名", "第3名",
-  "前8名", "前16名", "參賽",
+  "參賽", "第8名", "第7名", "第6名", "第5名",
+  "第4名", "第3名", "第2名", "第1名",
 ].map(v => ({ value: v, label: v }));
+
+const FORMATS = EXTERNAL_COMP_FORMATS.map(item => ({ value:item.id, label:item.label }));
+const FORMAT_LABEL = Object.fromEntries(EXTERNAL_COMP_FORMATS.map(item => [item.id, item.label]));
 
 // 深色原生：語意 token 淡色底 + 同色系文字（style 疊在玻璃卡上，不再依賴覆寫層）
 const STATUS_STYLE = {
@@ -48,7 +52,7 @@ export default function MemberExternalComp() {
   const [saving, setSaving]   = useState(false);
   const [form, setForm]       = useState({
     compName: "", date: today(), location: "",
-    category: "裸弓 - 室內18米", rank: "第1名",
+    category: "裸弓 - 室內18米", format: "qualification", rank: "參賽",
     hasAward: false, awardKept: false, note: "",
   });
 
@@ -70,7 +74,7 @@ export default function MemberExternalComp() {
     });
     toast("申報已送出，等待教練審核 ✓");
     setAdding(false);
-    setForm({ compName:"", date:today(), location:"", category:"裸弓 - 室內18米", rank:"第1名", hasAward:false, awardKept:false, note:"" });
+    setForm({ compName:"", date:today(), location:"", category:"裸弓 - 室內18米", format:"qualification", rank:"參賽", hasAward:false, awardKept:false, note:"" });
     setSaving(false);
   }
 
@@ -108,6 +112,9 @@ export default function MemberExternalComp() {
           <Sel label="參賽組別" value={form.category}
             onChange={e => setForm(p=>({...p, category:e.target.value}))}
             options={CATEGORIES} />
+          <Sel label="賽制" value={form.format}
+            onChange={e => setForm(p=>({...p, format:e.target.value}))}
+            options={FORMATS} />
           <Sel label="最終名次" value={form.rank}
             onChange={e => setForm(p=>({...p, rank:e.target.value}))}
             options={RANKS} />
@@ -165,6 +172,11 @@ export default function MemberExternalComp() {
             </div>
 
             <div className="flex gap-2 flex-wrap mb-2">
+              {r.format && (
+                <span className="text-xs bg-purple-500/15 text-purple-300 font-bold px-2 py-0.5 rounded-full">
+                  {FORMAT_LABEL[r.format] || r.format}
+                </span>
+              )}
               <span className="text-xs bg-white/10 border border-white/15 text-gray-300 font-medium px-2 py-0.5 rounded-full">
                 {r.category}
               </span>

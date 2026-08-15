@@ -1,5 +1,5 @@
 // 貓咪攻擊回合全螢幕覆蓋層
-// open=true 時遮蓋整個畫面，cats=[{ catId, catName, dmg }]
+// open=true 時遮蓋整個畫面，並顯示每隻貓本回合真正生效的戰鬥效果。
 
 const CSS = `
 @keyframes cro-bounce {
@@ -30,6 +30,16 @@ export default function CatRoundOverlay({ open, cats = [], totalDmg }) {
   const count = cats.length;
   const size  = count === 1 ? 148 : count <= 2 ? 120 : count <= 4 ? 90 : 68;
   const total = totalDmg ?? cats.reduce((s, c) => s + (c.dmg || 0), 0);
+  const effectLabels = cat => [
+    cat.skillTriggered && cat.skillName ? `✨ ${cat.skillName}` : null,
+    cat.heal > 0 ? `💚 治療 ${cat.heal}` : null,
+    cat.shield > 0 ? `🛡️ 護盾 ${cat.shield}` : null,
+    cat.teamHeal > 0 ? `💚 全隊治療 ${cat.teamHeal}` : null,
+    cat.teamShield > 0 ? `🫧 全隊護盾 ${cat.teamShield}` : null,
+    cat.cleanseCount > 0 ? "✨ 全隊淨化" : null,
+    cat.statusApplied?.name ? `☠️ ${cat.statusApplied.name}` : null,
+    cat.defBonusPct > 0 ? `🛡️ DEF +${cat.defBonusPct}%` : null,
+  ].filter(Boolean);
 
   return (
     <div style={{
@@ -48,7 +58,7 @@ export default function CatRoundOverlay({ open, cats = [], totalDmg }) {
         letterSpacing: "0.18em", textShadow: "0 0 16px rgba(244,114,182,0.7)",
         animation: "cro-title 0.35s ease both",
       }}>
-        🐾 貓咪攻擊！
+        🐾 貓咪協戰！
       </div>
 
       {/* 貓咪頭像格 */}
@@ -91,6 +101,13 @@ export default function CatRoundOverlay({ open, cats = [], totalDmg }) {
                 animation: `cro-dmg 0.4s cubic-bezier(.34,1.56,.64,1) ${0.55 + i * 0.08}s both`,
               }}>
                 -{cat.dmg}
+              </div>
+            )}
+            {effectLabels(cat).length > 0 && (
+              <div style={{display:"flex",flexWrap:"wrap",justifyContent:"center",gap:4,maxWidth:Math.max(size,150)}}>
+                {effectLabels(cat).map((label,index)=>(
+                  <span key={`${label}-${index}`} style={{padding:"2px 6px",borderRadius:999,background:"rgba(255,255,255,.09)",border:"1px solid rgba(249,168,212,.28)",color:"#fce7f3",fontSize:9,fontWeight:800,whiteSpace:"nowrap"}}>{label}</span>
+                ))}
               </div>
             )}
           </div>

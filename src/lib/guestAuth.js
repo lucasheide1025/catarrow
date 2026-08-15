@@ -236,7 +236,7 @@ async function resolveLegacyGuestSession(contact, accountType, sessionSourceId =
 // ⚠️ 這組帳號密碼的效力範圍只有這個隱藏頁面本身——不會因此獲得 bookingBetaAccess
 // 或能登入完整的學生 App（LoginPage/useAuth.js 走的是完全獨立的登入邏輯）。
 
-export async function registerGuestWithPassword(name, email, phone, password) {
+export async function registerGuestWithPassword(name, email, phone, password, { marketingOptIn = false } = {}) {
   const trimmedEmail = (email || "").trim().toLowerCase();
   if (!trimmedEmail || !password) return { ok: false, reason: "Email 與密碼為必填" };
 
@@ -297,17 +297,25 @@ export async function registerGuestWithPassword(name, email, phone, password) {
     if (!snap.empty) {
       // 這個 email 之前用匿名QR碼流程留過記錄——原地接上，不建立新文件
       const existing = snap.docs[0];
-      await updateDoc(existing.ref, { uid, hasPassword: true, lastLoginAt: serverTimestamp() });
+      const patch = { uid, hasPassword: true, lastLoginAt: serverTimestamp() };
+      if (marketingOptIn === true) {
+        patch.marketingOptIn = true;
+        patch.marketingOptInAt = serverTimestamp();
+      }
+      await updateDoc(existing.ref, patch);
       return { ok: true, id: existing.id, ...existing.data(), uid, isNew: false };
     }
 
-    const ref = await addDoc(collection(db, C_MEMBERS), {
+    const newGuest = {
       accountType: "guest", contactHash, contactRaw: trimmedEmail,
       sessionSourceId: null, uid, hasPassword: true,
       name: (name || "").trim() || "訪客射手",
       email: trimmedEmail, phone: (phone || "").trim(),
+      marketingOptIn: marketingOptIn === true,
       coins: 0, createdAt: serverTimestamp(), lastLoginAt: serverTimestamp(),
-    });
+    };
+    if (marketingOptIn === true) newGuest.marketingOptInAt = serverTimestamp();
+    const ref = await addDoc(collection(db, C_MEMBERS), newGuest);
     return { ok: true, id: ref.id, accountType: "guest", uid, name: (name || "").trim() || "訪客射手", email: trimmedEmail, phone: (phone || "").trim(), coins: 0, isNew: true };
   } catch (e) {
     if (e?.code === "auth/email-already-in-use") return { ok: false, reason: "這個 Email 已經註冊過了，請改用「登入」" };
@@ -475,7 +483,7 @@ export async function loginGuestWithGoogle() {
 //     教練的 Google UID 被寫進訪客文件造成 useAuth 混淆，2026-07-11 事件）。
 //   • usedTempApp=false（主 App 無人登入）：會寫 uid，因為這時 uid 是真正的訪客 Google UID，
 //     而且 Firestore 規則的 guest/kid create 分支需要 uid == request.auth.uid 才會放行。
-export async function saveGuestFromSocial({ name, email, phone, uid, provider = "google", usedTempApp = true }) {
+export async function saveGuestFromSocial({ name, email, phone, uid, provider = "google", usedTempApp = true, marketingOptIn = false }) {
   const trimmedEmail = (email || "").trim().toLowerCase();
   if (!trimmedEmail)           return { ok: false, reason: "缺少 Email" };
   if (!phone || !phone.trim()) return { ok: false, reason: "請留下電話，方便有狀況時聯絡你" };
@@ -503,6 +511,10 @@ export async function saveGuestFromSocial({ name, email, phone, uid, provider = 
         socialUid: uid || null, phone: phone.trim(), socialProvider: provider, lastLoginAt: serverTimestamp(),
       };
       if (!usedTempApp) patch.uid = uid;
+      if (marketingOptIn === true) {
+        patch.marketingOptIn = true;
+        patch.marketingOptInAt = serverTimestamp();
+      }
       await updateDoc(existing.ref, patch);
       return { ok: true, id: existing.id, ...existing.data(), phone: phone.trim(), isNew: false };
     }
@@ -512,8 +524,10 @@ export async function saveGuestFromSocial({ name, email, phone, uid, provider = 
       sessionSourceId: null, socialUid: uid || null, socialProvider: provider,
       name: (name || "").trim() || "訪客射手",
       email: trimmedEmail, phone: phone.trim(),
+      marketingOptIn: marketingOptIn === true,
       coins: 0, createdAt: serverTimestamp(), lastLoginAt: serverTimestamp(),
     };
+    if (marketingOptIn === true) docData.marketingOptInAt = serverTimestamp();
     // 無臨時 App 時（主 App 無人），寫入真實 uid 以通過 firestore.rules 的 guest/kid create 檢查
     if (!usedTempApp) docData.uid = uid;
     const ref = await addDoc(collection(db, C_MEMBERS), docData);
@@ -536,13 +550,18 @@ export async function getGuestProfile(memberId) {
   }
 }
 
-// ── 會員中心：更新個人資料（姓名/電話）──
-export async function updateGuestProfile(memberId, { name, phone }) {
+// ── 會員中心：更新個人資料（姓名/電話/Email 通知偏好）──
+export async function updateGuestProfile(memberId, { name, phone, marketingOptIn }) {
   if (!memberId) return { ok: false, reason: "缺少會員 id" };
   try {
     const patch = {};
     if (typeof name === "string")  patch.name  = name.trim() || "訪客射手";
     if (typeof phone === "string") patch.phone = phone.trim();
+    if (typeof marketingOptIn === "boolean") {
+      patch.marketingOptIn = marketingOptIn;
+      if (marketingOptIn) patch.marketingOptInAt = serverTimestamp();
+      else patch.marketingOptOutAt = serverTimestamp();
+    }
     if (Object.keys(patch).length === 0) return { ok: true };
     await updateDoc(doc(db, C_MEMBERS, memberId), patch);
     return { ok: true, ...patch };

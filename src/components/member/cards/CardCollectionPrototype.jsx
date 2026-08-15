@@ -31,6 +31,12 @@ function getCardStatType(view) {
   return FAMILY_STAT[view.family] || "atk";
 }
 
+const WORLD_BOSS_CARD_ART_V2 = Object.freeze({
+  head_coach: ["head_coach-v3.png", "head_coach-v2.png", "head_coach.webp"],
+  wife: ["wife-v3.png", "wife-v2.png", "wife.webp"],
+  yumi: ["yumi-v3.png", "yumi-v2.png", "yumi.webp"],
+});
+
 // 世界王卡：從既有獨立來源衍生 view（不塞進怪物 catalog）
 function wbViews(collection) {
   const owned = (collection && collection.wbCards) || {};
@@ -38,7 +44,8 @@ function wbViews(collection) {
     const has = !!owned[key];
     return {
       monsterId: `wb:${key}`, cardId: key, artKey: key,
-      artSources: [`/cards/worldboss/${key}.webp`],
+      artSources: (WORLD_BOSS_CARD_ART_V2[key] || [`${key}.webp`])
+        .map(file => `/cards/worldboss/${file}`),
       availability: "existing", family: "worldboss", tier: "worldboss",
       encounter: "worldboss", role: "worldboss", source: "wb",
       name: (meta && meta.name) || "世界王卡",

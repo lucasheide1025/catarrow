@@ -317,9 +317,21 @@ for (const catId of CAT_IDS_FOR_PIXEL) {
 //
 // 好消息是素材其實躺在別的資料夾：`/cats/portraits/{catId}.webp` 九隻都有。
 // 小王則沿用同族大王的圖（比像素 SVG 好，等專屬圖生出來再換）。
-function bossImageChain(bossKey) {
+export function bossImageChain(bossKey) {
   if (!bossKey) return [];
-  const chain = [`/worldboss/${bossKey}.webp`];
+  const battleV3Keys = new Set([
+    "head_coach", "wife", "yumi",
+    "cat_daming", "cat_gege", "cat_meimei", "cat_niuniu", "cat_haji",
+    "cat_baobao", "cat_youyou", "cat_xiaoan", "cat_diandian",
+  ]);
+  const v2Portraits = {
+    head_coach: "/worldboss/head_coach-v2.png",
+    wife: "/worldboss/wife-v2.png",
+    yumi: "/worldboss/yumi-v2.png",
+  };
+  const chain = [];
+  if (battleV3Keys.has(bossKey)) chain.push(`/worldboss/battle-v3/${bossKey}.png`);
+  chain.push(v2Portraits[bossKey] || `/worldboss/${bossKey}.webp`);
   if (bossKey.startsWith("cat_")) {
     chain.push(`/cats/portraits/${bossKey.slice(4)}.webp`);
   }

@@ -99,7 +99,7 @@ function SavedCard({ d, profile, onSelect, onRemove, removing }) {
               <div className="text-xs font-black text-white leading-tight truncate drop-shadow">
                 {d.isHidden ? "寶藏地下城" : family.label}
               </div>
-              <div className="text-[9px] font-bold" style={{ color:"rgba(255,255,255,0.7)" }}>T{d.difficulty}</div>
+              <div className="text-[9px] font-bold" style={{ color:"rgba(255,255,255,0.7)" }}>第 {d.difficulty} 階</div>
             </div>
             <span className="text-white/70 text-sm shrink-0">›</span>
           </div>

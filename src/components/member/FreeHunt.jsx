@@ -11,6 +11,7 @@ import {
   getFreeHuntMonsterById,
   getFreeHuntMonsters,
 } from "../../lib/freeHuntCatalog";
+import { applySoloVariant, selectVariant, toLegacyBattleMonster } from "../../lib/monsterExpansionAdapter";
 
 const PARTY_SIZE_GUIDE = Object.freeze([
   { players:1, label:"獨自建立", pressure:"怪物基準強度", reward:"素材箱 1＋金幣箱 1" },
@@ -78,6 +79,7 @@ export default function FreeHunt({ onBack, onSolo, onEnterPartyRoom, resumableBa
   async function createSelectedParty() {
     if (!selected || !myId || partyLoading) return;
     setPartyLoading(true); setPartyError("");
+    const rolledMonster = applySoloVariant(toLegacyBattleMonster(selected), selectVariant(), Math.random());
     const res = await createPartyRoom(myId, myName, "battle", {
       accountType, level,
       huntMonsterId: selected.id,
@@ -85,12 +87,7 @@ export default function FreeHunt({ onBack, onSolo, onEnterPartyRoom, resumableBa
       huntDistanceM: 5,
       huntTargetFmt: "half_17",
       bowType: "recurve_bare",
-      monsterSnapshot: {
-        id:selected.id, name:selected.name, icon:selected.icon || "👾",
-        hp:Number(selected.hp) || 1, atk:Number(selected.atk) || 0, def:Number(selected.def) || 0,
-        tier:selected.tier, tierIndex:Number(selected.tierIndex) || null,
-        family:selected.family, encounter:selected.encounter, artKey:selected.artKey || null,
-      },
+      monsterSnapshot: rolledMonster,
     });
     setPartyLoading(false);
     if (res.ok) onEnterPartyRoom?.(res.roomId, "battle", true, selected);
@@ -114,12 +111,20 @@ export default function FreeHunt({ onBack, onSolo, onEnterPartyRoom, resumableBa
     <div className="min-h-screen px-4 pb-8 pt-4 text-white"
       style={{ background:"radial-gradient(circle at 50% -10%, rgba(99,102,241,.28), transparent 38%), linear-gradient(180deg,#07101f 0%,#0f172a 48%,#050914 100%)" }}>
       <div className="mx-auto flex w-full max-w-lg flex-col gap-4">
-        <div className="relative overflow-hidden rounded-3xl border border-indigo-400/20 bg-slate-950/70 p-5 shadow-2xl">
-          <button onClick={onBack} className="absolute left-4 top-4 rounded-xl bg-white/5 px-3 py-2 text-xs font-black text-slate-300">← 冒險</button>
-          <div className="pt-8 text-center">
-            <div className="text-4xl">🧭</div>
-            <h1 className="mt-2 text-2xl font-black text-indigo-100">自由狩獵</h1>
-            <p className="mt-1 text-xs leading-relaxed text-slate-400">指定族群、危險等級與討伐目標，不再隨機刷怪。</p>
+        <div
+          className="relative min-h-[230px] overflow-hidden rounded-3xl border border-indigo-300/25 bg-slate-950 p-5 shadow-2xl"
+          style={{
+            backgroundImage:"linear-gradient(180deg,rgba(4,9,22,.48) 0%,rgba(4,9,22,.16) 38%,rgba(4,9,22,.93) 100%), url('/ui/hunt/hunt-hero-v1.webp')",
+            backgroundPosition:"center",
+            backgroundSize:"cover",
+          }}
+          data-hunt-art="hero"
+        >
+          <button onClick={onBack} className="absolute left-4 top-4 rounded-xl border border-white/15 bg-slate-950/55 px-3 py-2 text-xs font-black text-white shadow-lg backdrop-blur-sm">← 冒險</button>
+          <div className="absolute inset-x-5 bottom-5">
+            <div className="inline-flex rounded-full border border-cyan-200/20 bg-slate-950/55 px-3 py-1 text-[10px] font-black tracking-[.18em] text-cyan-100 backdrop-blur-sm">七族狩獵路線</div>
+            <h1 className="mt-2 text-3xl font-black text-white drop-shadow-lg">自由狩獵</h1>
+            <p className="mt-1 max-w-xs text-xs font-bold leading-relaxed text-slate-200 drop-shadow">指定族群、危險等級與討伐目標，踏上自己的狩獵路線。</p>
           </div>
         </div>
 
@@ -173,22 +178,30 @@ export default function FreeHunt({ onBack, onSolo, onEnterPartyRoom, resumableBa
           </div>
         </details>
 
-        <section className="rounded-3xl border border-white/10 bg-slate-950/60 p-4 shadow-xl">
-          <div className="mb-3 flex items-center justify-between">
+        <section
+          className="relative overflow-hidden rounded-3xl border border-white/10 bg-slate-950 p-4 shadow-xl"
+          style={{
+            backgroundImage:"linear-gradient(180deg,rgba(5,10,22,.78),rgba(5,10,22,.9)), url('/ui/hunt/hunt-family-map-v1.webp')",
+            backgroundPosition:"center",
+            backgroundSize:"cover",
+          }}
+          data-hunt-art="family-map"
+        >
+          <div className="relative z-10 mb-3 flex items-center justify-between">
             <div>
               <div className="text-[10px] font-black uppercase tracking-[.22em] text-indigo-300">STEP 1</div>
               <div className="text-base font-black">選擇七大族</div>
             </div>
             <div className="text-xs font-bold" style={{ color:familyMeta?.color }}>{familyMeta?.icon} {familyMeta?.label}</div>
           </div>
-          <div className="grid grid-cols-4 gap-2">
+          <div className="relative z-10 grid grid-cols-4 gap-2">
             {FREE_HUNT_FAMILIES.map(id => {
               const meta = FAMILIES[id];
               const active = id === family;
               return (
                 <button key={id} onClick={() => chooseFamily(id)}
                   className="min-h-16 rounded-2xl border px-2 py-2 text-center transition-all active:scale-95"
-                  style={{ borderColor: active ? meta?.color : "rgba(255,255,255,.08)", background: active ? `${meta?.color}22` : "rgba(255,255,255,.025)" }}>
+                  style={{ borderColor: active ? meta?.color : "rgba(255,255,255,.12)", background: active ? `${meta?.color}38` : "rgba(2,6,23,.58)", backdropFilter:"blur(5px)" }}>
                   <div className="text-2xl">{meta?.icon || "👾"}</div>
                   <div className="mt-1 truncate text-[10px] font-black" style={{ color: active ? meta?.color : "#94a3b8" }}>{meta?.label}</div>
                 </button>

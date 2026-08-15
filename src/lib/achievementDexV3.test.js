@@ -508,10 +508,11 @@ test("combat separates normal monsters mini bosses and bosses", () => {
   expect(AUTO_ACHIEVEMENTS.find(item => item.id === "monster_mvp10")?.cat).toBe("monster_boss");
 });
 
-test("archer level reaches 500 and tenure exposes 20 full-year milestones", () => {
+test("archer level is grouped into five 100-level milestones", () => {
   const level = buildArcherLevelAchievement();
   expect(level.cat).toBe("archer_level");
-  expect(level.tiers).toHaveLength(500);
+  expect(level.tiers).toHaveLength(5);
+  expect(level.tiers.map(tier => tier.name)).toEqual(["Lv.1～100","Lv.101～200","Lv.201～300","Lv.301～400","Lv.401～500"]);
   expect(level.tiers[level.tiers.length - 1].count).toBe(500);
   const tenure = buildArcheryTenureAchievement({ toDate:() => new Date("2000-01-01T00:00:00Z") }, new Date("2026-08-12T00:00:00Z"));
   expect(tenure.cat).toBe("archery_tenure");

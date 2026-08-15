@@ -28,4 +28,22 @@ describe("battle screen snapshot", () => {
   test("rejects corrupt snapshots", () => {
     expect(() => restoreBattleScreenSnapshot({ battle: { round: 0 } })).toThrow("invalid_battle_screen_snapshot");
   });
+
+  test("preserves living and defeated companion hp exactly", () => {
+    for (const catCurrentHP of [73, 0]) {
+      const snapshot = createBattleScreenSnapshot({ battle:{ phase:"playing", round:2 }, catCurrentHP });
+      expect(restoreBattleScreenSnapshot(snapshot, { hasCat:true, catMaxHP:100 }).catCurrentHP).toBe(catCurrentHP);
+    }
+  });
+
+  test("old snapshots default an accompanying cat to max hp rather than dead", () => {
+    const restored = restoreBattleScreenSnapshot({ battle:{ phase:"playing", round:2 } }, { hasCat:true, catMaxHP:120 });
+    expect(restored.catCurrentHP).toBe(120);
+  });
+
+  test("preserves redesigned cat pity and guard state",()=>{
+    const catBattleState={strongSkillMisses:2,guardAtkBuff:{value:12,expiresAfterRound:3}};
+    const snapshot=createBattleScreenSnapshot({battle:{phase:"playing",round:2},catBattleState});
+    expect(restoreBattleScreenSnapshot(snapshot).catBattleState).toEqual(catBattleState);
+  });
 });

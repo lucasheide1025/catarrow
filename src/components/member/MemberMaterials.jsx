@@ -19,8 +19,19 @@ const FAMILY_CONFIG = {
   workplace: { label: "職場族",    icon: "💼", color: "#475569" },
   exam:      { label: "考試族",    icon: "📝", color: "#dc2626" },
   temple:    { label: "西方怪物族", icon: "🏰", color: "#ea580c" },
+  treasure:  { label: "寶箱族",    icon: "📦", color: "#d97706" },
   all:       { label: "章碎片",    icon: "✨", color: "#d97706" },
 };
+const CHEST_SOURCE_LABELS = {
+  dungeon_boss_choice: "地下城王房選擇獎勵",
+  dungeon_boss: "地下城王房獎勵",
+  dungeon: "地下城",
+  expedition: "遠征",
+  worldboss: "世界王",
+};
+function chestSourceLabel(from) {
+  return CHEST_SOURCE_LABELS[from] || from || "";
+}
 const FAMILY_ORDER = ["ghost", "mountain", "insect", "workplace", "exam", "temple", "all"];
 const TIER_ORDER   = ["common", "rare", "elite", "fierce", "boss", "mythic", "all"];
 const RARITY_ORDER = ["legendary", "rare", "uncommon", "common"];
@@ -156,9 +167,13 @@ export default function MemberMaterials({ onBack, onGoVillage, guestProfile }) {
   function chestLookup(ch) {
     const base = CHEST_TYPES[ch.type];
     if (!base) return CHEST_TYPES.wood;
+    const family = FAMILY_CONFIG[ch.family];
+    const dynamicFamilyName = ch.type === "family_mat" && family
+      ? `T${ch.tierIndex || "?"} ${family.label}素材箱`
+      : null;
     return {
       ...base,
-      name: ch.name || base.name,
+      name: dynamicFamilyName || ch.name || base.name,
       icon: ch.icon || base.icon,
       color: ch.color || base.color,
       img: ch.img || null,   // 族系箱專屬立繪；無則用 emoji icon
@@ -541,7 +556,7 @@ export default function MemberMaterials({ onBack, onGoVillage, guestProfile }) {
                     : <div className="text-4xl">{cc.icon}</div>}
                   <div className="flex-1 min-w-0">
                     <div className="font-black text-sm" style={{ color: cc.color }}>{cc.name}</div>
-                    {ch.from && <div className="text-gray-400 text-xs mt-0.5">來自 {ch.from}</div>}
+                    {ch.from && <div className="text-gray-400 text-xs mt-0.5">來自 {chestSourceLabel(ch.from)}</div>}
                     <div className="text-gray-500 text-xs mt-0.5 leading-snug">{cc.desc}</div>
                   </div>
                   <button

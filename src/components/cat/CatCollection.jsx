@@ -6,14 +6,22 @@ import {
   equipCat, unequipCat, unlockChapter, addBlessing,
 } from "../../lib/catDb";
 import {
-  CATS, CAT_IDS, CAT_TYPES, CAT_TYPE_MAP, CAT_SKILL_GROUPS, CAT_BUILD_PROFILES, getCatChapters,
+  CATS, CAT_IDS, CAT_TYPES, CAT_TYPE_MAP, CAT_BUILD_PROFILES, getCatChapters,
   getBondLevel, getBondProgress, BOND_THRESHOLDS, CHAPTER_BOND_LV,
   CAT_EQUIP_SLOTS, CAT_EQUIP_GRADE_NAMES, CAT_EQUIP_GRADE_COLORS, CAT_EQUIP_GRADE_BG,
-  catEquipEnhancement, calcCatSkillChance, calcCatSkillEffect,
+  catEquipEnhancement,
 } from "../../lib/catData";
 import { calcCatCombatStats } from "../../lib/catCombat";
 import { getLevelStyle } from "../../lib/archerLevel";
 import CatSVG from "./CatSVG";
+import CatAnimator from "./CatAnimator";
+import { getCatBattleArchetype, getCatBondScaling, getCatStrongSkillChance } from "../../lib/catBattleArchetypes";
+
+const CAT_ROLE_TABS=[
+  {id:"heal",label:"侵蝕治療",sub:"治療型",icon:"💚",cats:["daming","gege","meimei"],color:"emerald"},
+  {id:"attack",label:"狩獵攻擊",sub:"攻擊型",icon:"⚡",cats:["niuniu","haji","baobao"],color:"rose"},
+  {id:"defense",label:"守護反攻",sub:"防禦型",icon:"🛡️",cats:["youyou","xiaoan","diandian"],color:"sky"},
+];
 
 // ── 羈絆條 ──────────────────────────────────────────────────
 function BondBar({ bond }) {
@@ -256,34 +264,15 @@ function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, 
   const glowShadow = `0 0 25px rgba(${themeColor.rgb}, 0.5), inset 0 0 12px rgba(${themeColor.rgb}, 0.25)`;
   const glowBorder = `3px solid ${themeColor.hex}`;
 
-  const skillGroup = CAT_SKILL_GROUPS[catId] || "heal";
-  const activeChance = calcCatSkillChance(catLevel, bondLevel, catId);
+  const battleArchetype = getCatBattleArchetype(catId);
+  const bondScaling = getCatBondScaling(bondLevel);
+  const nextBondScaling = getCatBondScaling(Math.min(50,bondLevel+1));
+  const activeChance = getCatStrongSkillChance(catId, bondLevel);
   const activeChancePct = (activeChance * 100).toFixed(1);
-  const bl = bondLevel || 0;
-  const skillPower = CAT_BUILD_PROFILES[catId]?.skillPower || 1;
-
-  let activeSkillName = "";
-  let activeSkillDesc = "";
-  let activeSkillDetails = "";
-
-  if (skillGroup === "heal") {
-    activeSkillName = "💚 貓之治癒術 (Active Heal)";
-    const minHeal = Math.round((10 + catLevel * 0.5 + bl * 5) * 0.7 * skillPower);
-    const maxHeal = Math.round((10 + catLevel * 0.5 + bl * 5) * 1.0 * skillPower);
-    activeSkillDesc = "回合結束後，有機率為射手回復生命值。";
-    activeSkillDetails = `當前效果：回復 +${minHeal} ～ +${maxHeal} HP`;
-  } else if (skillGroup === "counter") {
-    activeSkillName = "🛡️ 喵喵盾格擋 (Active Block)";
-    const pct = Math.min(60, 10 + catLevel * 0.1 + bl * 2);
-    activeSkillDesc = "受到傷害時，有機率架起護盾，按比例直接減免該次受到的傷害。";
-    activeSkillDetails = `當前效果：該次受傷減免 +${pct.toFixed(0)}% 傷害`;
-  } else {
-    activeSkillName = "💥 喵喵爪擊 (Active Claw)";
-    const minDmg = Math.round((15 + catLevel * 0.7 + bl * 6) * 0.7 * skillPower);
-    const maxDmg = Math.round((15 + catLevel * 0.7 + bl * 6) * 1.0 * skillPower);
-    activeSkillDesc = "射手射擊後，有機率對敵人追加一次爪擊，造成物理傷害。";
-    activeSkillDetails = `當前效果：追加造成約 +${minDmg} ～ +${maxDmg} 點傷害`;
-  }
+  const roleLabel={heal:"治療／異常",attack:"直接攻擊",defense:"護盾／反攻"}[battleArchetype.type];
+  const activeSkillName = `✨ ${battleArchetype.strongSkill.name}`;
+  const activeSkillDesc = battleArchetype.strongSkill.summary;
+  const activeSkillDetails = `每回合：${battleArchetype.passive.name}｜定位：${roleLabel}`;
 
   async function handleEquip() {
     setUpdating(true);
@@ -614,7 +603,18 @@ function CatDetail({ catId, catData, equippedCat, onBack, memberId, memberName, 
                     <span className="text-indigo-200">{activeChancePct}%</span>
                   </div>
                   <div className="mt-2 text-[9px] text-slate-500 leading-normal border-t border-slate-700/30 pt-1.5">
-                    * 觸發率隨等級與羈絆成長（基礎 5% + 每級 0.05% + 每級羈絆 1%），上限 35%。個體天賦與特質會進一步調整觸發率與技能強度。
+                    * 強技機率會隨羈絆提升；連續三回合未發動時，第 4 回合必定發動。目前羈絆效果倍率 ×{bondScaling.powerMultiplier.toFixed(2)}。
+                  </div>
+                  <div className="mt-2 rounded-lg border border-violet-400/20 bg-violet-950/20 p-2 text-[10px] font-bold text-violet-100">
+                    {bondLevel>=50
+                      ? "羈絆已達 Lv.50：技能威力與觸發加成已達上限"
+                      : `下一級：技能威力 ×${nextBondScaling.powerMultiplier.toFixed(3)}（+${((nextBondScaling.powerMultiplier-bondScaling.powerMultiplier)*100).toFixed(1)}%）・強力技能再 +${((nextBondScaling.procBonus-bondScaling.procBonus)*100).toFixed(2)}%`}
+                  </div>
+                  <div className="mt-2 rounded-lg bg-black/25 p-2 text-[10px] text-cyan-200">
+                    卡片／專精搭配：{battleArchetype.synergy.name}－{battleArchetype.synergy.summary}
+                  </div>
+                  <div className="mt-2 rounded-lg border border-amber-400/20 bg-amber-950/20 p-2 text-[9px] leading-relaxed text-amber-100/80">
+                    模式限制：一般狩獵與地下城使用完整效果；王類降低百分比傷害與護盾上限；世界王採最嚴格上限，且小安的不倒守護不會發動。決鬥維持原規則。
                   </div>
                 </div>
               </div>
@@ -713,6 +713,10 @@ export default function CatCollection({ onBack, onOpenBook, onOpenForge, sharedC
   const [claiming,  setClaiming]  = useState(false);
   const [claimMsg,  setClaimMsg]  = useState("");
   const [equipped,  setEquipped]  = useState(profile?.equippedCat || null);
+  const [roleTab,setRoleTab]=useState(()=>getCatBattleArchetype(profile?.equippedCat?.catId).type);
+  const [previewCat,setPreviewCat]=useState(()=>profile?.equippedCat?.catId||"daming");
+  const [quickEquipping,setQuickEquipping]=useState(false);
+  const [quickMessage,setQuickMessage]=useState("");
 
   const memberId   = profile?.id;
   const memberName = profile?.nickname || profile?.name || "射手";
@@ -748,6 +752,23 @@ export default function CatCollection({ onBack, onOpenBook, onOpenForge, sharedC
   }
 
   const ownedCount = Object.keys(myCats).length;
+  const previewOwned=!!myCats[previewCat];
+  const previewMeta=CATS[previewCat];
+  const previewRole=getCatBattleArchetype(previewCat);
+  const previewBond=getBondLevel(myCats[previewCat]?.bond||0);
+  const previewBondFx=getCatBondScaling(previewBond);
+  const previewNextBondFx=getCatBondScaling(Math.min(50,previewBond+1));
+  const activeRole=CAT_ROLE_TABS.find(tab=>tab.id===roleTab)||CAT_ROLE_TABS[0];
+
+  async function handleQuickEquip(){
+    if(!previewOwned||equipped?.catId===previewCat||quickEquipping)return;
+    setQuickEquipping(true);setQuickMessage("");
+    const type=CAT_TYPE_MAP[previewCat]||myCats[previewCat]?.type||"allround";
+    const result=await equipCat(memberId,previewCat,type);
+    if(result.ok){setEquipped({catId:previewCat,name:previewMeta?.name,type});setQuickMessage(`${previewMeta?.name} 開心地跑來陪你練習！`);}
+    else setQuickMessage(result.reason||"暫時無法更換陪練貓");
+    setQuickEquipping(false);
+  }
 
   if (loading) {
     return (
@@ -789,33 +810,30 @@ export default function CatCollection({ onBack, onOpenBook, onOpenForge, sharedC
       </div>
 
       <div className="px-4 pt-4 pb-6 space-y-4 w-full">
-        <section className="rounded-2xl border border-white/10 bg-white/5 p-4">
-          <h2 className="text-sm font-black text-white">九隻貓，九種配點</h2>
-          <p className="mt-1 text-xs leading-relaxed text-slate-400">
-            上排是治癒型、中排是攻擊型、下排是防禦型。同類貓仍有不同的 HP／ATK／DEF 配點與固有特性，不再只有外觀差異。
-          </p>
-          <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-            <div className="rounded-xl bg-emerald-500/10 px-1 py-2 text-[10px] font-bold text-emerald-300">💚 治癒型<br/>續戰支援</div>
-            <div className="rounded-xl bg-rose-500/10 px-1 py-2 text-[10px] font-bold text-rose-300">⚔️ 攻擊型<br/>追加傷害</div>
-            <div className="rounded-xl bg-sky-500/10 px-1 py-2 text-[10px] font-bold text-sky-300">🛡️ 防禦型<br/>減傷格擋</div>
-          </div>
-        </section>
-
-        {/* 裝備中的貓 */}
-        {equipped && myCats[equipped.catId] && (
-          <div className="bg-indigo-900/30 border border-indigo-400/30 rounded-2xl px-4 py-3 flex items-center gap-3">
-            <CatSVG catId={equipped.catId} size={44}/>
-            <div className="flex-1">
-              <div className="text-xs text-indigo-300 font-bold mb-0.5">目前陪練</div>
-              <div className="font-black">{equipped.name}</div>
-              <div className="text-xs text-slate-400">{CAT_TYPES[equipped.type]?.label} — 羈絆 {myCats[equipped.catId]?.bond || 0}</div>
+        <section className="relative overflow-hidden rounded-[28px] border border-pink-300/20 bg-gradient-to-br from-indigo-950 via-violet-950 to-rose-950 p-4 shadow-[0_18px_50px_rgba(30,27,75,.45)]">
+          <div className="absolute -right-8 -top-10 h-32 w-32 rounded-full bg-pink-400/10 blur-2xl" />
+          <div className="relative flex items-center gap-4">
+            <div className="relative flex h-32 w-32 shrink-0 items-end justify-center rounded-[26px] border border-white/15 bg-white/10">
+              <CatAnimator catId={previewCat} animation={equipped?.catId===previewCat?"happy":"idle"} size={112}/>
+              {equipped?.catId===previewCat&&<span className="absolute left-2 top-2 rounded-full bg-amber-300 px-2 py-1 text-[9px] font-black text-amber-950">陪練中</span>}
             </div>
-            <button onClick={() => setSelCat(equipped.catId)}
-              className="text-xs text-indigo-300 border border-indigo-400/30 px-2 py-1 rounded-lg">
-              詳情
-            </button>
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] font-black tracking-[.18em] text-pink-200/70">今日陪練房</div>
+              <h2 className="mt-1 text-xl font-black">{previewMeta?.name||"選一隻貓咪"}</h2>
+              <div className="text-xs font-bold text-violet-200">{previewRole.title}・羈絆 Lv.{previewBond}</div>
+              <p className="mt-2 text-[11px] leading-5 text-white/70">{previewRole.passive.summary}</p>
+              <button onClick={()=>previewOwned&&setSelCat(previewCat)} disabled={!previewOwned} className="mt-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-[10px] font-black disabled:opacity-40">完整技能與養成 ›</button>
+            </div>
           </div>
-        )}
+          <div className="relative mt-4 grid grid-cols-3 gap-2">
+            {[{k:"被動",v:previewRole.passive.name},{k:"強力技能",v:previewRole.strongSkill.name},{k:"推薦聯動",v:previewRole.synergy.name}].map(item=><div key={item.k} className="rounded-2xl border border-white/10 bg-black/15 p-2"><div className="text-[9px] font-bold text-white/45">{item.k}</div><div className="mt-1 text-[10px] font-black text-white">{item.v}</div></div>)}
+          </div>
+          <div className="relative mt-3 rounded-2xl bg-white/5 px-3 py-2 text-[10px] text-violet-100/75">
+            <div>羈絆加成：技能威力 ×{previewBondFx.powerMultiplier.toFixed(2)}・強力技能 +{Math.round(previewBondFx.procBonus*1000)/10}%・最晚第 4 回合發動</div>
+            <div className="mt-1 text-violet-200">{previewBond>=50?"已達羈絆上限":`下一級：威力 ×${previewNextBondFx.powerMultiplier.toFixed(3)}・強力技能 +${(previewNextBondFx.procBonus*100).toFixed(2)}%`}</div>
+          </div>
+          {quickMessage&&<div className="relative mt-2 text-center text-[11px] font-bold text-amber-200">{quickMessage}</div>}
+        </section>
 
         {/* 沒有貓 → 領取提示 */}
         {ownedCount === 0 && (
@@ -831,9 +849,12 @@ export default function CatCollection({ onBack, onOpenBook, onOpenForge, sharedC
           </div>
         )}
 
-        {/* 貓咪圖鑑格 */}
-        <div className="grid grid-cols-3 gap-3">
-          {CAT_IDS.map(catId => {
+        <section>
+          <div className="grid grid-cols-3 gap-2 rounded-2xl bg-black/20 p-1.5" role="tablist" aria-label="貓咪戰術類型">
+            {CAT_ROLE_TABS.map(tab=><button key={tab.id} role="tab" aria-selected={roleTab===tab.id} onClick={()=>{setRoleTab(tab.id);const owned=tab.cats.find(id=>myCats[id]);setPreviewCat(owned||tab.cats[0]);}} className={`rounded-xl px-1 py-2 text-[10px] font-black transition ${roleTab===tab.id?"bg-white text-slate-900 shadow-lg":"text-white/55"}`}><span className="block text-base">{tab.icon}</span>{tab.label}<span className="block text-[8px] opacity-60">{tab.sub}</span></button>)}
+          </div>
+          <div className="mt-3 grid grid-cols-3 gap-3">
+          {activeRole.cats.map(catId => {
             const cat    = CATS[catId];
             const owned  = !!myCats[catId];
             const bond   = myCats[catId]?.bond || 0;
@@ -841,11 +862,13 @@ export default function CatCollection({ onBack, onOpenBook, onOpenForge, sharedC
 
             return (
               <button key={catId}
-                onClick={() => owned && setSelCat(catId)}
+                onClick={() => setPreviewCat(catId)}
                 disabled={!owned}
                 className={`rounded-2xl border p-3 flex flex-col items-center gap-2 transition-all active:scale-95 disabled:opacity-30 ${
                   isEq
-                    ? "border-indigo-400 bg-indigo-900/30"
+                    ? "border-amber-300 bg-amber-400/15"
+                    : previewCat===catId
+                      ? "border-pink-300 bg-pink-400/10"
                     : owned
                       ? "border-white/15 bg-white/5"
                       : "border-white/5 bg-white/3"
@@ -853,12 +876,9 @@ export default function CatCollection({ onBack, onOpenBook, onOpenForge, sharedC
                 <CatSVG catId={catId} size={52} deceased={cat?.isDeceased && owned}/>
                 <div className="text-center">
                   <div className="text-xs font-black text-white">{cat?.name}</div>
-                  <div className="text-[10px] text-slate-500">{cat?.color}</div>
-                  <div className="text-[10px] font-bold" style={{ color: CAT_TYPES[CAT_TYPE_MAP[catId]]?.color }}>
-                    {CAT_TYPES[CAT_TYPE_MAP[catId]]?.icon} {CAT_TYPES[CAT_TYPE_MAP[catId]]?.label}
-                  </div>
+                  <div className="mt-1 text-[9px] font-bold text-violet-200">{getCatBattleArchetype(catId).title}</div>
                   {owned && (
-                    <div className="text-[10px] text-indigo-300 font-bold">羈絆 {bond}</div>
+                    <div className="text-[9px] text-indigo-300 font-bold">羈絆 Lv.{getBondLevel(bond)}</div>
                   )}
                   {isEq && (
                     <div className="text-[10px] text-indigo-300 font-bold">陪練中</div>
@@ -867,7 +887,8 @@ export default function CatCollection({ onBack, onOpenBook, onOpenForge, sharedC
               </button>
             );
           })}
-        </div>
+          </div>
+        </section>
 
         {/* 取得方式說明 */}
         {ownedCount < CAT_IDS.length && (
@@ -878,6 +899,7 @@ export default function CatCollection({ onBack, onOpenBook, onOpenForge, sharedC
           </div>
         )}
       </div>
+      {ownedCount>0&&<div className="sticky bottom-0 z-20 border-t border-white/10 bg-slate-950/90 p-3 backdrop-blur-xl"><button onClick={handleQuickEquip} disabled={!previewOwned||equipped?.catId===previewCat||quickEquipping} className="w-full rounded-2xl bg-gradient-to-r from-pink-400 via-violet-400 to-indigo-400 py-3.5 text-sm font-black text-slate-950 shadow-[0_8px_28px_rgba(167,139,250,.35)] disabled:bg-none disabled:bg-white/10 disabled:text-white/35">{quickEquipping?"正在呼喚貓咪…":equipped?.catId===previewCat?`${previewMeta?.name} 正在陪練中`:`🐾 攜帶 ${previewMeta?.name} 陪練`}</button></div>}
     </div>
   );
 }

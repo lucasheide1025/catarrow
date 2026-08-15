@@ -1,5 +1,6 @@
 // src/lib/expeditionData.js — 遠征隊任務定義與獎勵計算
 import { calcCatCombatStats } from "./catCombat";
+import { getGoodById as getShopGoodById } from "./shopGoodsCatalog";
 
 // 計算貓咪完整戰力（同 useCatCompanion 邏輯，純函式版）
 export function calcCatFullStats(catData = {}) {
@@ -38,29 +39,67 @@ const EXPEDITION_SPECIAL_REWARD_META = Object.freeze({
   gachaToken: { name: "扭蛋幣", icon: "🎰" },
 });
 
+// 寶箱顯示資訊（探險戰利品：通用材料/族系/金幣/卡包）
+const CHEST_DISPLAY = {
+  wood:   { name: "木材寶箱", icon: "📦" },
+  iron:   { name: "鐵製寶箱", icon: "📦" },
+  gold:   { name: "黃金寶箱", icon: "📦" },
+  epic:   { name: "史詩寶箱", icon: "📦" },
+  mythic: { name: "神話寶箱", icon: "📦" },
+  family_mat: { name: "族系素材箱", icon: "📦" },
+  coin:   { name: "金幣寶箱", icon: "💰" },
+  card_pack:  { name: "怪物卡包", icon: "🃏" },
+};
+
 export function buildExpeditionRewardEntries(rewards = {}) {
-  return Object.entries(rewards).flatMap(([key, rawCount]) => {
+  const entries = [];
+
+  // 探險戰利品：寶箱（chests 陣列）
+  for (const chest of Array.isArray(rewards.chests) ? rewards.chests : []) {
+    const info = CHEST_DISPLAY[chest?.type] || { name: chest?.name || "探險寶箱", icon: "📦" };
+    entries.push({ key: `chest_${chest?.id || Math.random().toString(36).slice(2, 8)}`, ...info, count: 1, kind: "chest" });
+  }
+
+  // 探險戰利品：商店武器/裝備/料理（shopGoods: { goodId: count }）
+  const goods = (rewards.shopGoods && typeof rewards.shopGoods === "object") ? rewards.shopGoods : {};
+  for (const [goodId, rawCount] of Object.entries(goods)) {
     const count = Math.max(0, Math.floor(Number(rawCount) || 0));
-    if (count <= 0) return [];
+    if (count <= 0) continue;
+    const good = getShopGoodById(goodId);
+    entries.push({
+      key: `good_${goodId}`,
+      name: good?.name || goodId,
+      icon: good?.icon || "🏪",
+      count,
+      kind: "goods",
+    });
+  }
+
+  // 一般資源／特殊獎勵
+  for (const [key, rawCount] of Object.entries(rewards)) {
+    const count = Math.max(0, Math.floor(Number(rawCount) || 0));
+    if (count <= 0) continue;
+    if (key === "chests" || key === "shopGoods") continue;
 
     const special = EXPEDITION_SPECIAL_REWARD_META[key];
-    if (special) return [{ key, ...special, count, kind: "special" }];
+    if (special) { entries.push({ key, ...special, count, kind: "special" }); continue; }
 
     const match = /^([a-z]+)_t([1-5])$/.exec(key);
-    if (!match) return [];
+    if (!match) continue;
     const [, resource, rawTier] = match;
     const meta = EXPEDITION_RESOURCE_META[resource];
-    if (!meta) return [];
+    if (!meta) continue;
     const tier = Number(rawTier);
-    return [{
+    entries.push({
       key,
       ...meta,
       tier,
       count,
       kind: "material",
       image: `/ui/village/resource-${resource}${tier}.webp`,
-    }];
-  });
+    });
+  }
+  return entries;
 }
 
 export const EXPEDITION_MISSIONS = [
@@ -71,7 +110,7 @@ export const EXPEDITION_MISSIONS = [
     image: "/ui/village/expedition/mission-t1.webp",
     hours: 8,
     desc: "周邊林地採集，8小時輕鬆回來。",
-    archerCost: { archer_t1: 50 },
+    archerCost: { archer_t1: 100 },
     catXP: 40,    // ×貓戰力倍率後結算，上限 800
     catBond: 1,   // 固定值，上限 15
     baseRewards: [
@@ -90,7 +129,7 @@ export const EXPEDITION_MISSIONS = [
     image: "/ui/village/expedition/mission-t2.webp",
     hours: 16,
     desc: "深入山區採集，16小時中等難度。",
-    archerCost: { archer_t1: 50, archer_t2: 30 },
+    archerCost: { archer_t1: 100, archer_t2: 60 },
     catXP: 80,
     catBond: 2,
     baseRewards: [
@@ -113,7 +152,7 @@ export const EXPEDITION_MISSIONS = [
     image: "/ui/village/expedition/mission-t3.webp",
     hours: 24,
     desc: "進入神秘深林，需要一整天。",
-    archerCost: { archer_t1: 50, archer_t2: 30, archer_t3: 20 },
+    archerCost: { archer_t1: 100, archer_t2: 60, archer_t3: 40 },
     catXP: 140,
     catBond: 3,
     baseRewards: [
@@ -138,7 +177,7 @@ export const EXPEDITION_MISSIONS = [
     image: "/ui/village/expedition/mission-t4.webp",
     hours: 48,
     desc: "挑戰險峻秘境，兩天的艱困旅途。",
-    archerCost: { archer_t2: 50, archer_t3: 30, archer_t4: 20 },
+    archerCost: { archer_t2: 100, archer_t3: 60, archer_t4: 40 },
     catXP: 260,
     catBond: 5,
     baseRewards: [
@@ -163,7 +202,7 @@ export const EXPEDITION_MISSIONS = [
     image: "/ui/village/expedition/mission-t5.webp",
     hours: 72,
     desc: "三天三夜的傳說級任務，高風險高回報。",
-    archerCost: { archer_t3: 50, archer_t4: 30, archer_t5: 20 },
+    archerCost: { archer_t3: 100, archer_t4: 60, archer_t5: 40 },
     catXP: 400,
     catBond: 8,
     baseRewards: [

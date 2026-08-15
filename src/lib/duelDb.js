@@ -5,6 +5,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { shouldTriggerEvent, drawRandomEvent } from "./randomEvents";
+import { computeDuelRound } from "./duelCombat";
 
 const DUEL = "duelRooms";
 const DUEL_STATS = "duelStats";
@@ -23,12 +24,14 @@ function calcCatDmg(catAtk, targetDef) {
   return total;
 }
 
-// ── 決鬥數值平衡（壓縮強度差距，老手僅略有優勢）──────────
+// ── 決鬥數值：直接寫入玩家本身的 HP / ATK / DEF（不壓縮）────
+// 2026-08-13 定案：移除舊的強度壓縮（200~280 / 5~14 / 2~7），
+// 玩家練多少就帶多少進決鬥，卡片天賦＋裝備專精（mods）照常套用。
 export function balanceDuelStats(raw) {
   return {
-    hp:  Math.max(200, Math.round(200 + Math.min((raw.hp  - 200) * 0.12, 80))),  // 200~280
-    atk: Math.max(5,   Math.round(5   + Math.min((raw.atk - 15)  * 0.05, 9))),   // 5~14
-    def: Math.max(2,   Math.round(2   + Math.min((raw.def - 8)   * 0.15, 5))),   // 2~7
+    hp:  Math.max(50,  Math.round(raw.hp  || 200)),
+    atk: Math.max(1,   Math.round(raw.atk  || 20)),
+    def: Math.max(0,   Math.round(raw.def  || 10)),
   };
 }
 
@@ -54,7 +57,7 @@ export async function shuffleDuelTeams(roomId, room) {
 }
 
 // ── 建立房間 ────────────────────────────────────────────────
-export async function createDuelRoom(hostId, hostName, type, hostTeam, stats, isGuest = false) {
+export async function createDuelRoom(hostId, hostName, type, hostTeam, stats, isGuest = false, loadout = null) {
   try {
     const code = genCode();
     const member = {
@@ -64,6 +67,10 @@ export async function createDuelRoom(hostId, hostName, type, hostTeam, stats, is
       catName: stats.catName || "",
       archerStyle: stats.archerStyle || "baobao",
       arrows: [], ready: false, alive: true,
+      // 決鬥 2.0：卡片天賦＋裝備專精快照（host 結算直接用，不再重讀）
+      mods: loadout?.mods || null,
+      loadout: loadout?.loadout || null,
+      shield: 0, status: {}, pending: {},
     };
     const room = {
       code, type, status: "waiting",
@@ -80,7 +87,7 @@ export async function createDuelRoom(hostId, hostName, type, hostTeam, stats, is
 }
 
 // ── 加入房間 ────────────────────────────────────────────────
-export async function joinDuelRoom(code, memberId, memberName, team, stats, isGuest = false) {
+export async function joinDuelRoom(code, memberId, memberName, team, stats, isGuest = false, loadout = null) {
   try {
     const snap = await getDocs(
       query(collection(db, DUEL), where("code", "==", code.toUpperCase()), where("status", "==", "waiting"))
@@ -96,6 +103,10 @@ export async function joinDuelRoom(code, memberId, memberName, team, stats, isGu
       catName: stats.catName || "",
       archerStyle: stats.archerStyle || "baobao",
       arrows: [], ready: false, alive: true,
+      // 決鬥 2.0：卡片天賦＋裝備專精快照
+      mods: loadout?.mods || null,
+      loadout: loadout?.loadout || null,
+      shield: 0, status: {}, pending: {},
     };
 
     // 用 transaction 讓「讀人數 → 寫入成員」變成原子操作，避免多人同時加入超員
@@ -213,6 +224,9 @@ export async function resetDuelRoom(roomId, room) {
       updates[`teamA.${id}.ready`] = false;
       updates[`teamA.${id}.arrows`]= [];
       updates[`teamA.${id}.disconnected`] = false;
+      updates[`teamA.${id}.shield`] = 0;
+      updates[`teamA.${id}.status`] = {};
+      updates[`teamA.${id}.pending`] = {};
     }
     for (const [id, m] of Object.entries(room.teamB || {})) {
       updates[`teamB.${id}.hp`]    = m.maxHP;
@@ -220,6 +234,9 @@ export async function resetDuelRoom(roomId, room) {
       updates[`teamB.${id}.ready`] = false;
       updates[`teamB.${id}.arrows`]= [];
       updates[`teamB.${id}.disconnected`] = false;
+      updates[`teamB.${id}.shield`] = 0;
+      updates[`teamB.${id}.status`] = {};
+      updates[`teamB.${id}.pending`] = {};
     }
     await updateDoc(doc(db, DUEL, roomId), updates);
     return { ok: true };
@@ -235,160 +252,33 @@ export async function clearDuelProcessing(roomId) {
 
 // ── 處理回合（host）────────────────────────────────────────
 // calcDmgFn(arrows, atk, targetDef) → { dmg, crits, arrowBreakdown }
-export async function processDuelRound(roomId, room, calcDmgFn) {
+export async function processDuelRound(roomId, room, _calcDmgFn = null) {
+  // 決鬥 2.0：回合結算全部走 duelCombat 純邏輯
+  // （卡片天賦/裝備專精/護盾/異常/反彈/回血都在那一層算好，這裡只負責寫回）
   try {
-    const teamA = room.teamA || {};
-    const teamB = room.teamB || {};
-    const aliveA = Object.keys(teamA).filter(id => teamA[id].alive);
-    const aliveB = Object.keys(teamB).filter(id => teamB[id].alive);
+    const computed = computeDuelRound({
+      teamA: room.teamA || {},
+      teamB: room.teamB || {},
+      round: room.round || 1,
+      type: room.type || "",
+    });
 
-    // 隨機事件（決鬥模式才能抽到 duelOnly 事件）
-    const eventRaw = shouldTriggerEvent() ? drawRandomEvent("duel") : null;
-    let eventData = eventRaw
-      ? { id: eventRaw.id, icon: eventRaw.icon, title: eventRaw.title, desc: eventRaw.desc, type: eventRaw.type }
-      : null;
-    const eff = eventRaw?.effect || {};
-
-    // ── 叛變：換隊先行，本回合用換後隊伍計算攻擊 ──────────
-    let effTeamA = teamA, effTeamB = teamB;
-    let effAliveA = aliveA, effAliveB = aliveB;
-
-    if (eventData?.id === "betrayal" && room.type !== "1v1" && aliveA.length > 0 && aliveB.length > 0) {
-      const swapAId = aliveA[Math.floor(Math.random() * aliveA.length)];
-      const swapBId = aliveB[Math.floor(Math.random() * aliveB.length)];
-      eventData = { ...eventData, swapAId, swapAName: teamA[swapAId]?.name || "?", swapBId, swapBName: teamB[swapBId]?.name || "?" };
-      // 建立換隊後的有效隊伍（淺拷貝後交換成員）
-      effTeamA = { ...teamA, [swapBId]: teamB[swapBId] };
-      effTeamB = { ...teamB, [swapAId]: teamA[swapAId] };
-      delete effTeamA[swapAId];
-      delete effTeamB[swapBId];
-      effAliveA = aliveA.filter(id => id !== swapAId).concat([swapBId]);
-      effAliveB = aliveB.filter(id => id !== swapBId).concat([swapAId]);
-    } else if (eventData?.id === "betrayal") {
-      eventData = null; // 1v1 或無存活，不觸發叛變
-    }
-
-    // 配對目標：有偏好目標時 50% 機率命中，否則隨機
-    function pickTarget(myTeam, attackerId) {
-      const pool = myTeam === "A" ? effAliveB : effAliveA;
-      if (!pool.length) return null;
-      const srcTeam = myTeam === "A" ? effTeamA : effTeamB;
-      const preferred = srcTeam[attackerId]?.preferredTargetId;
-      if (preferred && pool.includes(preferred) && Math.random() < 0.5) return preferred;
-      return pool[Math.floor(Math.random() * pool.length)];
-    }
-
-    // 計算每人傷害
-    const attacks = [];
-    for (const id of effAliveA) {
-      const m = effTeamA[id];
-      const targetId = pickTarget("A", id);
-      if (!targetId) continue;
-      const raw = calcDmgFn(m.arrows || [], m.atk || 20, effTeamB[targetId]?.def || 10);
-      const dmg        = typeof raw === "object" ? (raw.dmg || 0)           : raw;
-      const crits      = typeof raw === "object" ? (raw.crits || 0)         : 0;
-      const arrowBreakdown = typeof raw === "object" ? (raw.arrowBreakdown || []) : [];
-      const luckyEvent = typeof raw === "object" ? (raw.luckyEvent || null)  : null;
-      attacks.push({ attackerId: id, attackerTeam: "A", targetId, dmg, crits, arrowBreakdown, luckyEvent });
-    }
-    for (const id of effAliveB) {
-      const m = effTeamB[id];
-      const targetId = pickTarget("B", id);
-      if (!targetId) continue;
-      const raw = calcDmgFn(m.arrows || [], m.atk || 20, effTeamA[targetId]?.def || 10);
-      const dmg        = typeof raw === "object" ? (raw.dmg || 0)           : raw;
-      const crits      = typeof raw === "object" ? (raw.crits || 0)         : 0;
-      const arrowBreakdown = typeof raw === "object" ? (raw.arrowBreakdown || []) : [];
-      const luckyEvent = typeof raw === "object" ? (raw.luckyEvent || null)  : null;
-      attacks.push({ attackerId: id, attackerTeam: "B", targetId, dmg, crits, arrowBreakdown, luckyEvent });
-    }
-
-    // 貓貓攻擊（各自選目標，6 箭合算）
-    for (const id of effAliveA) {
-      const m = effTeamA[id];
-      if (!m.catAtk) continue;
-      const targetId = pickTarget("A", id);
-      if (!targetId) continue;
-      const dmg = calcCatDmg(m.catAtk, effTeamB[targetId]?.def || 10);
-      attacks.push({ attackerId: id, attackerTeam: "A", targetId, dmg, crits: 0, arrowBreakdown: [], luckyEvent: null, isCat: true, catName: m.catName || "貓貓" });
-    }
-    for (const id of effAliveB) {
-      const m = effTeamB[id];
-      if (!m.catAtk) continue;
-      const targetId = pickTarget("B", id);
-      if (!targetId) continue;
-      const dmg = calcCatDmg(m.catAtk, effTeamA[targetId]?.def || 10);
-      attacks.push({ attackerId: id, attackerTeam: "B", targetId, dmg, crits: 0, arrowBreakdown: [], luckyEvent: null, isCat: true, catName: m.catName || "貓貓" });
-    }
-
-    // 加總傷害
-    const hpDelta = {};
-    for (const atk of attacks) {
-      let dmg = atk.dmg;
-      if (eff.extraDmg) dmg += Math.floor(eff.extraDmg / attacks.length);
-      hpDelta[atk.targetId] = (hpDelta[atk.targetId] || 0) - dmg;
-    }
-
-    // 更新 HP
     const updates = { round: (room.round || 1) + 1 };
-
-    if (eventData?.swapAId) {
-      // 叛變：整體重建 teamA/teamB（成員跨隊，無法用 dot notation 逐欄寫入）
-      const newTeamA = {}, newTeamB = {};
-      for (const [id, m] of Object.entries(effTeamA)) {
-        if (!m.alive) { newTeamA[id] = { ...m, arrows: [], ready: false }; continue; }
-        let hp = Math.max(0, (m.hp || 0) + (hpDelta[id] || 0));
-        if (eff.healArcher) hp = Math.min(m.maxHP || 0, hp + eff.healArcher);
-        newTeamA[id] = { ...m, hp, arrows: [], ready: false, alive: hp > 0 };
-      }
-      for (const [id, m] of Object.entries(effTeamB)) {
-        if (!m.alive) { newTeamB[id] = { ...m, arrows: [], ready: false }; continue; }
-        let hp = Math.max(0, (m.hp || 0) + (hpDelta[id] || 0));
-        if (eff.healArcher) hp = Math.min(m.maxHP || 0, hp + eff.healArcher);
-        newTeamB[id] = { ...m, hp, arrows: [], ready: false, alive: hp > 0 };
-      }
-      updates.teamA = newTeamA;
-      updates.teamB = newTeamB;
-    } else {
-      // 一般：逐欄位更新（dot notation）
-      for (const id of effAliveA) {
-        let hp = Math.max(0, (effTeamA[id].hp || 0) + (hpDelta[id] || 0));
-        if (eff.healArcher) hp = Math.min(effTeamA[id].maxHP, hp + eff.healArcher);
-        updates[`teamA.${id}.hp`] = hp;
-        updates[`teamA.${id}.arrows`] = [];
-        updates[`teamA.${id}.ready`] = false;
-        if (hp <= 0) updates[`teamA.${id}.alive`] = false;
-      }
-      for (const id of effAliveB) {
-        let hp = Math.max(0, (effTeamB[id].hp || 0) + (hpDelta[id] || 0));
-        if (eff.healArcher) hp = Math.min(effTeamB[id].maxHP, hp + eff.healArcher);
-        updates[`teamB.${id}.hp`] = hp;
-        updates[`teamB.${id}.arrows`] = [];
-        updates[`teamB.${id}.ready`] = false;
-        if (hp <= 0) updates[`teamB.${id}.alive`] = false;
-      }
+    for (const [key, member] of Object.entries(computed.members || {})) {
+      const idx = key.indexOf(":");
+      const team = key.slice(0, idx);
+      const id = key.slice(idx + 1);
+      updates[`team${team}.${id}`] = member;
     }
+    updates.log = arrayUnion(computed.logEntry);
 
-    // 勝負判斷（統一用 updates 最終結果）
-    let aliveAAfter, aliveBAfter;
-    if (eventData?.swapAId) {
-      aliveAAfter = Object.values(updates.teamA).filter(m => m.alive);
-      aliveBAfter = Object.values(updates.teamB).filter(m => m.alive);
-    } else {
-      aliveAAfter = effAliveA.filter(id => (updates[`teamA.${id}.hp`] ?? effTeamA[id].hp) > 0);
-      aliveBAfter = effAliveB.filter(id => (updates[`teamB.${id}.hp`] ?? effTeamB[id].hp) > 0);
+    if (computed.result) {
+      updates.result = computed.result;
+      updates.status = "finished";
     }
-    let result = null;
-    if (aliveAAfter.length === 0 && aliveBAfter.length === 0) result = "draw";
-    else if (aliveAAfter.length === 0) result = "teamB";
-    else if (aliveBAfter.length === 0) result = "teamA";
-
-    const logEntry = { round: room.round || 1, event: eventData, attacks, hpDelta };
-    updates.log = arrayUnion(logEntry);
-    if (result) { updates.result = result; updates.status = "finished"; }
 
     await updateDoc(doc(db, DUEL, roomId), updates);
-    return { ok: true, result };
+    return { ok: true, result: computed.result };
   } catch (e) {
     return { ok: false, reason: e.message };
   }
@@ -437,8 +327,8 @@ export async function resetWithRedistribution(roomId, room) {
       allPlayers.slice(0, half).forEach(([id, m]) => { newTeamA[id] = m; });
       allPlayers.slice(half).forEach(([id, m])   => { newTeamB[id] = m; });
     }
-    // 重置個人狀態
-    const resetM = m => ({ ...m, hp: m.maxHP, arrows: [], ready: false, alive: true, disconnected: false });
+    // 重置個人狀態（含決鬥 2.0 的護盾與異常）
+    const resetM = m => ({ ...m, hp: m.maxHP, arrows: [], ready: false, alive: true, disconnected: false, shield: 0, status: {}, pending: {} });
     Object.keys(newTeamA).forEach(id => { newTeamA[id] = resetM(newTeamA[id]); });
     Object.keys(newTeamB).forEach(id => { newTeamB[id] = resetM(newTeamB[id]); });
     await updateDoc(doc(db, DUEL, roomId), {

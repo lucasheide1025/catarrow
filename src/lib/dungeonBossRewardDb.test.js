@@ -17,7 +17,7 @@ beforeEach(() => {
 test("fixed boss rewards are requested from the trusted callable", async () => {
   global.mockCallable.mockResolvedValue({ data:{ ok:true, duplicate:false, claimId:"claim", envelope:{ choiceCount:2 } } });
   const result = await createDungeonBossRewardClaim({ battleId:"b1", memberId:"m1", monsterId:"ghost_t1_boss" });
-  expect(global.mockCallable).toHaveBeenCalledWith("createDungeonBossRewardClaim", { battleId:"b1", memberId:"m1", monsterId:"ghost_t1_boss" });
+  expect(global.mockCallable).toHaveBeenCalledWith("createDungeonBossRewardClaim", { battleId:"b1", memberId:"m1", monsterId:"ghost_t1_boss", teamRoomId:null });
   expect(result.claimId).toBe("claim");
 });
 

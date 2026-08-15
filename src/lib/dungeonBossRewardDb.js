@@ -3,10 +3,10 @@ import app from "./firebase";
 
 const functions = getFunctions(app, "asia-east1");
 
-export async function createDungeonBossRewardClaim({ battleId, memberId, monsterId }) {
+export async function createDungeonBossRewardClaim({ battleId, memberId, monsterId, teamRoomId = null }) {
   if (!battleId || !memberId || !monsterId) throw new Error("invalid_dungeon_reward_identity");
   const callable = httpsCallable(functions, "createDungeonBossRewardClaim");
-  const response = await callable({ battleId, memberId, monsterId });
+  const response = await callable({ battleId, memberId, monsterId, teamRoomId });
   return response.data;
 }
 

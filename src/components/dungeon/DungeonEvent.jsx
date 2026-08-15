@@ -16,13 +16,13 @@ const TYPE_STYLE = {
 function formatEffectBadges(effect, cost) {
   const badges = [];
   if (cost) {
-    if (cost.hp) badges.push({ type: "cost", label: `💔 代價：扣除 ${Math.round(cost.hp * 100)}% HP`, color: "text-rose-300 bg-rose-950/80 border-rose-500/50" });
+    if (cost.hp) badges.push({ type: "cost", label: `💔 代價：扣除 ${Math.round(cost.hp * 100)}% 生命`, color: "text-rose-300 bg-rose-950/80 border-rose-500/50" });
     if (cost.gold) badges.push({ type: "cost", label: `🪙 代價：花費 ${cost.gold} 金幣`, color: "text-amber-300 bg-amber-950/80 border-amber-500/50" });
   }
   if (effect) {
-    if (effect.hp) badges.push({ type: "gain", label: `❤️ 全隊 HP 回復 +${Math.round(effect.hp * 100)}%`, color: "text-emerald-300 bg-emerald-950/80 border-emerald-500/50" });
-    if (effect.atk) badges.push({ type: "gain", label: `⚔️ 全隊 ATK ${effect.atk > 0 ? '+' : ''}${Math.round(effect.atk * 100)}%`, color: "text-amber-300 bg-amber-950/80 border-amber-500/50" });
-    if (effect.def) badges.push({ type: "gain", label: `🛡️ 全隊 DEF ${effect.def > 0 ? '+' : ''}${Math.round(effect.def * 100)}%`, color: "text-sky-300 bg-sky-950/80 border-sky-500/50" });
+    if (effect.hp) badges.push({ type: "gain", label: `❤️ 全隊生命回復 +${Math.round(effect.hp * 100)}%`, color: "text-emerald-300 bg-emerald-950/80 border-emerald-500/50" });
+    if (effect.atk) badges.push({ type: "gain", label: `⚔️ 全隊攻擊 ${effect.atk > 0 ? '+' : ''}${Math.round(effect.atk * 100)}%`, color: "text-amber-300 bg-amber-950/80 border-amber-500/50" });
+    if (effect.def) badges.push({ type: "gain", label: `🛡️ 全隊防禦 ${effect.def > 0 ? '+' : ''}${Math.round(effect.def * 100)}%`, color: "text-sky-300 bg-sky-950/80 border-sky-500/50" });
     if (effect.dmg) badges.push({ type: "gain", label: `🔥 全隊 傷害 ${effect.dmg > 0 ? '+' : ''}${Math.round(effect.dmg * 100)}%`, color: "text-orange-300 bg-orange-950/80 border-orange-500/50" });
     if (effect.gold) badges.push({ type: "gain", label: `🪙 金幣 +${effect.gold}`, color: "text-yellow-300 bg-yellow-950/80 border-yellow-500/50" });
     if (effect.item) badges.push({ type: "gain", label: `🧪 獲得冒險道具：${effect.item}`, color: "text-purple-300 bg-purple-950/80 border-purple-500/50" });

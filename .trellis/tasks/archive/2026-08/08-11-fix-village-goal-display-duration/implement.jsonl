@@ -1,5 +1,0 @@
-{"file":".trellis/spec/frontend/index.md","reason":"Frontend package development checklist"}
-{"file":".trellis/spec/frontend/cat-village-gathering.md","reason":"Cat village gathering and village-goal contribution contracts"}
-{"file":".trellis/spec/frontend/state-management.md","reason":"Firestore and client state boundary guidance"}
-{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Frontend validation expectations"}
-{"file":".trellis/spec/frontend/type-safety.md","reason":"Legacy data normalization and compatibility"}

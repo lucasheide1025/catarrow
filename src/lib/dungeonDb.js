@@ -29,6 +29,10 @@ import { planDungeonRoundAbility, tickDungeonStatuses, getStatusStatMods } from 
 import {
   mergeAllStatuses, mergeMonsterStatus, monsterStatMods, rollInflictForArrows, tickMonsterStatuses,
 } from "./monsterStatus";
+import { mergeCombatStatus } from "./soloMonsterAbilityEngine";
+import { applyGlareToDamageBreakdown, applyIncomingHealing, deterministicStatusRoll, getPlayerStatusModifiers, resolveFamilyOrdinaryStatusForParty } from "./familyPlayerStatus";
+import { resolveFamilyModifiers } from "./monsterCards";
+import { consumeCatDeathGuard, getCatGuardAtkBonus, recordCatShieldAbsorption, resolveAuthoritativeCatRound } from "./catBattleEngine";
 
 const D = "dungeonRooms";
 
@@ -103,12 +107,13 @@ export async function applyDungeonCarryPotion(roomId, memberId, potionId) {
 
       const effect = potion.effect || {};
       const updates = { [`members.${memberId}.potionUsedRound`]: round };
+      const statuses=room.abilityStatuses?.[memberId] || [];
+      const statusMods=getPlayerStatusModifiers(statuses);
       if (effect.hpPct) {
         const maxHP = member.maxHP || 100;
-        updates[`members.${memberId}.hp`] = Math.min(
-          maxHP,
-          (member.hp || 0) + Math.round(maxHP * effect.hpPct / 100)
-        );
+        const recovery=applyIncomingHealing({hp:member.hp,maxHp:maxHP,amount:maxHP*effect.hpPct/100,statuses});
+        updates[`members.${memberId}.hp`] = recovery.hp;
+        updates[`abilityStatuses.${memberId}`] = recovery.statuses;
       }
       // 戰鬥級藥水依 family 保存，同類高級版覆蓋低級版，不因重複飲用無限累乘。
       const families = { ...(member.potionBuffs?.families || {}) };
@@ -121,7 +126,7 @@ export async function applyDungeonCarryPotion(roomId, memberId, potionId) {
         defMult: buffs.defMult,
         dmgMult: buffs.dmgMult,
         regenPct: buffs.regenPct,
-        shield: Math.max(member.potionBuffs?.shield || 0, Math.round((member.maxHP || 100) * (buffs.shieldPct || 0) / 100)),
+        shield: Math.max(member.potionBuffs?.shield || 0, Math.round((member.maxHP || 100) * (buffs.shieldPct || 0) / 100 * statusMods.shieldReceivedMultiplier)),
       };
       transaction.update(roomRef, updates);
     });
@@ -236,6 +241,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
     }
     // 上一回合怪物技能掛的異常（atkDown/defDown）在這回合生效（dungeonAbilityRound）
     const abilityStatuses = { ...(room.abilityStatuses || {}) };
+    const playerStatusMods = Object.fromEntries(aliveIds.map(id=>[id,getPlayerStatusModifiers(abilityStatuses[id] || [])]));
     // 怪物自身減傷（技能 selfReduction）：本回合生效，回合末 duration -1
     const monsterAbilityStateBefore = room.monsterAbilityState || null;
     const monsterReduceMult = (monsterAbilityStateBefore?.reductionDuration || 0) > 0
@@ -247,11 +253,13 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       const rearHeal   = isRear && m.rearChoice === "heal";
       const rearBuff   = isRear && !rearHeal;
       const statusMods = getStatusStatMods(abilityStatuses[id]);
+      const catGuardAtk=getCatGuardAtkBonus(m.catBattleState,round);
       const effectiveAtk = isRear
         ? 0
-        : Math.round((m.atk || 10) * (m.buffs?.atkMult || 1) * (m.potionBuffs?.atkMult || 1) * restAtkMult(m) * (1 + atkBuffPctForFront) * (1 - statusMods.atkPct / 100));
+        : Math.round((m.atk || 10) * (m.buffs?.atkMult || 1) * (m.potionBuffs?.atkMult || 1) * restAtkMult(m) * (1 + atkBuffPctForFront) * (1 - statusMods.atkPct / 100))+catGuardAtk;
       const wbFx = resolveMemberWbFx(m, room.monster);
-      const dmgMult      = (m.buffs?.dmgMult || 1) * (m.potionBuffs?.dmgMult || 1) * (mods.dmgMult || 1) * (room.consumableEffects?.teamDmgMult || 1) * (1 + (m.wbBonus?.dmgBonusPct || 0) + wbFx.damagePct) * monsterReduceMult;
+      const familyFx=resolveFamilyModifiers(m.wbBonus,room.monster?.family);
+      const dmgMult      = (m.buffs?.dmgMult || 1) * (m.potionBuffs?.dmgMult || 1) * (mods.dmgMult || 1) * (room.consumableEffects?.teamDmgMult || 1) * (1 + (m.wbBonus?.dmgBonusPct || 0) + familyFx.damageBonusPct/100 + wbFx.damagePct) * monsterReduceMult;
       const contract     = m.contract || { type:"standard", param:null };
       const damageItems  = (m.arrows || []).filter(arrow => getPotion(arrow?.label || arrow)?.actionCost === "arrow");
       const scoreArrows  = (m.arrows || []).filter(arrow => !getPotion(arrow?.label || arrow));
@@ -270,7 +278,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
         : calcDmgFn(scoreArrows, effectiveAtk,
             Math.max(0, room.monster.def * (1 - monsterStatMods(room.monsterStatuses || []).defDownPct / 100) * (1 - wbFx.armorPiercePct / 100)),
             contract, dmgMult);
-      const arrowBreakdown = (raw.arrowBreakdown || []).map((entry, index) => {
+      const arrowBreakdown = applyGlareToDamageBreakdown((raw.arrowBreakdown || []).map((entry, index) => {
         const arrow = (m.arrows || [])[index];
         return Number.isFinite(arrow?.nx) && Number.isFinite(arrow?.ny)
           ? {
@@ -281,10 +289,10 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
               targetFormat:arrow.targetFormat || room.targetFmt || "full_110",
             }
           : entry;
-      });
+      }),playerStatusMods[id]?.bonusDamageReductionPct);
       allData[id] = {
         name: m.name || "射手",
-        totalDmg: (raw.dmg || 0) + directDmg,
+        totalDmg: (arrowBreakdown.length?arrowBreakdown.reduce((sum,hit)=>sum+(Number(hit.dmg)||0),0):(raw.dmg || 0)) + directDmg,
         crits:    raw.crits || 0,
         arrowBreakdown,
         contract,
@@ -441,32 +449,46 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       }
     }
 
+    const memberUpd = {};
     let catTotalDmg = 0;
+    const catDefBonusByMember = {};
     const catMiniLog = [];
+    let teamShieldMax = 0;
+    let teamHealMax = 0;
+    let teamCleanseMax = 0;
     for (const id of aliveIds) {
       const m = members[id];
       if (!m.catAtk || memberHPNow[id] <= 0) continue;
-      let dmg = 0;
-      const arrowBreakdown = [];
-      for (let i = 0; i < 2; i++) {
-        const score = Math.max(5, Math.min(10, Math.round(7 + (Math.random() * 6 - 3))));
-        const mult = 0.85 + Math.random() * 0.3;
-        const base = 8 + m.catAtk * 0.7 + score * 1.2 - (room.monster?.def || 0) * 0.35;
-        const arrowDmg = Math.max(1, Math.round(base * mult));
-        dmg += arrowDmg;
-        arrowBreakdown.push({ label:String(score), dmg:arrowDmg, isCrit:mult > 1.1, partName:"貓爪", partIcon:"🐾" });
-      }
-      const skillTriggered = Math.random() < 0.25;
-      const skillName = skillTriggered ? "連環貓掌" : null;
-      const skillBonus = skillTriggered ? Math.max(1, Math.round(dmg * 0.25)) : 0;
-      dmg += skillBonus;
+      const outcome=resolveAuthoritativeCatRound({member:m,monster:{...room.monster,currentHp:monsterHP,maxHp:room.monsterMaxHP||room.monster?.hp},round,mode:["boss","mythic"].includes(room.monster?.tier)?"boss":"normal",state:m.catBattleState,battleId:room.battleInstanceId||roomId,memberId:id});
+      const dmg=outcome.monsterDamage;
+      const arrowBreakdown=[{label:"🐾",dmg,isCrit:outcome.strongTriggered,partName:outcome.events[0]?.name||"貓咪協戰",partIcon:"🐾"}];
+      const skillTriggered=outcome.strongTriggered;
+      const skillName=skillTriggered?outcome.events.find(e=>e.kind==="strong_skill")?.name:null;
+      const attackEvent=outcome.events.find(event=>event.kind==="cat_attack");
+      const skillBonus=Math.max(0,(attackEvent?.hitCount||1)-1);
+      memberUpd[`members.${id}.catBattleState`]=outcome.state;
+      if(outcome.playerHeal>0)memberHPNow[id]=Math.min(m.maxHP||memberHPNow[id],memberHPNow[id]+outcome.playerHeal);
+      if(outcome.playerShield>0)potionShieldNow[id]=(potionShieldNow[id]||0)+outcome.playerShield;
+      teamShieldMax=Math.max(teamShieldMax,outcome.teamShield||0);
+      teamHealMax=Math.max(teamHealMax,outcome.teamHeal||0);
+      teamCleanseMax=Math.max(teamCleanseMax,outcome.teamCleanseCount||0);
+      catDefBonusByMember[id]=outcome.playerShield>0?(outcome.playerDefBonusPct||0):0;
+      if(outcome.monsterStatus)monsterStatuses=mergeMonsterStatus(monsterStatuses,outcome.monsterStatus);
       catTotalDmg += dmg;
       catMiniLog.push({
         id, catId:m.catId || "diandian", name:`🐱${m.catName || "貓貓"}`,
         catName:m.catName || "貓貓", dmg, ctr:0, arrowBreakdown, crits:0,
-        isCat:true, skillTriggered, skillName, skillBonus,
+        isCat:true, skillTriggered, skillName, skillBonus, hitCount:attackEvent?.hitCount||1,
+        statusApplied:outcome.monsterStatus||null,
+        heal:outcome.playerHeal||0, shield:outcome.playerShield||0,
+        teamHeal:outcome.teamHeal||0, teamShield:outcome.teamShield||0,
+        cleanseCount:outcome.teamCleanseCount||0,
+        defBonusPct:outcome.playerDefBonusPct||0,
       });
     }
+    if(teamShieldMax>0)for(const targetId of aliveIds)potionShieldNow[targetId]=Math.max(potionShieldNow[targetId]||0,(members[targetId].potionBuffs?.shield||0)+teamShieldMax);
+    if(teamHealMax>0)for(const targetId of aliveIds)memberHPNow[targetId]=Math.min(members[targetId].maxHP||memberHPNow[targetId],memberHPNow[targetId]+teamHealMax);
+    if(teamCleanseMax>0)for(const targetId of aliveIds)abilityStatuses[targetId]=(abilityStatuses[targetId]||[]).slice(teamCleanseMax);
     // ☠️ 回合末：怪物身上的異常結算並倒數（放在貓貓之前，先讓 DOT 生效）
     if (monsterStatuses.length && monsterHP > 0) {
       const avgAtk = aliveIds.length
@@ -525,6 +547,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
           alive: memberHPNow[id] > 0,
           hp: memberHPNow[id],
           maxHP: members[id].maxHP || 100,
+          statusResistance:members[id].statusResistance||{},
           def: Math.round((members[id].def || 10) * (members[id].buffs?.defMult || 1) * (members[id].potionBuffs?.defMult || 1) * restDefMult(members[id])
             * (1 - getStatusStatMods(abilityStatuses[id]).defPct / 100)),
           // 破解率只看計分箭：藥水箭在傷害路徑本來就被濾掉，這裡若算進去會變成 0 分箭拖累破解
@@ -567,6 +590,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
     }
 
     // 大回合末：唯一一次怪物反擊（所有箭矢 + 貓貓攻擊後）
+    let familyStatusResults = [];
     if (!skipAllCtr && monsterHP > 0) {
       const monsterAtk = Math.round((room.monster.atk || 10) * (mods.monsterAtkMult || 1));
       const ctrLog     = [];
@@ -574,15 +598,18 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       for (const id of ctrTargets) {
         if (memberHPNow[id] <= 0) continue;
         const m            = members[id];
-        const effectiveDef = Math.round((m.def || 10) * (m.buffs?.defMult || 1) * (m.potionBuffs?.defMult || 1) * restDefMult(m));
-        const rawCtr       = Math.ceil(calcCtrFn(monsterAtk, effectiveDef, (m.wbBonus?.dmgReducePct || 0) + resolveMemberWbFx(m, room.monster).damageReducePct) * (1 - (room.consumableEffects?.counterReducePct || 0) / 100));
+        const effectiveDef = Math.round((m.def || 10) * (m.buffs?.defMult || 1) * (m.potionBuffs?.defMult || 1) * restDefMult(m)*(1+(catDefBonusByMember[id]||0)/100));
+        const familyFx=resolveFamilyModifiers(m.wbBonus,room.monster?.family);
+        const rawCtr       = Math.ceil(calcCtrFn(monsterAtk, effectiveDef, (m.wbBonus?.dmgReducePct || 0) + familyFx.damageReducePct/100 + resolveMemberWbFx(m, room.monster).damageReducePct) * (playerStatusMods[id]?.damageTakenMultiplier || 1) * (1 - (room.consumableEffects?.counterReducePct || 0) / 100));
         const counterHit   = resolvePlayerCounter({ arrows:m.arrows || [], baseDamage:rawCtr, maxHP:m.maxHP || memberHPNow[id] });
         const absorbed     = Math.min(potionShieldNow[id] || 0, counterHit.damage);
         potionShieldNow[id] = Math.max(0, (potionShieldNow[id] || 0) - absorbed);
+        if(absorbed>0){const stateKey=`members.${id}.catBattleState`;memberUpd[stateKey]=recordCatShieldAbsorption(memberUpd[stateKey]||m.catBattleState,{catId:m.catId,bondLevel:m.catBond,catAtk:m.catAtk||m.catATK,absorbed,round});}
         const ctr          = counterHit.damage - absorbed;
         ctrAccum[id]       = (ctrAccum[id] || 0) + ctr;
         const prevHP       = memberHPNow[id];
         memberHPNow[id]    = Math.max(0, prevHP - ctr);
+        if(memberHPNow[id]<=0){const stateKey=`members.${id}.catBattleState`;const guard=consumeCatDeathGuard(memberUpd[stateKey]||m.catBattleState,{catId:m.catId,maxHp:m.maxHP,mode:["boss","mythic"].includes(room.monster?.tier)?"boss":"normal"});if(guard.triggered){memberHPNow[id]=guard.hp;memberUpd[stateKey]=guard.state;}}
         const died         = prevHP > 0 && memberHPNow[id] <= 0;
         ctrLog.push({
           id, name: m.name, dmg: 0, ctr, arrowBreakdown: [], hitPart:counterHit.part, averageScore:counterHit.averageScore,
@@ -593,6 +620,11 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       miniRounds.push({
         miniRound: null, isCounter: true,
         playerLog: ctrLog, totalDmg: 0, monsterHPAfter: monsterHP,
+      });
+      familyStatusResults = resolveFamilyOrdinaryStatusForParty({
+        family:room.monster?.family,tierIndex:room.monster?.tierIndex,
+        members:aliveIds.map(id=>({id,alive:members[id].alive,role:members[id].role,mods:members[id].statusResistance||{}})),
+        random:member=>deterministicStatusRoll(room.battleInstanceId||roomId,round,member.id,room.monster?.family),
       });
     }
 
@@ -628,7 +660,11 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       Object.fromEntries(aliveIds.map(id => [id, members[id].maxHP || 100])),
     );
     for (const [id, hp] of Object.entries(statusTick.memberHP)) memberHPNow[id] = hp;
-    const abilityStatusesAfter = statusTick.statuses;
+    const abilityStatusesAfter = { ...statusTick.statuses };
+    for (const result of familyStatusResults) {
+      if (!result.finalStatus) continue;
+      abilityStatusesAfter[result.targetId] = mergeCombatStatus(abilityStatusesAfter[result.targetId] || [], result.finalStatus);
+    }
     const monsterAbilityStateAfter = abilityPlan?.monsterEffect.reductionDuration > 0
       ? { reductionPct: abilityPlan.monsterEffect.reductionPct, reductionDuration: abilityPlan.monsterEffect.reductionDuration }
       : (monsterAbilityStateBefore?.reductionDuration > 0
@@ -640,17 +676,19 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
     const displayGroupsBefore = Object.fromEntries(
       aliveIds.map(id => [id, members[id].displayGroup || members[id].role || "front"])
     );
-    const memberUpd = {};
     let   liveAfter = 0;
     for (const id of aliveIds) {
       const m      = members[id];
       const isRear = m.role === "rear";
       let hp       = memberHPNow[id];
-      if (m.potionBuffs?.regenPct && hp > 0) hp = Math.min(m.maxHP || 9999, hp + Math.round((m.maxHP || 100) * m.potionBuffs.regenPct / 100));
+      let statuses=abilityStatusesAfter[id] || [];
+      if (m.potionBuffs?.regenPct && hp > 0) { const recovery=applyIncomingHealing({hp,maxHp:m.maxHP||hp,amount:(m.maxHP||100)*m.potionBuffs.regenPct/100,statuses});hp=recovery.hp;statuses=recovery.statuses; }
       // 後衛heal：治癒量由其他後衛分給（不補自己）
-      if (receivedHeal[id]) hp = Math.min(m.maxHP || 9999, hp + receivedHeal[id]);
-      if (eff.archerHP)   hp = Math.min(m.maxHP || 9999, hp + eff.archerHP);
-      if (eff.healArcher) hp = Math.min(m.maxHP || 9999, hp + eff.healArcher);
+      if (receivedHeal[id]) { const recovery=applyIncomingHealing({hp,maxHp:m.maxHP||hp,amount:receivedHeal[id],statuses});hp=recovery.hp;statuses=recovery.statuses; }
+      if (eff.archerHP>0) { const recovery=applyIncomingHealing({hp,maxHp:m.maxHP||hp,amount:eff.archerHP,statuses});hp=recovery.hp;statuses=recovery.statuses; }
+      else if (eff.archerHP<0) hp=Math.max(0,hp+eff.archerHP);
+      if (eff.healArcher) { const recovery=applyIncomingHealing({hp,maxHp:m.maxHP||hp,amount:eff.healArcher,statuses});hp=recovery.hp;statuses=recovery.statuses; }
+      abilityStatusesAfter[id]=statuses;
       // 復活符：第一次陣亡自動回血（僅前衛）
       if (hp <= 0 && !isRear && m.buffs?.hasRevival && !m.revived) {
         hp = Math.round((m.maxHP || 100) * 0.3);
@@ -699,6 +737,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       round, event, miniRounds, playerLog, totalDmg,
       monsterHPBefore: room.monsterHP, monsterHPAfter: monsterHP,
       counterRound: !skipAllCtr,
+      familyStatusResults,
       lastHit: lastHitInfo,
       displayGroupsBefore, // 回合開始前各人的視覺分組（客戶端動畫用）
       // 怪物技能：成員端 BattleScreen 靠這個欄位播技能演出（沒出招就不寫，維持舊 log 形狀）
@@ -710,6 +749,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
           targetMode: abilityPlan.targetMode, targetIds: abilityPlan.targetIds,
           damageByMember: abilityPlan.damageByMember,
           statusesByMember: abilityPlan.statusesByMember,
+          statusResultsByMember:abilityPlan.statusResultsByMember,
           monsterEffect: abilityPlan.monsterEffect,
           poisonDamage: statusTick.poisonDamage,
         },

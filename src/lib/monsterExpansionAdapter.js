@@ -85,9 +85,11 @@ export function applyChallengeLevel(monster, levelId) {
   };
 }
 
-function selectVariant() {
-  // 方案A：抽怪不再隨機貼弱化/強悍,強度改由玩家進場自選（applyChallengeLevel）
-  return "normal";
+export function selectVariant(roll = Math.random()) {
+  const value = Math.max(0, Math.min(0.999999, Number(roll) || 0));
+  if (value < 0.25) return "weak";
+  if (value < 0.75) return "normal";
+  return "strong";
 }
 
 export function applySoloVariant(monster, variant, roll) {
@@ -119,7 +121,7 @@ export function drawExpansionSoloMonsters(power, { random = Math.random, familie
     );
     if (!candidates.length) return null;
     const selected = candidates[Math.min(candidates.length - 1, Math.floor(random() * candidates.length))];
-    const variant = selectVariant(power, random());
+    const variant = selectVariant(random());
     return applySoloVariant(toLegacyBattleMonster(selected), variant, random());
   }).filter(Boolean);
 }

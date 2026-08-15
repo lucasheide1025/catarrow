@@ -7,13 +7,12 @@ import CatRoundOverlay from "../cat/CatRoundOverlay";
 import { useToast } from "../shared/UI";
 import DuelBattleCard from "./DuelBattleCard";
 import { useDuelReveal } from "../../battle/useDuelReveal";
-import { calcDuelRoundDamage } from "../../lib/damage";
 import { labelToValue } from "../../lib/score";
+import { summarizeDuelLoadout, PVP_STATUS_RULES } from "../../lib/duelCombat";
 import { getTargetScoreLabels } from "../../lib/targetFace";
-import TargetFaceOverlay, { TargetFmtPicker, InputModePicker, getBattleTargetFmt, setBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
-import BattleShootingProfile from "../shared/BattleShootingProfile";
+import TargetFaceOverlay, { getBattleTargetFmt, getBattleInputMode, setBattleInputMode } from "../shared/TargetFaceOverlay";
 import { loadBattleShootingProfile } from "../../lib/battlePractice";
-import { sfxArrowHit, sfxCritBoom, sfxMonsterDead, sfxCounter } from "../../lib/sound";
+import { sfxBattleIntro, sfxArrowShoot, sfxArrowHit, sfxCritBoom, sfxMonsterDead, sfxShieldBlock, sfxRoundEnd, sfxVictoryFanfare, sfxDefeat, sfxSuccess } from "../../lib/sound";
 import {
   subscribeDuelRoom, submitDuelArrows, processDuelRound,
   updateDuelHeartbeat, DUEL_HEARTBEAT_MS, sendDuelCheer, resetDuelRoom, getDuelStats, recordDuelResult,
@@ -33,8 +32,19 @@ import ArrowMilestonePopup from "../member/ArrowMilestonePopup";
 import { useCheckinActive } from "../../hooks/useCheckinActive";
 
 const ARROWS = 6;
-const REVEAL_TOTAL = ARROWS * 2; // A 隊先攻 6 箭 + B 隊後攻 6 箭
+// 決鬥 2.1：A1箭 B1箭 有來有回、先手隨機、中途擊殺提前結束。
+// 揭露步數改由 useDuelReveal 依 logEntry.attacks 動態計算，不再固定 12 步。
 // SCORE_BTNS 統一由 ../../lib/score 管理
+
+// 效果播報徽章的配色（護盾/反彈/異常/DoT/凍結/回血）
+const POP_COLORS = {
+  shield:  { color: "#7dd3fc", border: "rgba(56,189,248,.55)" },   // 護盾擋格
+  reflect: { color: "#86efac", border: "rgba(74,222,128,.55)" },   // 荊棘反彈
+  inflict: { color: "#f0abfc", border: "rgba(217,70,239,.55)" },   // 異常施加
+  dot:     { color: "#fca5a5", border: "rgba(248,113,113,.55)" },   // DoT 跳傷
+  stun:    { color: "#93c5fd", border: "rgba(96,165,250,.55)" },   // 凍結/麻痺
+  heal:    { color: "#86efac", border: "rgba(74,222,128,.55)" },   // 回合末回血
+};
 
 const DUEL_CSS = `
 @keyframes dmg-float{0%{opacity:1;transform:translateY(0) scale(1)}80%{opacity:1;transform:translateY(-28px) scale(1.1)}100%{opacity:0;transform:translateY(-36px) scale(0.9)}}
@@ -54,8 +64,14 @@ const DUEL_CSS = `
 @keyframes mvp-pop{0%{opacity:0;transform:scale(0.5) rotate(-8deg)}60%{transform:scale(1.15) rotate(2deg)}100%{opacity:1;transform:scale(1) rotate(0)}}
 @keyframes screen-white{0%,100%{opacity:0}25%{opacity:0.7}}
 @keyframes intro-appear{from{transform:scale(1.18);opacity:0}to{transform:scale(1);opacity:1}}
+@keyframes hp-bar-dmg{0%,100%{opacity:0}20%{opacity:.95}45%{opacity:.15}70%{opacity:.6}85%{opacity:0}}
+@keyframes bar-shake{0%,100%{transform:translateX(0)}15%{transform:translateX(-3px)}30%{transform:translateX(3px)}45%{transform:translateX(-2px)}60%{transform:translateX(2px)}75%{transform:translateX(-1px)}}
+@keyframes skull-pop{0%{opacity:0;transform:scale(0) rotate(-25deg)}55%{opacity:1;transform:scale(1.3) rotate(8deg)}75%{transform:scale(.9) rotate(-3deg)}100%{opacity:1;transform:scale(1) rotate(0)}}
+@keyframes bar-dim{0%,100%{opacity:1}50%{opacity:.45}}
+@keyframes status-pop{0%{opacity:0;transform:translateX(-50%) translateY(10px) scale(.6)}28%{opacity:1;transform:translateX(-50%) translateY(-2px) scale(1.12)}55%{opacity:1;transform:translateX(-50%) translateY(-16px) scale(1)}100%{opacity:0;transform:translateX(-50%) translateY(-30px) scale(.85)}}
 .dmg-float{position:absolute;pointer-events:none;font-size:1.1rem;font-weight:900;animation:dmg-float 1.4s ease forwards;white-space:nowrap;}
 .crit-pop{position:absolute;pointer-events:none;font-size:1.4rem;font-weight:900;animation:crit-pop 1.1s ease forwards;}
+.status-pop{position:absolute;pointer-events:none;font-size:.68rem;font-weight:900;white-space:nowrap;padding:2px 7px;border-radius:999px;background:rgba(8,8,20,.72);backdrop-filter:blur(3px);border:1px solid rgba(255,255,255,.22);box-shadow:0 2px 8px rgba(0,0,0,.45);z-index:30;animation:status-pop 1.2s ease forwards;}
 .battle-start-txt{-webkit-text-stroke:2px rgba(255,180,0,0.5);letter-spacing:0.18em;font-weight:900;}
 `;
 
@@ -173,12 +189,28 @@ function DuelIntro({ room, myId, onDone }) {
 // ── 傷害計算（client-side，用於 host 處理回合）─────────────
 
 // ── 決鬥玩家小卡 ────────────────────────────────────────────
+function StatusIcons({ status }) {
+  const list = Object.entries(status || {});
+  if (!list.length) return null;
+  return (
+    <span className="inline-flex gap-0.5 ml-1">
+      {list.map(([sid, st]) => (
+        <span key={sid} title={`${PVP_STATUS_RULES[sid]?.name || sid}（剩 ${st.duration} 回合）`} className="text-[10px]">
+          {PVP_STATUS_RULES[sid]?.icon || "☠️"}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function DuelPlayerCard({ id, m, isMe, flash, displayHp, attack, revealIdx, teamA, teamB }) {
   const hp     = displayHp?.[id] ?? m.hp;
   const maxHP  = m.maxHP || 1;
   const pct    = Math.max(0, Math.round(hp / maxHP * 100));
   const color  = pct > 50 ? "#22c55e" : pct > 25 ? "#f59e0b" : "#ef4444";
   const isDead = !m.alive || hp <= 0;
+  const shield = Number(m.shield) || 0;
+  const shieldPct = Math.min(100, Math.round(shield / (maxHP || 1) * 250));
 
   return (
     <div className={`rounded-xl p-2 border transition-all ${
@@ -194,11 +226,20 @@ function DuelPlayerCard({ id, m, isMe, flash, displayHp, attack, revealIdx, team
           {isDead ? "💀" : m.ready ? "✅" : "🏹"} {m.name}
           {isMe && <span className="ml-1 text-[9px] text-amber-400/70">(我)</span>}
           {m.catName && <span className="ml-1 text-[9px] text-indigo-400">🐱</span>}
+          <StatusIcons status={m.status} />
         </span>
+        {shield > 0 && !isDead && (
+          <span className="text-[9px] font-black text-sky-300 shrink-0">🛡{shield}</span>
+        )}
       </div>
       <div className="h-1.5 bg-slate-700/80 rounded-full overflow-hidden">
         <div className="h-full rounded-full transition-all duration-500" style={{ width:`${pct}%`, background:color }} />
       </div>
+      {shield > 0 && (
+        <div className="mt-1 h-1 rounded-full overflow-hidden" style={{ background:"rgba(56,189,248,.15)" }}>
+          <div className="h-full rounded-full transition-all duration-500" style={{ width:`${shieldPct}%`, background:"#38bdf8" }} />
+        </div>
+      )}
     </div>
   );
 }
@@ -206,8 +247,11 @@ function DuelPlayerCard({ id, m, isMe, flash, displayHp, attack, revealIdx, team
 // ── 主組件 ─────────────────────────────────────────────────
 export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) {
   const checkinActive = useCheckinActive(profile?.id);
-  const { catMsg, clearCatMsg, showCatEntry, saveBond, hasCat, catName: myCatName, calcCatRoundDamage, catATK } = useCatCompanion();
+  const { catMsg, clearCatMsg, showCatEntry, saveBond, hasCat, catName: myCatName, catATK } = useCatCompanion();
   const { toast, ToastContainer } = useToast();
+
+  const myId   = profile?.id || profile?.uid || "guest";
+  const myName = profile?.nickname || profile?.name || (isGuest ? "訪客" : "射手");
 
   // ── 統一 Firestore 回合生命週期 ────────────────────────────
   const {
@@ -253,9 +297,10 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   // ── 逐箭揭露 hook ──────────────────────────────────────
   const duelReveal = useDuelReveal({
     room,
-    onSoundEffect: (hasCrit, hasHit) => {
+    onSoundEffect: (hasCrit, hasHit, hasShield) => {
       if (hasCrit) sfxCritBoom();
       else if (hasHit) sfxArrowHit();
+      if (hasShield) sfxShieldBlock();
     },
     onComplete: () => {
       const allMembers = [
@@ -269,12 +314,13 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     revealEntry, revealIdx, displayHp, floats, flashIds,
     attackingIds, hittingIds, eventPhase, showCatRound, duelCatCats,
     revealPhaseBanner, isRevealing, hasRevealed, skipEvent, stopReveal,
+    statusPops,
   } = duelReveal;
 
   const [myArrows, setMyArrows]   = useState([]);
   const [targetMode, setTargetMode]   = useState(() => getBattleInputMode() === "target");
   const [targetPending, setTargetPending] = useState(false);
-  const [targetFmt, setTargetFmt]     = useState(getBattleTargetFmt);
+  const [targetFmt]                   = useState(getBattleTargetFmt);
   const [resultShown, setResultShown] = useState(false);
   const [showResult,  setShowResult]  = useState(false); // 玩家確認後才跳結算頁
   const [duelStats, setDuelStats]     = useState(null);
@@ -292,9 +338,49 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   const catAppliedRef   = useRef(false);
   const prevDuelRound   = useRef(0);
   const introShownRef   = useRef(false);
+  // ── 血量比對條動畫狀態 ────────────────────────────────
+  const [hpFlashTeam, setHpFlashTeam] = useState(null);   // "A" | "B" | null — 受傷閃爍
+  const [hpShakeTeam, setHpShakeTeam] = useState(null);   // "A" | "B" | null — 擊倒抖動
+  const [downedTeam, setDownedTeam]   = useState(null);   // "A" | "B" | null — 💀 擊倒標記
+  const prevTeamHPRef   = useRef(null);   // { A: number, B: number }
+  const prevAliveRef    = useRef({});     // memberId -> alive
+  const hpAnimTimerRef  = useRef(null);
 
-  const myId   = profile?.id || profile?.uid || "guest";
-  const myName = profile?.nickname || profile?.name || (isGuest ? "訪客" : "射手");
+  // 監看雙隊總 HP／擊倒狀態變化 → 觸發頭部比對條動畫
+  // 注意：不能依賴 teamA/teamB（render 後段才宣告，依賴陣列求值會 TDZ），改用 room
+  useEffect(() => {
+    if (!room) return;
+    const tA = room.teamA || {}, tB = room.teamB || {};
+    const aHP = Object.values(tA).reduce((s, m) => s + Math.max(0, m.hp || 0), 0);
+    const bHP = Object.values(tB).reduce((s, m) => s + Math.max(0, m.hp || 0), 0);
+    const prev = prevTeamHPRef.current;
+    if (prev) {
+      // 受傷：該側總 HP 下降 → 閃爍
+      if (aHP < prev.A) setHpFlashTeam("A");
+      else if (bHP < prev.B) setHpFlashTeam("B");
+      // 擊倒：有成員從 alive 變死 → 抖動 + 💀
+      const all = [...Object.entries(tA), ...Object.entries(tB)];
+      for (const [id, m] of all) {
+        if (prevAliveRef.current[id] === true && !m.alive) {
+          const team = Object.keys(tA).includes(id) ? "A" : "B";
+          setHpShakeTeam(team);
+          setDownedTeam(team);
+          break;
+        }
+      }
+    }
+    prevTeamHPRef.current = { A: aHP, B: bHP };
+    [...Object.entries(tA), ...Object.entries(tB)].forEach(([id, m]) => {
+      prevAliveRef.current[id] = !!m.alive;
+    });
+    // 動畫結束後清除（閃爍 900ms / 擊倒 2.6s）
+    clearTimeout(hpAnimTimerRef.current);
+    hpAnimTimerRef.current = setTimeout(() => {
+      setHpFlashTeam(null);
+      setHpShakeTeam(null);
+      setDownedTeam(null);
+    }, 2600);
+  }, [room]); // eslint-disable-line
 
   // 我在哪一隊
   const myTeam = room
@@ -312,6 +398,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
     introShownRef.current = true;
     if ((room?.round || 1) === 1 && !(room?.log?.length)) {
       setShowIntro(true);
+      sfxBattleIntro();
     }
   }, [room?.status]); // eslint-disable-line
 
@@ -378,6 +465,12 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   useEffect(() => {
     if (!room || room.status !== "finished" || resultShown) return;
     setResultShown(true);
+    // 回合勝負音效：我方勝→凱旋、敗→哀鳴、平→成功
+    if (myTeam) {
+      if (room.result === `team${myTeam}`) sfxVictoryFanfare();
+      else if (room.result !== "draw") sfxDefeat();
+      else sfxSuccess();
+    }
     if (isGuest || !profile?.id || !myTeam) return;
 
     const isSolo  = room.type === "1v1";
@@ -482,7 +575,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   function addArrow(score, label, landing) {
     if (myArrows.length >= ARROWS || submitted) return;
     shootingProfileRef.current ||= loadBattleShootingProfile(profile?.id || myId);
-    sfxArrowHit();
+    sfxArrowShoot(); // 輸入分數＝弓弦拉放
     setMyArrows(prev => [...prev, {
       score,
       label,
@@ -512,6 +605,7 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
   async function handleSubmit() {
     if (myArrows.length < ARROWS || submitted || !myTeam || submitting) return;
     battleAreaRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    sfxRoundEnd(); // 送出攻擊＝本回合定案
     await fsHandleSubmit(myTeam, myArrows, selectedTarget || null);
   }
 
@@ -733,6 +827,41 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
           </div>
         )}
 
+        {/* 本場配置＋狀態事件 */}
+        <div className="w-full max-w-sm rounded-2xl p-3 border border-white/10 bg-white/5">
+          <div className="text-[10px] font-black tracking-widest text-amber-300/70 mb-1.5">🎒 本場決鬥配置</div>
+          {(() => {
+            const me = (myTeam === "A" ? room.teamA : room.teamB)?.[myId];
+            const rows = me?.loadout ? summarizeDuelLoadout(me.loadout) : [];
+            if (!rows.length) return <div className="text-[11px] text-slate-500">未帶卡片／專精（或訪客）</div>;
+            return (
+              <div className="flex flex-wrap gap-1">
+                {rows.map((r, i) => (
+                  <span key={i} className="rounded-full px-2 py-[1px] text-[9px] font-black"
+                    style={{ background:"rgba(251,191,36,.14)", color:"#fde68a", border:"1px solid rgba(251,191,36,.3)" }}>
+                    {r.icon} {r.label}
+                  </span>
+                ))}
+              </div>
+            );
+          })()}
+
+          <div className="text-[10px] font-black tracking-widest text-amber-300/70 mt-3 mb-1.5">📋 狀態事件</div>
+          {(() => {
+            const all = (room.log || []).flatMap(e => e.statusEvents || []);
+            const mine = all.filter(e => e.memberId === myId);
+            const list = (mine.length ? mine : all).slice(-6).reverse();
+            if (!list.length) return <div className="text-[11px] text-slate-500">本場沒有觸發異常/護盾/反彈</div>;
+            return (
+              <div className="flex flex-col gap-0.5">
+                {list.map((e, i) => (
+                  <div key={i} className="text-[10px] text-slate-300">{e.icon} {e.text}</div>
+                ))}
+              </div>
+            );
+          })()}
+        </div>
+
         {/* 按鈕 */}
         <div className="w-full max-w-sm flex flex-col gap-2">
           {/* 未發起：host 顯示「再來一局」 */}
@@ -896,14 +1025,81 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
       />
 
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-black/50 shrink-0">
+      <div className="flex items-center justify-between px-4 py-3 bg-black/60 border-b border-purple-500/20 shrink-0"
+        style={{ background:"linear-gradient(180deg, rgba(20,5,40,.85), rgba(0,0,0,.55))" }}>
         <button onClick={() => { if (room?.status === "active") { setConfirmLeave(true); } else { onLeave(); } }}
-          className="text-slate-300 text-sm">← 離開</button>
-        <div className="text-white font-black text-sm">
-          ⚔️ {room.type} 決鬥 · 第 {(room.round || 1) - (isRevealing ? 1 : 0)} 回合
+          className="text-slate-300 text-sm px-1">← 離開</button>
+        <div className="text-center">
+          <div className="text-white font-black text-sm tracking-wide">
+            <span className="text-purple-300">⚔️ {room.type} 決鬥</span> · 第 <span className="text-amber-300">{(room.round || 1) - (isRevealing ? 1 : 0)}</span> 回合
+          </div>
+          {(() => {
+            const aHP = Object.values(teamA).reduce((s, m) => s + Math.max(0, m.hp || 0), 0);
+            const bHP = Object.values(teamB).reduce((s, m) => s + Math.max(0, m.hp || 0), 0);
+            if (aHP + bHP <= 0) return null;
+            const pct = Math.round(aHP / (aHP + bHP) * 100);
+            const shakeA = hpShakeTeam === "A", shakeB = hpShakeTeam === "B";
+            const flashA = hpFlashTeam === "A", flashB = hpFlashTeam === "B";
+            const skullA = downedTeam === "A", skullB = downedTeam === "B";
+            return (
+              <div className="flex items-center gap-1.5 mt-1">
+                {/* A 側：受傷閃爍 + 擊倒💀 + 抖動 */}
+                <div className="flex items-center gap-1 w-[52px] justify-end">
+                  <span className="text-[9px] font-black text-blue-400 tabular-nums">{aHP}</span>
+                  <span className="relative inline-block w-3 h-3">
+                    {skullA && <span style={{ animation:"skull-pop .6s cubic-bezier(.34,1.56,.64,1) both", position:"absolute", inset:0, lineHeight:"12px" }}>💀</span>}
+                  </span>
+                </div>
+                <div className={`flex-1 h-2 rounded-full overflow-hidden flex relative ${shakeA ? "" : ""}`}
+                  style={{
+                    background:"rgba(255,255,255,.1)",
+                    border: skullA || skullB ? "1px solid rgba(255,255,255,.25)" : undefined,
+                    animation: (shakeA || shakeB) ? "bar-shake .5s ease" : undefined,
+                  }}>
+                  {/* A 段 */}
+                  <div className="relative h-full transition-all duration-500"
+                    style={{ width:`${pct}%`, background: skullA ? "linear-gradient(90deg,#64748b,#94a3b8)" : "linear-gradient(90deg,#3b82f6,#60a5fa)" }}>
+                    {flashA && <div className="absolute inset-0" style={{ background:"#fff", animation:"hp-bar-dmg .9s ease" }} />}
+                  </div>
+                  {/* B 段 */}
+                  <div className="relative h-full transition-all duration-500"
+                    style={{ width:`${100-pct}%`, background: skullB ? "linear-gradient(90deg,#7f1d1d,#991b1b)" : "linear-gradient(90deg,#ef4444,#f87171)" }}>
+                    {flashB && <div className="absolute inset-0" style={{ background:"#fff", animation:"hp-bar-dmg .9s ease" }} />}
+                  </div>
+                </div>
+                {/* B 側 */}
+                <div className="flex items-center gap-1 w-[52px]">
+                  <span className="relative inline-block w-3 h-3">
+                    {skullB && <span style={{ animation:"skull-pop .6s cubic-bezier(.34,1.56,.64,1) both", position:"absolute", inset:0, lineHeight:"12px" }}>💀</span>}
+                  </span>
+                  <span className="text-[9px] font-black text-red-400 tabular-nums">{bHP}</span>
+                </div>
+              </div>
+            );
+          })()}
         </div>
-        <button onClick={handleCheer} className="text-slate-300 text-xl">🎉</button>
+        <button onClick={handleCheer} className="text-slate-300 text-xl px-1">🎉</button>
       </div>
+
+      {/* 我的決鬥配置（卡片天賦＋裝備專精） */}
+      {(() => {
+        const me = (myTeam === "A" ? teamA : teamB)?.[myId];
+        const rows = me?.loadout ? summarizeDuelLoadout(me.loadout) : [];
+        if (!rows.length) return null;
+        return (
+          <div className="mx-4 mt-2 rounded-xl px-3 py-1.5 shrink-0 flex items-center gap-1 flex-wrap"
+            style={{ background:"rgba(255,255,255,.08)", border:"1px solid rgba(255,255,255,.12)" }}>
+            <span className="text-[10px] font-black text-amber-300/80 mr-1">🎒</span>
+            {rows.slice(0, 5).map((r, i) => (
+              <span key={i} className="rounded-full px-2 py-[1px] text-[9px] font-black"
+                style={{ background:"rgba(251,191,36,.14)", color:"#fde68a", border:"1px solid rgba(251,191,36,.3)" }}>
+                {r.icon} {r.label}
+              </span>
+            ))}
+            {rows.length > 5 && <span className="text-[9px] text-slate-400 font-bold">+{rows.length - 5}</span>}
+          </div>
+        );
+      })()}
 
       {/* 加油訊息 */}
       {cheerMsg && (
@@ -936,16 +1132,39 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
         </div>
       )}
 
-      {/* 換邊橫幅 */}
-      {revealPhaseBanner === "B" && (
-        <div className="mx-4 mt-2 rounded-xl px-3 py-2 text-sm font-black text-center border shrink-0 bg-red-900/60 border-red-500/60 text-red-200"
+      {/* 先手橫幅：誰先射（每回合隨機） */}
+      {revealPhaseBanner && (
+        <div className={`mx-4 mt-2 rounded-xl px-3 py-2 text-sm font-black text-center border shrink-0 ${
+          revealPhaseBanner === "A"
+            ? "bg-blue-900/60 border-blue-500/60 text-blue-200"
+            : "bg-red-900/60 border-red-500/60 text-red-200"
+        }`}
           style={{ animation:"slide-in .2s ease" }}>
-          ⚔️ 隊伍 B 反擊！
+          {revealPhaseBanner === "A" ? "🔵 隊伍 A 先手！" : "🔴 隊伍 B 先手！"}
         </div>
       )}
 
       {/* 雙隊弓箭手 + 血條 — 可滾動中間區 */}
       <div ref={battleAreaRef} className="flex-1 overflow-y-auto">
+
+      {/* 本回合狀態事件（護盾/異常/反彈/回血）— 置頂優先可見 */}
+      {(() => {
+        const lastLog = room.log?.length ? room.log[room.log.length - 1] : null;
+        const evs = lastLog?.statusEvents || [];
+        if (!evs.length) return null;
+        return (
+          <div className="mx-3 mt-2 rounded-xl px-3 py-2"
+            style={{ background:"rgba(88,28,135,.18)", border:"1px solid rgba(192,132,252,.3)" }}>
+            <div className="text-[9px] font-black tracking-widest text-purple-300/80 mb-1">📋 本回合狀態</div>
+            <div className="flex flex-col gap-0.5">
+              {evs.slice(0, 4).map((e, i) => (
+                <div key={i} className="text-[10px] text-slate-200 font-medium">{e.icon} {e.text}</div>
+              ))}
+              {evs.length > 4 && <div className="text-[9px] text-slate-400">…還有 {evs.length - 4} 筆</div>}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 角色展示區：弓箭手 + 短血條 直列 */}
       {(() => {
@@ -979,16 +1198,35 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
               <div style={{ fontSize:8, fontWeight:700, maxWidth:imgSz+8, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
                 color: id === myId ? "#fbbf24" : team === "A" ? "#93c5fd" : "#fca5a5" }}>
                 {isDead ? "💀" : ""}{m.name}{id === myId ? " ▲" : ""}
+                {Object.keys(m.status || {}).length > 0 && (
+                  <span> {Object.entries(m.status).map(([sid]) => PVP_STATUS_RULES[sid]?.icon || "☠️").join("")}</span>
+                )}
               </div>
               <div style={{ width:imgSz+4, height:4, background:"rgba(255,255,255,0.1)", borderRadius:3, overflow:"hidden",
                 animation: flashIds[id] ? "hp-flash 0.4s ease" : undefined }}>
                 <div style={{ height:"100%", width:`${pct}%`, background:hpColor, borderRadius:3, transition:"width 0.5s" }}/>
               </div>
+              {Number(m.shield) > 0 && !isDead && (
+                <div style={{ width:imgSz+4, height:3, background:"rgba(56,189,248,.18)", borderRadius:3, overflow:"hidden" }}>
+                  <div style={{ height:"100%", width:`${Math.min(100, Math.round(Number(m.shield) / (maxHP||1) * 250))}%`, background:"#38bdf8", borderRadius:3 }} />
+                </div>
+              )}
               {/* 浮動傷害 */}
               {floats.filter(f => f.memberId === id).map(f => (
                 <span key={f.id} className={f.isCrit ? "crit-pop" : "dmg-float"}
                   style={{ top:0, left:"50%", transform:"translateX(-50%)", color: f.isCrit ? "#f59e0b" : "#f87171", zIndex:20 }}>
                   {f.text}
+                </span>
+              ))}
+              {/* 效果獨立播報徽章：護盾/反彈/異常/DoT/凍結/回血 */}
+              {statusPops.filter(p => p.memberId === id).map(p => (
+                <span key={p.id} className="status-pop"
+                  style={{
+                    top:-2, left:"50%", transform:"translateX(-50%)", zIndex:40,
+                    color: POP_COLORS[p.kind]?.color || "#e2e8f0",
+                    borderColor: POP_COLORS[p.kind]?.border || "rgba(255,255,255,.22)",
+                  }}>
+                  {p.icon} {p.text}
                 </span>
               ))}
             </div>
@@ -1014,11 +1252,10 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
         );
       })()}
 
-
       {/* 戰鬥結束 → reveal 跑完後顯示確認按鈕 */}
       {room.status === "finished" && !showResult && !showEndAnim && (
         <div className="mx-4 mt-3">
-          {revealIdx >= REVEAL_TOTAL ? (
+          {hasRevealed ? (
             <button onClick={() => setShowEndAnim(true)}
               className="w-full py-3 rounded-2xl font-black text-white border border-amber-400/60 active:scale-95 transition-transform"
               style={{ background:"linear-gradient(135deg,#92400e,#b45309)", animation:"slide-in .4s ease" }}>
@@ -1070,13 +1307,6 @@ export default function DuelRoom({ roomId, isHost, onLeave, profile, isGuest }) 
             );
           })()}
 
-          {myArrows.length === 0 && !targetPending && (room.round || 1) === 1 && (
-            <div className="bg-slate-800/60 border border-slate-600/40 rounded-xl p-3 mb-2 flex flex-col gap-3">
-              <BattleShootingProfile memberId={profile?.id || myId} />
-              <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
-              <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v === "target"; setTargetMode(t); setBattleInputMode(v); }} />
-            </div>
-          )}
           {myArrows.length === 0 && (
             <div className="flex items-center gap-2 mb-1.5">
               <span className="text-[10px] text-slate-500 font-bold">輸入方式</span>

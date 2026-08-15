@@ -207,7 +207,7 @@ export default function DungeonKillResult({
                   padding:"7px 10px", borderRadius:10, background:"rgba(0,0,0,.25)", fontSize:12,
                 }}>
                   <span style={{ color:"#e2e8f0" }}>
-                    {item.icon} {item.family ? `${FAMILY_LABEL[item.family] || item.family} ` : ""}{item.name}
+                    {item.icon} {item.family ? `${FAMILY_LABEL[item.family] || "未知族系"} ` : ""}{item.name}
                   </span>
                   <span style={{ fontWeight:900, color:"#fcd34d" }}>×{item.count}</span>
                 </div>

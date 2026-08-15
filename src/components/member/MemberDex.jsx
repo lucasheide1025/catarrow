@@ -30,7 +30,7 @@ const PIXEL_BADGE_STYLE = `
   .px-badge.locked::before          { border-color:#475569; }
   @keyframes mythic-pulse { 0%,100%{box-shadow:0 0 4px #ef444488;} 50%{box-shadow:0 0 14px #ef4444cc;} }
   .px-tile {
-    width:36px; height:36px; border-radius:3px;
+    width:50px; height:50px; border-radius:12px;
     display:flex; align-items:center; justify-content:center;
     font-size:20px; line-height:1; position:relative; overflow:hidden;
   }
@@ -42,6 +42,14 @@ const PIXEL_BADGE_STYLE = `
     animation:px-shine 3s ease-in-out infinite;
   }
   @keyframes px-shine { 0%,100%{left:-40%} 50%{left:110%} }
+  @keyframes dex-card-rise { from{opacity:0;transform:translateY(14px) scale(.94)} to{opacity:1;transform:translateY(0) scale(1)} }
+  @keyframes dex-art-breathe { 0%,100%{transform:translateY(0) rotate(-1deg)} 50%{transform:translateY(-3px) rotate(1deg)} }
+  @keyframes dex-progress-glow { 0%,100%{filter:brightness(1)} 50%{filter:brightness(1.25)} }
+  .dex-cell-card { animation:dex-card-rise .46s cubic-bezier(.2,.8,.2,1) both; }
+  .dex-cell-card .achievement-art:not(.is-locked) { animation:dex-art-breathe 3.2s ease-in-out infinite; }
+  .dex-cell-card:active .achievement-art { transform:scale(.9); }
+  .dex-modal-card { animation:dex-pop-in .42s cubic-bezier(.2,.9,.25,1.15) both; }
+  .dex-progress-fill { animation:dex-progress-glow 2.4s ease-in-out infinite; }
 
   /* 成就彈出提示動畫 */
   @keyframes dex-pop-in  { 0%{transform:translateY(80px) scale(.8);opacity:0} 60%{transform:translateY(-6px) scale(1.04)} 100%{transform:translateY(0) scale(1);opacity:1} }
@@ -56,10 +64,40 @@ const PIXEL_BADGE_STYLE = `
     background:linear-gradient(135deg,rgba(255,255,255,.08) 0%,transparent 60%);
     pointer-events:none;
   }
+  @media (prefers-reduced-motion: reduce) {
+    .dex-cell-card,.achievement-art,.dex-modal-card,.dex-progress-fill,.px-tile.legendary-shine::after,.px-badge.rarity-mythic::before { animation:none !important; }
+  }
 `;
 
 const rarityClass = r => ({ common:"rarity-common", uncommon:"rarity-uncommon", rare:"rarity-rare", epic:"rarity-epic", legendary:"rarity-legendary", mythic:"rarity-mythic" }[r] || "rarity-common");
 const rarityLabelColor = r => ({ common:"#64748b", uncommon:"#16a34a", rare:"#2563eb", epic:"#9333ea", legendary:"#d97706", mythic:"#dc2626" }[r] || "#64748b");
+const ACHIEVEMENT_ART_INDEX = Object.freeze(Object.fromEntries(DEX_CATEGORIES.map((item, index) => [item.id, index])));
+
+function stableArtHash(id = "") {
+  let hash = 0;
+  for (const char of String(id)) hash = (hash * 31 + char.charCodeAt(0)) % 360;
+  return hash;
+}
+
+function stableArtHue(id = "") {
+  return stableArtHash(id) % 24 - 12;
+}
+
+function AchievementArt({ achievement, size = 36, locked = false, hidden = false }) {
+  if (hidden) return <span style={{ fontSize:size * .58 }}>❓</span>;
+  const index = ACHIEVEMENT_ART_INDEX[achievement?.cat] ?? 0;
+  const col = index % 6;
+  const row = Math.floor(index / 6);
+  // 每個分類有三套同主題插畫；成就 id 決定版本，重整後也不會跳圖。
+  const atlasVariant = stableArtHash(achievement?.id) % 3 + 1;
+  return <span aria-hidden="true" className={`achievement-art ${locked ? "is-locked" : ""}`} style={{
+    display:"block", width:size, height:size, borderRadius:"22%",
+    backgroundImage:`url(/assets/achievements/achievement-atlas-v${atlasVariant}.png)`,
+    backgroundSize:"600% 500%",
+    backgroundPosition:`${col * 20}% ${row * 25}%`,
+    filter:`${locked ? "grayscale(1) brightness(.48)" : "saturate(1.06)"} hue-rotate(${stableArtHue(achievement?.id)}deg)`,
+  }} />;
+}
 
 /* ─── 主元件 ─────────────────────────────────────────────── */
 export default function MemberDex({ onBack, onDexViewed, sharedData }) {
@@ -160,6 +198,7 @@ export default function MemberDex({ onBack, onDexViewed, sharedData }) {
       setNewKeys(new Set(getUnseenKeys(profile.id, keys)));  // 凍結這批「新」的
     }
     markSeen(profile.id, keys);               // 看過了 → 清紅點
+    try { sessionStorage.setItem(`dex_unseen_count_${profile.id}`, "0"); } catch {}
     onDexViewed && onDexViewed();             // 通知 App 層重算 nav 紅點
   }, [profile?.id, certification, certRecords, granted, monsterDex, craftStats, chestStats, potionDex, cardData, duelStats, cats, guildRep, guildExpeditionStats, externalComps, dexCompetitions]); // eslint-disable-line
 
@@ -264,9 +303,9 @@ export default function MemberDex({ onBack, onDexViewed, sharedData }) {
       {onBack && <button onClick={onBack} className="text-gray-400 text-sm self-start py-1">← 返回</button>}
 
       {/* 標題 */}
-      <div className="rounded-2xl p-5 text-white" style={{ background:"linear-gradient(135deg,#1e293b,#0e7490)" }}>
+      <div className="relative overflow-hidden rounded-3xl p-5 text-white shadow-2xl" style={{ background:"radial-gradient(circle at 85% 10%,rgba(103,232,249,.35),transparent 32%),linear-gradient(135deg,#172554,#0e7490 55%,#164e63)" }}>
         <div className="text-xs tracking-widest text-cyan-200 font-black mb-1">數位圖鑑</div>
-        <div className="text-2xl font-black mb-3">🎖️ 我的成就收藏</div>
+        <div className="text-2xl font-black mb-3">我的成就收藏</div>
         <div className="flex items-center gap-4">
           <div>
             <div className="text-cyan-200 text-xs">收集進度</div>
@@ -279,7 +318,7 @@ export default function MemberDex({ onBack, onDexViewed, sharedData }) {
           </div>
         </div>
         <div className="mt-3 h-2 bg-white/20 rounded-full overflow-hidden">
-          <div className="h-full bg-amber-400 rounded-full" style={{ width:`${stats.totalAll ? (stats.totalUnlocked/stats.totalAll*100) : 0}%` }} />
+          <div className="dex-progress-fill h-full bg-gradient-to-r from-amber-300 via-yellow-400 to-orange-400 rounded-full transition-all duration-700" style={{ width:`${stats.totalAll ? (stats.totalUnlocked/stats.totalAll*100) : 0}%` }} />
         </div>
       </div>
 
@@ -313,14 +352,14 @@ export default function MemberDex({ onBack, onDexViewed, sharedData }) {
       {isRound ? (
         <RoundGrid cells={cells} catLabel={cat==="physical" ? "實體賽" : "積分賽"} onTap={setDetail} />
       ) : (
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
           {cells.length === 0 && cat === "cohort" && (
             <div className="col-span-4 text-gray-400 text-sm text-center py-6">尚未設定加入日期，無法判定期數</div>
           )}
           {cells.length === 0 && cat !== "cohort" && (
             <div className="col-span-4 text-gray-500 text-sm text-center py-6">目前沒有可追蹤成就</div>
           )}
-          {cells.map(a => <DexCell key={a.id} a={a} isNew={isCellNew(a)} onTap={() => setDetail(a)} />)}
+          {cells.map((a, index) => <DexCell key={a.id} a={a} index={index} isNew={isCellNew(a)} onTap={() => setDetail(a)} />)}
         </div>
       )}
 
@@ -330,17 +369,19 @@ export default function MemberDex({ onBack, onDexViewed, sharedData }) {
 }
 
 /* ─── 像素風成就格 ────────────────────────────────────────── */
-function DexCell({ a, onTap, isNew }) {
+function DexCell({ a, onTap, isNew, index = 0 }) {
   const unlocked  = a.unlocked;
   const isHidden  = a.hidden && !unlocked;
   const isLegendary = (a.rarity === "legendary" || a.rarity === "mythic") && unlocked;
 
   return (
     <button onClick={onTap}
-      className="relative flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl transition-transform active:scale-95"
+      className="dex-cell-card relative min-h-[112px] flex flex-col items-center justify-center gap-2 py-3 px-2 rounded-2xl overflow-hidden transition-transform active:scale-95"
       style={{
-        background: unlocked ? "#0f172a" : "rgba(255,255,255,0.05)",
+        animationDelay:`${Math.min(index, 12) * 32}ms`,
+        background: unlocked ? "linear-gradient(155deg,rgba(30,41,59,.98),rgba(15,23,42,.98))" : "linear-gradient(155deg,rgba(255,255,255,.07),rgba(255,255,255,.025))",
         border: `1.5px solid ${unlocked ? (RARITY_STYLE[a.rarity]?.ring || "#94a3b8") : "rgba(255,255,255,0.12)"}`,
+        boxShadow: unlocked ? `0 10px 24px rgba(2,6,23,.28), inset 0 1px 0 rgba(255,255,255,.08)` : "inset 0 1px 0 rgba(255,255,255,.04)",
       }}>
       {isNew && (
         <span className="absolute -top-1 -right-1 z-10 px-1 rounded-md bg-red-500 text-white font-black leading-none"
@@ -348,7 +389,7 @@ function DexCell({ a, onTap, isNew }) {
       )}
       <div className={`px-badge ${unlocked ? rarityClass(a.rarity) : "locked"}`}>
         <div className={`px-tile ${unlocked ? "unlocked" : "locked"} ${isLegendary ? "legendary-shine" : ""}`}>
-          {isHidden ? "❓" : a.icon}
+          <AchievementArt achievement={a} size={50} locked={!unlocked} hidden={isHidden} />
         </div>
       </div>
       <div style={{ fontSize:"10px", fontWeight:700, color: unlocked ? "#e2e8f0" : "#94a3b8",
@@ -385,20 +426,21 @@ function RoundGrid({ cells, catLabel, onTap }) {
       </button>
       {open && (
         <div className="p-3 grid grid-cols-4 gap-2">
-          {cells.map(c => {
+          {cells.map((c, index) => {
             const rk = c.unlocked ? (RANK_STYLE[c.rank] || RANK_STYLE[0]) : null;
             const bg = c.unlocked ? (ROUND_BG[c.rank ?? 0] || ROUND_BG[0]) : ROUND_BG_LOCKED;
             return (
               <button key={c.id} onClick={() => onTap(c)}
-                className="round-cell aspect-square rounded-xl flex flex-col items-center justify-center gap-0.5 transition-transform active:scale-95"
+                className="dex-cell-card round-cell aspect-square rounded-xl flex flex-col items-center justify-center gap-1 transition-transform active:scale-95"
                 style={{
+                  animationDelay:`${Math.min(index, 12) * 32}ms`,
                   background: bg,
                   border: `2px solid ${c.unlocked ? (rk.ring + "aa") : "#1e293b"}`,
                   boxShadow: c.unlocked ? rk.glow : "none",
                 }}>
                 {c.unlocked ? (
                   <>
-                    <div className="text-2xl leading-none">{rk.icon}</div>
+                    <AchievementArt achievement={c} size={42} />
                     <div style={{ fontSize:"11px", fontWeight:800, color:"#fff", textShadow:"0 1px 3px rgba(0,0,0,.8)" }}>
                       第{c.round}屆
                     </div>
@@ -406,7 +448,7 @@ function RoundGrid({ cells, catLabel, onTap }) {
                   </>
                 ) : (
                   <>
-                    <div className="text-lg opacity-30">🔒</div>
+                    <AchievementArt achievement={c} size={42} locked />
                     <div style={{ fontSize:"10px", fontWeight:700, color:"rgba(255,255,255,.3)" }}>第{c.round}屆</div>
                   </>
                 )}
@@ -435,7 +477,7 @@ function DexDetailModal({ a, onClose }) {
 
   return (
     <div className="fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-6" onClick={onClose}>
-      <div className="rounded-3xl p-6 w-full max-w-xs text-center"
+      <div className="dex-modal-card rounded-3xl p-6 w-full max-w-xs text-center"
         style={{ background:"var(--bg-surface)", border:"1px solid var(--border-card)", boxShadow:"var(--shadow-elevated)" }}
         onClick={e => e.stopPropagation()}>
         <div className="mx-auto mb-4 w-20 h-20 rounded-2xl flex items-center justify-center text-5xl"
@@ -444,7 +486,7 @@ function DexDetailModal({ a, onClose }) {
             border: `3px solid ${unlocked ? (isRound ? rk?.ring : (rs?.ring || "#94a3b8")) : "rgba(255,255,255,0.12)"}`,
             filter: unlocked ? "none" : "grayscale(1) opacity(.4)",
           }}>
-          {isHidden ? "❓" : isRound ? (unlocked ? rk.icon : "🔒") : a.icon}
+          <AchievementArt achievement={a} size={76} locked={!unlocked} hidden={isHidden} />
         </div>
 
         <div className="font-black text-xl text-gray-100 mb-1">
@@ -491,7 +533,6 @@ function TieredDetailContent({ a, onClose }) {
   // 當前 tier 的稀有度樣式
   const currentRarity = p.currentTier ? p.currentTier.rarity : (a.rarity || "common");
   const rs = RARITY_STYLE[currentRarity] || RARITY_STYLE.common;
-  const currentIcon = p.currentTier ? p.currentTier.icon : a.icon;
   const currentName = p.currentTier ? p.currentTier.name : "尚未解鎖";
 
   // 激勵文字
@@ -518,7 +559,7 @@ function TieredDetailContent({ a, onClose }) {
 
   return (
     <div className="fixed inset-0 z-[70] bg-black/60 flex items-center justify-center p-6" onClick={onClose}>
-      <div className="rounded-3xl p-6 w-full max-w-xs text-left"
+      <div className="dex-modal-card rounded-3xl p-6 w-full max-w-xs text-left"
         style={{ background:"var(--bg-surface)", border:"1px solid var(--border-card)", boxShadow:"var(--shadow-elevated)" }}
         onClick={e => e.stopPropagation()}>
 
@@ -530,12 +571,12 @@ function TieredDetailContent({ a, onClose }) {
               border: `2px solid ${p.currentTierIndex >= 0 ? rs.ring : "rgba(255,255,255,0.12)"}`,
               boxShadow: p.currentTierIndex >= 0 ? rs.glow : "none",
             }}>
-            {currentIcon}
+            <AchievementArt achievement={a} size={60} locked={p.currentTierIndex < 0} />
           </div>
           <div className="flex-1 min-w-0">
             <div className="font-black text-lg text-gray-100 truncate">{a.name}</div>
             <div className="flex items-center gap-2 mt-0.5">
-              <span className="text-sm">{currentIcon}</span>
+              <AchievementArt achievement={a} size={20} locked={p.currentTierIndex < 0} />
               <span className="text-sm font-bold truncate" style={{ color: rarityLabelColor(currentRarity) }}>
                 {currentName}
               </span>
@@ -551,7 +592,7 @@ function TieredDetailContent({ a, onClose }) {
         <div className="mb-3">
           <div className="relative h-2.5 bg-white/10 rounded-full overflow-hidden">
             <div
-              className={`h-full rounded-full bg-gradient-to-r ${rarityProgressClass} transition-all duration-700 ease-out`}
+              className={`dex-progress-fill h-full rounded-full bg-gradient-to-r ${rarityProgressClass} transition-all duration-700 ease-out`}
               style={{ width: `${p.progress.percent}%` }}
             />
             {/* 里程碑圓點標記 */}
@@ -632,7 +673,7 @@ function TieredDetailContent({ a, onClose }) {
                     {isNext ? "▶" : isDone ? "✅" : "🔒"}
                   </div>
                   {/* tier 圖示 */}
-                  <div className="text-lg flex-shrink-0">{t.icon}</div>
+                  <AchievementArt achievement={{ ...a, id:`${a.id}#${i}` }} size={26} locked={!isDone} />
                   {/* 名稱 */}
                   <div className="flex-1 min-w-0">
                     <div className="font-bold text-gray-200 text-xs truncate">{t.name}</div>

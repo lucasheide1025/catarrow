@@ -47,6 +47,19 @@ describe("planDungeonRoundAbility", () => {
     expect(JSON.parse(JSON.stringify(plan))).toEqual(plan);
   });
 
+  test("怪物技能異常按每位玩家自己的抗性判定並保存演出結果", () => {
+    const plan=planDungeonRoundAbility({
+      battleId:"dungeon:resist",monster:examT1Boss,round:2,
+      participants:[
+        member("plain",{arrows:["M","M","M","M","M","M"]}),
+        member("resist",{arrows:["M","M","M","M","M","M"],statusResistance:{statusStrengthReductionPct:50,statusDurationReduction:1}}),
+      ],monsterAtk:examT1Boss.atk,monsterHpRatio:0.6,calcCounter,
+    });
+    expect(plan.statusResultsByMember.plain[0].outcome).toBe("applied");
+    expect(plan.statusResultsByMember.resist[0].outcome).toBe("resisted");
+    expect(plan.statusesByMember.resist[0].strength).toBeLessThan(plan.statusesByMember.plain[0].strength);
+  });
+
   test("舊 60 隻怪（無 signatureSkillId）完全不出招", () => {
     const plan = planDungeonRoundAbility({
       battleId: "dungeon:r1", monster: { id: "ghost_1", name: "舊怪", atk: 20 },
@@ -161,5 +174,11 @@ describe("異常 tick", () => {
       { id: "defDown", strength: 5, duration: 1 },
     ]);
     expect(mods).toEqual({ atkPct: 15, defPct: 5 });
+  });
+  test("七族恐懼與破甲沿用 ATK/DEF 減幅，流血會造成不致死傷害", () => {
+    expect(getStatusStatMods([{id:"fear",strength:20,duration:1},{id:"armorBreak",strength:15,duration:1}])).toEqual({atkPct:20,defPct:15});
+    const result=tickDungeonStatuses({a:[{id:"bleed",strength:5,duration:2}]},{a:10},{a:100});
+    expect(result).toMatchObject({memberHP:{a:5},poisonDamage:{a:5}});
+    expect(result.statuses.a[0].duration).toBe(1);
   });
 });

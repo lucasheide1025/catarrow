@@ -5,6 +5,8 @@ import { createPartyRoom, joinPartyRoom, subscribeOpenPartyRooms, cleanupStalePa
 import { subscribePracticeLogs } from "../../lib/db";
 import { archerLevelFromXP } from "../../lib/archerLevel";
 import BattleRecords from "../member/BattleRecords";
+import { getFreeHuntMonsterById } from "../../lib/freeHuntCatalog";
+import { filterPartyLobbyRooms } from "../../lib/partyLobbyRooms";
 
 const TYPE_OPTIONS = [
   {
@@ -21,9 +23,9 @@ const TYPE_OPTIONS = [
 
 // guestOverride = { id, name } — 訪客模式時傳入，覆蓋 profile
 // battleOnly — 訪客模式只顯示打怪選項（不顯示日常任務）
-export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleOnly }) {
+export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleOnly, presetMonster = null, fixedMonsterId = null, initialTab = "create" }) {
   const { profile } = useAuth();
-  const [tab, setTab]         = useState("create"); // "create" | "join"
+  const [tab, setTab]         = useState(initialTab === "join" ? "join" : "create"); // "create" | "join"
   const [selType, setSelType] = useState("battle");
   const [loading, setLoading] = useState(false);
   const [err, setErr]         = useState("");
@@ -33,6 +35,13 @@ export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleO
   const myName = guestOverride?.name || profile?.nickname || profile?.name || "射手";
   const isGuestMode = !!guestOverride || ["guest", "kid"].includes(profile?.accountType);
   const [partyLogs, setPartyLogs] = useState([]);
+  const huntMonsterId = fixedMonsterId || presetMonster?.id || null;
+  const fixedMonster = presetMonster || getFreeHuntMonsterById(huntMonsterId);
+  const visibleRooms = filterPartyLobbyRooms(openRooms, { huntMonsterId, tab });
+
+  useEffect(() => {
+    setTab(initialTab === "join" ? "join" : "create");
+  }, [initialTab, fixedMonsterId]);
 
   useEffect(() => {
     if (!myId || isGuestMode) return;
@@ -54,6 +63,21 @@ export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleO
     const res = await createPartyRoom(myId, myName, selType, {
       accountType: isGuestMode ? (guestOverride?.accountType || "guest") : (profile?.accountType || "official"),
       level: isGuestMode ? 1 : archerLevelFromXP(profile?.archerXP || 0),
+      huntMonsterId: huntMonsterId,
+      monsterId: huntMonsterId,
+      monsterSnapshot: fixedMonster ? {
+        id: fixedMonster.id,
+        name: fixedMonster.name,
+        icon: fixedMonster.icon || "👾",
+        hp: Number(fixedMonster.hp) || 1,
+        atk: Number(fixedMonster.atk) || 0,
+        def: Number(fixedMonster.def) || 0,
+        tier: fixedMonster.tier,
+        tierIndex: Number(fixedMonster.tierIndex) || null,
+        family: fixedMonster.family,
+        encounter: fixedMonster.encounter,
+        artKey: fixedMonster.artKey || null,
+      } : null,
     });
     setLoading(false);
     if (res.ok) onEnterRoom(res.roomId, selType, true);
@@ -119,30 +143,38 @@ export default function PartyLobby({ onEnterRoom, onBack, guestOverride, battleO
               </button>
             ))}
 
-            <button onClick={handleCreate} disabled={loading}
+            {fixedMonster && (
+              <div className="rounded-2xl border border-violet-400/30 bg-violet-500/10 p-3">
+                <div className="text-[11px] font-black tracking-widest text-violet-300">狩獵目標已鎖定</div>
+                <div className="mt-1 font-black text-white">{fixedMonster.icon || "👾"} {fixedMonster.name} ・ T{fixedMonster.tierIndex}</div>
+              </div>
+            )}
+            <button onClick={handleCreate} disabled={loading || (!!huntMonsterId && !fixedMonster)}
               className="mt-1 w-full py-4 bg-gradient-to-r from-amber-400 to-orange-500 text-slate-900 font-black text-base rounded-2xl shadow-lg active:scale-95 transition-transform disabled:opacity-50">
               {loading ? "建立中…" : "🚀 建立房間，揪人打怪"}
             </button>
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            <div className="text-xs font-black text-slate-400 tracking-widest uppercase px-1">🏠 開放中的隊伍（{openRooms.length}）</div>
-            {openRooms.length === 0 ? (
+            <div className="text-xs font-black text-slate-400 tracking-widest uppercase px-1">🏠 開放中的隊伍（{visibleRooms.length}）</div>
+            {visibleRooms.length === 0 ? (
               <div className="rounded-2xl bg-white/5 border border-dashed border-white/15 p-8 text-center">
                 <div className="text-3xl mb-2 animate-pulse">🔍</div>
                 <div className="text-slate-400 text-sm">目前沒有開放的隊伍</div>
                 <div className="text-slate-600 text-xs mt-1">建立一個揪人吧！</div>
               </div>
-            ) : openRooms.map(r => {
+            ) : visibleRooms.map(r => {
               const memberCount = Object.keys(r.members || {}).length;
               const hostName    = r.members?.[r.hostId]?.name || "未知";
               const typeInfo    = TYPE_OPTIONS.find(t => t.id === r.type);
+              const roomMonster = r.monsterSnapshot || getFreeHuntMonsterById(r.monsterId || r.huntMonsterId);
               const full        = memberCount >= 8;
               return (
                 <div key={r.id} className="rounded-2xl border border-amber-500/20 bg-slate-900/75 p-3 shadow-xl backdrop-blur flex items-center gap-3">
                   <div className="w-11 h-11 rounded-xl bg-slate-950/60 border border-white/10 flex items-center justify-center text-xl shrink-0">{typeInfo?.icon || "⚔️"}</div>
                   <div className="flex-1 min-w-0">
                     <div className="text-white font-black text-sm truncate">{hostName} 的隊伍</div>
+                    {roomMonster && <div className="text-violet-300 text-[11px] mt-0.5 truncate">🎯 T{roomMonster.tierIndex}・{roomMonster.name}</div>}
                     <div className="text-slate-400 text-[11px] mt-0.5">👤 {memberCount}/8 人等待中</div>
                   </div>
                   <button onClick={() => handleJoinRoom(r)} disabled={loading || full}

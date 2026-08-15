@@ -267,7 +267,7 @@ export default function DungeonExpeditionResult({
               {chestSummary.map(item => (
                 <div key={item.key} className="flex items-center justify-between rounded-xl px-3 py-2 bg-black/20">
                   <span className="text-sm text-slate-200">
-                    {item.icon} {item.family ? `${FAMILY_LABEL[item.family]?.label || item.family} ` : ""}{item.name}
+                    {item.icon} {item.family ? `${FAMILY_LABEL[item.family]?.label || "未知族系"} ` : ""}{item.name}
                   </span>
                   <span className="font-black text-amber-300">×{item.count}</span>
                 </div>

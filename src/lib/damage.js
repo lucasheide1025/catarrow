@@ -83,7 +83,7 @@ const PLAYER_PARTS = {
   vulnerable: { id:"vulnerable", name:"要害", icon:"⚡", mult:1.30 },
 };
 
-export function resolvePlayerCounter({ arrows = [], baseDamage = 0, maxHP = 0 }) {
+export function resolvePlayerCounter({ arrows = [], baseDamage = 0 }) {
   const scores = arrows.map(arrow => Number(arrow?.score) || (arrow?.label === "X" ? 10 : 0));
   const averageScore = scores.length ? scores.reduce((sum, score) => sum + score, 0) / scores.length : 0;
   const pool = averageScore >= 9 ? ["arm", "belly"]
@@ -91,9 +91,8 @@ export function resolvePlayerCounter({ arrows = [], baseDamage = 0, maxHP = 0 })
     : averageScore >= 5 ? ["belly", "chest", "neck"]
     : ["chest", "neck", "vulnerable"];
   const part = PLAYER_PARTS[pool[Math.floor(Math.random() * pool.length)]];
-  const uncappedDamage = Math.max(0, Math.round(baseDamage * part.mult));
-  const cap = Math.max(0, Math.floor((Number(maxHP) || 0) * 0.25));
-  return { averageScore, part, damage:cap > 0 ? Math.min(uncappedDamage, cap) : uncappedDamage, cap };
+  const damage = Math.max(0, Math.round(baseDamage * part.mult));
+  return { averageScore, part, damage };
 }
 
 /**

@@ -8,7 +8,7 @@ import { WB_CARDS } from "./worldBossCards";
 
 // cardBonus: calcEquippedBonus(resolveEquippedCards(cardCollection)) 的結果，未傳入視為 0 加成
 // （地下城遠征系統本來完全沒有串接卡片系統，2026-07-09 補上，見 quick-ref.md「世界王 Phase 2」）
-export function buildExpeditionMemberData(profile, cardBonus = null, cardCollection = null) {
+export function buildExpeditionMemberData(profile, cardBonus = null, cardCollection = null, statusResistance = null, catModifiers = null) {
   const base = calcArcherStats({
     member: profile,
     certification: null,
@@ -49,16 +49,23 @@ export function buildExpeditionMemberData(profile, cardBonus = null, cardCollect
     catName: equippedCat?.name || "",
     catType: equippedCat?.type || "",
     catXP: equippedCat?.catXP || 0,
-    catBond: equippedCat?.bond || 0,
+    catBond: catStats?.bondLv || 0,
+    catLevel: catStats?.catLevel || 1,
     catAtk: catStats?.catATK || 0,
+    catMaxHP: catStats?.catHP || 0,
+    catDef: catStats?.catDEF || 0,
     wbBonus: {
       effectVersion:2, equippedCardKeys:wbKeys,
       dmgBonusPct:cb.dmgBonusPct || 0,
       dmgReducePct:cb.dmgReducePct || 0,
       healBonusPct:cb.healBonusPct || 0,
+      familyDamageBonusPct:{...(cb.familyDamageBonusPct||{})},
+      familyDamageReducePct:{...(cb.familyDamageReducePct||{})},
     },
     avatarId: profile?.avatarId || null,
     battleCosmetics,
+    statusResistance:statusResistance || null,
+    catModifiers:catModifiers || null,
   };
 }
 
@@ -93,9 +100,14 @@ export function buildExpeditionBattleMemberSnapshot({ memberName, memberData = {
     catType:memberData.catType || "",
     catXP:memberData.catXP ?? 0,
     catBond:memberData.catBond ?? 0,
+    catLevel:memberData.catLevel ?? 1,
+    catMaxHP:memberData.catMaxHP ?? 0,
+    catDef:memberData.catDef ?? 0,
     archerStyle:memberData.archerStyle || "baobao",
     catAtk:memberData.catAtk ?? 0,
     wbBonus:memberData.wbBonus || null,
     avatarId:memberData.avatarId || null,
+    statusResistance:memberData.statusResistance || null,
+    catModifiers:memberData.catModifiers || null,
   };
 }

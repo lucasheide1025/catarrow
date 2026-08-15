@@ -58,3 +58,12 @@ backup_*.json
 restore.js
 backup.js
 .tmp-dev*
+
+# Deployment / hotfix scratch work — never enter a Vercel source package
+.deploy-*
+.hotfix-*
+hotfix-prebuilt/
+hotfix-overlay/
+build-prepared-shop-hotfix.mjs
+
+.coding-tools/

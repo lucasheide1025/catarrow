@@ -239,7 +239,7 @@ export default function DungeonTeamLobby({
                       color: diff?.color || "#94a3b8",
                     }}
                   >
-                    {diff?.icon} {diff?.label} (T{dungeonDiffLevel})
+                    {diff?.icon} {diff?.label}（第 {dungeonDiffLevel} 階）
                   </span>
                   <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-500/20 border border-amber-400/40 text-amber-300">
                     🎰 寶箱掉落 ×{lootMult} 倍率
@@ -358,9 +358,9 @@ export default function DungeonTeamLobby({
 
                   {/* HP / ATK / DEF 一排 */}
                   <div className="grid grid-cols-3 gap-1">
-                    <div className="rounded-lg bg-slate-950/60 border border-slate-800 px-1 py-0.5 text-center"><div className="text-[8px] text-slate-400 font-bold">HP</div><div className="text-[11px] font-black text-emerald-400 leading-tight">{m.maxHP || "?"}</div></div>
-                    <div className="rounded-lg bg-slate-950/60 border border-slate-800 px-1 py-0.5 text-center"><div className="text-[8px] text-slate-400 font-bold">ATK</div><div className="text-[11px] font-black text-rose-400 leading-tight">{m.atk || "?"}</div></div>
-                    <div className="rounded-lg bg-slate-950/60 border border-slate-800 px-1 py-0.5 text-center"><div className="text-[8px] text-slate-400 font-bold">DEF</div><div className="text-[11px] font-black text-sky-400 leading-tight">{m.def || "?"}</div></div>
+                    <div className="rounded-lg bg-slate-950/60 border border-slate-800 px-1 py-0.5 text-center"><div className="text-[8px] text-slate-400 font-bold">生命</div><div className="text-[11px] font-black text-emerald-400 leading-tight">{m.maxHP || "?"}</div></div>
+                    <div className="rounded-lg bg-slate-950/60 border border-slate-800 px-1 py-0.5 text-center"><div className="text-[8px] text-slate-400 font-bold">攻擊</div><div className="text-[11px] font-black text-rose-400 leading-tight">{m.atk || "?"}</div></div>
+                    <div className="rounded-lg bg-slate-950/60 border border-slate-800 px-1 py-0.5 text-center"><div className="text-[8px] text-slate-400 font-bold">防禦</div><div className="text-[11px] font-black text-sky-400 leading-tight">{m.def || "?"}</div></div>
                   </div>
 
                   {/* 貓 + Ready */}

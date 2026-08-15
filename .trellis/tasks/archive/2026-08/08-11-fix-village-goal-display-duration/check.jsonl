@@ -1,5 +1,0 @@
-{"file":".trellis/spec/frontend/index.md","reason":"Frontend package quality checklist"}
-{"file":".trellis/spec/frontend/cat-village-gathering.md","reason":"Review village goal and gathering contribution behavior"}
-{"file":".trellis/spec/frontend/state-management.md","reason":"Review Firestore retry and client state boundaries"}
-{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Review tests and code quality"}
-{"file":".trellis/spec/frontend/type-safety.md","reason":"Review legacy compatibility and normalization"}

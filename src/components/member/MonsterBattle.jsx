@@ -34,7 +34,7 @@ import { resolveSoloMonsterAbility } from "../../lib/soloMonsterAbilityEngine";
 import { calcStandardCounter } from "../../lib/damage";
 import { MATERIAL_BY_ID as EXPANSION_MATERIAL_BY_ID } from "../../lib/monsterEconomyCatalog";
 import { calcCardCombatEffectsFromCollection } from "../../lib/cardTalents";
-import { SOLO_CHALLENGE_LEVELS, applyChallengeLevel } from "../../lib/monsterExpansionAdapter";
+import { SOLO_CHALLENGE_LEVELS, applyChallengeLevel, applySoloVariant, selectVariant } from "../../lib/monsterExpansionAdapter";
 import { sfxEpic, sfxBattleIntro, sfxVictoryFanfare, sfxSuccess, sfxTap, sfxSoftFail, sfxCast, sfxBuff, sfxDebuff, sfxArrowHit, sfxCritBoom, sfxOrganHit, sfxCounter, sfxCounterCrit, sfxMonsterDead, sfxRevive, sfxRoundEnd, sfxPotionDrink, unlockAudio, vibrate } from "../../lib/sound";
 import BattleCard from "./BattleCard";
 import MonsterSVG, { MonsterBattleImg } from "../MonsterSVG";
@@ -53,6 +53,12 @@ import { createMonsterBattleSnapshot, normalizeMonsterBattleSnapshot } from "../
 import { isMonsterExpansionEnabled } from "../../lib/monsterExpansionFeature";
 import { buildSoloExpansionReward, normalizeSoloRewardMaterials } from "../../lib/soloRewardEngine";
 import { claimMonsterBattleReward, flushPendingMonsterBattleRewards } from "../../lib/monsterRewardDb";
+import { getFreeHuntBattleMonster } from "../../lib/freeHuntCatalog";
+import { FREE_HUNT_FACES, FREE_HUNT_DISTANCES, getFreeHuntEnvironment } from "../../lib/freeHuntEnvironment";
+import { writeHuntBattleResume, clearHuntBattleResume } from "../../lib/huntBattleResume";
+import { createSyncingReceipt, normalizeBattleRewardReceipt } from "../../lib/battleRewardReceipt";
+import HuntBattleReport from "../battle/HuntBattleReport";
+import { gradeArcheryPerformance } from "../../lib/archeryGrade";
 
 // 向後相容 alias（逐步取代為直接使用 labelToValue / calcArrowStats）
 const arrowLabelToVal = labelToValue;
@@ -121,14 +127,17 @@ function loadMbDefaults() {
 function saveMbDefaults(obj) {
   localStorage.setItem("mb_defaults", JSON.stringify(obj));
 }
+function mergeMbDefaults(next) {
+  saveMbDefaults({ ...(loadMbDefaults() || {}), ...next });
+}
 
-export default function MonsterBattle({ onBack, isGuest = false, kidMode = false, guestProfile = null, questContext = null, onKillForQuest = null, onImmersiveChange = null, monsterDex = {}, craftStats = {}, chestStats = {}, potionDex = {}, duelStats = null, sharedData }) {
+export default function MonsterBattle({ onBack, isGuest = false, kidMode = false, guestProfile = null, questContext = null, huntMonsterId = null, autoResumeBattle = false, onKillForQuest = null, onImmersiveChange = null, monsterDex = {}, craftStats = {}, chestStats = {}, potionDex = {}, duelStats = null, sharedData }) {
   const { profile: authProfile } = useAuth();
   const profile = guestProfile || authProfile;
   const checkinActive = useCheckinActive(isGuest ? null : profile?.id);
   // 僅 kid（QR/一次性）才限制獎勵與功能；guest（有記憶的訪客）比照正式會員
   const isLimitedAccount = false; // 訪客/兒童皆比照正式會員
-  const { hasCat, catName, catId, catMsg, clearCatMsg, triggerCatAction, saveBond, saveXP, calcCatRoundDamage, triggerCatSkill, catHP: catMaxHP, catDEF: catBaseDEF } = useCatCompanion(isGuest ? profile : null);
+  const { equippedCat, hasCat, catName, catId, catMsg, clearCatMsg, triggerCatAction, saveBond, saveXP, catHP: catMaxHP } = useCatCompanion(isGuest ? profile : null);
   const [phase, setPhase]           = useState("select");
   const [archerStyle, setArcherStyle]               = useState(() => localStorage.getItem("mb_archer_style") || "");
   const [archerSelectReturn, setArcherSelectReturn] = useState("select");
@@ -191,6 +200,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   const [droppedCoins,    setDroppedCoins]     = useState(0);
   const [droppedCard,     setDroppedCard]      = useState(null);
   const [droppedCoinChest, setDroppedCoinChest] = useState(null);
+  const [rewardReceipt, setRewardReceipt] = useState(null);
   const [gainedXP,        setGainedXP]        = useState(0);
   const [gainedArcherXP,  setGainedArcherXP]  = useState(0);
   const [gainedCatXP,     setGainedCatXP]     = useState(0);
@@ -250,6 +260,35 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   const [scoringModeChosen, setScoringModeChosen]     = useState(false);
   const [distanceMode, setDistanceMode]       = useState(() => loadMbDefaults()?.distanceMode || "fixed");
   const [selectedDistance, setSelectedDistance] = useState(() => loadMbDefaults()?.selectedDistance || 15);
+  const [shootingBowType, setShootingBowType] = useState(() => loadBattleShootingProfile(profile?.id || "guest")?.bowType || "recurve_bare");
+  const huntEnvironment = getFreeHuntEnvironment({ distanceM:selectedDistance, targetFmt, bowType:shootingBowType });
+
+  // Free Hunt 已有獨立怪物選擇器；固定狩獵戰鬥永遠不能回到 MonsterBattle 的舊 select 畫面。
+  const returnToOpponentSelection = useCallback(() => {
+    if (huntMonsterId) {
+      onBack?.();
+      return;
+    }
+    setPhase("select");
+  }, [huntMonsterId, onBack]);
+
+  useEffect(() => {
+    const next = loadBattleShootingProfile(profile?.id || "guest");
+    shootingProfileRef.current = next;
+    setShootingBowType(next?.bowType || "recurve_bare");
+  }, [profile?.id]);
+
+  useEffect(() => {
+    if (!huntMonsterId) return;
+    const saved = loadMbDefaults() || {};
+    const nextDistance = FREE_HUNT_DISTANCES.includes(Number(saved.selectedDistance)) ? Number(saved.selectedDistance) : 10;
+    const nextFmt = FREE_HUNT_FACES.some(face => face.id === targetFmt) ? targetFmt : "half_17";
+    setDistanceMode("fixed");
+    setSelectedDistance(nextDistance);
+    setTargetFmt(nextFmt);
+    setBattleTargetFmt(nextFmt);
+    mergeMbDefaults({ selectedDistance:nextDistance, distanceMode:"fixed", targetFmt:nextFmt });
+  }, [huntMonsterId]);
   const [eventConfig, setEventConfig]         = useState(null); // 賽事模式設定
   const [eventMode, setEventMode]             = useState(false); // 是否走賽事流程
   const logEndRef = useRef(null);
@@ -337,6 +376,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
 
   // 任務模式：archerStats 就緒後直接跳到 prebattle，跳過選怪
   const questInitDone = useRef(false);
+  const huntInitDone = useRef(false);
   useEffect(() => {
     if (questInitDone.current) return;
     if (!questContext?.monsterId || !archerStats) return;
@@ -348,6 +388,22 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     setBattleBg(pickBg(target.family));
     setPhase("prebattle");
   }, [questContext?.monsterId, archerStats, phase, archerStyle]); // eslint-disable-line
+
+  useEffect(() => {
+    if (questContext?.monsterId || huntInitDone.current) return;
+    if (!huntMonsterId || !archerStats) return;
+    // 返回／重整同一場自由狩獵時，怪物快照（含 weak/normal/strong 與實際倍率）是權威資料。
+    // 禁止初始化 effect 先抽新個體；由下方 restoreBattle 完整恢復原戰鬥。
+    if (autoResumeBattle && savedBattle?.huntMonsterId === huntMonsterId && savedBattle?.monster?.id === huntMonsterId) return;
+    const baseTarget = getFreeHuntBattleMonster(huntMonsterId);
+    const target = baseTarget ? applySoloVariant(baseTarget, selectVariant(), Math.random()) : null;
+    if (!target) return;
+    huntInitDone.current = true;
+    setPickedMonster(target);
+    setMonster(target);
+    setBattleBg(pickBg(target.family));
+    setPhase("prebattle");
+  }, [huntMonsterId, archerStats, questContext?.monsterId, autoResumeBattle, savedBattle]);
 
     // ✅ 戰鬥進行中自動存檔，防止頁面重載後遺失進度
   useEffect(() => {
@@ -365,10 +421,12 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
       arrowsPerRound, targetFmt, targetMode,
       battleSessionId: battleSessionIdRef.current,
       runtimeSnapshot: battleRuntimeSnapshot,
+      huntMonsterId:huntMonsterId || null,
       activeCarryBuffs, potionShield, monsterDmgTakenPct, counterReducePct, poisonEffect,
       log: log.slice(-8),
     });
     try { sessionStorage.setItem("mb_battle_save", JSON.stringify(save)); } catch {}
+    if (huntMonsterId) writeHuntBattleResume(huntMonsterId);
   }, [phase, monsterHP, archerHP, round, arrowsPerRound, targetFmt, targetMode, battleRuntimeSnapshot]); // eslint-disable-line
 
   useEffect(() => {
@@ -444,7 +502,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
       }).catch(error => console.warn("monster expansion matcher unavailable", error));
     }
     // 只在選怪階段才重置選取；任務模式已由 questInitDone 鎖定，不能清空
-    if (!questInitDone.current && (phaseRef.current === "select" || phaseRef.current === "event_select")) {
+    if (!questInitDone.current && !huntInitDone.current && (phaseRef.current === "select" || phaseRef.current === "event_select")) {
       setPickedMonster(null);
     }
     return () => { cancelled = true; };
@@ -616,12 +674,14 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
 
   function restoreBattle(s) {
     s = normalizeMonsterBattleSnapshot(s);
+    huntInitDone.current = true;
+    setPickedMonster(s.monster);
     setMonster(s.monster);
     setBattleBg(pickBg(s.monster?.family));
     setMode(s.mode || "student");
     setBattleMode(s.battleMode || "score");
     setArrowsPerRound([3, 6].includes(s.arrowsPerRound) ? s.arrowsPerRound : 6);
-    if (["full_110", "half_610", "field_16"].includes(s.targetFmt)) {
+    if (["full_110", "half_610", "half_17", "field_16", "triple"].includes(s.targetFmt)) {
       setTargetFmt(s.targetFmt);
       setBattleTargetFmt(s.targetFmt);
     }
@@ -652,6 +712,14 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     sessionStorage.removeItem("mb_battle_save");
     setShowRestorePrompt(false);
   }
+
+  const autoResumeHandledRef = useRef(false);
+  useEffect(() => {
+    if (!autoResumeBattle || !savedBattle || autoResumeHandledRef.current) return;
+    autoResumeHandledRef.current = true;
+    restoreBattle(savedBattle);
+  // restoreBattle intentionally consumes the mount-time snapshot exactly once.
+  }, [autoResumeBattle, savedBattle]);
 
   async function startBattle() {
     setBattleRuntimeSnapshot(null);
@@ -721,7 +789,9 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     shootingProfileRef.current = null;
     setLog([
       { type:"system", text:`⚔️ ${boostedMonster.icon} ${boostedMonster.name}【${TIER_LABEL[boostedMonster.tier]?.label}】 出現！做好準備，戰鬥開始！` },
-      { type:"system", text:`🎯 ${"分數靶紙"}　${mode==="veteran"?`⚠️ 老手（HP:${boostedMonster.hp} ATK:${boostedMonster.atk} DEF:${boostedMonster.def}）`:mode==="student"?"🎓 學生模式":"🟢 新手模式"}　距離 ${initDist}米` },
+      { type:"system", text:huntMonsterId
+        ? `🧭 狩獵環境：${huntEnvironment.faceLabel} ×${huntEnvironment.faceMult.toFixed(2)}・${initDist}米 ×${huntEnvironment.distanceMult.toFixed(2)} → 環境倍率 ×${huntEnvironment.multiplier.toFixed(2)}`
+        : `🎯 ${"分數靶紙"}　${mode==="veteran"?`⚠️ 老手（HP:${boostedMonster.hp} ATK:${boostedMonster.atk} DEF:${boostedMonster.def}）`:mode==="student"?"🎓 學生模式":"🟢 新手模式"}　距離 ${initDist}米` },
       ...buffs.used.map(p=>({ type:"event_good", text:`⚗️ 使用 ${p.icon}「${p.name}」：${p.effectText}！` })),
       ...(throwDmgTotal>0?[{type:"event_bad", text:`💥 投擲命中！怪物直接失去 ${throwDmgTotal} HP！`}]:[]),
       ...(mode==="veteran"&&distanceMode==="dynamic"?[{type:"system",text:"📍 每回合結束後怪物逼近，隨機縮短 1~5 米！"}]:[]),
@@ -1058,7 +1128,10 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
 
         {/* 計分設定 */}
         <div style={{ background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:12, padding:"12px 14px", display:"flex", flexDirection:"column", gap:12 }}>
-          <BattleShootingProfile memberId={profile?.id || "guest"} />
+          <BattleShootingProfile memberId={profile?.id || "guest"} onChange={next => {
+            shootingProfileRef.current = next;
+            setShootingBowType(next?.bowType || "recurve_bare");
+          }} />
           <TargetFmtPicker value={targetFmt} onChange={v => { setTargetFmt(v); setBattleTargetFmt(v); }} />
           <InputModePicker value={targetMode ? "target" : "button"} onChange={v => { const t = v === "target"; setTargetMode(t); setBattleInputMode(v); }} />
         </div>
@@ -1232,7 +1305,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     return (
       <div className="p-4 flex flex-col gap-4 bg-slate-900 min-h-screen">
         <style>{BATTLE_CSS}</style>
-        <button onClick={() => { setEventMode(false); setPhase("select"); }} className="text-slate-400 text-sm self-start">← 返回</button>
+        <button onClick={() => { setEventMode(false); returnToOpponentSelection(); }} className="text-slate-400 text-sm self-start">← 返回</button>
 
         <div className="rounded-2xl p-4 text-white" style={{ background:"linear-gradient(135deg,#92400e,#b45309)" }}>
           <div className="text-xs font-black tracking-widest text-amber-200 mb-1">🏆 賽事模式</div>
@@ -1317,7 +1390,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     return (
       <div className="p-4 flex flex-col gap-4 bg-slate-900 min-h-screen">
         <style>{BATTLE_CSS}</style>
-        <button onClick={()=>setPhase("select")} className="text-slate-400 text-sm self-start">← 返回</button>
+        <button onClick={returnToOpponentSelection} className="text-slate-400 text-sm self-start">← 返回</button>
         <div className="text-white font-black text-xl text-center">選擇靶紙模式</div>
         <button onClick={()=>{ setBattleMode("score"); setMode("student"); setPhase("distance"); }}
           className="rounded-2xl p-5 text-left border-2 border-blue-500/40 bg-blue-900/20 active:scale-95 transition-transform">
@@ -1496,7 +1569,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     return (
       <div className="p-4 flex flex-col gap-4 bg-slate-900 min-h-screen">
         <style>{BATTLE_CSS}</style>
-        <button onClick={() => setPhase(eventMode ? "event_select" : loadMbDefaults() ? "select" : "distance")} className="text-slate-400 text-sm self-start">← 返回</button>
+        <button onClick={() => huntMonsterId ? onBack?.() : setPhase(eventMode ? "event_select" : loadMbDefaults() ? "select" : "distance")} className="text-slate-400 text-sm self-start">← 返回</button>
         <div className="rounded-2xl p-6 text-white text-center" style={{ background:"linear-gradient(135deg,#7c3aed,#1e3a8a)" }}>
           <div className="mb-2 flex justify-center" style={{ animation:"mb-bounce 1.5s ease infinite" }}>
             <MonsterBattleImg id={pickedMonster.id} icon={pickedMonster.icon} size={192}/>
@@ -1514,9 +1587,9 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
               {pickedMonster.counterSummary && <div className="text-emerald-300 text-xs mt-1.5">破解提示：{pickedMonster.counterSummary}</div>}
             </div>
           )}
-          {mode==="veteran"&&<div className="bg-orange-500/30 text-orange-200 text-xs font-bold px-3 py-1.5 rounded-full mb-3 inline-block">⚠️ 老手：數值增強，HP基礎 200，加成無上限</div>}
-          {mode==="student"&&<div className="bg-blue-500/30 text-blue-100 text-xs font-bold px-3 py-1.5 rounded-full mb-3 inline-block">🎓 學生模式：{distanceMode==="dynamic"?"動態距離從15米起":distanceMode==="random"?`隨機距離 ${selectedDistance}米`:`固定 ${selectedDistance}米`}</div>}
-          {mode==="novice"&&<div className="bg-green-500/30 text-green-100 text-xs font-bold px-3 py-1.5 rounded-full mb-3 inline-block">🟢 新手模式：固定 {selectedDistance}米</div>}
+          {!huntMonsterId&&mode==="veteran"&&<div className="bg-orange-500/30 text-orange-200 text-xs font-bold px-3 py-1.5 rounded-full mb-3 inline-block">⚠️ 老手：數值增強，HP基礎 200，加成無上限</div>}
+          {!huntMonsterId&&mode==="student"&&<div className="bg-blue-500/30 text-blue-100 text-xs font-bold px-3 py-1.5 rounded-full mb-3 inline-block">🎓 學生模式：{distanceMode==="dynamic"?"動態距離從15米起":distanceMode==="random"?`隨機距離 ${selectedDistance}米`:`固定 ${selectedDistance}米`}</div>}
+          {!huntMonsterId&&mode==="novice"&&<div className="bg-green-500/30 text-green-100 text-xs font-bold px-3 py-1.5 rounded-full mb-3 inline-block">🟢 新手模式：固定 {selectedDistance}米</div>}
           {archerStats&&(()=>{
             const _lvBon=isLimitedAccount?{hp:0,atk:0,def:0}:archerLevelBonus(archerLevelFromXP(profile?.archerXP||0));
             const _cardBonus=isLimitedAccount?{hp:0,atk:0,def:0}:calcEquippedBonus(resolveEquippedCards(cardColl));
@@ -1537,10 +1610,68 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
             </div>
             );
           })()}
-          <div className="text-purple-200 text-xs mb-4">
+          {!huntMonsterId&&<div className="text-purple-200 text-xs mb-4">
             {"🎯 分數靶紙"}
             {mode==="veteran"?"⚔️ 老手・起始15米":mode==="student"?`🎓 學生・${distanceMode==="dynamic"?"動態15m起":`固定${selectedDistance}米`}`:`🟢 新手・固定${selectedDistance}米`}　🏹 {arrowsPerRound}箭／回合
-          </div>
+          </div>}
+
+          {huntMonsterId&&(
+            <div className="w-full rounded-2xl border border-cyan-400/25 bg-slate-950/45 p-4 mb-4 text-left">
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div>
+                  <div className="text-cyan-300 text-xs font-black tracking-[0.18em]">狩獵環境</div>
+                  <div className="text-white font-black text-lg mt-1">距離與靶紙會提高傷害倍率</div>
+                </div>
+                <div className="shrink-0 rounded-xl px-3 py-2 text-center" style={{background:"rgba(34,211,238,.12)",border:"1px solid rgba(34,211,238,.28)"}}>
+                  <div className="text-[10px] text-cyan-200/70">環境倍率</div>
+                  <div className="text-xl font-black text-cyan-300">×{huntEnvironment.multiplier.toFixed(2)}</div>
+                </div>
+              </div>
+
+              <div className="text-[11px] font-black text-slate-400 mb-2">靶紙</div>
+              <div className="grid grid-cols-2 gap-2 mb-4">
+                {FREE_HUNT_FACES.map(face => (
+                  <button key={face.id} type="button"
+                    onClick={() => { setTargetFmt(face.id); setBattleTargetFmt(face.id); mergeMbDefaults({ targetFmt:face.id, selectedDistance, distanceMode:"fixed" }); }}
+                    className={`rounded-xl border px-3 py-2.5 text-left transition-all ${targetFmt===face.id ? "border-cyan-400 bg-cyan-500/15 text-white" : "border-white/10 bg-white/5 text-slate-300"}`}>
+                    <div className="font-black text-sm">{face.label}</div>
+                    <div className="text-[11px] mt-0.5" style={{color:targetFmt===face.id?"#67e8f9":"#94a3b8"}}>靶紙 ×{face.mult.toFixed(2)}{face.maxArrowsPerFace ? `・每張限 ${face.maxArrowsPerFace} 箭` : ""}</div>
+                  </button>
+                ))}
+              </div>
+
+              <div className="text-[11px] font-black text-slate-400 mb-2">射擊距離</div>
+              <div className="grid grid-cols-7 gap-1.5 mb-4">
+                {FREE_HUNT_DISTANCES.map(d => {
+                  const env = getFreeHuntEnvironment({ distanceM:d, targetFmt });
+                  return (
+                    <button key={d} type="button"
+                      onClick={() => { setSelectedDistance(d); setDistanceMode("fixed"); mergeMbDefaults({ selectedDistance:d, distanceMode:"fixed", targetFmt }); }}
+                      className={`rounded-lg border py-2 text-center transition-all ${selectedDistance===d ? "border-amber-300 bg-amber-400/15 text-amber-200" : "border-white/10 bg-white/5 text-slate-400"}`}>
+                      <div className="font-black text-xs">{d}m</div>
+                      <div className="text-[9px] mt-0.5">×{env.distanceMult.toFixed(2)}</div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-xl bg-white/5 p-2 text-center">
+                  <div className="text-[10px] text-slate-500">距離</div>
+                  <div className="text-sm font-black text-amber-200">{selectedDistance}m ×{huntEnvironment.distanceMult.toFixed(2)}</div>
+                </div>
+                <div className="rounded-xl bg-white/5 p-2 text-center">
+                  <div className="text-[10px] text-slate-500">靶紙</div>
+                  <div className="text-sm font-black text-violet-200">×{huntEnvironment.faceMult.toFixed(2)}</div>
+                </div>
+                <div className="rounded-xl bg-cyan-500/10 p-2 text-center border border-cyan-400/20">
+                  <div className="text-[10px] text-cyan-200/70">最終</div>
+                  <div className="text-sm font-black text-cyan-300">×{huntEnvironment.multiplier.toFixed(2)}</div>
+                </div>
+              </div>
+              <div className="mt-2 text-center text-[11px] font-bold" style={{color:huntEnvironment.label.color}}>{huntEnvironment.label.text}</div>
+            </div>
+          )}
 
           {/* 外觀更換 - 使用大頭像 */}
           <button
@@ -1725,19 +1856,27 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
           scoreInput={targetMode ? "target" : "keypad"}
           targetFormat={targetFmt}
           difficulty={{hp:1, atk:1, def:1}}
+          outgoingDamageMultiplier={huntMonsterId ? huntEnvironment.multiplier : 1}
+          maxDamageArrowsPerFace={huntMonsterId ? huntEnvironment.faceCap : null}
           arrowsPerRound={arrowsPerRound}
           allies={[]}
-          cat={hasCat ? { catId, catName, type: "allround", catXP: 0, bond: 0 } : null}
+          cat={hasCat ? {
+            catId,
+            catName,
+            type: equippedCat?.type,
+            catXP: equippedCat?.catXP || 0,
+            bond: equippedCat?.bond || 0,
+            equip: equippedCat?.equip || {},
+          } : null}
           bgImage={battleBg}
           onBattleEnd={handleMBBattleEnd}
           hideStandaloneResult
           onShootingAbandon={handleMBShootingAbandon}
           onLeaveBattle={() => {
-            if (!window.confirm("確定要離開戰鬥嗎？本場未完成的進度不會保留。")) return false;
-            sessionStorage.removeItem("mb_battle_save");
+            if (!window.confirm("暫時離開戰鬥並返回狩獵頁嗎？本場進度會保留。")) return false;
             pendingPotionRef.current = [];
-            if (questContext) onBack?.();
-            else setPhase("select");
+            if (questContext || huntMonsterId) onBack?.();
+            else returnToOpponentSelection();
             return true;
           }}
           autoStart={!battleRuntimeSnapshot}
@@ -1755,6 +1894,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
 
   if (phase==="loot") {
     const stats=calcStats(allArrows);
+    const shootingGrade=gradeArcheryPerformance(allArrows, { targetFmt });
     const questDone = questContext?.completed === true;
     const qProgress = questContext
       ? { done: questContext.killsSoFar ?? 0, need: questContext.killsNeeded ?? 1 }
@@ -1803,6 +1943,26 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
         ),
       },
     };
+    if (huntMonsterId) return <HuntBattleReport
+      won
+      monster={monster}
+      stats={{
+        dmgDealt:totalDmgDealt,
+        roundCount:round,
+        arrowCount:stats?.count||0,
+        totalScore:stats?.total||0,
+        avgScore:stats?.avg||0,
+        hitRate:shootingGrade.hitRate,
+        grade:shootingGrade.grade,
+        performanceScore:shootingGrade.score,
+      }}
+      receipt={rewardReceipt}
+      onBack={onBack}
+      onToggleDetails={()=>setShowBattleCard(value=>!value)}
+      detailsOpen={showBattleCard}
+    >
+      <div style={{display:"grid",gap:7}}>{roundScores.map(entry=><div key={entry.round} style={{padding:9,borderRadius:10,background:"rgba(255,255,255,.04)",fontSize:11,color:"#cbd5e1"}}>第 {entry.round} 回合・{entry.total} 分</div>)}</div>
+    </HuntBattleReport>;
     return (
       <div className="p-4 flex flex-col gap-4 items-center bg-slate-900 min-h-screen">
         <style>{BATTLE_CSS}</style>
@@ -1970,7 +2130,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
             </>
           ) : (
             <>
-              <button onClick={()=>setPhase("select")} className="flex-1 py-3 rounded-xl bg-white/10 text-slate-300 font-bold">換對手</button>
+              <button onClick={returnToOpponentSelection} className="flex-1 py-3 rounded-xl bg-white/10 text-slate-300 font-bold">換對手</button>
               {(dailyLeft===null||dailyLeft>0)&&(
                 <button onClick={()=>{ const m=lastPickedRef.current; if(m) setPickedMonster(m); setPhase("prebattle"); }}
                   className="flex-1 py-3 rounded-xl font-black"
@@ -2006,7 +2166,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
           <div className="flex gap-2">
             {questContext
               ? <button onClick={onBack} className="flex-1 py-3 rounded-xl bg-indigo-500/20 text-indigo-300 font-bold">🏛️ 返回冒險者公會</button>
-              : <button onClick={()=>setPhase("select")} className="flex-1 py-3 rounded-xl bg-white/20 text-white font-bold">換對手</button>
+              : <button onClick={returnToOpponentSelection} className="flex-1 py-3 rounded-xl bg-white/20 text-white font-bold">換對手</button>
             }
             {(questContext||dailyLeft===null||dailyLeft>0)&&(
               <button onClick={()=>{ const m=lastPickedRef.current; if(m) setPickedMonster(m); setPhase("prebattle"); }}
@@ -2075,6 +2235,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
   async function handleMBBattleEnd(result, summary = {}) {
     if (battleEndHandledRef.current) return;
     battleEndHandledRef.current = true;
+    if (huntMonsterId) clearHuntBattleResume(sessionStorage, { clearBattle:true });
     // Sync battle stats from BattleScreen summary
     if (summary.totalDamage !== undefined) setTotalDmgDealt(summary.totalDamage);
     if (summary.crits !== undefined) setCritCount(summary.crits);
@@ -2116,7 +2277,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
           setGuestWonBefore(true);
         }
         setWonChests([]);
-      } else {
+      } else if (!huntMonsterId) {
         const { mainChest, potionChest } = makeChests(monster, mode);
         const mainChests = [mainChest, potionChest].filter(Boolean);
         setWonChests(mainChests);
@@ -2125,6 +2286,11 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
         const coinChest = Math.random() < coinChestChance ? makeCoinChest(monster?.tier, "打怪掉落") : null;
         if (coinChest) setDroppedCoinChest(coinChest);
         addChests(profile.id, [...mainChests, ...(coinChest ? [coinChest] : [])]).catch(() => {});
+      } else {
+        // 自由狩獵的素材箱／金幣箱／藥水箱由 claimMonsterBattleReward
+        // 在同一個冪等 transaction 入庫並回傳收據，前端不可再抽一次。
+        setWonChests([]);
+        setDroppedCoinChest(null);
       }
 
       // Materials + coins（掉落全查挑戰強度表:SOLO_CHALLENGE_LEVELS）
@@ -2141,6 +2307,8 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
           cardChance:rewardLevel.cardChance,
         });
         if (expansionReward) {
+          const claimId=[battleSessionIdRef.current,profile.id,"solo_hunt"].map(encodeURIComponent).join("~");
+          setRewardReceipt(createSyncingReceipt({claimId,battleId:battleSessionIdRef.current,mode:"solo"}));
           const displayMaterials = expansionReward.materials.map(material => ({
             ...material,
             // 中文名從素材目錄查（adapter 只帶 materialId,舊寫法會露出原始 id）
@@ -2159,6 +2327,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
               metadata:{ mode, challengeLevel:monster?.challengeLevel || challengeLevel, monsterId:monster.id, catalogVersion:1, source:"solo" },
             });
             const trustedReward = claimResult?.reward || {};
+            setRewardReceipt(normalizeBattleRewardReceipt({claimId:claimResult?.claimId||claimId,battleId:battleSessionIdRef.current,mode:"solo",reward:{...trustedReward,archerXP:MONSTER_TIER_XP[monster?.tier]||5,catXP:hasCat?(CAT_TIER_XP[monster?.tier]||5):0}}));
             setDroppedCoins(Math.max(0, Number(trustedReward.coins) || 0));
             const trustedMaterials = normalizeSoloRewardMaterials(
               trustedReward.materialTotals,
@@ -2171,6 +2340,7 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
             setDroppedMaterials([]);
             setDroppedCard(null);
             setDroppedCoins(0);
+            setRewardReceipt(receipt=>receipt?{...receipt,status:"failed_retryable"}:createSyncingReceipt({claimId,battleId:battleSessionIdRef.current,mode:"solo"}));
             console.warn("solo expansion reward claim deferred", error);
           }
         } else {
@@ -2270,8 +2440,8 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
           totalArrows: summary.arrows || 0,
         }).catch(() => {});
       }
-      // Do not remount the legacy defeat panel after BattleScreen's result.
-      setPhase("select");
+      // Free Hunt 回新版狩獵選擇器；非 Free Hunt 才保留既有 select 相容流程。
+      returnToOpponentSelection();
     }
   }
 

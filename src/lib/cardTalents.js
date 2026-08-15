@@ -6,6 +6,7 @@
 import { getSignatureEffect } from "./signatureEffectCatalog";
 import { FAMILY_STATUS, MONSTER_STATUSES, procCapFor } from "./monsterStatus";
 import { resolveWorldBossCardEffects } from "./worldBossCards";
+import { calcEquippedBonus, resolveBattleBonus, resolveEquippedCards } from "./monsterCards";
 
 // ── 族系套裝（2張/4張兩階）────────────────────────────────
 export const FAMILY_SET_BONUSES = Object.freeze({
@@ -195,6 +196,9 @@ export function calcCardCombatEffectsFromCollection(collection = {}, context = {
   total.damageReductionPct = (total.damageReductionPct || 0) + wb.damageReducePct * 100;
   total.healPct = (total.healPct || 0) + wb.healPct * 100;
   total.armorPiercePct = (total.armorPiercePct || 0) + wb.armorPiercePct;
+  const family=resolveBattleBonus(calcEquippedBonus(resolveEquippedCards(collection)),context.enemyFamily);
+  total.damagePct=(total.damagePct||0)+family.dmgBonusPct*100;
+  total.damageReductionPct=(total.damageReductionPct||0)+family.dmgReducePct*100;
   if (wb.burn) total.inflict = { ...(total.inflict || {}), burn:{ chancePct:100, strength:wb.burn.strengthPct, duration:wb.burn.duration, uncapped:true } };
   return total;
 }

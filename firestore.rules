@@ -42,6 +42,14 @@ service cloud.firestore {
         return isLoggedIn() && (resource.data.uid == request.auth.uid
           || (request.auth.token.email != null && resource.data.email == request.auth.token.email));
       }
+      function marketingPreferenceUpdateIsValid() {
+        return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          "marketingOptIn", "marketingOptInAt", "marketingOptOutAt"
+        ]) || (
+          resource.data.get("accountType", "official") != "kid"
+          && request.resource.data.marketingOptIn is bool
+        );
+      }
       // Guest/kid accounts use anonymous auth whose uid changes each session,
       // so we also allow any logged-in user to read/write active guest/kid profiles.
       // The field-level restrictions still apply on update for guest/kid.
@@ -105,6 +113,7 @@ service cloud.firestore {
         && request.resource.data.get("createdAt", null) == resource.data.get("createdAt", null)
         && request.resource.data.get("lifecycle", null) == resource.data.get("lifecycle", null)
         && request.resource.data.get("sessionSourceId", null) == resource.data.get("sessionSourceId", null)
+        && marketingPreferenceUpdateIsValid()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "lastLoginAt", "updatedAt", "equipment", "armorSets", "accessorySets",
           "dailyQuestCount", "eventPoints", "coins", "lastDungeonDate", "equippedCat", "avatarId",
@@ -122,13 +131,15 @@ service cloud.firestore {
           // 登入/註冊當下會一起寫的身分欄位：密碼註冊補 hasPassword，Google 登入補
           // socialUid/socialProvider。少了它們，訪客「註冊時接上舊記錄」與「用 Google 登入」
           // 一樣會被規則擋成 Missing or insufficient permissions。
-          "hasPassword", "socialUid", "socialProvider"
+          "hasPassword", "socialUid", "socialProvider",
+          "marketingOptIn", "marketingOptInAt", "marketingOptOutAt"
         ])
       ) || (
         isLoggedIn() && resource.data.accountType in ["guest", "kid"] && activeProfile()
         // 同上：訪客/兒童帳號的 uid 每次登入都會變，允許寫回，但只能寫成自己的 uid。
         && (request.resource.data.get("uid", null) == resource.data.get("uid", null)
           || request.resource.data.get("uid", null) == request.auth.uid)
+        && marketingPreferenceUpdateIsValid()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "lastLoginAt", "updatedAt", "equipment", "armorSets", "accessorySets",
           "dailyQuestCount", "eventPoints", "coins", "lastDungeonDate", "equippedCat", "avatarId",
@@ -146,7 +157,8 @@ service cloud.firestore {
           // 登入/註冊當下會一起寫的身分欄位：密碼註冊補 hasPassword，Google 登入補
           // socialUid/socialProvider。少了它們，訪客「註冊時接上舊記錄」與「用 Google 登入」
           // 一樣會被規則擋成 Missing or insufficient permissions。
-          "hasPassword", "socialUid", "socialProvider"
+          "hasPassword", "socialUid", "socialProvider",
+          "marketingOptIn", "marketingOptInAt", "marketingOptOutAt"
         ])
       );
     }
@@ -210,6 +222,30 @@ service cloud.firestore {
     match /bookingEmailConfig/{document} {
       allow read: if isAdmin();
       allow write: if false;
+    }
+
+    // 行銷／比賽 Email：前端只能由管理員讀取設定與活動摘要；
+    // 收件人、queue、退訂與節流計數一律由 Cloud Functions / Admin SDK 管理。
+    match /marketingEmailConfig/{document} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /marketingCampaigns/{document} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    match /marketingEmailQueue/{document} {
+      allow read, write: if false;
+    }
+
+    match /emailSuppressions/{document} {
+      allow read, write: if false;
+    }
+
+    match /marketingEmailRuns/{document} {
+      allow read, write: if false;
     }
 
     // 測試信節流狀態只供 callable function 使用，不暴露管理員操作時間給前端。

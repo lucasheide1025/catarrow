@@ -11,7 +11,10 @@ import AdminNotify from "./AdminNotify";
 import AdminDailyQuest from "./AdminDailyQuest";
 import { useAuth } from "../../hooks/useAuth";
 import { fmtDT, getCertLevelByScores, certLevelStyle } from "../../lib/constants";
+import { EXTERNAL_COMP_FORMATS } from "../../lib/achievementDex";
 import { Card, Btn, Sel, Inp, TA, Modal, ST, Spinner, Empty, useToast } from "../shared/UI";
+
+const EXTERNAL_FORMAT_LABEL = Object.fromEntries(EXTERNAL_COMP_FORMATS.map(item => [item.id, item.label]));
 
 export default function AdminReviewCenter({ pendingCert, messages, pendingExtItems, certTasks, pendingCheckins }) {
   const { profile } = useAuth();
@@ -240,6 +243,7 @@ function ExtReviewCard({ r, operatorId, toast }) {
           📅 {r.date}{r.location && `　📍 ${r.location}`}
         </div>
         <div className="flex gap-1.5 flex-wrap mt-1">
+          {r.format && <span className="text-xs px-2 py-0.5 rounded-full text-purple-300" style={{ background:"rgba(168,85,247,0.12)" }}>{EXTERNAL_FORMAT_LABEL[r.format] || r.format}</span>}
           <span className="text-xs px-2 py-0.5 rounded-full text-slate-300" style={{ background:"rgba(255,255,255,0.08)" }}>{r.category}</span>
           <span className="text-xs bg-blue-100 text-blue-700 font-bold px-2 py-0.5 rounded-full">{r.rank}</span>
           {r.hasAward && <span className="text-xs bg-yellow-100 text-yellow-700 font-bold px-2 py-0.5 rounded-full">🏆 {r.awardKept?"獎項留箭場":"有獎項"}</span>}

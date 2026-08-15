@@ -146,6 +146,13 @@ describe("受擊", () => {
     expect(r.reductionPct).toBeLessThanOrEqual(MAX_DAMAGE_REDUCTION_PCT);
     expect(r.damage).toBeGreaterThan(0);
   });
+
+  test("⚠️ 不完整 mods（機器人快照缺欄位）不會算出 NaN 傷害", () => {
+    const partial = { openingShieldPct: 30, reflectPct: 40, endRoundHeal: 20 };
+    const r = applyIncoming({ damage: 100, currentHp: 100, maxHp: 100, mods: partial });
+    expect(Number.isFinite(r.damage)).toBe(true);
+    expect(r.damage).toBeGreaterThan(0);
+  });
 });
 
 describe("異常狀態抗性", () => {
@@ -172,6 +179,10 @@ describe("異常狀態抗性", () => {
 
   test("沒有狀態時回 null，不會炸", () => {
     expect(applyStatusResist(null, buildCombatModifiers())).toBeNull();
+  });
+
+  test("空白或舊版抗性快照不會把持續時間算成 NaN", () => {
+    expect(applyStatusResist({id:"defDown",strength:10,duration:2},{}).duration).toBe(2);
   });
 });
 

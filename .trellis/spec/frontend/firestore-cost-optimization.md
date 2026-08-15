@@ -99,6 +99,10 @@ export async function grantBonusExcavation(memberId, amount) {
 
 **Related**: [[project_state]] — same principle applied to `DungeonDex.jsx` (removed a redundant `subscribeCollectibles` listener in favor of reading `profile.dungeonCollectibles`, already live via `useAuth.js`'s own top-level member-doc subscription — don't open a second listener on data you already have).
 
+### Homepage aggregate summaries
+
+The achievement dex page is the authoritative full-context calculator. After computing the complete totals it writes `members.dexTotalUnlocked` and `members.dexTotalAll`. Homepage and other lightweight overview screens must display those member-document summary fields instead of calling `computeDexStats` with partially loaded collections or opening the dex listeners themselves. A partial recomputation produces inconsistent totals; adding listeners turns every login into unnecessary reads. If the summary has not been written yet, show a safe unsynced/zero fallback and let the user opening the dex page perform the existing authoritative refresh.
+
 ## Scenario: durable arrow aggregation and idempotent retry
 
 ### 1. Scope / Trigger

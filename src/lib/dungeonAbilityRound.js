@@ -6,6 +6,7 @@
 // host 只負責把回傳的 plan 寫進 room doc 欄位。
 
 import { resolveTeamMonsterAbility, mergeCombatStatus, applySoloStatusTick } from "./soloMonsterAbilityEngine";
+import { applyStatusResist } from "./combatModifiers";
 
 // 技能目標（母任務 PRD §47-48）。招牌技能資料表沒有 target 欄位，
 // 依 encounter 推導：大王＝全隊（效果約單體 50%），一般怪/小王＝單體且不點名後衛。
@@ -29,8 +30,8 @@ function statusStrength(statuses, id) {
 // 供下一回合 Step 1 使用：異常對 atk/def 的減幅（%）
 export function getStatusStatMods(statuses) {
   return {
-    atkPct: statusStrength(statuses, "atkDown"),
-    defPct: statusStrength(statuses, "defDown"),
+    atkPct: statusStrength(statuses, "atkDown") + statusStrength(statuses, "fear"),
+    defPct: statusStrength(statuses, "defDown") + statusStrength(statuses, "armorBreak"),
   };
 }
 
@@ -85,11 +86,20 @@ export function planDungeonRoundAbility({
   }
 
   const statusesByMember = {};
+  const statusResultsByMember = {};
   if (resolved.statuses?.length) {
     for (const target of targets) {
       let merged = existingStatuses[target.id] || [];
-      for (const status of resolved.statuses) merged = mergeCombatStatus(merged, status);
+      const results=[];
+      for (const status of resolved.statuses) {
+        const resisted=applyStatusResist(status,target.statusResistance||{});
+        const immune=!resisted||Number(resisted.strength)===0;
+        const changed=!immune&&(resisted.strength!==status.strength||resisted.duration!==status.duration);
+        results.push({statusId:status.id,outcome:immune?"immune":changed?"resisted":"applied",rawStatus:status,finalStatus:immune?null:resisted});
+        if (!immune) merged = mergeCombatStatus(merged, resisted);
+      }
       statusesByMember[target.id] = merged;
+      statusResultsByMember[target.id]=results;
     }
   }
 
@@ -106,6 +116,7 @@ export function planDungeonRoundAbility({
     breakLevel: resolved.outcome?.level || "none",
     damageByMember,
     statusesByMember,
+    statusResultsByMember,
     monsterEffect: {
       shieldHp: resolved.selfShieldMaxHpPct > 0 ? Math.round(monsterMaxHp * resolved.selfShieldMaxHpPct / 100) : 0,
       reductionPct: resolved.selfReductionPct || 0,

@@ -42,8 +42,24 @@ nul
 
 # Local image-generation review outputs (never deploy or commit)
 .staging/image-generation/
+tmp/
+tmp-*.html
 
 .env*
 
 # Freebuff desktop local db
 .freebuff/
+
+# Deployment / hotfix scratch work — never commit as application source
+.deploy-*
+.deploy-*/
+.hotfix-*
+.hotfix-*/
+.worktrees/
+hotfix-prebuilt/
+hotfix-overlay/
+build-prepared-shop-hotfix.mjs
+
+# Local AI/tool state �X never commit
+.coding-tools/
+.claude/settings.local.json

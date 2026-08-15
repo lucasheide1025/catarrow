@@ -739,6 +739,7 @@ export default function TeamExpeditionBattle({
         // potionBuffs＝戰鬥級（藥水）：每場都乾淨，打完該場就歸零（不會被 sync 帶回 teamRoom）。
         potionBuffs: { atkMult: 1, defMult: 1, dmgMult: 1 },
         wbBonus: m.wbBonus || null,
+        statusResistance: m.statusResistance || null,
       }));
 
     floorStartingRef.current = true;
@@ -1344,6 +1345,7 @@ export default function TeamExpeditionBattle({
         battleId:teamRoom.bossRewardBattleId,
         memberId:myId,
         monsterId:teamRoom.bossRewardMonsterId,
+        teamRoomId,
       });
       setBossRewardClaim(claim);
     } catch (error) {

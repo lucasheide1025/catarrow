@@ -20,6 +20,7 @@ export function createMonsterBattleSnapshot(state) {
     targetMode: state.targetMode,
     battleSessionId: state.battleSessionId || null,
     runtimeSnapshot: state.runtimeSnapshot || null,
+    huntMonsterId: state.huntMonsterId || null,
     activeCarryBuffs: state.activeCarryBuffs,
     potionShield: state.potionShield,
     monsterDmgTakenPct: state.monsterDmgTakenPct,

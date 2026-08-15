@@ -340,14 +340,15 @@ function PlayerStatusBar({ playerState, coins, lootMult = 1, partyMembers = [], 
   const restDefPct = Number(playerState?.restBonuses?.defPct) || 0;
   const merchantAtkPct = Number(playerState?.merchantBonuses?.atkPct) || 0;
   const merchantDefPct = Number(playerState?.merchantBonuses?.defPct) || 0;
-  if (restAtkPct) badges.push({ t:`🔨 打磨 ATK ${restAtkPct > 0 ? "+" : ""}${restAtkPct}%`, up:restAtkPct > 0 });
-  if (restDefPct) badges.push({ t:`🧰 整備 DEF ${restDefPct > 0 ? "+" : ""}${restDefPct}%`, up:restDefPct > 0 });
-  if (merchantAtkPct) badges.push({ t:`🪄 武器 ATK ${merchantAtkPct > 0 ? "+" : ""}${merchantAtkPct}%`, up:merchantAtkPct > 0 });
-  if (merchantDefPct) badges.push({ t:`✨ 防具 DEF ${merchantDefPct > 0 ? "+" : ""}${merchantDefPct}%`, up:merchantDefPct > 0 });
-  if ((buffs.atkMult || 1) !== 1) badges.push({ t:`⚔️ 臨時 ATK ${Math.round(((buffs.atkMult || 1) - 1) * 100)}%`, up:(buffs.atkMult||1) > 1 });
-  if ((buffs.defMult || 1) !== 1) badges.push({ t:`🛡️ 臨時 DEF ${Math.round(((buffs.defMult || 1) - 1) * 100)}%`, up:(buffs.defMult||1) > 1 });
+  if (restAtkPct) badges.push({ t:`🔨 打磨攻擊 ${restAtkPct > 0 ? "+" : ""}${restAtkPct}%`, up:restAtkPct > 0 });
+  if (restDefPct) badges.push({ t:`🧰 整備防禦 ${restDefPct > 0 ? "+" : ""}${restDefPct}%`, up:restDefPct > 0 });
+  if (merchantAtkPct) badges.push({ t:`🪄 武器攻擊 ${merchantAtkPct > 0 ? "+" : ""}${merchantAtkPct}%`, up:merchantAtkPct > 0 });
+  if (merchantDefPct) badges.push({ t:`✨ 防具防禦 ${merchantDefPct > 0 ? "+" : ""}${merchantDefPct}%`, up:merchantDefPct > 0 });
+  if ((buffs.atkMult || 1) !== 1) badges.push({ t:`⚔️ 臨時攻擊 ${Math.round(((buffs.atkMult || 1) - 1) * 100)}%`, up:(buffs.atkMult||1) > 1 });
+  if ((buffs.defMult || 1) !== 1) badges.push({ t:`🛡️ 臨時防禦 ${Math.round(((buffs.defMult || 1) - 1) * 100)}%`, up:(buffs.defMult||1) > 1 });
   if ((buffs.dmgMult || 1) !== 1) badges.push({ t:`💥×${buffs.dmgMult}`, up:(buffs.dmgMult||1) > 1 });
   if (buffs.hasRevival) badges.push({ t:"💫復活", up:true });
+  const teammates = partyMembers.filter(member => member?.id && member.id !== currentMemberId);
 
   return (
     <div style={{ padding:"8px 14px 6px", background:"rgba(0,0,0,0.3)", borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
@@ -362,13 +363,13 @@ function PlayerStatusBar({ playerState, coins, lootMult = 1, partyMembers = [], 
           <div style={{ display:"flex", flexWrap:"wrap", alignItems:"center", gap:"3px 8px", fontSize:10, color:"#94a3b8", marginTop:3 }}>
             <span>❤️ {hp}/{maxHP}</span>
             <span style={{ color:"#fb7185", fontWeight:900 }}>
-              ⚔️ ATK {stats.atkPct !== 0 ? `${stats.atkBase} → ` : ""}{stats.atk}
+              ⚔️ 攻擊 {stats.atkPct !== 0 ? `${stats.atkBase} → ` : ""}{stats.atk}
               {stats.atkPct !== 0 && <small style={{ marginLeft:3, color:stats.atkPct > 0 ? "#4ade80" : "#f87171", fontWeight:900 }}>
                 ({stats.atkPct > 0 ? "+" : ""}{stats.atkPct}%)
               </small>}
             </span>
             <span style={{ color:"#60a5fa", fontWeight:900 }}>
-              🛡️ DEF {stats.defPct !== 0 ? `${stats.defBase} → ` : ""}{stats.def}
+              🛡️ 防禦 {stats.defPct !== 0 ? `${stats.defBase} → ` : ""}{stats.def}
               {stats.defPct !== 0 && <small style={{ marginLeft:3, color:stats.defPct > 0 ? "#4ade80" : "#f87171", fontWeight:900 }}>
                 ({stats.defPct > 0 ? "+" : ""}{stats.defPct}%)
               </small>}
@@ -399,20 +400,21 @@ function PlayerStatusBar({ playerState, coins, lootMult = 1, partyMembers = [], 
         </div>
       </div>
       {partyMembers.length > 0 && (
-        <div style={{
-          display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(118px,1fr))",
-          gap:5, marginTop:6,
+        <div data-dungeon-party-status-rail="true" style={{
+          display:"flex", height:48, gap:5, marginTop:6,
+          overflowX:"auto", overflowY:"hidden", flexWrap:"nowrap",
+          overscrollBehaviorX:"contain", WebkitOverflowScrolling:"touch",
         }}>
-          {partyMembers
-            .filter(member => member?.id && member.id !== currentMemberId)
-            .map(member => {
+          {teammates.length === 0 ? (
+            <div style={{ height:42, display:"flex", alignItems:"center", fontSize:9, color:"#64748b" }}>等待隊友加入…</div>
+          ) : teammates.map(member => {
               const memberStats = calculateDungeonDisplayedStats(member);
               const memberHp = member.hp ?? 0;
               const memberMaxHp = member.maxHP || 1;
               const memberHpPct = Math.max(0, Math.min(100, memberHp / memberMaxHp * 100));
               return (
                 <div key={member.id} style={{
-                  minWidth:0, padding:"5px 7px", borderRadius:9,
+                  width:116, minWidth:116, height:42, flexShrink:0, padding:"5px 7px", borderRadius:9,
                   background:"rgba(15,23,42,.78)", border:"1px solid rgba(148,163,184,.18)",
                 }}>
                   <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:5 }}>
@@ -427,9 +429,9 @@ function PlayerStatusBar({ playerState, coins, lootMult = 1, partyMembers = [], 
                     <div style={{ width:`${memberHpPct}%`, height:"100%", background:"#22c55e" }} />
                   </div>
                   <div style={{ display:"flex", justifyContent:"space-between", gap:4, marginTop:3, fontSize:8, fontWeight:800 }}>
-                    <span style={{ color:"#86efac" }}>HP {memberHp}/{memberMaxHp}</span>
-                    <span style={{ color:"#fb7185" }}>ATK {memberStats.atk}</span>
-                    <span style={{ color:"#60a5fa" }}>DEF {memberStats.def}</span>
+                    <span style={{ color:"#86efac" }}>生命 {memberHp}/{memberMaxHp}</span>
+                    <span style={{ color:"#fb7185" }}>攻擊 {memberStats.atk}</span>
+                    <span style={{ color:"#60a5fa" }}>防禦 {memberStats.def}</span>
                   </div>
                 </div>
               );
@@ -612,7 +614,7 @@ export function GridMapStage({
       }}>
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ fontWeight:900, fontSize:16, color:"#fbbf24", display:"flex", alignItems:"center", gap:6 }}>
-            <span>🗺️ {FAMILY_STYLES[family]?.label || "幽冥系"} T{difficulty}</span>
+            <span>🗺️ {FAMILY_STYLES[family]?.label || "幽冥系"}・第 {difficulty} 階</span>
             <span style={{ fontSize:11, padding:"2px 6px", borderRadius:4, background:"rgba(255,255,255,0.08)", color:"rgba(255,255,255,0.6)", fontWeight:700 }}>
               第 {floorIndex + 1} 層
             </span>
@@ -867,7 +869,7 @@ export function BranchStage({
       }}>
         <div style={{ flex:1, minWidth:0 }}>
           <div style={{ fontWeight:900, fontSize:16, color: theme.textColor, display:"flex", alignItems:"center", gap:6 }}>
-            <span>👑 {theme.label} T{difficulty}</span>
+            <span>👑 {theme.label}・第 {difficulty} 階</span>
             <span style={{ fontSize:11, padding:"2px 6px", borderRadius:4, background:"rgba(255,255,255,0.08)", color:"rgba(255,255,255,0.6)", fontWeight:700 }}>
               第 3 層 · 王關
             </span>

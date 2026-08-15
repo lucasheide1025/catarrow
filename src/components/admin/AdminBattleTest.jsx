@@ -5,7 +5,8 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import MonsterSVG from "../MonsterSVG";
 import CatSVG from "../cat/CatSVG";
 import { MONSTERS as ALL_MONSTERS } from "../../lib/monsterData";
-import { CATS, CAT_IDS, CAT_TYPE_MAP, CAT_SKILL_GROUPS } from "../../lib/catData";
+import { CATS, CAT_IDS, CAT_TYPE_MAP } from "../../lib/catData";
+import { getCatBattleArchetype } from "../../lib/catBattleArchetypes";
 import { calcCatCombatStats } from "../../lib/catCombat";
 import { POTIONS } from "../../lib/itemData";
 import BattleSoundIndicator from "../shared/BattleSoundIndicator";
@@ -101,7 +102,7 @@ export default function AdminBattleTest() {
   const hasCat = !!selectedCatId;
   const catName = hasCat ? (CATS[selectedCatId]?.name || '') : '';
   const catType = hasCat ? (CAT_TYPE_MAP[selectedCatId] || 'allround') : 'allround';
-  const skillGroup = hasCat ? (CAT_SKILL_GROUPS[selectedCatId] || 'heal') : 'heal';
+  const skillGroup = hasCat ? getCatBattleArchetype(selectedCatId).type : 'heal';
   const catCombatStats = useMemo(() => hasCat ? calcCatCombatStats({ catId: selectedCatId, catXP: 5000, bond: 50, type: catType }) : null, [hasCat, selectedCatId, catType]);
   const catMaxHP = hasCat ? (catCombatStats?.catHP || 300) : 300;
   const catATK = hasCat ? (catCombatStats?.catATK || 25) : 25;

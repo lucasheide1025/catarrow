@@ -1041,6 +1041,13 @@ export function buildCohortAchievements(joinDate, max = 20) {
 }
 
 export function buildArcherLevelAchievement() {
+  const ranges = [
+    { count:100, name:"Lv.1～100", rarity:"rare", icon:"🌱" },
+    { count:200, name:"Lv.101～200", rarity:"epic", icon:"🏹" },
+    { count:300, name:"Lv.201～300", rarity:"legendary", icon:"⚡" },
+    { count:400, name:"Lv.301～400", rarity:"legendary", icon:"🔥" },
+    { count:500, name:"Lv.401～500", rarity:"mythic", icon:"👑" },
+  ];
   return {
     id: "archer_level_progress",
     cat: "archer_level",
@@ -1049,16 +1056,10 @@ export function buildArcherLevelAchievement() {
     desc: `射手等級 Lv.1～Lv.${MAX_ARCHER_LEVEL}`,
     directDisplay: true,
     getValue: c => archerLevelFromXP(c.member?.archerXP || 0),
-    tiers: Array.from({ length: MAX_ARCHER_LEVEL }, (_, index) => {
-      const level = index + 1;
-      return {
-        count: level,
-        rarity: level >= 500 ? "mythic" : level >= 300 ? "legendary" : level >= 200 ? "epic" : level >= 100 ? "rare" : level >= 50 ? "uncommon" : "common",
-        icon: level >= 500 ? "👑" : "📈",
-        name: `Lv.${level}`,
-        desc: `射手等級達到 Lv.${level}`,
-      };
-    }),
+    tiers: ranges.map((range, index) => ({
+      ...range,
+      desc: `射手等級區間 ${index * 100 + 1}～${range.count}`,
+    })),
   };
 }
 

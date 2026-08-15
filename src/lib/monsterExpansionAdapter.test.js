@@ -2,6 +2,7 @@ import {
   SOLO_HUNT_FAMILIES,
   drawExpansionSoloMonsters,
   getExpansionTierPool,
+  selectVariant,
   toLegacyBattleMonster,
 } from "./monsterExpansionAdapter";
 import { EXPANSION_MONSTER_BY_ID } from "./monsterExpansionCatalog";
@@ -36,5 +37,11 @@ describe("monster expansion legacy adapter", () => {
     const monsters = drawExpansionSoloMonsters(10, { random: () => 0, families: ["treasure"] });
     expect(monsters).toHaveLength(1);
     expect(monsters[0]).toMatchObject({ family: "treasure", encounter: "normal" });
+  });
+
+  test("進場會從弱化、普通與強悍三種個體抽選", () => {
+    expect(selectVariant(0)).toBe("weak");
+    expect(selectVariant(0.5)).toBe("normal");
+    expect(selectVariant(0.99)).toBe("strong");
   });
 });

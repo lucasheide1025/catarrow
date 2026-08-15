@@ -36,7 +36,7 @@ function buildFirstClearEntries(collectibles) {
     .map(({ item, match }) => ({
       item,
       qty: collectibles[item.id] || 0,
-      context: `${familyLabel[match[1]] || match[1]} T${match[2]}`,
+      context: `${familyLabel[match[1]] || "未知族系"}・第 ${match[2]} 階`,
     }));
 }
 

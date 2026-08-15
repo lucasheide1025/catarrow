@@ -113,15 +113,15 @@ export default function DungeonRest({
               </div>
             </div>
             <div className="flex gap-2 text-[10px] font-black">
-              <span className="rounded-full bg-orange-400/15 px-3 py-1 text-orange-300">ATK +{bonuses.atkPct || 0}%</span>
-              <span className="rounded-full bg-blue-400/15 px-3 py-1 text-blue-300">DEF +{bonuses.defPct || 0}%</span>
+              <span className="rounded-full bg-orange-400/15 px-3 py-1 text-orange-300">攻擊 +{bonuses.atkPct || 0}%</span>
+              <span className="rounded-full bg-blue-400/15 px-3 py-1 text-blue-300">防禦 +{bonuses.defPct || 0}%</span>
             </div>
           </div>
           <div className="mt-3 h-3 overflow-hidden rounded-full bg-white/10">
             <div className="h-full rounded-full bg-gradient-to-r from-rose-500 to-emerald-400 transition-all duration-700" style={{ width:`${hpPct}%` }} />
           </div>
           <div className="mt-1 text-right text-[10px] font-bold text-slate-300">
-            HP {result?.hp ?? me.hp ?? 0} / {me.maxHP || 100}
+            生命 {result?.hp ?? me.hp ?? 0} / {me.maxHP || 100}
           </div>
         </section>
 

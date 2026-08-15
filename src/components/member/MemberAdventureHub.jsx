@@ -6,8 +6,7 @@ import { SectionHeader, HubTile } from "../shared/Widgets";
 
 // 入口常數陣列（accent 必須是 hex，HubTile 內部以 `${accent}26` 疊 15% 透明漸層）
 const ADVENTURE_ITEMS = [
-  { page:"monster",   icon:"⚔️",  title:"RPG打怪",   desc:"單人冒險",  accent:"#7c3aed", badgeKey:"monster" },
-  { page:"party",     icon:"🤝",  title:"組隊打怪",   desc:"合作戰鬥",  accent:"#14b8a6", badgeKey:"party" },
+  { page:"hunt",      icon:"🧭",  title:"自由狩獵",   desc:"選族・選階・指定討伐", accent:"#7c3aed", badgeKey:"monster", imagePage:"monster" },
   { page:"dungeon",   icon:"🏰",  title:"地下城",     desc:"副本探索",  accent:"#8b5cf6", badgeKey:"dungeon" },
   { page:"worldboss", icon:"🌍",  title:"世界王",     desc:"全員挑戰",  accent:"#ef4444", badgeKey:"worldboss" },
   { page:"duel",      icon:"🎯",  title:"玩家決鬥",   desc:"1v1 對戰",  accent:"#6366f1", badgeKey:"duel" },
@@ -44,20 +43,55 @@ export default function MemberAdventureHub({ onPageChange, badges = {} }) {
     </span>
   );
 
+  // 決鬥入口專屬競技場樣式（黑紫背景 + 藍/紅對抗邊框 + 閃光標題）
+  const renderDuelTile = () => {
+    const item = ADVENTURE_ITEMS.find(i => i.page === "duel");
+    if (!item) return null;
+    return (
+      <button key="duel" onClick={() => onPageChange("duel")}
+        className="relative flex flex-col items-start justify-end gap-1 overflow-hidden p-4 text-left transition-all active:scale-95 w-full"
+        style={{
+          minHeight: 146, borderRadius: "var(--r-lg)",
+          border: "1px solid rgba(167,139,250,.5)",
+          backgroundImage: "linear-gradient(135deg, rgba(88,28,135,.55) 0%, rgba(30,27,75,.85) 100%), url(/ui/adventure/duel.webp)",
+          backgroundSize: "cover", backgroundPosition: "center",
+          boxShadow: "0 14px 28px rgba(88,28,135,.35), inset 0 0 24px rgba(217,70,239,.15)",
+        }}>
+        {badges[item.badgeKey] > 0 && (
+          <span className="absolute top-2 right-2 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-black flex items-center justify-center text-white"
+            style={{ background: "#dc2626" }}>
+            {badges[item.badgeKey] > 99 ? "99+" : badges[item.badgeKey]}
+          </span>
+        )}
+        <span className="text-2xl leading-none" style={{ animation: "adv-glow 1.8s ease-in-out infinite" }}>🎯</span>
+        <span className="text-sm font-black mt-1 text-white drop-shadow-lg">玩家決鬥</span>
+        <span className="text-[11px] leading-tight" style={{ color:"#c4b5fd" }}>1v1 對戰</span>
+        {/* 藍/紅對抗小標記 */}
+        <div className="flex items-center gap-1 mt-0.5">
+          <span className="text-[8px] font-black px-1.5 py-px rounded-full text-white" style={{ background:"linear-gradient(90deg,#1d4ed8,#3b82f6)" }}>A</span>
+          <span className="text-[8px] font-black text-amber-300">VS</span>
+          <span className="text-[8px] font-black px-1.5 py-px rounded-full text-white" style={{ background:"linear-gradient(90deg,#dc2626,#ef4444)" }}>B</span>
+        </div>
+      </button>
+    );
+  };
+
   return (
     <div className="p-4 flex flex-col gap-3" style={{ minHeight:"100dvh", backgroundImage:"url(/ui/page-bg.webp)", backgroundSize:"cover", backgroundPosition:"top center", backgroundAttachment:"local" }}>
       <style>{SHINE_KEYFRAMES}</style>
       <SectionHeader icon="🗺️" title="冒險" />
       <div className="grid grid-cols-2 gap-3">
         {ADVENTURE_ITEMS.map(item => (
-          <HubTile key={item.page}
-            icon={item.icon}
-            title={item.title}
-            desc={item.page === "guild" ? guildDesc : item.desc}
-            accent={item.accent}
-            image={`/ui/adventure/${item.page}.webp`}
-            badge={badges[item.badgeKey] || 0}
-            onClick={() => onPageChange(item.page)} />
+          item.page === "duel"
+            ? renderDuelTile()
+            : <HubTile key={item.page}
+                icon={item.icon}
+                title={item.title}
+                desc={item.page === "guild" ? guildDesc : item.desc}
+                accent={item.accent}
+                image={`/ui/adventure/${item.imagePage || item.page}.webp`}
+                badge={badges[item.badgeKey] || 0}
+                onClick={() => onPageChange(item.page)} />
         ))}
       </div>
     </div>

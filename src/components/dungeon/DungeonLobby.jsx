@@ -12,6 +12,10 @@ import TeamExpeditionBattle from "./TeamExpeditionBattle";
 import { buildExpeditionMemberData } from "../../lib/expeditionMemberData";
 import { subscribeCardCollection } from "../../lib/db";
 import { calcEquippedBonus, resolveEquippedCards } from "../../lib/monsterCards";
+import { calcCardCombatEffectsFromCollection } from "../../lib/cardTalents";
+import { buildCombatModifiers } from "../../lib/combatModifiers";
+import { getEquipSpecializations, toEquipSpecSlots } from "../../lib/equipSpecializationDb";
+import { normalizePlayerStatusResistance } from "../../lib/familyPlayerStatus";
 import {
   createTeamExpeditionRoom,
   findReconnectableTeamExpedition,
@@ -82,6 +86,7 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap, a
   // 卡片裝備加成（世界王卡等，地下城遠征本來沒串接，2026-07-09 補上）
   const [cardColl, setCardColl] = useState({ cards: {}, wbCards: {}, equipped: [] });
   const [cardReady, setCardReady] = useState(() => isGuest || !myId);
+  const [equipSpecSlots, setEquipSpecSlots] = useState(null);
   useEffect(() => {
     if (sharedData?.cardData !== undefined) {
       setCardColl(sharedData.cardData);
@@ -103,8 +108,19 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap, a
       setCardReady(true);
     });
   }, [myId, isGuest, sharedData?.cardData]);
+  useEffect(() => {
+    if (!myId || isGuest) { setEquipSpecSlots(null); return undefined; }
+    let active=true;
+    getEquipSpecializations(myId).then(spec=>{if(active)setEquipSpecSlots(toEquipSpecSlots(spec));});
+    return()=>{active=false;};
+  },[myId,isGuest]);
   const cardBonus = calcEquippedBonus(resolveEquippedCards(cardColl));
-  function buildMemberData() { return buildExpeditionMemberData(profile, cardBonus, cardColl); }
+  function buildMemberData() {
+    const cardFx=calcCardCombatEffectsFromCollection(cardColl||{});
+    const modifiers=buildCombatModifiers({cardFx,equipSpec:equipSpecSlots});
+    const resistance=normalizePlayerStatusResistance(modifiers);
+    return buildExpeditionMemberData(profile, cardBonus, cardColl, resistance,{companionAttackPct:modifiers.companionAttackPct,companionHealingPct:modifiers.companionHealingPct});
+  }
 
   // 登入地下城首頁時，找回仍包含自己的等待室、進行中遠征或未領取結算。
   useEffect(() => {
@@ -484,8 +500,8 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap, a
                       exam: "📝 考試系",
                       temple: "🏛️ 神廟系",
                       treasure: "📦 寶箱族",
-                    }[profile.teamSavedProgress.family] || profile.teamSavedProgress.family || "未知"
-                  } (T{profile.teamSavedProgress.difficulty || 1})</b><br />
+                    }[profile.teamSavedProgress.family] || "未知族系"
+                  }（第 {profile.teamSavedProgress.difficulty || 1} 階）</b><br />
                   點擊下方按鈕即可創建新房間，邀請夥伴從此進度繼續挑戰！
                 </p>
                 <div className="mt-3 flex gap-2">
@@ -580,8 +596,8 @@ export default function DungeonLobby({ onBack, guestProfile, isGuest, tierCap, a
                       exam: "📝 考試系",
                       temple: "🏛️ 神廟系",
                       treasure: "📦 寶箱族",
-                    }[soloRecovery.family] || soloRecovery.family || "探索中"
-                  } (T{soloRecovery.difficultyTier || 1})</b><br />
+                    }[soloRecovery.family] || "未知族系"
+                  }（第 {soloRecovery.difficultyTier || 1} 階）</b><br />
                   地圖狀態已完好保存！隨時可以回到地圖繼續探索。
                 </p>
                 <div className="mt-3 flex gap-2">

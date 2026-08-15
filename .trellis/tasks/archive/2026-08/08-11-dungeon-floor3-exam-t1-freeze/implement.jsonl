@@ -1,4 +1,0 @@
-{"file":".trellis/spec/frontend/index.md","reason":"Frontend package entry point and development checklist"}
-{"file":".trellis/spec/frontend/dungeon-system.md","reason":"Dungeon persistence, tier locking, team reconnect, and battle contracts"}
-{"file":".trellis/spec/frontend/type-safety.md","reason":"State normalization and compatibility requirements"}
-{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"Frontend validation expectations"}

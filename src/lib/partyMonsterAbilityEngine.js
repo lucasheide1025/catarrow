@@ -99,14 +99,14 @@ export function applyPartyStatusesForRound(member = {}) {
   const remainingStatuses = [];
   for (const status of member.combatStatuses || []) {
     if (!status || status.duration <= 0) continue;
-    if (status.id === "poison") {
+    if (status.id === "poison" || status.id === "bleed") {
       const damage = Math.min(Math.max(0, hp - 1), Math.ceil(maxHp * (status.strength || 0) / 100));
       hp -= damage;
       ticks.push({ id:status.id, damage });
-    } else if (status.id === "atkDown") {
+    } else if (status.id === "atkDown" || status.id === "fear") {
       atkMultiplier *= Math.max(0, 1 - (status.strength || 0) / 100);
       ticks.push({ id:status.id, strength:status.strength || 0 });
-    } else if (status.id === "defDown") {
+    } else if (status.id === "defDown" || status.id === "armorBreak") {
       defMultiplier *= Math.max(0, 1 - (status.strength || 0) / 100);
       ticks.push({ id:status.id, strength:status.strength || 0 });
     }

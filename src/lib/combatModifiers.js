@@ -163,14 +163,15 @@ export function applyIncoming({ damage, currentHp = 1, maxHp = 1, mods }) {
   const m = mods || buildCombatModifiers();
   const ratio = num(maxHp) > 0 ? num(currentHp) / num(maxHp) : 1;
   const guardOn = ratio <= pct(m.guardThresholdPct);
-  const total = Math.min(
-    MAX_DAMAGE_REDUCTION_PCT,
-    m.flatReductionPct + (guardOn ? m.guardReductionPct : 0) + m.cardReductionPct,
-  );
+  const flat  = num(m.flatReductionPct);
+  const guard = guardOn ? num(m.guardReductionPct) : 0;
+  const card  = num(m.cardReductionPct);
+  const total = Math.min(MAX_DAMAGE_REDUCTION_PCT, flat + guard + card);
   return {
+    // ⚠️ 全部經過 num()：不完整/缺欄位的 mods（如機器人快照）不會算出 NaN 傷害
     damage: Math.max(0, Math.round(num(damage) * (1 - total / 100))),
     reductionPct: total,
-    guardActive: guardOn && m.guardReductionPct > 0,
+    guardActive: guardOn && guard > 0,
   };
 }
 
@@ -192,7 +193,7 @@ export function applyStatusResist(status, mods) {
       ? Math.round(strength * (1 - pct(m.poisonResistPct)) * 10) / 10
       : strength;
   }
-  const duration = Math.max(1, num(status.duration, 1) - m.statusDurationReduction);
+  const duration = Math.max(1, num(status.duration, 1) - num(m.statusDurationReduction));
   return { ...status, strength, duration };
 }
 

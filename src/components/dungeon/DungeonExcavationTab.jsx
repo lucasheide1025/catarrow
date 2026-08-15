@@ -551,7 +551,7 @@ export default function DungeonExcavationTab({ profile }) {
           </div>
           <div className="flex justify-between">
             <span>📈 最高可挖等級</span>
-            <span className="font-bold" style={{ color:"#fbbf24" }}>T{maxTier}</span>
+            <span className="font-bold" style={{ color:"#fbbf24" }}>第 {maxTier} 階</span>
           </div>
         </div>
 
@@ -571,14 +571,14 @@ export default function DungeonExcavationTab({ profile }) {
                     color: tl.color || "#94a3b8",
                     opacity: t.tier <= maxTier ? 1 : 0.4,
                   }}>
-                  {tl.icon || ""} T{t.tier} {t.pct}%
+                  {tl.icon || ""} 第 {t.tier} 階 {t.pct}%
                 </span>
               );
             })}
           </div>
           {dailyArrows < 150 && (
             <div className="mt-1 text-[9px]" style={{ color:"var(--text-muted)" }}>
-              💡 再射 {30 - (dailyArrows % 30) || 30} 箭可提升 T{Math.min(6, maxTier + 1)} 機率
+              💡 再射 {30 - (dailyArrows % 30) || 30} 箭可提升第 {Math.min(6, maxTier + 1)} 階機率
             </div>
           )}
         </div>
@@ -640,7 +640,7 @@ export default function DungeonExcavationTab({ profile }) {
           <div className="mt-3 p-3 rounded-xl text-center text-xs font-bold"
             style={{ background:"rgba(74,222,128,0.12)", color:"#4ade80", border:"1px solid rgba(74,222,128,0.25)" }}>
             🎉 獲得 {FAMILY_LABEL[scrollResult.family]?.emoji} {FAMILY_LABEL[scrollResult.family]?.label}
-            （{TIER_LABEL[scrollResult.difficulty]?.icon} T{scrollResult.difficulty}）已存入選單！
+            （{TIER_LABEL[scrollResult.difficulty]?.icon} 第 {scrollResult.difficulty} 階）已存入選單！
           </div>
         )}
       </div>
@@ -674,7 +674,7 @@ export default function DungeonExcavationTab({ profile }) {
                   color: TIER_LABEL[pendingReveal.difficulty]?.color || "#94a3b8",
                   border: `1px solid ${(TIER_LABEL[pendingReveal.difficulty]?.color || "#94a3b8")}55`,
                 }}>
-                {TIER_LABEL[pendingReveal.difficulty]?.icon || ""} T{pendingReveal.difficulty} {TIER_LABEL[pendingReveal.difficulty]?.label || ""}
+                {TIER_LABEL[pendingReveal.difficulty]?.icon || ""} 第 {pendingReveal.difficulty} 階 {TIER_LABEL[pendingReveal.difficulty]?.label || ""}
               </span>
             </div>
 

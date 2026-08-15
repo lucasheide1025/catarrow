@@ -103,8 +103,8 @@ export function mergeCombatStatus(statuses = [], incoming, maxStatuses = 3) {
 export function applySoloStatusTick({ status, playerHp, playerMaxHp }) {
   if (!status || status.duration <= 0) return { playerHp, status: null, damage: 0 };
   let damage = 0;
-  if (status.id === "poison") damage = Math.ceil(playerMaxHp * (status.strength || 0) / 100);
-  const nextHp = status.id === "poison" ? Math.max(1, playerHp - damage) : playerHp;
+  if (status.id === "poison" || status.id === "bleed") damage = Math.ceil(playerMaxHp * (status.strength || 0) / 100);
+  const nextHp = status.id === "poison" || status.id === "bleed" ? Math.max(1, playerHp - damage) : playerHp;
   const nextDuration = status.duration - 1;
   return { playerHp: nextHp, status: nextDuration > 0 ? { ...status, duration: nextDuration } : null, damage: Math.max(0, playerHp - nextHp) };
 }

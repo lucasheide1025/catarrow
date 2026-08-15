@@ -15,7 +15,7 @@ jest.mock("firebase/firestore", () => ({
 jest.mock("./firebase", () => ({ db:{} }));
 jest.mock("./db", () => ({ addChests:jest.fn() }));
 
-const { exchangeTicketsForReward, settleVillageShopAutoSales, completeLiveShopSession, claimVillageShopRushTime } = require("./villageShopDb");
+const { initVillageShopIfNeeded, exchangeTicketsForReward, settleVillageShopAutoSales, completeLiveShopSession, claimVillageShopRushTime } = require("./villageShopDb");
 const { todayStr } = require("./villageShop");
 const { defaultShopState } = require("./villageShop");
 const { liveShopStateSignature } = require("./villageShopLive");
@@ -42,6 +42,34 @@ beforeEach(() => {
     get:mockTransactionGet,
     update:mockTransactionUpdate,
   }));
+});
+
+test("shop initialization never overwrites a persisted shop when caller passes a null or stale village hint", async () => {
+  const persistedShop = defaultShopState(1700000000000);
+  persistedShop.level = 9;
+  persistedShop.tickets = 4321;
+  persistedShop.stock.weapon_0 = 77;
+  mockTransactionGet.mockResolvedValue(memberSnapshot({ village:{ shop:persistedShop } }));
+
+  await expect(initVillageShopIfNeeded("member-1", null)).resolves.toBeUndefined();
+
+  expect(mockTransactionGet).toHaveBeenCalledTimes(1);
+  expect(mockTransactionUpdate).not.toHaveBeenCalled();
+});
+
+test("shop initialization creates defaults only when persisted member really has no shop", async () => {
+  mockTransactionGet.mockResolvedValue(memberSnapshot({ village:{} }));
+
+  await expect(initVillageShopIfNeeded("member-1", null)).resolves.toBeUndefined();
+
+  expect(mockTransactionGet).toHaveBeenCalledTimes(1);
+  expect(mockTransactionUpdate).toHaveBeenCalledTimes(1);
+  expect(mockTransactionUpdate.mock.calls[0][1]["village.shop"]).toMatchObject({
+    level:1,
+    tickets:0,
+    stock:{},
+    stats:{ totalSales:0, totalTickets:0, customersServed:0, totalRevenue:0 },
+  });
 });
 
 test("special ticket exchange atomically updates existing specialItems and village-only daily usage", async () => {

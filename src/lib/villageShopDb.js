@@ -45,23 +45,36 @@ export async function claimVillageShopRushTime(memberId) {
 // ── 初始化（無 village.shop 才寫；lastVisitedAt 回首 1 小時 → 首次開店即有開場顧客）──
 export async function initVillageShopIfNeeded(memberId, village) {
   if (!memberId || village?.shop) return;
-  const state = defaultShopState(Date.now());
-  await updateDoc(doc(db, MEMBERS, memberId), {
-    "village.shop": {
-      level: 1,
-      tickets: 0,
-      stock: {},
-      display: state.display,
-      furniture: state.furniture,
-      lastVisitedAt: new Date(Date.now() - 60 * 60000),
-      stats: {
-        totalSales: 0, totalTickets: 0, customersServed: 0, totalRevenue: 0,
-        discoveredCustomers: [], customerLog: [],
+  const ref = doc(db, MEMBERS, memberId);
+
+  // `village` 只是呼叫端手上的快照提示：有 shop 可以安全 fast-path；
+  // 但 null / stale 絕對不能被當成「Firestore 真的沒有 shop」。
+  // 探險戰利品入庫會刻意傳 null，因此初始化必須重新讀取權威資料，
+  // 否則會把既有玩家整份 village.shop 覆寫回 Lv.1 預設值。
+  return runTransaction(db, async transaction => {
+    const snap = await transaction.get(ref);
+    if (!snap.exists()) throw new Error("找不到會員");
+    if (snap.data()?.village?.shop) return;
+
+    const now = Date.now();
+    const state = defaultShopState(now);
+    transaction.update(ref, {
+      "village.shop": {
+        level: 1,
+        tickets: 0,
+        stock: {},
+        display: state.display,
+        furniture: state.furniture,
+        lastVisitedAt: new Date(now - 60 * 60000),
+        stats: {
+          totalSales: 0, totalTickets: 0, customersServed: 0, totalRevenue: 0,
+          discoveredCustomers: [], customerLog: [],
+        },
+        exchange: { date: todayStr(), counts: {}, daily: { specialTickets:{} }, week: weekStr(), weeklyCounts: {} },
+        lastAutoSaleAt: new Date(now),
+        createdAt: serverTimestamp(),
       },
-      exchange: { date: todayStr(), counts: {}, daily: { specialTickets:{} }, week: weekStr(), weeklyCounts: {} },
-      lastAutoSaleAt: new Date(Date.now()),
-      createdAt: serverTimestamp(),
-    },
+    });
   });
 }
 

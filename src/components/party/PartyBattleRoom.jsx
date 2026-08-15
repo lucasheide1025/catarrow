@@ -1,4 +1,4 @@
-﻿// src/components/party/PartyBattleRoom.jsx — 組隊打怪房間
+// src/components/party/PartyBattleRoom.jsx — 組隊打怪房間
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
@@ -52,6 +52,9 @@ import { SOLO_CHALLENGE_LEVELS, getPartyChallengeProfile } from "../../lib/monst
 import { getFreeHuntBattleMonster } from "../../lib/freeHuntCatalog";
 import { FREE_HUNT_FACES, FREE_HUNT_DISTANCES, getFreeHuntEnvironment, getPartyMemberFreeHuntEnvironment } from "../../lib/freeHuntEnvironment";
 import { buildBattleStatProvenance } from "../../lib/battleStatProvenance";
+import { createSyncingReceipt, normalizeBattleRewardReceipt } from "../../lib/battleRewardReceipt";
+import HuntBattleReport from "../battle/HuntBattleReport";
+import { gradeArcheryPerformance } from "../../lib/archeryGrade";
 
 // SCORE_MAP/SCORE_LABELS/SCORE_COLORS 統一由 ../../lib/score 管理
 const ARROWS_PER_ROUND = 6;
@@ -205,6 +208,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const myInflictRef = useRef({});
   const {
     room,
+    submitted: roundSubmitted,
     handleSubmit: fsHandleSubmit,
     localProcessing: submitting,
     setSubmitted: setFsSubmitted,
@@ -226,12 +230,13 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     onBeforeSubmit: () => { sfxCast(); vibrate([0, 20, 40]); },
     onSubmitError: (reason) => { alert("送出失敗，請重試（" + reason + "）"); },
     onSubmitSuccess: (submittedArrows) => {
-      setPostSubmitted(true);
       if (myId && Array.isArray(submittedArrows) && submittedArrows.length > 0) {
         addRoundArrows(myId, submittedArrows.length, { accountType: profile?.accountType || "official" }).catch(() => {});
       }
     },
   });
+
+  const postSubmitted = roundSubmitted;
 
   const lockedBattleSettings = normalizePartyBattleSettings(room, {
     targetFormat: targetFmt,
@@ -240,7 +245,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const isFreeHuntParty = !!room?.huntMonsterId;
   // 自由狩獵的討伐目標由建房時鎖定，不再借用舊組隊的抽怪/setupMonster 狀態。
   const fixedHuntMonster = isFreeHuntParty
-    ? (getFreeHuntBattleMonster(room?.huntMonsterId || room?.monsterId) || room?.monsterSnapshot || room?.monster || null)
+    ? (room?.monsterSnapshot || room?.monster || getFreeHuntBattleMonster(room?.huntMonsterId || room?.monsterId) || null)
     : null;
   const myHuntMember = room?.members?.[myId] || {};
   const huntTargetFmt = myHuntMember.huntTargetFmt || room?.huntTargetFmt || "half_17";
@@ -275,9 +280,10 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const [guestLoot,       setGuestLoot]       = useState(null);
   const [guestAlreadyWon, setGuestAlreadyWon] = useState(false);
   const [guestPartyReward, setGuestPartyReward] = useState(null);
-  const [claimResult,     setClaimResult]     = useState(null); // { coins, material, card }
-  const [previewReward,   setPreviewReward]   = useState(null); // 領取前預覽
-  const [claimedCoinChests, setClaimedCoinChests] = useState([]); // 領取當下產生的金幣寶箱（結算頁要顯示）
+  const [claimResult,     setClaimResult]     = useState(null);
+  const [rewardReceipt,   setRewardReceipt]   = useState(null);
+  const [previewReward] = useState(null); // 僅供非自由狩獵舊結算相容；自由狩獵禁止預抽
+  const [claimedCoinChests] = useState([]);
   const [drawnMonsters,   setDrawnMonsters]   = useState([]);
   const [cheerMsg,        setCheerMsg]        = useState("");
   const [scoringReady,    setScoringReady]    = useState(false);
@@ -289,8 +295,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const [scoringModeChosen, setScoringModeChosen] = useState(false);
   const [potionUsedThisRound, setPotionUsedThisRound] = useState(false);
   // 提交後鎖定所有輸入按鈕，到下一回合開始才解鎖（防止動畫進行中玩家誤操作）
-  const [postSubmitted, setPostSubmitted] = useState(false);
-
   const {
     liveEntry, liveMiniIdx: liveMiniRoundIdx,
     animHit, animCounter, animMonsterCharge, animScreenShake,
@@ -371,7 +375,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     stopReveal();
     setShowFullLog(false);
     setClaimResult(null);
-    setPreviewReward(null);
+    setRewardReceipt(null);
     setStartError("");
     setLogInited(false);
     setScoringReady(false);
@@ -435,7 +439,6 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   // 每回合開始時重置計分門禁、角色選擇、Firestore hook submitted 狀態
   useEffect(() => {
     setScoringReady(false);
-    setPostSubmitted(false);
     setFsSubmitted(false);
     // 從 Firestore 讀取自己目前的 role（前衛倒下時伺服器會寫入 "rear"）
     const serverRole = room?.members?.[myId]?.role;
@@ -729,21 +732,23 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const myExpansionReward = room?.expansionRewardPending?.[myId] || null;
   const myClaimed = (room?.rewardClaimed || []).includes(myId);
 
-  // 寶箱出現時預先 roll 金幣 + 掉落物，讓玩家看到等待中的獎勵
+  // 勝利資格出現後自動呼叫權威 claim；畫面在確認前只顯示同步中，不做客戶端預抽。
   useEffect(() => {
-    if (!myChests.length || myClaimed || previewReward || !room) return;
-    const coins    = rollCoins(room.monster?.tier || "common", room.mode || "student");
-    const material = myExpansionReward?.material || rollMaterialDrop(room.monster);
-    const card     = myExpansionReward ? myExpansionReward.card : rollCardDrop(room.monster);
-    setPreviewReward({ coins, material, card });
-  }, [myChests.length, myClaimed, myExpansionReward?.rewardKey]); // eslint-disable-line
-
-  // 自動領取寶箱（previewReward 準備好後立即入庫，無需手動點擊）
-  useEffect(() => {
-    if (!previewReward || !myChests.length || myClaimed || claiming || autoClaimFiredRef.current) return;
+    if (!myChests.length || rewardReceipt?.status === "confirmed" || claiming || autoClaimFiredRef.current) return;
     autoClaimFiredRef.current = true;
     handleClaim();
-  }, [previewReward]); // eslint-disable-line
+  }, [myChests.length, myClaimed, rewardReceipt?.status]); // eslint-disable-line
+
+  // 網路暫時失敗時保留同一 claim ID，稍候再查詢同一份權威收據。
+  // 不在 catch 裡立刻重送，避免離線期間形成緊密請求迴圈。
+  useEffect(() => {
+    if (rewardReceipt?.status !== "failed_retryable" || claiming || !myChests.length) return undefined;
+    const timer = setTimeout(() => {
+      autoClaimFiredRef.current = false;
+      handleClaim();
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [rewardReceipt?.status, claiming, myChests.length]); // eslint-disable-line
 
   // 玩家確認隨機事件彈窗 → 關掉彈窗並啟動本回合動畫
   const handleDismissEvent = () => {
@@ -913,32 +918,19 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   async function handleClaim() {
     if (!myChests.length || claiming) return;
     setClaiming(true);
+    const claimId=[roomId,room.battleInstanceId,myId,"party_v2"].map(encodeURIComponent).join("~");
+    setRewardReceipt(createSyncingReceipt({claimId,battleId:room.battleInstanceId,mode:"party"}));
     try {
       let archerXPForResult = 0, catXPForResult = 0;
       const myDmg = (room.log || []).reduce((s, entry) => {
         const p = (entry.playerLog || []).find(p => p.id === myId);
         return s + (p?.dmg || 0);
       }, 0);
-      // 使用預覽時已 roll 好的值，保持顯示一致
-      const reward   = previewReward || {};
-      let coins    = reward.coins    ?? rollCoins(room.monster?.tier || "common", room.mode || "student");
-      let material = reward.material ?? myExpansionReward?.material ?? rollMaterialDrop(room.monster);
-      let card     = myExpansionReward ? myExpansionReward.card : (reward.card ?? rollCardDrop(room.monster));
       const monsterTier = room.monster?.tier || "common";
-      const coinChest = makeCoinChest(monsterTier, "組隊戰鬥掉落");
-      const bonusChest = Math.random() < PARTY_BONUS_CHEST_CHANCE ? makeCoinChest(monsterTier, "組隊加成寶箱") : null;
-      // 金幣寶箱是「領取當下」才產生的，不在 myChests（那是戰鬥掉落的箱子）。
-      // 不存起來的話結算頁就完全看不到它 —— 使用者實測「沒有顯示金幣寶箱掉落」。
-      setClaimedCoinChests([coinChest, bonusChest].filter(Boolean));
       const { claimPartyBattleRewardV2 } = await import("../../lib/partyRewardClaimDb");
       const res = isLimitedAccount ? { ok:true, reward:{} } : await claimPartyBattleRewardV2({ roomId, battleInstanceId:room.battleInstanceId, memberId:myId });
-      if (!isLimitedAccount) {
-        const authoritative=res.reward||{};
-        coins=authoritative.coins||0; card=authoritative.card||null;
-        const entry=Object.entries(authoritative.materialTotals||{})[0]; material=entry?{id:entry[0],quantity:entry[1]}:null;
-        setClaimedCoinChests(authoritative.chests||[]);
-      }
       if (!res?.ok) throw new Error(res?.reason || "領取失敗");
+      const authoritative=res.reward||{};
       if (!isLimitedAccount) {
         // Authoritative party resources are committed atomically by the callable above.
       }
@@ -970,10 +962,10 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             mvpId:getPartyMvpId(room.log),
             damage:myDmg,
             rewards:{
-              coins,
-              materials:material ? [{ id:material.id, name:material.name || material.id }] : [],
-              card:card ? { id:card.id, name:card.name || card.id } : null,
-              chests:[coinChest, ...(bonusChest ? [bonusChest] : [])].map(chest => ({
+              coins:authoritative.coins||0,
+              materials:Object.entries(authoritative.materialTotals||{}).map(([id,quantity])=>({id,quantity})),
+              card:authoritative.card ? { id:authoritative.card.monsterId, name:authoritative.card.name } : null,
+              chests:(authoritative.chests||[]).map(chest => ({
                 type:chest.type, name:chest.name,
               })),
             },
@@ -991,13 +983,16 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
         const _ptyCatId = authProfile?.equippedCat?.catId;
         const catXP = _ptyCatId ? Math.round((CAT_TIER_XP[monsterTier] || 5) * xpMult) : 0;
         if (_ptyCatId) addCatXP(myId, _ptyCatId, catXP).catch(() => {});
-        archerXPForResult = xp;
+        archerXPForResult = authoritative.archerXP || xp;
         catXPForResult = catXP;
       }
       saveBond("party");
-      setClaimResult({ coins, material, card, coinChest, archerXP: archerXPForResult, catXP: catXPForResult });
+      const receipt=normalizeBattleRewardReceipt({claimId,battleId:room.battleInstanceId,mode:"party",reward:{...authoritative,catXP:catXPForResult}});
+      setRewardReceipt(receipt);
+      setClaimResult({receipt,archerXP:archerXPForResult,catXP:catXPForResult});
     } catch (e) {
       console.warn("handleClaim error:", e?.message);
+      setRewardReceipt(receipt=>receipt?{...receipt,status:"failed_retryable"}:createSyncingReceipt({claimId,battleId:room.battleInstanceId,mode:"party"}));
     } finally {
       setClaiming(false);
     }
@@ -1618,6 +1613,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     const myArrowBreakdown = (room.log || []).flatMap(entry =>
       (entry.playerLog || []).find(p => p.id === myId)?.arrowBreakdown || []
     );
+    const myShootingGrade=gradeArcheryPerformance(myArrowBreakdown, { targetFmt:activeTargetFmt });
     // 註：分數分佈與均分已改由 DungeonKillResult 內部的 archeryGrade 計算，
     // 原本手算的 partyScoreBreakdown / partyAvgScore 連同 partyResultData 一併移除。
 
@@ -1660,6 +1656,28 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       def:   members[id]?.def   || 0,
     })).sort((a, b) => b.dmgDealt - a.dmgDealt);
     const mvpId = statsList[0]?.dmgDealt > 0 ? statsList[0].id : null;
+
+    if (isFreeHuntParty) return <HuntBattleReport
+      won={won}
+      monster={room.monster}
+      stats={{
+        dmgDealt:myLogStats.dmg,
+        roundCount:room.log?.length||0,
+        arrowCount:myShootingGrade.arrowCount,
+        totalScore:myArrowBreakdown.reduce((sum,arrow)=>{const label=arrow?.label ?? arrow?.score ?? arrow;return sum+((SCORE_MAP[String(label)] ?? Number(label)) || 0);},0),
+        avgScore:myShootingGrade.avgScore,
+        hitRate:myShootingGrade.hitRate,
+        grade:myShootingGrade.grade,
+        performanceScore:myShootingGrade.score,
+      }}
+      receipt={won?rewardReceipt:null}
+      partyMembers={statsList}
+      onBack={onLeave}
+      onToggleDetails={()=>setShowFullLog(value=>!value)}
+      detailsOpen={showFullLog}
+    >
+      <div style={{display:"grid",gap:7}}>{(room.log||[]).map(entry=><div key={entry.round} style={{padding:9,borderRadius:10,background:"rgba(255,255,255,.04)",fontSize:11,color:"#cbd5e1"}}>第 {entry.round} 回合・隊伍傷害 {entry.totalDmg||0}</div>)}</div>
+    </HuntBattleReport>;
 
     return (
       <div className={`min-h-screen flex flex-col px-4 py-6 gap-4 max-w-lg mx-auto overflow-y-auto ${
@@ -2054,9 +2072,9 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 @keyframes party-banner-exit{0%{opacity:1;transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,-50%) scale(0.82) translateY(-8px)}}
       `}</style>
 
-      <CatMsg msg={catMsg} onDone={clearCatMsg}/>
+      {!isFreeHuntParty&&<CatMsg msg={catMsg} onDone={clearCatMsg}/>}
       <CatRoundOverlay
-        open={room?.status !== "active" && !!liveEntry && isCatMini}
+        open={!isFreeHuntParty && room?.status !== "active" && !!liveEntry && isCatMini}
         cats={catOverlayCats}
         totalDmg={curMini?.totalDmg}
       />

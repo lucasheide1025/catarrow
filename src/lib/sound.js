@@ -64,7 +64,7 @@ function sample(name, volume, fallback, vib) {
 // 而那些都是有動畫鋪陳的大場面，感覺不出來）。
 const SAMPLE_NAMES = [
   "ui_tap", "ui_switch", "ui_success",              // 介面：每天按幾百次
-  "normal_atk", "crit", "monster_atk", "monster_crit", "miss",   // 戰鬥：每回合都響
+  "normal_atk", "crit", "monster_atk", "monster_crit", "miss", "arrow_shoot",   // 戰鬥：每回合都響
   "round_end", "coin", "shop_buy",                  // 回合/獎勵與商店收銀：頻繁
 ];
 let _preloaded = false;
@@ -561,6 +561,20 @@ function sfxArrowShootSynth() {
 }
 
 // ── 戰鬥音效 ─────────────────────────────────────────────────
+
+// 護盾抵擋 — 金屬鏗鏘（高頻撞擊 + 短餘韻），比「被打」清脆、不悶
+// 有真實樣本就用樣本；載入失敗會自動退回下面的合成版（不會變成無聲）
+export function sfxShieldBlock() {
+  sample("shield_block", 0.8, sfxShieldBlockSynth, [0, 30, 20, 30]);
+}
+
+function sfxShieldBlockSynth() {
+  // 金屬擋格：高頻 pluck（鏗）+ 中頻 impact（擋住）+ 一點 air（發亮）
+  pluck({ freq: 1568, dur: 0.11, gain: 0.18, detune: 10, cut0: 7800, cut1: 1400, send: 0.22 });
+  impact({ dur: 0.2, cut0: 5200, cut1: 700, gain: 0.3, send: 0.16 });
+  air({ dur: 0.14, gain: 0.08, hp: 4200, send: 0.2 });
+  vibrate([0, 30, 20, 30]);
+}
 
 // 怪物反擊
 // 有真實樣本就用樣本；載入失敗會自動退回下面的合成版（不會變成無聲）

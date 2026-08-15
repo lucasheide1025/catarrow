@@ -28,6 +28,15 @@ describe("buildExpeditionMemberData", () => {
     expect(result.atk).toBe(base.atk + level.atk + cardBonus.atk);
     expect(result.def).toBe(base.def + level.def + cardBonus.def);
     expect(result.catAtk).toBeGreaterThanOrEqual(0);
+    expect(result.catBond).toBeLessThanOrEqual(50);
+    expect(result.catLevel).toBeGreaterThanOrEqual(1);
+    expect(result.catMaxHP).toBeGreaterThan(0);
+    expect(result.catDef).toBeGreaterThan(0);
+  });
+
+  test("carries the normalized personal resistance snapshot into expedition rooms", () => {
+    expect(buildExpeditionMemberData({},null,null,{statusStrengthReductionPct:20,statusDurationReduction:1,poisonResistPct:50}).statusResistance)
+      .toEqual({statusStrengthReductionPct:20,statusDurationReduction:1,poisonResistPct:50});
   });
 });
 
@@ -46,6 +55,8 @@ describe("地下城地圖數值進入戰鬥房", () => {
     });
     expect(member.restBonuses).toEqual({ atkPct:15, defPct:10 });
     expect(member.merchantBonuses).toEqual({ atkPct:17.5, defPct:0 });
+    expect(buildExpeditionBattleMemberSnapshot({memberName:"a",memberData:{statusResistance:{poisonResistPct:100}}}).statusResistance).toEqual({poisonResistPct:100});
+    expect(buildExpeditionBattleMemberSnapshot({memberName:"a",memberData:{catBond:12,catLevel:8,catMaxHP:345,catDef:27}})).toMatchObject({catBond:12,catLevel:8,catMaxHP:345,catDef:27});
     expect(calculateDungeonDisplayedStats(member)).toMatchObject({ atk:191, def:146 });
   });
 });

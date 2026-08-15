@@ -2,6 +2,11 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useCatCompanion } from "../../hooks/useCatCompanion";
+import { createCatBattleState, resolveCatRound } from "../../lib/catBattleEngine";
+import { calcCatCombatStats } from "../../lib/catCombat";
+import { buildCombatModifiers } from "../../lib/combatModifiers";
+import { getEquipSpecializations, toEquipSpecSlots } from "../../lib/equipSpecializationDb";
+import { calcCardCombatEffectsFromCollection } from "../../lib/cardTalents";
 import { attackWorldBoss, hireWorldBossBot, distributeWorldBossRewards } from "../../lib/worldBossDb";
 import { shouldShowWorldBossVictory } from "../../lib/worldBossState";
 import { worldBossWeaponLabel } from "../../lib/worldBossPresentation";
@@ -231,13 +236,15 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const { profile: authProfile } = useAuth();
   const profile = guestOverride || authProfile;
   const isGuest  = !!guestOverride || ["guest", "kid"].includes(profile?.accountType);
-  const { saveBond, hasCat, catName, catATK, triggerCatSkill } = useCatCompanion(isGuest ? profile : null);
+  const { saveBond, hasCat, catName, catATK } = useCatCompanion(isGuest ? profile : null);
   const todayStr = new Date().toISOString().slice(0, 10);
 
   // ── 正確載入檢定資料，確保 ATK 包含檢定加成 ─────────────
   const [certRecords,   setCertRecords]   = useState([]);
   const [certification, setCertification] = useState(null);
   const [certReady,     setCertReady]     = useState(false);
+  const [equipSpecSlots,setEquipSpecSlots]=useState(null);
+  useEffect(()=>{if(isGuest||!profile?.id){setEquipSpecSlots(null);return undefined;}let active=true;getEquipSpecializations(profile.id).then(spec=>{if(active)setEquipSpecSlots(toEquipSpecSlots(spec));});return()=>{active=false;};},[isGuest,profile?.id]);
   useEffect(() => {
     if (sharedData?.certRecords !== undefined) setCertRecords(sharedData.certRecords);
     if (sharedData?.certification !== undefined) setCertification(sharedData.certification);
@@ -393,6 +400,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
   const [targetPending, setTargetPending] = useState(false);
   const [targetFmt,    setTargetFmt]    = useState(getBattleTargetFmt);
   const [allRounds,    setAllRounds]    = useState(_hasSave ? _saved.allRounds   : []);
+  const [catBattleState,setCatBattleState]=useState(_hasSave?(_saved.catBattleState||createCatBattleState()):createCatBattleState());
   const [roundSummary, setRoundSummary] = useState(null);
   const shootingProfileRef = useRef(null);
   const shootingSessionIdRef = useRef(null);
@@ -763,36 +771,36 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       },
     });
 
-    // ── 貓貓每回合攻擊（與打怪模式相同，HP > 0 才出擊）────────
+    let nextCatBattleState=catBattleState;
+    let catRoundHeal=0;
+    let catRoundShield=0;
+    let catRoundDefBonusPct=0;
+    // ── 新版貓咪權威公式：世界王採專用低比例與嚴格 cap ────────
     if (hasCat && catATK && localBossHP > 0) {
-      let catDmg = 0;
-      for (let i = 0; i < 6; i++) {
-        const s = Math.max(5, Math.min(10, Math.round(7 + (Math.random() * 6 - 3))));
-        catDmg += wbArrowDmg(s, catATK, boss.def, participantBonus);
-      }
-      catDmg = Math.round(catDmg);
-      const catSkill = triggerCatSkill?.();
-      let skillNote = "";
-      if (catSkill?.triggered) {
-        if (catSkill.skillGroup === "atk") {
-          const bonus = Math.round(catDmg * (catSkill.extraMult || 0.5));
-          catDmg += bonus;
-          skillNote = ` ✨ 特技爆發！傷害 ×${(1 + (catSkill.extraMult || 0.5)).toFixed(1)}`;
-        } else if (catSkill.skillGroup === "heal") {
-          skillNote = ` 💚 ${catName} 治療技能觸發！`;
-        } else if (catSkill.skillGroup === "def") {
-          skillNote = ` 🛡️ ${catName} 防護姿態觸發！`;
-        }
-      }
+      const equippedCat=profile?.equippedCat||{};
+      const catStats=calcCatCombatStats(equippedCat,equippedCat.catId);
+      const catMods=buildCombatModifiers({cardFx:calcCardCombatEffectsFromCollection(cardColl||{}),equipSpec:equipSpecSlots});
+      const outcome=resolveCatRound({catId:equippedCat.catId,catLevel:catStats.catLevel,bondLevel:catStats.bondLv,catAtk:catStats.catATK||catATK,catMaxHp:catStats.catHP,companionAttackPct:catMods.companionAttackPct,companionHealingPct:catMods.companionHealingPct,playerHp:myHP,playerMaxHp:baseHP,monsterHp:localBossHP,monsterMaxHp:bossMaxHP,monsterBossTagged:true,round:roundIdx+1,scores:fullArrows.map(arrow=>arrow.label),mode:"worldboss",state:catBattleState});
+      nextCatBattleState=outcome.state;
+      setCatBattleState(outcome.state);
+      const catDmg=outcome.monsterDamage;
+      catRoundHeal=Math.max(0,outcome.playerHeal||0);
+      catRoundShield=Math.max(0,outcome.playerShield||0);
+      catRoundDefBonusPct=catRoundShield>0?Math.max(0,outcome.playerDefBonusPct||0):0;
+      const strong=outcome.events.find(event=>event.kind==="strong_skill");
+      const skillNote=strong?` ✨ ${strong.name}！`:"";
       totalDmg += catDmg;
       localBossHP = Math.max(0, localBossHP - catDmg);
       setBossHP(localBossHP);
-      setDmgLog(prev => [...prev, `🐱 ${catName} 出擊！6箭齊射 -${catDmg}${skillNote}`]);
+      const effectNotes=[catDmg>0?`傷害 ${catDmg}`:null,catRoundHeal>0?`治療 ${catRoundHeal}`:null,catRoundShield>0?`護盾 ${catRoundShield}`:null,outcome.monsterStatus?.name?`造成${outcome.monsterStatus.name}`:null].filter(Boolean);
+      setDmgLog(prev => [...prev, `🐱 ${catName} 協戰：${effectNotes.join("・")||"守護待命"}${skillNote}`]);
       // 顯示貓貓回合覆蓋層
-      setCatRoundCats([{ catId: profile?.equippedCat?.catId || "baobao", catName, dmg: catDmg }]);
+      setCatRoundCats([{ catId: profile?.equippedCat?.catId || "baobao", catName, dmg: catDmg, skillTriggered:outcome.strongTriggered, skillName:strong?.name, heal:catRoundHeal, shield:catRoundShield, defBonusPct:catRoundDefBonusPct, statusApplied:outcome.monsterStatus||null }]);
       setCatRoundTotalDmg(catDmg);
-      setBattleDemo({ key:`${roundIdx}:cat:${Date.now()}`, type:"cat", damage:catDmg, skillTriggered:!!catSkill?.triggered, skillLabel:catSkill?.skillName || catSkill?.skillGroup, message:`🐾 ${catName} 協戰：-${catDmg}${catSkill?.triggered ? " 技能發動" : ""}` });
+      setBattleDemo({ key:`${roundIdx}:cat:${Date.now()}`, type:"cat", damage:catDmg, skillTriggered:outcome.strongTriggered, skillLabel:strong?.name||outcome.events[0]?.name, message:`🐾 ${catName} 協戰：-${catDmg}${outcome.strongTriggered ? " 技能發動" : ""}` });
       setShowCatRound(true);
+      if(catRoundHeal>0)setMyHP(current=>Math.min(baseHP,current+catRoundHeal));
+      if(catRoundShield>0)setPotionShield(current=>current+catRoundShield);
       sfxArrowHit();
       await delay(1800);
       setShowCatRound(false);
@@ -818,8 +826,10 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     addTimer(() => {
       setAnimBossCharge(false);
       const defDebuffMult = 1 - (strikeDebuffs.defDownPct || 0) / 100;
-      const effectiveDef = Math.round(baseDEF * (carryBuffs.defMult || 1) * defDebuffMult);
+      const effectiveDef = Math.round(baseDEF * (carryBuffs.defMult || 1) * defDebuffMult * (1+catRoundDefBonusPct/100));
       const rawPlayerCdmg = Math.round(wbCounter(boss.atk || 100, effectiveDef, wbDmgReducePct) * (1 - nextCounterReducePct / 100));
+      const hpBeforeCounter=Math.min(baseHP,myHP+catRoundHeal);
+      const shieldBeforeCounter=potionShield+catRoundShield;
 
       // ── R2/R4 強攻：以本回合射箭破解,走 worldBossStrikeEngine（PRD 14-19）──
       const roundNumber = nextRounds.length;
@@ -831,8 +841,8 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
           arrows: fullArrows.filter(a => !a.consumableId).map(a => a.label),
           targetFmt,
           baseCounterDamage: rawPlayerCdmg,
-          playerHp: myHP, playerMaxHp: baseHP,
-          shield: potionShield,
+          playerHp: hpBeforeCounter, playerMaxHp: baseHP,
+          shield: shieldBeforeCounter,
           resolvedSkillKeys: resolvedStrikeKeys,
         });
         if (!strikeResult?.ok) strikeResult = null; // 資料異常時退回標準反擊,不擋戰鬥
@@ -840,11 +850,11 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
       let cdmg, absorbed, counterHitText;
       if (strikeResult) {
         cdmg = strikeResult.damage; // 已含倍率/破解減幅/護盾;R2 保 1、R4 可歸零
-        absorbed = Math.max(0, potionShield - strikeResult.shieldRemaining);
+        absorbed = Math.max(0, shieldBeforeCounter - strikeResult.shieldRemaining);
         counterHitText = `「${scheduledStrike.name}」`;
       } else {
         const playerCounter = resolvePlayerCounter({ arrows:fullArrows, baseDamage:rawPlayerCdmg, maxHP:baseHP });
-        absorbed = Math.min(potionShield, playerCounter.damage);
+        absorbed = Math.min(shieldBeforeCounter, playerCounter.damage);
         cdmg = playerCounter.damage - absorbed;
         counterHitText = playerCounter.part.name;
       }
@@ -855,7 +865,8 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
 
       const companionCounterDmgs = Object.fromEntries(companions.map(companion => [companion.id, Math.round(wbCounter(boss.atk || 100, companion.def, wbDmgReducePct) * (1 - nextCounterReducePct / 100))]));
       const totalCounterDmg = cdmg + Object.values(companionCounterDmgs).reduce((sum, damage) => sum + damage, 0);
-      setPotionShield(current => Math.max(0, current - absorbed));
+      const shieldAfterCounter=Math.max(0,shieldBeforeCounter-absorbed);
+      setPotionShield(shieldAfterCounter);
       setNextCounterReducePct(0);
       const isLast = nextRounds.length === TOTAL_ROUNDS;
       // 有專屬語錄的王（目前是六族小王）優先用自己的梗，其餘沿用通用台詞池
@@ -892,7 +903,7 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
         // 蜂毒（上回合附加）：本回合結算,毒不致死（最低留 1 HP）
         const poisonPct = strikeDebuffs.dotMaxHpPct || 0;
         const poisonDmg = poisonPct > 0 ? Math.max(1, Math.round(baseHP * poisonPct / 100)) : 0;
-        let afterCounter = Math.max(0, myHP - cdmg);
+        let afterCounter = Math.max(0, hpBeforeCounter - cdmg);
         if (poisonDmg > 0 && afterCounter > 0) {
           const afterPoison = Math.max(1, afterCounter - poisonDmg);
           setDmgLog(prev => [...prev, `🕷️ 蜂毒發作：-${afterCounter - afterPoison} HP`]);
@@ -930,9 +941,10 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
                 allRounds: nextRounds, myHP: nextMyHP,
                 localBossHP, companionHPs: nextCompHPs,
                 activeCarryBuffs, raidUsed, sortieDmgPct, botDmgPct,
-                potionShield:Math.max(0, potionShield - absorbed), nextCounterReducePct:0,
+                potionShield:shieldAfterCounter, nextCounterReducePct:0,
                 sortieId, resolvedStrikeKeys: nextResolvedKeys,
                 strikeDebuffs: nextDebuffs, pendingTelegraph: telegraph,
+                catBattleState:nextCatBattleState,
               }));
             } catch { /**/ }
             setArrows([]);

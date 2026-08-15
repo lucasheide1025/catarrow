@@ -1,7 +1,7 @@
 "use strict";
 const test=require("node:test");
 const assert=require("node:assert/strict");
-const { buildDungeonBossEnvelope, buildFamilyMaterialChests, isRewardableDungeonRoom, publicEnvelope, validateChoices }=require("./dungeonBossReward");
+const { buildDungeonBossEnvelope, buildFamilyMaterialChests, isRewardableDungeonRoom, isRewardableTeamDungeonBossRoom, publicEnvelope, validateChoices }=require("./dungeonBossReward");
 
 test("server builds deterministic boss envelopes with valid choices",()=>{
   const input={ battleId:"run-1", memberId:"m1", monsterId:"ghost_t1_boss" };
@@ -27,10 +27,31 @@ test("claims require authoritative win proof with matching member and monster",(
   assert.equal(isRewardableDungeonRoom({...recovered,log:[{monsterHPAfter:1,playerLog:[{id:"u1"}]}]},"u1","m1"),false);
 });
 
+test("team members remain rewardable when they did not appear in the final attack log",()=>{
+  const room={
+    status:"path_select", result:"win", monsterHP:0, monster:{id:"m1"},
+    members:{host:{role:"front"}, teammate:{role:"rear"}},
+    log:[{monsterHPAfter:0,playerLog:[{id:"host"}]}],
+  };
+  assert.equal(isRewardableDungeonRoom(room,"teammate","m1"),true);
+});
+
+test("team coordination room preserves teammate reward eligibility after battle advances",()=>{
+  const teamRoom={
+    members:{host:{},teammate:{}},
+    bossRewardBattleId:"boss-room",
+    bossRewardMonsterId:"ghost_t1_boss",
+    bossRewardEligibleMemberIds:["host","teammate"],
+  };
+  assert.equal(isRewardableTeamDungeonBossRoom(teamRoom,"boss-room","teammate","ghost_t1_boss"),true);
+  assert.equal(isRewardableTeamDungeonBossRoom(teamRoom,"wrong-room","teammate","ghost_t1_boss"),false);
+  assert.equal(isRewardableTeamDungeonBossRoom(teamRoom,"boss-room","outsider","ghost_t1_boss"),false);
+});
+
 test("material choices create canonical openable family chests",()=>{
   const chests=buildFamilyMaterialChests({claimId:"c",optionId:"o",family:"ghost",tierIndex:3,quantity:2,now:123});
   assert.equal(chests.length,2);
-  assert.deepEqual(chests[0],{id:"c:o:0",type:"family_mat",family:"ghost",tierIndex:3,tier:"elite",name:"T3 ghost 族系素材箱",icon:"📦",color:"#a16207",from:"dungeon_boss_choice",ts:123});
+  assert.deepEqual(chests[0],{id:"c:o:0",type:"family_mat",family:"ghost",tierIndex:3,tier:"elite",name:"T3 鬼怪族素材箱",icon:"📦",color:"#a16207",from:"dungeon_boss_choice",ts:123});
 });
 
 test("six choices contain the approved T1 reward categories",()=>{
