@@ -1,3 +1,8 @@
+## 2026-08-16 — 地下城組隊第一回合卡死：貓咪演出 fail-safe
+- 修正地下城組隊在第一回合送出後可能永久鎖住操作的 presentation 缺口：`BattleScreen` 的共享 `partyResolution` 非同步播放器現在有 `try/catch/finally`，即使貓咪卡片、音效或可選演出資料在播放途中拋錯，也一定會在未卸載時完成 `completedPartyResolutionKey`，不再讓下一回合永遠停在 resolution lock。
+- `dungeonDb.processDungeonRound()` 不再只在 `catTotalDmg > 0` 時產生貓咪 mini-round；尤尤／小安／點點等防禦型貓即使本回合為 0 直接傷害、只提供護盾／不倒／反攻，也會留下合法 `isCat` 權威演出資料，避免 Firestore 已套技能但客戶端沒有相對應回合資料。
+- 0 傷害貓咪回合不會誤判尾刀；怪物 HP 仍只扣實際 `catTotalDmg`。本輪只修地下城組隊回合生命週期與貓咪 presentation 一致性，不改九貓技能倍率或一般組隊玩法。
+
 ## 2026-08-15 — 專案正本化：本機現行工作區改為唯一候選真本
 - 在任何清理前先建立 `D:\射箭系統備份\codebase-canonicalization-2026-08-15_112229\`；包含工作樹快照、完整主 repo Git bundle、狀態／diff 記錄，另為 `.hotfix-shop-deploy` 建立獨立完整 Git bundle，兩份 bundle 均已 `git bundle verify` 通過。
 - 清除只會造成版本來源混亂的非正式產物：`.hotfix-shop-deploy/`、`build/`、`tmp/`、repo 內 `backups/`、既有 `.deploy-*` 暫存目錄與明顯命令誤產物；`src/`、`public/`、`functions/`、`website/` 明確保留，不進行死碼大掃除。

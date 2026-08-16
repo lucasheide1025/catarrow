@@ -854,6 +854,7 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
       setCompletedPartyResolutionKey(0);
       setPartyHistory([]);
       setPartyMonsterHp(partyResolution.monsterHPBefore ?? null);
+      try {
       for(const mini of partyResolution.miniRounds){
         if(cancelled)return;
         if(mini.isCounter){
@@ -974,13 +975,24 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
         setPartyPhase({type:"fallen",title:"前衛被擊倒",detail:`${fallen.name} 已轉為後衛，下一回合可選擇支援方式。`,icon:"🛡️"});
         await delay(2400);
       }
+      } catch (error) {
+        // Shared dungeon/party resolution is already authoritative in Firestore.
+        // A presentation-only failure (cat overlay, sound, malformed optional UI data, etc.)
+        // must never keep the controls locked forever waiting for this key to complete.
+        console.error("[BattleScreen party resolution playback]", error);
+      } finally {
       if(!cancelled){
         setPartyAction(null);
         setPartyPhase(null);
+        setSkillFx(null);
+        if(Number.isFinite(partyResolution.monsterHPAfter)){
+          setPartyMonsterHp(partyResolution.monsterHPAfter);
+        }
         const completedAt=Date.now();
         setPartyResolutionCompletedAt(completedAt);
         setPartyPresentationNow(completedAt);
         setCompletedPartyResolutionKey(partyResolutionKey);
+      }
       }
     };
     run();

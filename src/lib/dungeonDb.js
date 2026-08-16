@@ -513,14 +513,17 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       monsterStatuses = tick.statuses;
     }
 
-    if (catTotalDmg > 0 && monsterHP > 0) {
+    // 防禦型貓可能本回合只提供護盾／不倒／反攻而沒有直接傷害。
+    // 仍要建立合法的 cat mini-round，否則權威端已套用技能、客戶端卻完全沒有
+    // 對應演出資料，會讓組隊回合的 presentation state 與 Firestore 結算分岔。
+    if (catMiniLog.length > 0 && monsterHP > 0) {
       const hpBeforeCatAttack = monsterHP;
       monsterHP = Math.max(0, monsterHP - catTotalDmg);
       miniRounds.push({
         miniRound: "cat", isCounter: false, isCat: true,
         playerLog: catMiniLog, totalDmg: catTotalDmg, monsterHPAfter: monsterHP,
       });
-      if (hpBeforeCatAttack > 0 && monsterHP <= 0) {
+      if (catTotalDmg > 0 && hpBeforeCatAttack > 0 && monsterHP <= 0) {
         const finisher = catMiniLog.at(-1);
         lastHitInfo = {
           memberId: finisher?.id || null,
