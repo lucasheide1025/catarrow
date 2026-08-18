@@ -209,8 +209,22 @@ export async function forceSkipDungeonPlayer(roomId, memberId) {
 // calcCtrFn(monsterAtk, archerDef) → number
 export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
   if (room.processing) return { ok:false, reason:"already processing" };
+  const expectedRound = Number(room?.round) || 1;
+  let claimedRound = false;
   try {
-    await updateDoc(doc(db, D, roomId), { processing:true });
+    const roomRef = doc(db, D, roomId);
+    const claim = await runTransaction(db, async tx => {
+      const snap = await tx.get(roomRef);
+      if (!snap.exists()) return { ok:false, reason:"room-not-found" };
+      const current = snap.data();
+      const currentRound = Number(current?.round) || 1;
+      if (current.processing) return { ok:false, reason:"already-processing" };
+      if (currentRound !== expectedRound) return { ok:false, reason:"stale-round" };
+      tx.update(roomRef, { processing:true });
+      return { ok:true };
+    });
+    if (!claim?.ok) return claim;
+    claimedRound = true;
 
     const members  = room.members || {};
     const aliveIds = Object.keys(members).filter(id => members[id].alive);
@@ -868,7 +882,9 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
     return { ok:true, won:monsterHP <= 0, lost:result === "lose" };
   } catch (e) {
     console.error("[processDungeonRound]", e);
-    await updateDoc(doc(db, D, roomId), { processing:false }).catch(() => {});
+    if (claimedRound) {
+      await updateDoc(doc(db, D, roomId), { processing:false }).catch(() => {});
+    }
     return { ok:false, reason:e.message };
   }
 }

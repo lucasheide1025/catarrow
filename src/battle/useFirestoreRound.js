@@ -83,6 +83,7 @@ export function useFirestoreRound({
   const retryCountRef = useRef(0);  // 連續失敗次數
   const retryRoundRef = useRef(0);  // retryCount 所屬回合
   const confirmNowRef = useRef(null); // { timer, interval, doProcess, processDelayMs }
+  const retryTimerRef = useRef(null);
   const submitLockRef = useRef(false);
 
   const onBeforeSubmitRef = useRef(onBeforeSubmit);
@@ -133,10 +134,15 @@ export function useFirestoreRound({
   // 同回合的房間快照更新不能取消已開始的房主確認倒數；僅在卸載時統一清除。
   useEffect(() => () => {
     const pending = confirmNowRef.current;
-    if (!pending) return;
-    clearTimeout(pending.timer);
-    clearInterval(pending.interval);
-    confirmNowRef.current = null;
+    if (pending) {
+      clearTimeout(pending.timer);
+      clearInterval(pending.interval);
+      confirmNowRef.current = null;
+    }
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
   }, []);
 
   // ── 2. Submit ────────────────────────────────────────────
@@ -165,28 +171,8 @@ export function useFirestoreRound({
   }, [roomId, myId, submitted, localProcessing]); // eslint-disable-line
 
   // ── 3. Host: detect all-ready → process ──────────────────
-  // Non-host clients also render the shared countdown and can recover a
-  // round when the host refreshed. processRound is still protected by its
-  // Firestore processing guard, so only one client resolves the round.
-  useEffect(() => {
-    if (!room || room.status !== "active" || isProcessing(room) || room.hostId === myId) return;
-    const alive = getMembers(room).filter(member => member.alive);
-    if (!alive.length || !alive.every(member => member.ready)) return;
-    setAllReady(true);
-    setReadyCountdown(Math.round(confirmDelayMs / 1000));
-    const interval = setInterval(() => setReadyCountdown(prev => Math.max(0, prev - 1)), 1000);
-    const timer = setTimeout(async () => {
-      clearInterval(interval);
-      const latestRoom = roomRef.current;
-      if (!latestRoom || latestRoom.status !== "active" || isProcessingRef.current(latestRoom)) return;
-      const latestAlive = getMembersRef.current(latestRoom).filter(member => member.alive);
-      if (!latestAlive.length || !latestAlive.every(member => member.ready)) return;
-      const extraArgs = getExtraProcessArgsRef.current?.() || [];
-      await processRoundRef.current(roomId, latestRoom, ...extraArgs).catch(() => {});
-    }, confirmDelayMs);
-    return () => { clearInterval(interval); clearTimeout(timer); };
-  }, [room, myId, roomId, confirmDelayMs]); // eslint-disable-line
-
+  // Only the Firestore room host owns countdown + resolution. Teammates only
+  // submit arrows and wait for the authoritative room update.
   useEffect(() => {
     if (!room || room.hostId !== myId || room.status !== "active") return;
 
@@ -224,11 +210,44 @@ export function useFirestoreRound({
     const doProcess = async () => {
       try {
         const extraArgs = getExtraProcessArgsRef.current?.() || [];
-        const res = await processRound(roomId, room, ...extraArgs);
-        if (res?.ok) retryCountRef.current = 0;
-        else { guardRef.current = 0; retryCountRef.current++; }
+        const latestRoom = roomRef.current || room;
+        const res = await processRoundRef.current(roomId, latestRoom, ...extraArgs);
+        if (res?.ok) {
+          retryCountRef.current = 0;
+          return;
+        }
+        retryCountRef.current++;
+        console.error("[useFirestoreRound] round processing failed", {
+          roomId,
+          round: currentRound,
+          reason: res?.reason || "unknown",
+          retry: retryCountRef.current,
+        });
+        // Keep guardRef on the same round. Clearing it here used to make the
+        // shared 5-second confirmation countdown restart from 5 after it hit 0.
+        // Retry the authority operation silently instead of replaying the UI countdown.
+        if (retryCountRef.current < maxRetries) {
+          retryTimerRef.current = setTimeout(doProcess, 750);
+        } else {
+          setAllReady(false);
+          setReadyCountdown(0);
+          onSubmitErrorRef.current?.(`回合結算失敗：${res?.reason || "請重新同步後再試"}`);
+        }
       } catch (e) {
-        guardRef.current = 0; retryCountRef.current++;
+        retryCountRef.current++;
+        console.error("[useFirestoreRound] round processing threw", {
+          roomId,
+          round: currentRound,
+          reason: e?.message || String(e),
+          retry: retryCountRef.current,
+        });
+        if (retryCountRef.current < maxRetries) {
+          retryTimerRef.current = setTimeout(doProcess, 750);
+        } else {
+          setAllReady(false);
+          setReadyCountdown(0);
+          onSubmitErrorRef.current?.(`回合結算失敗：${e?.message || "請重新同步後再試"}`);
+        }
       }
     };
 
@@ -268,6 +287,8 @@ export function useFirestoreRound({
 
   // ── confirmNow：房主手動提前觸發 ──────────────────────────
   const confirmNow = useCallback(() => {
+    const authorityRoom = roomRef.current;
+    if (!authorityRoom || authorityRoom.hostId !== myId || authorityRoom.status !== "active") return;
     if (!confirmNowRef.current) {
       // A browser refresh clears the five-second local timer while Firestore
       // still has every member marked ready.  Let the host resume that exact
@@ -280,8 +301,20 @@ export function useFirestoreRound({
       guardRef.current = currentRound;
       const extraArgs = getExtraProcessArgsRef.current?.() || [];
       processRoundRef.current(roomId, latestRoom, ...extraArgs).then(res => {
-        if (!res?.ok) guardRef.current = 0;
-      }).catch(() => { guardRef.current = 0; });
+        if (!res?.ok) {
+          console.error("[useFirestoreRound] host recovery processing failed", {
+            roomId,
+            round: currentRound,
+            reason: res?.reason || "unknown",
+          });
+        }
+      }).catch(e => {
+        console.error("[useFirestoreRound] host recovery processing threw", {
+          roomId,
+          round: currentRound,
+          reason: e?.message || String(e),
+        });
+      });
       return;
     }
     const { timer, interval, doProcess, processDelayMs: pDelay } = confirmNowRef.current;
@@ -295,7 +328,7 @@ export function useFirestoreRound({
     } else {
       doProcess();
     }
-  }, []);
+  }, [myId, roomId]);
 
   return {
     room,
