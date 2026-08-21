@@ -154,3 +154,14 @@ Why: QR-based kid sessions intentionally allow multiple children to use the same
 **Related**: [[project_party_system]] room-code join is `accountType`-agnostic by design (no filtering needed there — see the `07-09-guest-kid-mode-overhaul` task's `design.md` §4).
 
 **Deliberately NOT filtered**: `resetAllDungeonUsed`, `resetAllMonsterSessions` (daily resets should apply to guest/kid too), and cert/competition registration queries (guest/kid accounts have no UI path into those flows in `GuestApp.jsx`, so filtering there would be dead code).
+
+## Convention: booking visitors enter Arcade, not GuestApp
+
+There are two intentionally separate visitor-facing products:
+
+- `?guest=1` / `?kid=...` routes to `GuestApp`, which is the persistent Firebase guest/kid account and student-record flow.
+- `?arcade` routes to `ArcadeApp`, which is the simplified Local First visitor adventure with nickname, companion cat, and its own dungeon modes.
+
+The public booking member center is an Arcade entry point. Its game button must link directly to `/?arcade` and must not write `guest_prefill` or bridge booking identity fields (name, email, phone, member ID) into Arcade. Keep the legacy `?guest=1` route available for callers that explicitly need the account-backed guest system, but do not label it or expose it as the booking visitor adventure.
+
+When changing either route, preserve routing precedence in `App.jsx`: an explicit `?arcade` request resolves to `ArcadeApp` before legacy guest-entry detection. This keeps the simple visitor experience independent even if a stale guest parameter is also present.

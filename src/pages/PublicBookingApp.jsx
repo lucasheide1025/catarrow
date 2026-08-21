@@ -273,20 +273,9 @@ export default function PublicBookingApp() {
     setOldPw(""); setNewPw("");
   }
 
-  function enterGuestGame() {
-    // 進入訪客學籍系統（遊戲）。用同一個 email 進去會歸戶到同一個帳號。
-    // 2026-07-12 修復：把姓名跟信箱預先寫進 sessionStorage，讓 GuestApp 直接讀取、
-    // 自動填入聯絡方式與姓名，不用客戶端再手動打一次。
-    const prefKey = 'guest_prefill';
-    try {
-      sessionStorage.setItem(prefKey, JSON.stringify({
-        memberId: profile.id || '',
-        email: profile.email || (memberDoc?.email) || '',
-        name: profile.name || (memberDoc?.name) || '',
-        phone: profile.phone || (memberDoc?.phone) || '',
-      }));
-    } catch { /* ignore */ }
-    window.location.href = "/?guest=1";
+  function enterVisitorArcade() {
+    // Arcade 是獨立的 Local First 訪客冒險，不帶入預約會員或舊學籍資料。
+    window.location.href = "/?arcade";
   }
 
   function handleLogout() {
@@ -490,10 +479,10 @@ export default function PublicBookingApp() {
             )}
           </div>
 
-          {/* ── 進入訪客學籍系統（遊戲）── */}
-          <button onClick={enterGuestGame}
+          {/* ── 進入 Local First 訪客冒險 ── */}
+          <button onClick={enterVisitorArcade}
             style={{ width: "100%", padding: "13px 0", borderRadius: 14, border: "none", background: "linear-gradient(90deg,#7c3aed,#4f46e5)", color: "white", fontWeight: 900, fontSize: 15, cursor: "pointer" }}>
-            🎮 進入訪客學籍系統（打怪／學籍）
+            🎮 進入訪客冒險
           </button>
 
           {/* ── 預約 tabs ── */}
