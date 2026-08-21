@@ -1,0 +1,7 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `py -3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/frontend/index.md", "reason": "前端開發與品質入口"}
+{"file": ".trellis/spec/frontend/guest-kid-mode.md", "reason": "Arcade 與 GuestApp 邊界"}
+{"file": ".trellis/spec/frontend/target-face.md", "reason": "戰鬥靶面呈現與互動契約"}
+{"file": ".trellis/tasks/08-22-visitor-arcade-game-ui-redesign/research/design-a-immersive.md", "reason": "沉浸式場景與單一 CTA 研究"}
+{"file": ".trellis/tasks/08-22-visitor-arcade-game-ui-redesign/research/design-b-modern-rpg.md", "reason": "手機 RPG 操作骨架研究"}
+{"file": ".trellis/tasks/08-22-visitor-arcade-game-ui-redesign/research/design-c-arcade-machine.md", "reason": "魔法街機戰鬥 HUD 研究"}

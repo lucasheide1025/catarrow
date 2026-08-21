@@ -8,6 +8,7 @@ import LoginPage   from "./pages/LoginPage";
 import AdminApp    from "./pages/AdminApp";
 import MemberApp   from "./pages/MemberApp";
 import GuestApp    from "./pages/GuestApp";
+import ArcadeApp   from "./arcade/ArcadeApp";
 import PublicBookingApp from "./pages/PublicBookingApp";
 import GuestReviewPage from "./pages/GuestReviewPage";
 import ZombieGame   from "./zombie/ZombieGame";
@@ -31,6 +32,9 @@ function AppRoutes() {
 
   const guestEntry = resolveGuestEntry(searchParams);
   const reviewToken = searchParams.get("review");
+  // 訪客冒險系統（獨立於學生系統）：QR 固定帶 ?arcade，永不改變。
+  // 純本機 Local First 遊戲，不需要任何登入／學籍資料。
+  if (searchParams.has("arcade")) return <ArcadeApp />;
   if (reviewToken) return <GuestReviewPage token={reviewToken} />;
   if (guestEntry) return <GuestApp accountType={guestEntry.accountType} sessionSourceId={guestEntry.sessionSourceId} />;
   if (searchParams.get("bk") === PUBLIC_BOOKING_TOKEN) return <PublicBookingApp />;

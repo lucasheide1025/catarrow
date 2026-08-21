@@ -1,0 +1,25 @@
+{
+  "name": "貓小隊射箭場・訪客冒險",
+  "short_name": "貓小隊冒險",
+  "description": "掃 QR 就能玩的手機 Arcade RPG：射箭是遊戲控制器，手機把每一輪射箭賦予目的。",
+  "start_url": "/?arcade",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f3e7c9",
+  "theme_color": "#3a5a40",
+  "lang": "zh-TW",
+  "icons": [
+    {
+      "src": "/arcade-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/arcade-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

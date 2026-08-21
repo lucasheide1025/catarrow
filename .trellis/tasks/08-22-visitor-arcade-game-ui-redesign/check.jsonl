@@ -1,0 +1,7 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `py -3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/frontend/index.md", "reason": "前端品質檢查入口"}
+{"file": ".trellis/spec/frontend/guest-kid-mode.md", "reason": "確認不誤接舊訪客系統"}
+{"file": ".trellis/spec/frontend/target-face.md", "reason": "確認靶面與戰鬥輸入相容"}
+{"file": ".trellis/tasks/08-22-visitor-arcade-game-ui-redesign/research/design-a-immersive.md", "reason": "檢查場景焦點"}
+{"file": ".trellis/tasks/08-22-visitor-arcade-game-ui-redesign/research/design-b-modern-rpg.md", "reason": "檢查手機操作層級"}
+{"file": ".trellis/tasks/08-22-visitor-arcade-game-ui-redesign/research/design-c-arcade-machine.md", "reason": "檢查戰鬥視覺方向"}

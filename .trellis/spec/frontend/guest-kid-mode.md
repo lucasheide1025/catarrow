@@ -165,3 +165,11 @@ There are two intentionally separate visitor-facing products:
 The public booking member center is an Arcade entry point. Its game button must link directly to `/?arcade` and must not write `guest_prefill` or bridge booking identity fields (name, email, phone, member ID) into Arcade. Keep the legacy `?guest=1` route available for callers that explicitly need the account-backed guest system, but do not label it or expose it as the booking visitor adventure.
 
 When changing either route, preserve routing precedence in `App.jsx`: an explicit `?arcade` request resolves to `ArcadeApp` before legacy guest-entry detection. This keeps the simple visitor experience independent even if a stale guest parameter is also present.
+
+### Arcade multiplayer and presentation contracts
+
+- Arcade presentation components are isolated under the `arcade-*` namespace and may be lazy-loaded, but the persisted Local First profile and Firestore room contracts remain owned by the existing Arcade data modules.
+- Team adventure difficulty is locked at room start: monster HP is `baseHp * (1 + playerCount)`, and every active player receives persisted `hp/maxHp = 100`. A surviving normal monster attacks every living player; an uninterrupted Boss attack does the same. Only all players reaching zero HP ends the run. Reconnect and host takeover reuse persisted HP and must never rescale from the currently online roster.
+- Downed team members are not required round submitters. When accumulating round statistics, normalize absent round fields to zero before a Firestore write; JavaScript `undefined + number` becomes `NaN`, which Firestore rejects.
+- Duel max HP is also locked when combat is created: 3-arrow mode uses `80 + (players-2)*20`; 6-arrow mode uses `130 + (players-2)*30`, clamped to 2–8 players. Later rounds and host takeover use persisted combat values.
+- Result share images remain offline-native Canvas output. Cache prepared PNG blobs per canvas/result rather than in one module-global slot, or opening a second result can share the previous player's image.
