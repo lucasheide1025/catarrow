@@ -123,3 +123,26 @@ test("all multi-monster renderers opt into synchronized cat and canonical status
   expect(solo).toContain("MONSTER_STATUSES[p.status?.id]?.color");
   expect(solo).toContain("event.type === MULTI_BATTLE_EVENT.STATUS_TICK ? null");
 });
+
+test("dungeon multi propagates dungeonMode through waiting sync, arrow count and battle start", () => {
+  const room = read("MultiMonsterPartyRoom.jsx");
+  const db = read("../../lib/multiMonsterPartyDb.js");
+  expect(room).toContain("updateMultiMonsterPartyMemberStats(roomId, myId, entryStats, { dungeonMode })");
+  expect(room).toContain("setMultiMonsterPartyArrowsPerRound(roomId, myId, count, { dungeonMode })");
+  expect(room).toContain("startMultiMonsterPartyBattle(roomId, myId, { dungeonMode })");
+  expect(room).toContain("if (!dungeonMode && quotaRemaining <= 0)");
+  expect(db).toContain("roomRef(roomId, dungeonMode)");
+});
+
+test("multi round submit has a synchronous per-round flight lock and aborted retry", () => {
+  const room = read("MultiMonsterPartyRoom.jsx");
+  const db = read("../../lib/multiMonsterPartyDb.js");
+  expect(room).toContain("submitFlightRef.current === flightKey");
+  expect(room).toContain("submitFlightRef.current = flightKey");
+  expect(room).toContain("submitFlightRef.current = null");
+  expect(room).toContain("setSubmittingRound(true)");
+  expect(room).toContain('disabled={submittingRound || arrows.length !== arrowsPerRound');
+  expect(room).toContain('(attackMode === "focus" && !targetId)');
+  expect(db).toContain("retryAborted:true");
+  expect(db).toContain("isAbortedCallable");
+});

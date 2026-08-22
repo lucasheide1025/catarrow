@@ -88,11 +88,27 @@ function submissionPatch(room, roomId, memberId, input) {
   return { submissionId:`${roomId}:${room.round}:${memberId}`,round:Number(room.round),memberId,arrows,attackMode,targetId,revision };
 }
 
+function submissionReplayStatus(room, memberId, input) {
+  const requestedRound = Number(input?.round);
+  const currentRound = Number(room?.round);
+  if (!Number.isFinite(requestedRound) || !memberId) return null;
+  const member = room?.members?.[memberId];
+  if (requestedRound === currentRound && member?.ready === true && Number(member?.submission?.round) === requestedRound) {
+    return { duplicate:true, alreadyResolved:false, revision:Math.max(0,Number(member.submission?.revision)||0) };
+  }
+  const resolution = room?.lastResolution;
+  if (requestedRound < currentRound && Number(resolution?.round) === requestedRound && Array.isArray(resolution?.submittedIds) && resolution.submittedIds.includes(memberId)) {
+    return { duplicate:true, alreadyResolved:true, resolutionId:resolution.resolutionId || null };
+  }
+  return null;
+}
+
 function resolveRound(room, roomId) {
   const targets=clone(room.targets||{}),members=clone(room.members||{}),order=Array.isArray(room.targetOrder)?room.targetOrder:Object.keys(targets);
   const targetHpBefore=Object.fromEntries(Object.entries(targets).map(([id,target])=>[id,Number(target.currentHp)||0]));
   const memberHpBefore=Object.fromEntries(Object.entries(members).map(([id,member])=>[id,Number(member.hp)||0]));
   const livingMembers=Object.keys(members).filter(id=>members[id].alive!==false&&Number(members[id].hp)>0);
+  const submittedIds=[...livingMembers].sort();
   if(!livingMembers.length||livingMembers.some(id=>!members[id].ready||Number(members[id].submission?.round)!==Number(room.round)))throw new Error("not_all_ready");
   const rand=random(`${roomId}:${room.round}:v2`),events=[];
   const livingTargets=()=>order.filter(id=>targets[id]?.position==="front"&&targets[id].alive!==false&&Number(targets[id].currentHp)>0);
@@ -116,7 +132,7 @@ function resolveRound(room, roomId) {
   for(const [memberId,member] of Object.entries(members)){const heal=Math.max(0,Number(member.loadoutSnapshot?.cards?.combatMods?.endRoundHeal)||0);if(member.alive!==false&&heal){const before=Number(member.hp);member.hp=Math.min(Number(member.maxHp),before+heal);if(member.hp>before)events.push({type:"round_heal",memberId,amount:member.hp-before,source:"card"});}}
   const victory=!livingTargets().length,defeat=!victory&&!Object.values(members).some(m=>m.alive!==false&&Number(m.hp)>0),round=Number(room.round);
   for(const member of Object.values(members)){member.ready=false;member.submission=null;}
-  return {targets,members,status:victory?"victory":defeat?"defeat":"active",round:round+1,roundPhase:victory||defeat?"complete":"input",lastResolution:{resolutionId:`${roomId}:${round}`,round,seedVersion:2,targetHpBefore,memberHpBefore,events:events.map((event,index)=>({id:`${roomId}:${round}:${index}`,...event})),outcome:victory?"win":defeat?"lose":"continue"}};
+  return {targets,members,status:victory?"victory":defeat?"defeat":"active",round:round+1,roundPhase:victory||defeat?"complete":"input",lastResolution:{resolutionId:`${roomId}:${round}`,round,seedVersion:2,submittedIds,targetHpBefore,memberHpBefore,events:events.map((event,index)=>({id:`${roomId}:${round}:${index}`,...event})),outcome:victory?"win":defeat?"lose":"continue"}};
 }
 
-module.exports={EFFECT_VERSION,SUPPORTED_EFFECTS,buildEncounter,buildDungeonEncounter,startPatch,submissionPatch,resolveRound,validateSnapshot};
+module.exports={EFFECT_VERSION,SUPPORTED_EFFECTS,buildEncounter,buildDungeonEncounter,startPatch,submissionPatch,submissionReplayStatus,resolveRound,validateSnapshot};

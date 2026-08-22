@@ -31,6 +31,26 @@ export function incrementLocalTodayArrows(memberId, count) {
   return setLocalTodayArrows(memberId, getLocalTodayArrows(memberId) + normalizedCount);
 }
 
+export function buildDungeonExcavationAfterArrows(raw, count, today = taipeiDateKey()) {
+  const amount = Number(count);
+  const current = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const next = { ...current };
+  if (!Number.isFinite(amount) || amount <= 0) return next;
+
+  const progress = Math.max(0, Number(current.progress) || 0);
+  if (progress < 100) {
+    next.lastActiveDate = today;
+    next.progress = Math.min(100, progress + Math.min(amount, 100));
+    next.dailyArrowsUsed = current.lastActiveDate === today
+      ? Math.max(0, Number(current.dailyArrowsUsed) || 0) + amount
+      : amount;
+  }
+  if (current.assignedCatId && Math.max(0, Number(current.catDigProgress) || 0) < 100) {
+    next.catDigProgress = Math.min(100, Math.max(0, Number(current.catDigProgress) || 0) + amount * 0.5);
+  }
+  return next;
+}
+
 export function subscribeLocalTodayArrows(memberId, callback) {
   if (!memberId || typeof window === "undefined") return () => {};
   const key = dailyArrowStorageKey(memberId);

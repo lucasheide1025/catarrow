@@ -2,7 +2,7 @@
 import {
   collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc,
   setDoc, query, where, orderBy, limit, serverTimestamp, onSnapshot,
-  increment, arrayUnion, Timestamp, deleteField, writeBatch, runTransaction, getDocsFromCache
+  increment, arrayUnion, Timestamp, deleteField, writeBatch, runTransaction, getDocsFromCache, FieldPath
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { MATERIALS } from "./monsterMaterials";
@@ -30,7 +30,7 @@ import { completeClassEndRushFlow, settleClassEndRushAward } from "./classEndRus
 import { existingMonthlyCardPurchaseCount, nextMonthlyCardPurchaseCounters, purchaseCountFromMonthlyCardLogs } from "./monthlyCardStats";
 import { FREE_HUNT_RESET_SCOPE, resetFreeHuntUsage } from "./freeHuntQuota";
 import {
-  createIdempotentBattleRoundRecorder, createRoundArrowRecorder, dailyArrowStorageKey, getLocalTodayArrows,
+  buildDungeonExcavationAfterArrows, createIdempotentBattleRoundRecorder, createRoundArrowRecorder, dailyArrowStorageKey, getLocalTodayArrows,
   setLocalTodayArrows, subscribeLocalTodayArrows, taipeiDateKey,
 } from "./arrowProgress";
 export { dailyArrowStorageKey, getLocalTodayArrows, subscribeLocalTodayArrows, taipeiDateKey } from "./arrowProgress";
@@ -978,6 +978,8 @@ function enqueueArrowOperation(memberId, count) {
   return items[items.length - 1];
 }
 async function applyArrowOperation(operation) {
+  const count = Number(operation?.count);
+  if (!operation?.memberId || !operation?.id || !Number.isFinite(count) || count <= 0) return;
   const memberRef = doc(db, C.members, operation.memberId);
   const operationRef = doc(db, C.arrowRoundOperations, operation.id);
   let goal = null;
@@ -990,25 +992,17 @@ async function applyArrowOperation(operation) {
     // 不能讓它炸掉整筆箭數同步（會造成挖掘/終身箭數永遠卡住且無聲失敗）。
     const goalRef = goal?.id && goal.goalType === "total_arrows" ? doc(db, "villageGoals", goal.id) : null;
     const goalSnap = goalRef ? await transaction.get(goalRef) : null;
-    const current = memberSnap.data().dungeonExcavation || {};
-    const patch = { totalArrowsAllTime:increment(operation.count) };
-    if ((Number(current.progress) || 0) < 100) {
-      const today = taipeiDateKey();
-      patch["dungeonExcavation.lastActiveDate"] = today;
-      patch["dungeonExcavation.progress"] = Math.min(100, (Number(current.progress) || 0) + Math.min(operation.count, 100));
-      patch["dungeonExcavation.dailyArrowsUsed"] = current.lastActiveDate === today ? (Number(current.dailyArrowsUsed) || 0) + operation.count : operation.count;
-    }
-    if (current.assignedCatId && (Number(current.catDigProgress) || 0) < 100) {
-      patch["dungeonExcavation.catDigProgress"] = Math.min(100, (Number(current.catDigProgress) || 0) + (operation.count * 0.5));
-    }
-    transaction.update(memberRef, patch);
-    if (goalSnap?.exists()) transaction.update(goalRef, {
-      currentValue:increment(operation.count), [`participants.${operation.memberId}.contributed`]:increment(operation.count),
-    });
-    transaction.set(operationRef, { memberId:operation.memberId, arrowCount:operation.count, deviceId:arrowDeviceId(), createdAt:serverTimestamp() });
+    const excavation = buildDungeonExcavationAfterArrows(memberSnap.data().dungeonExcavation, count, taipeiDateKey());
+    transaction.update(memberRef, { totalArrowsAllTime:increment(count), dungeonExcavation:excavation });
+    if (goalSnap?.exists()) transaction.update(
+      goalRef,
+      new FieldPath("participants", String(operation.memberId), "contributed"), increment(count),
+      "currentValue", increment(count),
+    );
+    transaction.set(operationRef, { memberId:operation.memberId, arrowCount:count, deviceId:arrowDeviceId(), createdAt:serverTimestamp() });
   });
   import("./worldBossLifecycleClient").then(module => module.contributeWorldBossSpawnProgress({
-    memberId:operation.memberId, type:"arrows", amount:operation.count, operationId:`arrows:${operation.id}`,
+    memberId:operation.memberId, type:"arrows", amount:count, operationId:`arrows:${operation.id}`,
   })).catch(() => {});
 }
 // 供 UI 顯示「待同步箭數」筆數（同步卡住時使用者才看得見,可手動重試 flushPendingArrowProgress）

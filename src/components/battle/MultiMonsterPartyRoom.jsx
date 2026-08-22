@@ -183,8 +183,10 @@ export default function MultiMonsterPartyRoom({ roomId, playerStats, memberProfi
   const [completedPresentationIds, setCompletedPresentationIds] = useState(() => new Set());
   const [sheet, setSheet] = useState(null);
   const [quotaRemaining, setQuotaRemaining] = useState(() => getFreeHuntRemaining(memberProfile, FREE_HUNT_QUOTA_MODE.MULTI));
+  const [submittingRound, setSubmittingRound] = useState(false);
   const processingRoundRef = useRef(null);
   const settlementRef = useRef(false);
+  const submitFlightRef = useRef(null);
   const statsSignatureRef = useRef("");
   const introStatusRef = useRef(null);
   const presentationTokenRef = useRef(0);
@@ -227,10 +229,10 @@ export default function MultiMonsterPartyRoom({ roomId, playerStats, memberProfi
     const signature = JSON.stringify([roomId,myId,entryStats.hp,entryStats.atk,entryStats.def,entryStats.avatarId,entryStats.catId,entryStats.catName,entryStats.catType,entryStats.bondLv]);
     if (statsSignatureRef.current === signature) return;
     statsSignatureRef.current = signature;
-    updateMultiMonsterPartyMemberStats(roomId, myId, entryStats).then(result => {
+    updateMultiMonsterPartyMemberStats(roomId, myId, entryStats, { dungeonMode }).then(result => {
       if (!result?.ok) setError(result?.reason || "同步角色能力失敗");
     });
-  }, [roomId, myId, room?.status, entryStats]);
+  }, [roomId, myId, room?.status, entryStats, dungeonMode]);
 
   useEffect(() => {
     if (room?.status !== "active") {
@@ -370,6 +372,8 @@ export default function MultiMonsterPartyRoom({ roomId, playerStats, memberProfi
   useEffect(() => {
     setArrows([]);
     setError("");
+    submitFlightRef.current = null;
+    setSubmittingRound(false);
   }, [room?.round]);
 
   useEffect(() => {
@@ -396,14 +400,16 @@ export default function MultiMonsterPartyRoom({ roomId, playerStats, memberProfi
 
   async function startBattle() {
     if (!actualIsHost) { setError("只有房主可以開始複數討伐"); return; }
-    if (quotaRemaining <= 0) { setError("今日複數討伐次數已用完（5/5）"); return; }
+    if (!dungeonMode && quotaRemaining <= 0) { setError("今日複數討伐次數已用完（5/5）"); return; }
     setError("");
     try {
-      const quota = await consumeFreeHuntAttempt({
-        memberId:myId, mode:FREE_HUNT_QUOTA_MODE.MULTI, battleId:`multi_party_${roomId}`, roomId,
-      });
-      setQuotaRemaining(quota.remaining);
-      const result = await startMultiMonsterPartyBattle(roomId, myId);
+      if (!dungeonMode) {
+        const quota = await consumeFreeHuntAttempt({
+          memberId:myId, mode:FREE_HUNT_QUOTA_MODE.MULTI, battleId:`multi_party_${roomId}`, roomId,
+        });
+        setQuotaRemaining(quota.remaining);
+      }
+      const result = await startMultiMonsterPartyBattle(roomId, myId, { dungeonMode });
       if (!result?.ok) setError(result?.reason || "開始戰鬥失敗");
     } catch (startErr) {
       setError(freeHuntQuotaErrorMessage(startErr, FREE_HUNT_QUOTA_MODE.MULTI));
@@ -412,24 +418,37 @@ export default function MultiMonsterPartyRoom({ roomId, playerStats, memberProfi
 
   async function setArrowCount(count) {
     setError("");
-    const result = await setMultiMonsterPartyArrowsPerRound(roomId, myId, count);
+    const result = await setMultiMonsterPartyArrowsPerRound(roomId, myId, count, { dungeonMode });
     if (!result?.ok) setError(result?.reason || "設定箭數失敗");
   }
 
   async function submitRound() {
-    if (!room?.round || !myId || myReady) return;
+    const expectedRound = Number(room?.round);
+    const flightKey = `${roomId}:${expectedRound}:${myId}`;
+    if (!expectedRound || !myId || myReady || submitFlightRef.current === flightKey) return;
     const needed = [3,6].includes(Number(room.arrowsPerRound)) ? Number(room.arrowsPerRound) : 6;
     if (arrows.length !== needed) { setError(`請輸入完整 ${needed} 箭`); return; }
     if (attackMode === "focus" && !targetId) { setError("請選擇集火目標"); return; }
+    submitFlightRef.current = flightKey;
+    setSubmittingRound(true);
     setError("");
-    const result = await submitMultiMonsterPartyRound(roomId, myId, room.round, { arrows, attackMode, targetId }, { dungeonMode });
-    if (!result?.ok) setError(result?.reason || "送出失敗");
-    else recordBattleRoundArrows({memberId:myId,battleId:roomId,round:Number(room.round),count:arrows.length,accountType:memberProfile?.accountType||"official"}).catch(()=>{});
+    try {
+      const result = await submitMultiMonsterPartyRound(roomId, myId, expectedRound, { arrows, attackMode, targetId }, { dungeonMode });
+      if (!result?.ok) {
+        submitFlightRef.current = null;
+        setError(result?.reason || "送出失敗");
+        return;
+      }
+      recordBattleRoundArrows({memberId:myId,battleId:roomId,round:expectedRound,count:arrows.length,accountType:memberProfile?.accountType||"official"}).catch(()=>{});
+    } finally {
+      setSubmittingRound(false);
+    }
   }
 
   async function reviseRound() {
     const result = await reviseMultiMonsterPartyRound(roomId, myId, room.round, { dungeonMode });
     if (!result?.ok) { setError(result?.reason === "round_locked" ? "本回合已開始結算，無法修改" : (result?.reason || "無法修改")); return; }
+    submitFlightRef.current = null;
     setArrows(Array.isArray(me?.submission?.arrows) ? me.submission.arrows : []);
     setAttackMode(me?.submission?.attackMode === "all" ? "all" : "focus");
     if (me?.submission?.targetId) setTargetId(me.submission.targetId);
@@ -580,7 +599,7 @@ export default function MultiMonsterPartyRoom({ roomId, playerStats, memberProfi
           </div>
           <div className="mt-1 flex h-7 items-center gap-1 overflow-hidden">{Array.from({length:arrowsPerRound},(_,index)=><span key={index} className="grid h-7 min-w-7 place-items-center rounded-lg border border-white/10 bg-white/5 text-[10px] font-black">{arrows[index] || "_"}</span>)}<span className="ml-auto text-[10px] font-black text-cyan-200">{arrows.length}/{arrowsPerRound}</span></div>
           <div className="mt-1 grid grid-cols-6 gap-1">{SCORE_KEYS.map(score => <button key={score} disabled={arrows.length >= arrowsPerRound} onClick={() => setArrows(current => current.length >= arrowsPerRound ? current : [...current,score])} className="min-h-11 rounded-lg border border-white/10 bg-white/[.04] text-xs font-black text-white active:scale-95 disabled:opacity-30">{score}</button>)}</div>
-          <div className="mt-1 grid grid-cols-[auto_1fr] gap-1"><button onClick={() => setArrows(current => current.slice(0,-1))} onContextMenu={event=>{event.preventDefault();setArrows([]);}} className="min-h-11 rounded-lg border border-white/10 px-3 text-xs font-black text-slate-300">撤回<small className="block text-[8px]">長按清空</small></button><button onClick={submitRound} disabled={arrows.length !== arrowsPerRound || (attackMode === "focus" && !targetId)} className="min-h-11 rounded-lg bg-gradient-to-r from-cyan-400 to-blue-500 px-3 text-sm font-black text-slate-950 disabled:opacity-35">送出本回合</button></div>
+          <div className="mt-1 grid grid-cols-[auto_1fr] gap-1"><button onClick={() => setArrows(current => current.slice(0,-1))} onContextMenu={event=>{event.preventDefault();setArrows([]);}} className="min-h-11 rounded-lg border border-white/10 px-3 text-xs font-black text-slate-300">撤回<small className="block text-[8px]">長按清空</small></button><button onClick={submitRound} disabled={submittingRound || arrows.length !== arrowsPerRound || (attackMode === "focus" && !targetId)} className="min-h-11 rounded-lg bg-gradient-to-r from-cyan-400 to-blue-500 px-3 text-sm font-black text-slate-950 disabled:opacity-35">送出本回合</button></div>
         </section>}
       </>}
 

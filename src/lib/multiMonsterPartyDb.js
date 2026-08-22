@@ -16,9 +16,21 @@ import { stripUndefinedDeep } from "./firestoreSafeWrite";
 const PARTY = "partyRooms";
 const VALID_SCORES = new Set(["X","10","9","8","7","6","5","4","3","2","1","M"]);
 const functions = getFunctions(app, "asia-east1");
-const callV2 = async (name, data) => {
-  try { return (await httpsCallable(functions, name)(data)).data; }
-  catch (error) { return { ok:false, reason:error?.message?.split(" ").pop() || error?.details || "server_authority_failed" }; }
+const callableReason = error => String(error?.details || error?.message || "server_authority_failed")
+  .replace(/^FirebaseError:\s*/i, "").trim();
+const isAbortedCallable = error => String(error?.code || "").toLowerCase().includes("aborted");
+const callV2 = async (name, data, { retryAborted = false } = {}) => {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try { return (await httpsCallable(functions, name)(data)).data; }
+    catch (error) {
+      if (retryAborted && isAbortedCallable(error) && attempt < 2) {
+        await new Promise(resolve => setTimeout(resolve, 120 * (attempt + 1)));
+        continue;
+      }
+      return { ok:false, reason:callableReason(error), code:error?.code || null };
+    }
+  }
+  return { ok:false, reason:"server_authority_failed" };
 };
 
 function roomRef(roomId, dungeonMode = false) { return doc(db, dungeonMode ? "dungeonRooms" : PARTY, roomId); }
@@ -62,11 +74,11 @@ export function subscribeMultiMonsterPartyRoom(roomId, callback, { dungeonMode =
   return onSnapshot(roomRef(roomId, dungeonMode), snap => callback(snap.exists() ? { id:snap.id, ...snap.data() } : null));
 }
 
-export async function updateMultiMonsterPartyMemberStats(roomId, memberId, stats = {}) {
+export async function updateMultiMonsterPartyMemberStats(roomId, memberId, stats = {}, { dungeonMode = false } = {}) {
   if (!roomId || !memberId) return { ok:false, reason:"missing_member" };
   try {
     return await runTransaction(db, async tx => {
-      const ref = roomRef(roomId);
+      const ref = roomRef(roomId, dungeonMode);
       const snap = await tx.get(ref);
       if (!snap.exists()) return { ok:false, reason:"room_not_found" };
       const room = snap.data();
@@ -109,12 +121,12 @@ export async function updateMultiMonsterPartyMemberStats(roomId, memberId, stats
   } catch (error) { return { ok:false, reason:error.message }; }
 }
 
-export async function setMultiMonsterPartyArrowsPerRound(roomId, memberId, count) {
+export async function setMultiMonsterPartyArrowsPerRound(roomId, memberId, count, { dungeonMode = false } = {}) {
   const arrowsPerRound = Number(count);
   if (![3,6].includes(arrowsPerRound)) return { ok:false, reason:"invalid_arrow_count" };
   try {
     return await runTransaction(db, async tx => {
-      const ref = roomRef(roomId); const snap = await tx.get(ref);
+      const ref = roomRef(roomId, dungeonMode); const snap = await tx.get(ref);
       if (!snap.exists()) return { ok:false, reason:"room_not_found" };
       const room = snap.data();
       if (room.hostId !== memberId) return { ok:false, reason:"host_only" };
@@ -173,7 +185,7 @@ export async function startMultiMonsterPartyBattle(roomId, hostId, { dungeonMode
 }
 
 export async function submitMultiMonsterPartyRound(roomId, memberId, expectedRound, input = {}, { dungeonMode = false } = {}) {
-  return callV2("submitMultiMonsterPartyRoundV2", { roomId, memberId, round:expectedRound, dungeonMode, ...input });
+  return callV2("submitMultiMonsterPartyRoundV2", { roomId, memberId, round:expectedRound, dungeonMode, ...input }, { retryAborted:true });
   /* istanbul ignore next -- retained below as the v1 room compatibility implementation */
   // eslint-disable-next-line no-unreachable
   try {

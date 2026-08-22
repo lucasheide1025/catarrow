@@ -1,5 +1,5 @@
 import {
-  createIdempotentBattleRoundRecorder, createRoundArrowRecorder, dailyArrowStorageKey, getLocalTodayArrows,
+  buildDungeonExcavationAfterArrows, createIdempotentBattleRoundRecorder, createRoundArrowRecorder, dailyArrowStorageKey, getLocalTodayArrows,
   incrementLocalTodayArrows, taipeiDateKey,
 } from "./arrowProgress";
 
@@ -103,4 +103,29 @@ test("authoritative battle round receipt records exactly once across replay", as
   await submit({memberId:"m1",battleId:"battle/a",round:2,count:6,accountType:"official"});
   expect(record).toHaveBeenCalledTimes(1);
   expect(record).toHaveBeenCalledWith("m1",6,{accountType:"official"});
+});
+
+test("legacy dungeon excavation scalar or array is repaired into a safe map", () => {
+  expect(buildDungeonExcavationAfterArrows(7, 6, "2026-08-22")).toEqual({
+    lastActiveDate:"2026-08-22", progress:6, dailyArrowsUsed:6,
+  });
+  expect(buildDungeonExcavationAfterArrows([], 3, "2026-08-22")).toEqual({
+    lastActiveDate:"2026-08-22", progress:3, dailyArrowsUsed:3,
+  });
+});
+
+test("dungeon excavation arrow update preserves fields and daily/cat progress", () => {
+  const next = buildDungeonExcavationAfterArrows({
+    progress:40, dailyArrowsUsed:12, lastActiveDate:"2026-08-22",
+    assignedCatId:"haji", catDigProgress:80, keepMe:"yes",
+  }, 6, "2026-08-22");
+  expect(next).toMatchObject({
+    progress:46, dailyArrowsUsed:18, lastActiveDate:"2026-08-22",
+    assignedCatId:"haji", catDigProgress:83, keepMe:"yes",
+  });
+});
+
+test("invalid arrow count leaves excavation state untouched", () => {
+  const current = { progress:22, keepMe:true };
+  expect(buildDungeonExcavationAfterArrows(current, "bad", "2026-08-22")).toEqual(current);
 });

@@ -381,8 +381,13 @@ exports.consumeFreeHuntAttempt = onCall({ region:"asia-east1" }, async request =
 function multiPartyCallableError(error) {
   if(error instanceof HttpsError)return error;
   const message=String(error?.message||error||"multi_party_failed");
-  const invalid=new Set(["invalid_arrows","invalid_target","stale_round","loadout_v2_required","unsupported_loadout_effect","invalid_loadout_stats"]);
-  return new HttpsError(invalid.has(message)?"failed-precondition":"aborted",message);
+  if(message==="room_not_found")return new HttpsError("not-found",message);
+  if(message==="host_only")return new HttpsError("permission-denied",message);
+  const precondition=new Set(["invalid_arrows","invalid_target","stale_round","loadout_v2_required","unsupported_loadout_effect","invalid_loadout_stats","battle_not_active","round_locked","member_down","not_all_ready","room_not_waiting","not_multi_room","not_dungeon_multi_room","empty_party","member_stats_pending","battle_not_finished","rewards_pending"]);
+  if(precondition.has(message))return new HttpsError("failed-precondition",message);
+  const code=String(error?.code||"").toLowerCase();
+  if(code==="10"||code.includes("aborted"))return new HttpsError("aborted",message);
+  return new HttpsError("internal",message);
 }
 
 function multiBattleRoomRef(db, request) {
@@ -400,7 +405,7 @@ exports.startMultiMonsterPartyBattleV2 = onCall({region:"asia-east1"},async requ
 exports.submitMultiMonsterPartyRoundV2 = onCall({region:"asia-east1"},async request=>{
   const db=getFirestore(),roomId=safeFreeHuntId(request.data?.roomId,"invalid_room_id"),memberId=safeFreeHuntId(request.data?.memberId,"invalid_member_id");
   await requireOwnedMember(db,request,memberId);
-  try{return await db.runTransaction(async tx=>{const ref=multiBattleRoomRef(db,request).ref,snap=await tx.get(ref);if(!snap.exists)throw new Error("room_not_found");const room=snap.data(),submission=multiMonsterPartyV2.submissionPatch(room,roomId,memberId,request.data||{});room.members={...(room.members||{}),[memberId]:{...room.members[memberId],submission,ready:true}};const living=Object.values(room.members).filter(m=>m.alive!==false&&Number(m.hp)>0),ready=living.length>0&&living.every(m=>m.ready&&Number(m.submission?.round)===Number(room.round));if(ready){const resolved=multiMonsterPartyV2.resolveRound({...room,roundPhase:"resolving"},roomId);tx.update(ref,{roundPhase:"resolving",[`members.${memberId}.submission`]:submission,[`members.${memberId}.ready`]:true});tx.update(ref,resolved);return{ok:true,revision:submission.revision,resolved:true,resolutionId:resolved.lastResolution.resolutionId};}tx.update(ref,{[`members.${memberId}.submission`]:submission,[`members.${memberId}.ready`]:true});return{ok:true,revision:submission.revision,resolved:false};});}catch(error){throw multiPartyCallableError(error);}
+  try{return await db.runTransaction(async tx=>{const ref=multiBattleRoomRef(db,request).ref,snap=await tx.get(ref);if(!snap.exists)throw new Error("room_not_found");const room=snap.data();const replay=multiMonsterPartyV2.submissionReplayStatus(room,memberId,request.data||{});if(replay)return{ok:true,...replay,resolved:replay.alreadyResolved===true};const submission=multiMonsterPartyV2.submissionPatch(room,roomId,memberId,request.data||{});room.members={...(room.members||{}),[memberId]:{...room.members[memberId],submission,ready:true}};const living=Object.values(room.members).filter(m=>m.alive!==false&&Number(m.hp)>0),ready=living.length>0&&living.every(m=>m.ready&&Number(m.submission?.round)===Number(room.round));if(ready){const resolved=multiMonsterPartyV2.resolveRound({...room,roundPhase:"resolving"},roomId);tx.update(ref,resolved);return{ok:true,revision:submission.revision,resolved:true,resolutionId:resolved.lastResolution.resolutionId};}tx.update(ref,{[`members.${memberId}.submission`]:submission,[`members.${memberId}.ready`]:true});return{ok:true,revision:submission.revision,resolved:false};},{maxAttempts:10});}catch(error){throw multiPartyCallableError(error);}
 });
 
 exports.reviseMultiMonsterPartyRoundV2 = onCall({region:"asia-east1"},async request=>{
