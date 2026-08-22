@@ -18,15 +18,15 @@ function buildDungeonMultiReward({room,battleId,memberId}){
   if(!primary)throw new Error("dungeon_multi_primary_missing");
   if(targets.length!==3||new Set(targets.map(target=>target.instanceId)).size!==3)throw new Error("dungeon_multi_target_shape_invalid");
   const roomRole=room.expeditionRoomType||"monster";
-  const expectedPrimaryEncounter=roomRole==="boss"?"boss":roomRole==="elite"?"miniBoss":"normal";
+  const allowedPrimaryEncounters=roomRole==="boss"?new Set(["miniBoss","boss"]):new Set(["normal"]);
   const expectedFamily=String(room.multiFamily||room.monster?.family||"");
   const expectedTier=Math.max(1,Number(room.multiTier||room.expeditionDifficulty)||1);
   for(const target of targets){
     const monster=monsters.get(target.id);
     if(!monster)throw new Error("dungeon_multi_unknown_target");
     if(monster.family!==expectedFamily||Number(monster.tierIndex)!==expectedTier)throw new Error("dungeon_multi_catalog_mismatch");
-    const expectedEncounter=target.instanceId===primaryId?expectedPrimaryEncounter:"normal";
-    if(monster.encounter!==expectedEncounter)throw new Error("dungeon_multi_target_role_invalid");
+    const isPrimary=target.instanceId===primaryId;
+    if(isPrimary?!allowedPrimaryEncounters.has(monster.encounter):monster.encounter!=="normal")throw new Error("dungeon_multi_target_role_invalid");
   }
   if(room.monster?.id&&room.monster.id!==primary.id)throw new Error("dungeon_multi_primary_mismatch");
   const materialTotals={},cards=[],chests=[],lootMult=Math.max(1,Math.min(5,Number(room.dungeonLootMult)||1));
