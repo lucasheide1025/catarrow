@@ -1,5 +1,5 @@
 import {
-  createRoundArrowRecorder, dailyArrowStorageKey, getLocalTodayArrows,
+  createIdempotentBattleRoundRecorder, createRoundArrowRecorder, dailyArrowStorageKey, getLocalTodayArrows,
   incrementLocalTodayArrows, taipeiDateKey,
 } from "./arrowProgress";
 
@@ -94,4 +94,13 @@ test("local mileage remains in localStorage across repeated reads", () => {
   incrementLocalTodayArrows("member-1", 4);
   expect(getLocalTodayArrows("member-1")).toBe(6);
   expect(localStorage.getItem(dailyArrowStorageKey("member-1"))).toBe("6");
+});
+
+test("authoritative battle round receipt records exactly once across replay", async () => {
+  const record=jest.fn(()=>Promise.resolve());
+  const submit=createIdempotentBattleRoundRecorder({record});
+  await submit({memberId:"m1",battleId:"battle/a",round:2,count:6,accountType:"official"});
+  await submit({memberId:"m1",battleId:"battle/a",round:2,count:6,accountType:"official"});
+  expect(record).toHaveBeenCalledTimes(1);
+  expect(record).toHaveBeenCalledWith("m1",6,{accountType:"official"});
 });

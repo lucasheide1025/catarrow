@@ -42,6 +42,7 @@ function humanError(e) {
 
 function playerEntry(profile) {
   const cat = profile.cat || {};
+  const combat = profile.combatSnapshot || {};
   return {
     visitorId: profile.visitorId,
     nickname: profile.nickname,
@@ -62,11 +63,17 @@ function playerEntry(profile) {
     scoreSqSum: 0,
     damage: 0,
     kills: 0,
+    level: Math.max(1, Number(combat.level) || 1),
+    hp: Math.max(1, Number(combat.maxHp) || 100),
+    maxHp: Math.max(1, Number(combat.maxHp) || 100),
+    atk: Math.max(1, Number(combat.atk) || 10),
+    def: Math.max(0, Number(combat.def) || 5),
+    cardEffects: Array.isArray(combat.cardEffects) ? combat.cardEffects.slice(0, 2) : [],
   };
 }
 
 /** 建立房間（隊長）。碰撞自動換一組新代碼重試。mode: forest | moon | abyss */
-export async function createTeamRoom({ visitorId, nickname, cat }, mode = "forest") {
+export async function createTeamRoom({ visitorId, nickname, cat, combatSnapshot }, mode = "forest") {
   if (!visitorId) return { ok: false, reason: "參數錯誤" };
   const safeMode = teamModeById(mode).id;
   for (let attempt = 0; attempt < 6; attempt += 1) {
@@ -80,14 +87,16 @@ export async function createTeamRoom({ visitorId, nickname, cat }, mode = "fores
         tx.set(ref, {
           kind: "team",
           roomCode,
+          sessionKey: `team-${now.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
           hostId: visitorId,
           status: "waiting",
           mode: safeMode,
-          players: { [visitorId]: playerEntry({ visitorId, nickname, cat }) },
+          players: { [visitorId]: playerEntry({ visitorId, nickname, cat, combatSnapshot }) },
           adventure: null,
           monsterIdx: 0,
           monster: null,
           monsterHp: 0,
+          monsterStatuses: [],
           round: 0,
           lastResolution: null,
           result: null,
@@ -128,7 +137,7 @@ export async function setTeamMode(roomCode, visitorId, mode) {
 }
 
 /** 加入房間（朋友掃 QR 或輸入代碼）。順手清掉離線玩家，保持名單乾淨。 */
-export async function joinTeamRoom(roomCode, { visitorId, nickname, cat }) {
+export async function joinTeamRoom(roomCode, { visitorId, nickname, cat, combatSnapshot }) {
   if (!isValidRoomCode(roomCode)) return { ok: false, reason: "請輸入 5 位數房間代碼" };
   if (!visitorId) return { ok: false, reason: "參數錯誤" };
   const ref = doc(db, C, roomCode);
@@ -151,7 +160,7 @@ export async function joinTeamRoom(roomCode, { visitorId, nickname, cat }) {
       if (existing) {
         // 回來（含戰鬥中重連）：用完整 playerEntry 補齊所有欄位再覆寫——
         // 心跳可能留下只有 lastAt 的幽靈欄位（見 heartbeat），重連時必須補回統計欄位，不能有 undefined
-        const fresh = playerEntry({ visitorId, nickname, cat });
+        const fresh = playerEntry({ visitorId, nickname, cat, combatSnapshot });
         tx.update(ref, {
           [`players.${visitorId}`]: {
             ...fresh,
@@ -161,6 +170,14 @@ export async function joinTeamRoom(roomCode, { visitorId, nickname, cat }) {
             catName: cat?.name || existing.catName || fresh.catName,
             catImage: cat?.image || existing.catImage || fresh.catImage,
             catRole: cat?.role || existing.catRole || fresh.catRole,
+            ...(data.status === "waiting" ? {
+              level: fresh.level,
+              hp: fresh.maxHp,
+              maxHp: fresh.maxHp,
+              atk: fresh.atk,
+              def: fresh.def,
+              cardEffects: fresh.cardEffects,
+            } : {}),
             lastAt: now,
           },
           updatedAt: serverTimestamp(),
@@ -171,7 +188,7 @@ export async function joinTeamRoom(roomCode, { visitorId, nickname, cat }) {
       const activeCount = stale.active.length;
       if (activeCount >= TEAM_MAX_PLAYERS) throw new Error("__ROOM_FULL__");
       tx.update(ref, {
-        [`players.${visitorId}`]: playerEntry({ visitorId, nickname, cat }),
+        [`players.${visitorId}`]: playerEntry({ visitorId, nickname, cat, combatSnapshot }),
         updatedAt: serverTimestamp(),
       });
     });
@@ -214,13 +231,15 @@ export async function startTeamRoom(roomCode, hostId) {
         routeEffects: { atkBuff: 1, coinMult: 1, spirit: TEAM_BOSS_SPIRIT_START },
         monster: first,
         monsterHp: first.hp,
+        monsterStatuses: [],
         round: 1,
         startedAt: Date.now(), // 最速通關統計用
         updatedAt: serverTimestamp(),
       };
       prune.active.forEach((player) => {
-        patch[`players.${player.visitorId}.hp`] = 100;
-        patch[`players.${player.visitorId}.maxHp`] = 100;
+        const maxHp = Math.max(1, Number(player.maxHp) || 100);
+        patch[`players.${player.visitorId}.hp`] = maxHp;
+        patch[`players.${player.visitorId}.maxHp`] = maxHp;
         patch[`players.${player.visitorId}.alive`] = true;
       });
       if (hostStale) patch.hostId = hostId; // 離線房主 → 接管
@@ -313,6 +332,7 @@ export async function submitTeamRound(roomCode, visitorId, { round, arrows }) {
       const patch = {
         ...removePatch,
         monsterHp,
+        monsterStatuses: comboInfo.monsterStatuses || [],
         round: data.round + 1,
         updatedAt: serverTimestamp(),
       };
@@ -339,7 +359,7 @@ export async function submitTeamRound(roomCode, visitorId, { round, arrows }) {
       });
       (comboInfo.partyDamage || []).forEach((hit) => {
         patch[`players.${hit.visitorId}.hp`] = hit.hpAfter;
-        patch[`players.${hit.visitorId}.maxHp`] = 100;
+        patch[`players.${hit.visitorId}.maxHp`] = Math.max(1, Number(players[hit.visitorId]?.maxHp) || 100);
         patch[`players.${hit.visitorId}.alive`] = hit.alive;
       });
       // 全隊 Combo 累計（結果頁顯示）
@@ -516,12 +536,14 @@ export async function chooseTeamRoute(roomCode, visitorId, routeId) {
         patch.teamGoals = { teamMin, personal, atkBuff: eff.atkBuff || 1 };
         patch.monster = boss;
         patch.monsterHp = boss.hp;
+        patch.monsterStatuses = [];
       } else {
         // 進下一關：菁英路 → 下場怪 elite 化
         let m = adventure.stages[nextStageIdx].monster;
         if (routeId === "elite") m = eliteVariant(m);
         patch.monster = m;
         patch.monsterHp = m.hp;
+        patch.monsterStatuses = [];
       }
       tx.update(ref, patch);
     });

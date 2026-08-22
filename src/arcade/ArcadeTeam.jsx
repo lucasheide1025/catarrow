@@ -29,6 +29,8 @@ import {
 } from "../lib/sound";
 import { ResultShareCard, BossEntrance, ShootingPerformance } from "./ArcadeAdventure";
 import { performanceFromAggregates } from "./arcadePerformance";
+import { applyArcadeSettlement, buildArcadeCombatSnapshot } from "./arcadeProgression";
+import { calcBattleXP } from "./arcadeShop";
 
 function joinUrl(code) {
   const host = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
@@ -46,8 +48,9 @@ function teamEntryMessage(reason) {
   return "無法進入這個房間";
 }
 
-export default function ArcadeTeam({ profile, initialCode = null, initialRound = 0, initialArrows = null, onExit, onSave }) {
+export default function ArcadeTeam({ profile, initialCode = null, initialRound = 0, initialArrows = null, onExit, onSave, onMutate, onToast }) {
   const cat = arcadeCatById(profile.selectedCat) || arcadeCatById("haji");
+  const combatSnapshot = buildArcadeCombatSnapshot(profile);
   const [roomCode, setRoomCode] = useState("");
   // joinCode 只是待確認的房號；roomCode 才代表已完成權威驗證、可掛 snapshot 的房間。
   const [joinCode, setJoinCode] = useState(() => normalizeRoomCode(initialCode || ""));
@@ -138,7 +141,7 @@ export default function ArcadeTeam({ profile, initialCode = null, initialRound =
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const info = { visitorId: profile.visitorId, nickname: profile.nickname, cat };
+      const info = { visitorId: profile.visitorId, nickname: profile.nickname, cat, combatSnapshot };
       if (initialCode && isValidRoomCode(initialCode)) {
         const normalized = normalizeRoomCode(initialCode);
         setJoinCode(normalized);
@@ -387,7 +390,7 @@ export default function ArcadeTeam({ profile, initialCode = null, initialRound =
     setJoinCode(normalized);
     setBusy(true);
     setError("");
-    const r = await enterExistingRoom(normalized, { visitorId: profile.visitorId, nickname: profile.nickname, cat });
+    const r = await enterExistingRoom(normalized, { visitorId: profile.visitorId, nickname: profile.nickname, cat, combatSnapshot });
     setBusy(false);
     if (r.ok) setRoomCode(normalized);
     else setError(r.reason || "加入失敗");
@@ -457,7 +460,7 @@ export default function ArcadeTeam({ profile, initialCode = null, initialRound =
         throw new Error(teamEntryMessage(decision.reason));
       }
       if (decision.action === "join") {
-        const rejoin = await joinTeamRoom(roomCode, { visitorId: profile.visitorId, nickname: profile.nickname, cat });
+        const rejoin = await joinTeamRoom(roomCode, { visitorId: profile.visitorId, nickname: profile.nickname, cat, combatSnapshot });
         if (!rejoin.ok) throw new Error(rejoin.reason || "重新加入失敗");
       }
 
@@ -513,33 +516,43 @@ export default function ArcadeTeam({ profile, initialCode = null, initialRound =
   }
 
   async function handleFinish() {
-    // 存本機進度 → 離開（最後離開的人自動刪房）
     const grade = room?.result?.grade || teamGrade(0);
     const coins = Math.round((room?.result?.coins || 0) * grade.bonusMult);
-    // 組隊模式成就統計（勝利才更新：通關次數／最佳 Combo／最速通關）
     const mode = room?.result?.mode || room?.mode || "forest";
-    const teamStats = room?.status === "result"
-      ? updateTeamStats(profile.teamStats, mode, {
-          bestCombo: bestComboMult,
-          timeMs: room?.result?.durationMs || 0,
-        })
-      : profile.teamStats;
-    const updated = {
-      ...profile,
-      coins: (profile.coins || 0) + coins,
-      teamStats,
-      statistics: {
-        ...profile.statistics,
-        battles: (profile.statistics.battles || 0) + 1,
-        kills: (profile.statistics.kills || 0) + (myStats?.kills || 0),
-        bestDamage: Math.max(profile.statistics.bestDamage || 0, myStats?.damage || 0),
-        xCount: (profile.statistics.xCount || 0) + (myStats?.xCount || 0), // X 內十累計
-        // 冒險紀錄的最佳 Combo（數值，顯示時用 comboLabel 轉名稱）
-        bestCombo: Math.max(profile.statistics.bestCombo || 1, bestComboMult),
-      },
-      lastPlayedAt: Date.now(),
+    const won = room?.status === "result";
+    const xp = calcBattleXP({ mode, grade: grade.grade || "C", isTeam: true, bossKills: won ? 1 : 0 });
+    const settlementId = `team:${room?.sessionKey || roomCode}:${profile.visitorId}`;
+    const mutate = (current) => {
+      const settled = applyArcadeSettlement(current, {
+        id: settlementId,
+        coins: won ? coins : 0,
+        xp,
+        stats: {
+          battles: 1,
+          kills: myStats?.kills || 0,
+          bestDamage: myStats?.damage || 0,
+          xCount: myStats?.xCount || 0,
+        },
+      });
+      if (settled.alreadySettled) return settled.updated;
+      const teamStats = won
+        ? updateTeamStats(settled.updated.teamStats, mode, {
+            bestCombo: bestComboMult,
+            timeMs: room?.result?.durationMs || 0,
+          })
+        : settled.updated.teamStats;
+      return {
+        ...settled.updated,
+        teamStats,
+        statistics: {
+          ...(settled.updated.statistics || {}),
+          bestCombo: Math.max(settled.updated.statistics?.bestCombo || 1, bestComboMult),
+        },
+      };
     };
-    await onSave(updated);
+    if (onMutate) await onMutate(mutate);
+    else if (onSave) await onSave(mutate(profile));
+    onToast?.(`獲得 ${xp} EXP${won ? `・${coins} 金幣` : ""}`);
     await handleLeave();
   }
 

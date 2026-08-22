@@ -1,0 +1,7 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend spec entry point."}
+{"file":".trellis/spec/frontend/hunt-battle-flow.md","reason":"Free Hunt round authority, mobile UI, and reward contracts."}
+{"file":".trellis/spec/frontend/cat-companion.md","reason":"Canonical cat stats and bond rules."}
+{"file":".trellis/spec/frontend/card-collection-system.md","reason":"Structured card effects and world-boss snapshot rules."}
+{"file":".trellis/spec/frontend/equipment-system.md","reason":"Canonical equipment stat calculations."}
+{"file":".trellis/tasks/08-14-cat-battle-archetype-redesign/design.md","reason":"Existing cat engine authority and deterministic multiplayer design."}
+{"file":".trellis/tasks/08-14-hunt-battle-presentation-rebuild/design.md","reason":"Existing round event, bonus sheet, and receipt architecture."}

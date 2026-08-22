@@ -5,6 +5,8 @@ import {
   pickSingleTarget,
   getStatusStatMods,
   PARTY_TARGET_SCALE,
+  mergeDungeonPostRoundStatuses,
+  nextDungeonMonsterAbilityState,
 } from "./dungeonAbilityRound";
 import { EXPANSION_MONSTERS } from "./monsterExpansionCatalog";
 import { toLegacyBattleMonster } from "./monsterExpansionAdapter";
@@ -180,5 +182,15 @@ describe("異常 tick", () => {
     const result=tickDungeonStatuses({a:[{id:"bleed",strength:5,duration:2}]},{a:10},{a:100});
     expect(result).toMatchObject({memberHP:{a:5},poisonDamage:{a:5}});
     expect(result.statuses.a[0].duration).toBe(1);
+  });
+  test("新套用的 duration=1 Boss 異常不在施放回合被立即吃掉", () => {
+    const oldTick=tickDungeonStatuses({a:[{id:"atkDown",strength:10,duration:1}]},{a:100},{a:100});
+    const next=mergeDungeonPostRoundStatuses(oldTick.statuses,{a:[{finalStatus:{id:"defDown",stat:"def",unit:"pct",strength:8,duration:1}}]},[]);
+    expect(next.a).toEqual([{id:"defDown",stat:"def",unit:"pct",strength:8,duration:1}]);
+  });
+  test("Boss 減傷狀態到期後直接清除，不留下 duration 0 物件", () => {
+    expect(nextDungeonMonsterAbilityState({reductionPct:10,reductionDuration:1},null)).toBeNull();
+    expect(nextDungeonMonsterAbilityState({reductionPct:10,reductionDuration:2},null)).toEqual({reductionPct:10,reductionDuration:1});
+    expect(nextDungeonMonsterAbilityState(null,{reductionPct:5,reductionDuration:1})).toEqual({reductionPct:5,reductionDuration:1});
   });
 });

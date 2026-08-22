@@ -28,6 +28,7 @@ import {
   participantTotal,
   validatePartySize,
 } from "./bookingPricing";
+import { selectLegacyBookingForCheckin } from "./bookingCheckoutLink";
 
 const BOOKINGS    = "bookings";
 const SLOT_COUNTS = "bookingSlotCounts";
@@ -646,37 +647,37 @@ export async function completeBookingForMemberOnDate(memberId, date, checkinId, 
   if (!memberId || !date) return { ok: true, linked: false };
   const result = await getBookingsForDateRange(date, date);
   if (!result.ok) return { ok: false, reason: result.reason };
-  const candidates = result.bookings.filter(b =>
-    b.memberId === memberId && ["confirmed", "completed"].includes(b.status) && !b.billingRecordId
-  );
-  if (candidates.length === 0) return { ok:false, linked:false, reason:"找不到可連動的當日預約" };
   let checkinTime = null;
+  let checkinBookingId = null;
   if (checkinId) {
     try {
       const snap = await getDoc(doc(db, "checkins", checkinId));
-      const value = snap.data()?.createdAt;
+      const checkin = snap.data() || {};
+      checkinBookingId = checkin.bookingId || null;
+      const value = checkin.createdAt;
       const d = value?.toDate?.();
       if (d) checkinTime = d.toLocaleTimeString("en-GB", {
         timeZone:"Asia/Taipei", hour:"2-digit", minute:"2-digit", hour12:false,
       });
     } catch {}
   }
+
+  // 新版 checkin 已綁定課次時，只允許回寫那一筆；不能因同學生同日又有新預約而改綁別筆。
+  if (checkinBookingId) {
+    const exact = result.bookings.find(b =>
+      b.id === checkinBookingId && b.memberId === memberId && b.date === date
+    );
+    if (!exact) return { ok:false, linked:false, reason:"此下課紀錄已綁定其他預約" };
+    return completeBookingFromCheckin(exact.id, checkinId, billingId);
+  }
+
   const nowTime = new Date().toLocaleTimeString("en-GB", {
     timeZone: "Asia/Taipei", hour: "2-digit", minute: "2-digit", hour12: false,
   });
-  const toMinutes = value => {
-    const [h, m] = (value || "00:00").split(":").map(Number);
-    return h * 60 + m;
-  };
-  const referenceTime = checkinTime || nowTime;
-  const booking =
-    candidates.find(b => b.checkinId === checkinId) ||
-    candidates.find(b => checkinTime && b.startTime <= checkinTime && checkinTime < b.endTime) ||
-    candidates.find(b => b.startTime <= nowTime && nowTime < b.endTime) ||
-    candidates.slice().sort((a, b) =>
-      Math.abs(toMinutes(a.startTime) - toMinutes(referenceTime)) - Math.abs(toMinutes(b.startTime) - toMinutes(referenceTime))
-    )[0];
-  if (!booking) return { ok:false, linked:false, reason:"無法判斷要連動的預約" };
+  const booking = selectLegacyBookingForCheckin(result.bookings, {
+    memberId, checkinId, checkinTime, nowTime,
+  });
+  if (!booking) return { ok:false, linked:false, reason:"無法安全判斷要連動的預約，請從行事曆手動處理" };
   return completeBookingFromCheckin(booking.id, checkinId, billingId);
 }
 

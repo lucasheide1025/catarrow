@@ -1,0 +1,114 @@
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.EQUIPMENT_RUNE_TYPES = exports.EQUIPMENT_RUNE_TIERS = exports.EQUIPMENT_RUNES = void 0;
+exports.getAllEquipmentRuneBonus = getAllEquipmentRuneBonus;
+exports.getEquipmentRune = getEquipmentRune;
+exports.getEquipmentRuneBonus = getEquipmentRuneBonus;
+exports.getNextEquipmentRune = getNextEquipmentRune;
+const EQUIPMENT_RUNE_TYPES = exports.EQUIPMENT_RUNE_TYPES = {
+  atk: {
+    name: "攻擊符文",
+    icon: "⚔️",
+    stat: "atk"
+  },
+  def: {
+    name: "防禦符文",
+    icon: "🛡️",
+    stat: "def"
+  },
+  hp: {
+    name: "生命符文",
+    icon: "❤️",
+    stat: "hp"
+  },
+  cat: {
+    name: "貓靈符文",
+    icon: "🐱",
+    stat: "all"
+  }
+};
+
+// 2026-07-19 使用者拍板：加成改為「階級 × 1%」的線性曲線。
+// 舊值是 4/7/11/16%，光 T2 就 +7%、T4 高達 +16%，而貓靈符文（stat:"all"）三圍全加，
+// 等於一顆 T4 貓靈就給 atk/def/hp 各 +16% —— 相對怪物數值太強，使用者要求壓下來。
+// ⚠️ 要調符文強度就改這裡的 bonus，不要去動 getEquipmentRuneBonus 的疊加方式。
+const EQUIPMENT_RUNE_TIERS = exports.EQUIPMENT_RUNE_TIERS = [{
+  tier: 1,
+  name: "初階",
+  bonus: 0.01,
+  fragmentCost: 10,
+  goldCost: 300
+}, {
+  tier: 2,
+  name: "進階",
+  bonus: 0.02,
+  fragmentCost: 16,
+  goldCost: 900
+}, {
+  tier: 3,
+  name: "高階",
+  bonus: 0.03,
+  fragmentCost: 24,
+  goldCost: 2400
+}, {
+  tier: 4,
+  name: "王級",
+  bonus: 0.04,
+  fragmentCost: 36,
+  goldCost: 6000
+}];
+const EQUIPMENT_RUNES = exports.EQUIPMENT_RUNES = Object.fromEntries(Object.entries(EQUIPMENT_RUNE_TYPES).flatMap(([type, meta]) => EQUIPMENT_RUNE_TIERS.map(config => {
+  const id = `equipment_${type}_t${config.tier}`;
+  // 每類型每階專屬立繪（ComfyUI 生成，public/assets/runes/rune_<type>_t<tier>.webp）
+  const img = `/assets/runes/rune_${type}_t${config.tier}.webp`;
+  return [id, {
+    id,
+    type,
+    img,
+    ...meta,
+    ...config
+  }];
+})));
+function getEquipmentRune(runeId) {
+  return EQUIPMENT_RUNES[runeId] || null;
+}
+function getNextEquipmentRune(runeId) {
+  const rune = getEquipmentRune(runeId);
+  if (!rune || rune.tier >= EQUIPMENT_RUNE_TIERS.length) return null;
+  return EQUIPMENT_RUNES[`equipment_${rune.type}_t${rune.tier + 1}`] || null;
+}
+function getEquipmentRuneBonus(sockets = []) {
+  const bonus = {
+    atk: 0,
+    def: 0,
+    hp: 0
+  };
+  sockets.forEach(runeId => {
+    const rune = getEquipmentRune(runeId);
+    if (!rune) return;
+    if (rune.stat === "all") {
+      bonus.atk += rune.bonus;
+      bonus.def += rune.bonus;
+      bonus.hp += rune.bonus;
+    } else {
+      bonus[rune.stat] += rune.bonus;
+    }
+  });
+  return bonus;
+}
+function getAllEquipmentRuneBonus(equipment = {}) {
+  return Object.values(equipment).reduce((total, item) => {
+    const bonus = getEquipmentRuneBonus(item?.sockets);
+    total.atk += bonus.atk;
+    total.def += bonus.def;
+    total.hp += bonus.hp;
+    return total;
+  }, {
+    atk: 0,
+    def: 0,
+    hp: 0
+  });
+}

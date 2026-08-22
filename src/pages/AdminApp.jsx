@@ -13,6 +13,7 @@ import { getAppTheme, saveAppTheme, APP_THEMES } from "../lib/theme";
 import { levelFromXP, rankFromLevel } from "../lib/adventurerSystem";
 import { archerLevelFromXP } from "../lib/archerLevel";
 import { readHuntBattleResume, clearHuntBattleResume } from "../lib/huntBattleResume";
+import { resolveCombatResumePage } from "../lib/combatResumeRoute";
 import { getFreeHuntMonsterById } from "../lib/freeHuntCatalog";
 import { APP_VERSION } from "../lib/version";
 import { subscribeWorldBossStatus } from "../lib/worldBossDb";
@@ -76,6 +77,8 @@ const MemberInventoryHub = lazy(() => import("../components/member/MemberInvento
 const MemberRecordsHub   = lazy(() => import("../components/member/MemberRecordsHub"));
 const MemberPerformance  = lazy(() => import("../components/member/MemberPerformance"));
 const MonsterBattle      = lazy(() => import("../components/member/MonsterBattle"));
+const MultiMonsterBattle = lazy(() => import("../components/battle/MultiMonsterBattle"));
+const MultiMonsterPartyRoom = lazy(() => import("../components/battle/MultiMonsterPartyRoom"));
 const MonsterHandbook    = lazy(() => import("../components/member/MonsterHandbook"));
 const CardCollection     = lazy(() => import("../components/member/CardCollectionModern"));
 const GuildExpedition    = lazy(() => import("../guild/GuildTestApp"));
@@ -164,8 +167,12 @@ export default function AdminApp() {
   const [page, setPageState]        = useState(() => {
     const isArcher = sessionStorage.getItem("admin_archerMode") === "1";
     const s = sessionStorage.getItem("admin_page");
-    if (isArcher && readHuntBattleResume()) return "hunt";
-    if (isArcher) return (s && !VALID_PAGES.has(s)) ? s : "home";
+    if (isArcher) return resolveCombatResumePage({
+      storedPage:(s && !VALID_PAGES.has(s)) ? s : null,
+      hasMultiMonsterPartySession:Boolean(sessionStorage.getItem("admin_multi_monster_party_room")),
+      hasHuntResume:Boolean(readHuntBattleResume()),
+      fallbackPage:"home",
+    });
     return (s && VALID_PAGES.has(s)) ? s : "daily";
   });
   const setPage = useCallback((p) => startTransition(() => setPageState(p)), []);
@@ -191,6 +198,10 @@ export default function AdminApp() {
   const [questCtx, setQuestCtx]     = useState(null);
   const [fromGuild, setFromGuild]   = useState(false);
   const [huntContext, setHuntContext] = useState(null);
+  const [multiMonsterContext, setMultiMonsterContext] = useState(null);
+  const [multiMonsterPartySession, setMultiMonsterPartySession] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem("admin_multi_monster_party_room") || "null"); } catch { return null; }
+  });
   const [huntResume, setHuntResume] = useState(() => readHuntBattleResume());
   const [autoResumeHuntBattle, setAutoResumeHuntBattle] = useState(false);
   useEffect(() => { if (page === "hunt") setHuntResume(readHuntBattleResume()); }, [page]);
@@ -302,20 +313,21 @@ export default function AdminApp() {
 
   const [classEndBusy, setClassEndBusy] = useState(false);
   async function handleHomeClassEnd() {
-    if (!profile?.id || !todayCheckin?.id || classEndBusy) return;
-    if (!window.confirm("確定要下課嗎？下課後會結算今天的箭數與獎勵。")) return;
+    if (!profile?.id || !todayCheckin?.id || classEndBusy) return false;
     setClassEndBusy(true);
     try {
-      await submitClassEnd(profile.id, todayCheckin.id);
-      if (todayArrowsGlobal > 0) {
+      const result = await submitClassEnd(profile.id, todayCheckin.id);
+      if (result?.classEnd?.endedNow !== false && todayArrowsGlobal > 0) {
         await Promise.allSettled([
           addArrowdew(profile.id, todayArrowsGlobal),
           checkAndGrantArrowMilestones(profile.id, todayArrowsGlobal),
         ]);
       }
+      return true;
     } catch (e) {
       console.error("class end:", e?.message);
       window.alert("下課結算失敗，請稍後再試。");
+      return false;
     } finally {
       setClassEndBusy(false);
     }
@@ -445,6 +457,20 @@ export default function AdminApp() {
     handleEnterPartyRoom(roomId, type, host);
   }
 
+  function enterMultiMonsterParty(roomId, host, context = {}) {
+    const session = { roomId, isHost:Boolean(host), family:context.family || null, tier:context.tier || null, code:context.code || null };
+    sessionStorage.setItem("admin_multi_monster_party_room", JSON.stringify(session));
+    setMultiMonsterPartySession(session);
+    setMultiMonsterContext(null);
+    setPage("multi-monster-party");
+  }
+
+  function leaveMultiMonsterParty() {
+    sessionStorage.removeItem("admin_multi_monster_party_room");
+    setMultiMonsterPartySession(null);
+    setPage("hunt");
+  }
+
   const _savedDuel = (() => { try { return JSON.parse(sessionStorage.getItem("admin_duel_room") || "null"); } catch { return null; } })();
   const [duelRoomId,  setDuelRoomId]  = useState(_savedDuel?.roomId || null);
   const [duelIsHost,  setDuelIsHost]  = useState(_savedDuel?.isHost || false);
@@ -550,7 +576,7 @@ const adminNav = [
     { id:"booking",       icon:"📅", label:"約課"  },
     { id:"profile",       icon:"👤", label:"我的"  },
   ];
-  const ADMIN_ADVENTURE = ["adventure-hub","monster","party-quest","party-battle","duel","duel-room","dungeon","worldboss","guild","monsterdex"];
+  const ADMIN_ADVENTURE = ["adventure-hub","hunt","monster","multi-monster","party-quest","party-battle","duel","duel-room","dungeon","worldboss","guild","monsterdex"];
   const ADMIN_TRAINING  = ["training-hub","comps","comp-detail","practice","performance"];
   const ADMIN_INVENTORY = ["inventory-hub","coinshop","materials","cats","catbook","story","equipment","specialization-runes","cards","gacha"];
   const ADMIN_PROFILE   = ["profile","learn","msgs","history","external","achievements","certexam","notifications","dex","guide","leaderboard","bowsetting"];
@@ -680,12 +706,29 @@ const adminNav = [
             setPage(nextPage);
           }} />}
           {page==="hunt" && <FreeHunt
-            onBack={() => { setHuntContext(null); setPage("adventure-hub"); }}
+            onBack={() => { setHuntContext(null); setMultiMonsterContext(null); setPage("adventure-hub"); }}
             onSolo={(monster) => openHuntMonster(monster, "solo")}
+            onMultiMonster={({ family, tierIndex }) => { setMultiMonsterContext({ family, tier: tierIndex }); setPage("multi-monster"); }}
             resumableBattle={huntResume}
             onResumeBattle={() => { const monster=getFreeHuntMonsterById(huntResume?.monsterId); if(monster){ setAutoResumeHuntBattle(true); setHuntContext({monster,intent:"solo"}); setPage("monster"); } }}
             onAbandonBattle={() => { if(window.confirm("確定放棄這場狩獵戰鬥？進度將無法復原。")){ clearHuntBattleResume(sessionStorage,{clearBattle:true}); setHuntResume(null); } }}
-            onEnterPartyRoom={enterFreeHuntParty} />}
+            onEnterPartyRoom={enterFreeHuntParty}
+            onEnterMultiPartyRoom={enterMultiMonsterParty} />}
+          {page==="multi-monster" && multiMonsterContext && <MultiMonsterBattle
+            family={multiMonsterContext.family}
+            tier={multiMonsterContext.tier}
+            playerStats={{ hp: profile?.hp || 200, maxHp: profile?.maxHp || 200, atk: profile?.atk || 15, def: profile?.def || 10 }}
+            memberProfile={profile}
+            sharedData={sharedPlayerData}
+            onBack={() => { setMultiMonsterContext(null); setPage("hunt"); }}
+            onWin={() => { setMultiMonsterContext(null); setPage("hunt"); }} />}
+          {page==="multi-monster-party" && multiMonsterPartySession?.roomId && <MultiMonsterPartyRoom
+            roomId={multiMonsterPartySession.roomId}
+            isHost={multiMonsterPartySession.isHost}
+            playerStats={{ hp: profile?.hp || 200, maxHp: profile?.maxHp || 200, atk: profile?.atk || 15, def: profile?.def || 10 }}
+            memberProfile={profile}
+            sharedData={sharedPlayerData}
+            onLeave={leaveMultiMonsterParty} />}
           {page==="training-hub"  && <MemberTrainingHub  onPageChange={setPage} onJoinParty={handleEnterPartyRoom} showPerformance={archerMode} />}
           {archerMode && page==="performance" && <MemberPerformance />}
           {page==="inventory-hub" && <MemberInventoryHub onPageChange={setPage} />}

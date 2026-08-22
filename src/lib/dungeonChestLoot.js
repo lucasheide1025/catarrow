@@ -40,7 +40,10 @@ export function createOrdinaryChestLoot({
     material: material ? {
       id: material.id,
       name: material.name,
-      icon: material.icon,
+      // ⚠️ EXPANSION_MATERIALS 的 material 物件沒有 icon 欄位（252 隻全缺）——
+      //    直接寫 undefined 進 Firestore 會 400（巢狀 undefined），組隊探險踩寶箱房整隊卡死。
+      //    choice 顯示層（:85）有 fallback，巢狀 material 也要有。
+      icon: material.icon || "🧱",
       family: material.family,
       tier: material.tier,
       tierIndex: material.tierIndex,

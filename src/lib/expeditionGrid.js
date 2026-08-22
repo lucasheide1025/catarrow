@@ -5,6 +5,7 @@
 
 import { STAGE_ROOM_QUOTA } from "./dungeonData";
 import { INLINE_ROOM_META, pickInlineRoomType } from "./dungeonInlineRooms";
+import { createDungeonRouteV2 } from "./dungeonRouteV2";
 
 // 地圖擴大為兩倍（2026-08-06）：5×5／20~23 格 → 7×7／40~46 格。
 // 地圖是等角 2.5D + 鏡頭跟隨（DungeonStages::MapViewport），放大不需要改 UI。
@@ -24,10 +25,10 @@ const STAGE_ROOM_LABELS = {
   rest:         "休息區",
 };
 
-function shuffle(arr) {
+function shuffle(arr, random = Math.random) {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(random() * (i + 1));
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
@@ -52,16 +53,16 @@ export function getAdjacentPositions(pos) {
 }
 
 // 生成樹式區域擴張：從隨機起點開始，每次從邊界隨機挑一格併入，保證所有格子連通
-function growRegion(targetCount) {
+function growRegion(targetCount, random = Math.random) {
   const start = {
-    x: Math.floor(Math.random() * GRID_SIZE),
-    y: Math.floor(Math.random() * GRID_SIZE),
+    x: Math.floor(random() * GRID_SIZE),
+    y: Math.floor(random() * GRID_SIZE),
   };
   const region = new Map([[posKey(start.x, start.y), start]]);
   let frontier = getAdjacentPositions(start);
 
   while (region.size < targetCount && frontier.length > 0) {
-    const idx = Math.floor(Math.random() * frontier.length);
+    const idx = Math.floor(random() * frontier.length);
     const cell = frontier.splice(idx, 1)[0];
     const key = posKey(cell.x, cell.y);
     if (region.has(key)) continue;
@@ -109,12 +110,12 @@ function pickStairs(cells, start, random = Math.random) {
 }
 
 // ── 第 1、2 層：5×5 迷霧格子（最大 25 格，戰鬥不連續） ─────────
-export function generateGridFloor(floorIndex, difficultyTier) {
+export function generateGridFloor(floorIndex, difficultyTier, random = Math.random) {
   const quota = STAGE_ROOM_QUOTA[Math.min(floorIndex, STAGE_ROOM_QUOTA.length - 1)] || STAGE_ROOM_QUOTA[0];
   const roomCount = ROOM_COUNT_RANGE.min
-    + Math.floor(Math.random() * (ROOM_COUNT_RANGE.max - ROOM_COUNT_RANGE.min + 1));
-  const { start, cells } = growRegion(roomCount);
-  const stairs = pickStairs(cells, start);
+    + Math.floor(random() * (ROOM_COUNT_RANGE.max - ROOM_COUNT_RANGE.min + 1));
+  const { start, cells } = growRegion(roomCount, random);
+  const stairs = pickStairs(cells, start, random);
 
   const startKey = posKey(start.x, start.y);
   const stairsKey = posKey(stairs.x, stairs.y);
@@ -134,11 +135,11 @@ export function generateGridFloor(floorIndex, difficultyTier) {
   // ② 剩下的格子全部給輕量房（踩到就結算、不離開地圖）
   //    地圖擴大多出來的空間都在這裡消化，重量房的絕對數量因此不變。
   while (types.length < otherCells.length) {
-    const type = pickInlineRoomType();
+    const type = pickInlineRoomType(random);
     types.push({ type, label: INLINE_ROOM_META[type]?.label || type });
   }
 
-  let assigned = shuffle(types).slice(0, otherCells.length);
+  let assigned = shuffle(types, random).slice(0, otherCells.length);
 
   // 防呆與修復：戰鬥不連續 (避免兩間戰鬥房相鄰)
   for (let i = 0; i < otherCells.length; i++) {
@@ -222,7 +223,7 @@ const BRANCH_META = {
 };
 
 // 回傳 { entrance, branches:{A,B,C 各 rooms:[3 抽 + 固定商人 + 休息]}, boss, treasure }
-export function generateBranchFloor() {
+export function generateBranchFloor(seed = `route-${Date.now()}-${Math.random()}`) {
   const branches = {};
   for (const key of ["A", "B", "C"]) {
     const randomRooms = shuffle([
@@ -247,6 +248,8 @@ export function generateBranchFloor() {
   }
 
   return {
+    routeVersion: 2,
+    route: createDungeonRouteV2(seed),
     entrance: { id: "b_entrance", type: "entrance", label: "王關入口", cleared: true },
     branches,
     boss: { id: "b_boss", type: "boss_battle", label: "Boss", cleared: false },

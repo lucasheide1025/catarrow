@@ -209,7 +209,7 @@ export default function ArcadeDuel({
     return () => clearTimeout(t);
   }, [room?.lastResolution, meId]);
 
-  // 結束：只寫本機 profile。syncProfileToCloud 會主動剝除 duelStats。
+  // 結束：只寫本機 profile；duelStats 永久留在此瀏覽器，不寫入 Firestore。
   useEffect(() => {
     if (room?.status !== "result" || !room.result || resultSaveRef.current) return;
     resultSaveRef.current = true;

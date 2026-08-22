@@ -1,3 +1,224 @@
+## 2026-08-22｜訪客 Arcade 地圖 `visitedIds.has` 崩潰修正
+- 症狀：訪客點「冒險」進 `ArcadeDungeonRun → GridMapStage → DungeonMapView` 後立即出現 `TypeError: visitedIds.has is not a function`。
+- 根因：Arcade Local First runtime 為了 IndexedDB/localStorage 安全持久化，`visitedIds` 保存為 Array；共用地下城 presentation `DungeonMapView` 的既有契約是 Set，內部直接呼叫 `.has()`。訪客 controller 先前直接把 Array 傳入。
+- 修法：不改學生地下城、不把 Set 寫進 visitor session；只在 `ArcadeDungeonRun` render adapter 用 memoized `new Set(runtime.visitedIds)` 轉型後傳給 `GridMapStage`。新開局與 reload/resume 都維持 Array runtime 契約。
+- 新增 source contract test，防止日後又把 `runtime.visitedIds` 直接傳入共用地圖。
+
+## 2026-08-22｜訪客 Arcade 單人地下城改用學籍 presentation + Local First Arcade runtime
+- 新增 `ArcadeDungeonRun.jsx`／`arcadeDungeonRunLogic.js`，正式取代單人主入口舊 `ArcadeAdventure` controller；學籍地下城只共用 presentation，不共用學生資料層。
+- 地圖直接使用 `GridMapStage`／`BranchStage`；商店、陷阱、事件、寶箱、休息共用既有 `localMode` 元件。HP、Buff、本趟金幣、背包增量、房間與地圖進度都保存在 IndexedDB `adventureSession.runtime`。
+- `ArcadeBattleScreenAdapter` 將 `BattleScreen` 固定為 external presentation/input：開啟 `isolateStudentProgression` 與 `hideLeaveControl`，移除傳入學生式 cat authority。訪客戰鬥唯一結算來源為 `arcadeBattle.resolveRound()`，避免學生卡片／裝備／貓咪與 Arcade 規則雙算。
+- 修正 visitor map deterministic bug：shared `expeditionGrid.generateGridFloor` 增加 optional RNG（預設仍 `Math.random`），Arcade config 傳 runId-derived seeded RNG；同一 run 可 reload／接管後恢復同一張圖，學生地下城既有呼叫不變。
+- 永久進度只在 `clear / retreat / defeat` 透過穩定 settlement id `${runId}:dungeon` 呼叫 `applyArcadeSettlement()`；返回大廳只暫停並保留 run，不提前入帳。settlement 寫入失敗會停在結果頁並可重試。
+- 地下城結構：貓森遺跡 2 層；月夜迷城／深淵巢穴 3 層，最終層共用 A/B/C `BranchStage`。深淵團滅時未帶出的本趟金幣歸零，但仍取得 EXP。
+- 新增 runtime 與 source contract tests，鎖住共享 UI、Local First、BattleScreen 隔離、session resume 與 terminal settlement 邊界。
+- 驗證：focused **6 suites / 30 tests PASS**；完整 Arcade **18 suites / 195 tests PASS**；`npm run build` `Compiled successfully`；scoped `git diff --check` PASS。
+- 狀態：本機完成；本次 ArcadeDungeonRun 改動**尚未 deploy / commit / push**。工作區曾在此功能完成前有另一筆 Vercel deployment，該 deployment 不包含本次 08:27 後完成的共享地下城改動。
+
+## 2026-08-22｜地下城單人複數怪 `dungeon_multi_run_mismatch` 修正
+- 根因不是複數怪戰鬥結果錯誤，而是**權威結算證據與續玩存檔的時序衝突**：`claimDungeonMultiSoloReward` 會驗證 `members.activeExpedition.mapState.pendingRoom.multiBattleRoomId + encounterId`，但一般 `activeExpedition` 為了省 Firestore writes 採 5 秒 trailing write。房間建立後若玩家很快打完，Cloud Function 可能仍讀到上一份 pendingRoom，合法勝利就被拒絕成 `dungeon_multi_run_mismatch`。
+- 保留後端防偽檢查，不放寬 claim。`DungeonExpedition` 把 activeExpedition payload 抽成共用 builder；一般走格／探索仍維持 5 秒合併寫入。
+- **只有地下城單人複數 encounter 開戰是 barrier**：`dungeonRooms` 建立並 `startMultiMonsterPartyBattle` 成功 → 寫入 `r.multiBattleRoomId` → 用同一 builder 產生含 `battleId + encounterId` 的 pendingRoom → queue + `flushActiveExpeditionProgress()` 立即落地成功 → 才 `setPendingRoom` 並切進 battle。若立即存檔失敗，先 cleanup 新房並禁止進戰鬥，避免打一場註定無法權威結算的房。
+- `functions/index.js` 的 `dungeon_multi_run_mismatch` 驗證原封不動；修的是 client persistence ordering，不是降低伺服器安全性。
+
+## 2026-08-21｜訪客 Arcade 組隊：房號加入＋斷線／重整返回戰鬥
+
+### 根因
+- `getTeamRoom()` 過去把 Firestore/network error 吞成 `null`，UI 無法分辨「暫時斷線」與「房間真的不存在」。
+- `ArcadeTeam` 初始加入失敗會直接清 `currentTeamRoom`，因此短暫網路失敗就失去回鍋資訊。
+- QR 是主要入口，但沒有把既有 5 位 roomCode 做成正式手動加入／恢復 UX。
+
+### 修改
+- 新增房號 normalize/validate 與 room-entry decision 純函式；waiting outsider 可加入、active 只允許原隊員 reconnect。
+- `getTeamRoom()` 改為只有 exists=false 才回 null；連線錯誤向上拋出，resume 保留。
+- 大廳新增 5 位房號輸入；`joinCode` 與已授權 `roomCode` 分離，避免未驗證 active 房先掛 snapshot。
+- reload/斷線時 same round 恢復未送 arrows；remote round 已前進則清舊箭。
+- snapshot/submit 暫時同步錯誤不導回首頁、不清房，提供人工「重新同步」。
+- waiting、戰鬥、叉路、團滅、結算畫面持續顯示房號；QR 流程保留。
+- 原隊員在 result/defeat 房保留期間仍可返回看結算；非隊員不能靠房號插入已開始房。
+
+### 驗證
+- `npm test -- --watchAll=false --runInBand src/arcade`：11 suites、155 tests PASS。
+- `npm run build`：Compiled successfully。
+
+## 2026-08-20｜複數討伐射手／貓貓外觀＋組隊正式戰場 UI
+- 單人複數戰進場的固定弓箭 emoji 改為會員設定的 `PlayerAvatar`，同行貓同步使用 `CatSVG` 真實外觀；戰鬥 HUD 也顯示射手小頭像與實際貓圖、羈絆／ATK。
+- 組隊等待室與戰鬥卡加入射手頭像、同行貓；怪物卡改讀正式 battle monster 圖片來源。active 畫面加入族系背景、round/arrows/mode HUD、party strip、前後排戰場與約 2.4 秒 local-only VS 進場演出。
+- `updateMultiMonsterPartyMemberStats` 在原本 waiting 能力同步同一筆 transaction 內附帶 `avatarId/catId/catName/catType/bondLv`，所以 UI 能顯示每位隊員自己的外觀；開戰後沒有新增 cosmetic/per-round Firestore write，既有低寫入權威架構不變。
+- 本輪只改 presentation/cosmetic snapshot，不改傷害、掉落、自由狩獵 5 次限制或權威 resolver。
+
+## 2026-08-20｜複數討伐正式組隊同步 v1
+- 新增 `MultiMonsterPartyRoom.jsx`、`multiMonsterPartyDb.js`、`multiMonsterPartyBattle.js`，建立複數討伐專用多人路徑；**不擴寫單怪 `PartyBattleRoom/processPartyRound`**，`huntType="multi"` 房與既有單怪自由狩獵房持續隔離。
+- 建立／加入複數隊伍後直接進正式等待室，最多 8 人；房主可設定 3／6 箭並開始戰鬥。`MemberApp`／教練射手模式 `AdminApp` 各自保存 multi-party `sessionStorage` roomId，重新整理後可重新訂閱同一房間並依 `waiting/active/victory/defeat` 恢復畫面。
+- 房主開始戰鬥時以 transaction 只建立一次共享遭遇：同族同 T 三隻前排一般怪各自抽弱化／普通／強悍，後排 0～2 根治療符文柱；`targets map + targetOrder + encounterSeed` 一併持久化。所有成員必須先同步正式 `maxHp/baseAtk/baseDef`，任一成員尚未完成時 DB 回 `member_stats_pending`，房主開始按鈕也保持 disabled，避免剛加入就被預設 200/15/10 鎖進整場。
+- 每位存活成員只提交自己的 `arrows + attackMode + targetId`。目前房主依 `room.hostId` 作權威 resolver，使用 `expectedRound` transaction 原子結算；亂數由 `encounterSeed + round` 決定，流程固定為 **全體玩家攻擊 → 符文治療一次 → 存活前排怪反擊**。同一 expected round 重複 resolver 只能得到 stale round，不會雙重扣血、治療或反擊。
+- 集火維持 100%；全員攻擊每箭對所有存活目標各自套 50%。若前一位隊員已擊倒下一位原本鎖定的目標，後者會改鎖第一個仍存活目標。怪物 HP 與隊員 HP／即時 ATK／DEF 全部直接讀 Firestore room state；`lastResolution` 只覆寫最新一輪並限制事件數，不建立無界 battle log。
+- 主動離開時若離開者是房主且仍有其他隊員，transaction 會把房主交給下一位隊員；重新整理則直接靠 session + room subscription 回房。**v1 尚未加入瀏覽器崩潰／斷網後的 heartbeat timeout 自動換房主**，這是下一階段的斷線容錯項目。
+- 勝利只要求三隻非符文前排全部倒下，不要求破壞治療符文。每位實際參戰者自行對三隻倒下前排呼叫既有 `claimMonsterBattleReward`；claim identity 本身含 `battleId + memberId + rewardType`，不同隊員可安全領同一隻怪。符文柱永遠 0 獎勵；各人成功後標記 `rewardClaimed`，房主預設等全員領完才可關房，仍有人未領時強制關閉需二次確認。
+- 驗證：focused **6 suites / 37 tests PASS**；production build **PASS**；feature-scoped `git diff --check` PASS。狀態：本機完成，**未 deploy Vercel / Firebase，未 commit / push**。
+
+## 2026-08-20｜複數討伐即時 HP／ATK／DEF HUD
+- 複數戰頂部新增常駐三圍：HP 顯示目前／最大生命，ATK、DEF 顯示戰鬥中的有效值；和進場基礎值不同時以 `+/-` 差額與增減樣式提示。
+- `multiMonsterBattle.js` 新增 `getMultiMonsterPlayerStats()` 作單一真本：保留 `baseAtk/baseDef`，支援技能／事件隨時改 `atkMult/defMult`、`atkFlat/defFlat`，並沿用既有玩家異常語意 `fear/atkDown`、`armorBreak/defDown`。HUD 直接由 `visualState` 推導，因此 battle state 一變就會重新顯示目前值。
+- 箭傷、玩家 ATK 型異常 tick 與怪物反擊 DEF 同步改讀 live effective stats；未套任何增減益時，數值與舊版完全一致。
+- 驗證：focused **4 suites / 23 tests PASS**；production build **PASS**；`git diff --check` PASS。狀態：本機修改，未 deploy / commit / push。
+
+## 2026-08-20｜複數討伐教練帳號進場修正＋組隊入口預留
+- 實機症狀「點複數討伐沒有反應」的主因不是 `MultiMonsterBattle`：一般學生 `MemberApp` 已有 `onMultiMonster → page="multi-monster"`，但教練帳號切射手模式使用的 `AdminApp` 沒有傳 `onMultiMonster`、也沒有 `multi-monster` render，因此 `FreeHunt` 的 optional callback 對教練帳號實際是 no-op。
+- `AdminApp` 現在與 `MemberApp` 對齊：都保存 `{ family, tier }` context，切到同一個 `MultiMonsterBattle`，返回／勝利後回 `hunt`；複數單人戰不再因帳號角色不同而走兩套入口。
+- `FreeHunt` 的複數討伐卡不再整張「直接進場」，改成明確三選一：**⚔️ 單人討伐／🤝 建立隊伍／🔎 加入隊伍**。只有單人按鈕會直接切入戰鬥。
+- 複數組隊先建立安全的等待房契約：`partyRooms` 寫入 `huntType="multi"`、`multiMonster=true`、`multiFamily`、`multiTier`；列表只顯示複數房，既有單怪自由狩獵列表會排除複數房，兩種房型不混用。
+- 目前 `PartyBattleRoom` 仍是單怪同步核心，因此複數房**只保留建房／加入／隊員資料**並明示「多人戰鬥同步尚未開放」；不會把複數房錯送進單怪戰。後續真正接多怪組隊時直接沿用這批 metadata。
+- 順修既有複數戰 50% AoE 測試不穩：`calcStandardArrowDmg` 新增可選 RNG（預設仍 `Math.random`），複數戰把自己的 `rand` 傳到底層，使同一基準下「全員攻擊＝集火傷害向下取整 50%」可重現；正式未注入時隨機行為不變。
+- 驗證：focused **4 suites / 20 tests PASS**；production build **PASS**；`git diff --check` PASS。2026-08-20 已部署 Vercel production：`catarrow-ki9o7i6vu-broudes-1864s-projects.vercel.app`；自訂網域 `student.catgroup.com.tw` 已明確 alias 到此版並驗證 HTTP 200，主 bundle=`main.996e2533.js`。未 deploy Firebase Rules / Functions，未 commit / push。
+
+## 2026-08-20｜會計自訂實收金額＋新預約不再繼承舊下課／結帳狀態
+- `BillingSystem` 的方案仍會依 `bookingPricing` 自動帶入標準價／早鳥／月卡計算結果，但「實收金額」改為可編輯整數欄位；教練可直接改成實際收款（例如 NT$425），送出 `addBillingRecord` 時以自訂值為準。空白、非數字、負數、小數與異常過大金額會阻擋；0 元保留給月卡／贈送／折抵情境。
+- 根因：`checkins` 目前仍是 `memberId + date` 一天一份，舊 `AdminBooking` 又會把 `${memberId}_${date}` 當成所有同日預約的 fallback checkinId。學生第一筆課程下課／結帳後，後來新建的第二筆 booking 因同一日 checkinId 撞到舊 `classEnded`／`billingRecord`，會被錯誤標成 completed 或直接進強制結帳。
+- 新規則：**下課／帳單狀態屬於課次，不屬於「這個學生今天」**。一般結帳必須能證明 `checkin.bookingId === booking.id`；legacy 無 bookingId 時只接受 booking 自己已持久化的 `checkinId` 或可唯一判定的舊資料，不得用同學生＋日期猜。
+- 行事曆自動補結帳改成 `billingRecordMatchesBooking()`：優先精確 `record.bookingId === booking.id`；legacy `checkinId` 只有 booking 自己已保存同一 checkinId 才能匹配。新建 confirmed booking 不再因舊帳單自動變 completed。
+- 一般「💰 結帳」找不到該 booking 自己的已下課 checkin 時只提示「此筆預約尚未完成下課」，**不再偷偷升級為 isForce=true**；原本明確的「⚡ 強制結帳」仍保留，只有教練主動點擊才使用。
+- `completeBookingForMemberOnDate()` 若 checkin 已有 `bookingId`，只能完成那一筆；legacy fallback 移除「挑最近一筆」猜測，只在 checkinId／報到時間／目前時間可唯一解析或全日只有一個候選時連動，否則要求從行事曆手動處理。
+- 驗證：本次 focused **4 suites / 18 tests PASS**；production build **PASS**。2026-08-20 已正式部署 Vercel production：`catarrow-6iuk9vhox-broudes-1864s-projects.vercel.app`（`dpl_4jgHubLGjEh2HtGrgXzMR4Ck8ZDb`，Ready）；`student.catgroup.com.tw` 已確認指向此版且 HTTP 200，主 bundle=`main.0f3b697a.js`。包含自訂實收金額的 `2798.6f9a62d8.chunk.js` 與預約下課隔離的 `3990.38a532e4.chunk.js` 均與本機已驗證 build 做 SHA-256 比對完全一致。未 deploy Firebase Rules / Functions，未 commit / push。
+
+## 2026-08-19｜單人複數怪擊倒演出＋權威結算＋入口收斂
+- `MultiMonsterBattle` 的每隻怪物死亡統一由 `MONSTER_KILLED` presentation event 驅動：怪物先播放約 1.15 秒失色／倒下動畫並蓋上「擊倒」印章，再繼續下一個戰鬥事件；箭傷、貓咪攻擊、異常傷害與反傷造成的擊殺都會走同一條事件路徑。
+- 勝利結算不再使用未完成的本機 `calculateMultiMonsterDrops`。三隻被擊倒的**非符文前排怪**各自以穩定且不同的 battleId 呼叫既有 `claimMonsterBattleReward`；後端照現行單人狩獵權威規則實際入帳金幣、素材、寶箱與卡片，治療符文柱永遠不列入獎勵。
+- 複數戰隨機「弱化／普通／強悍」只改戰鬥能力，不改掉寶難度；獎勵固定沿用自由狩獵 `mode=student`、`challengeLevel=standard`。客戶端必須以 `aggregateMultiMonsterRewardClaims(defeated, claims, MONSTER_TIER_XP)` 合併三筆權威回執，不能把 claim 陣列誤當 killedMonsters 傳入。
+- 射手 EXP 依三隻被擊倒怪物的 T 階加總，等三筆權威 claim 全部成功後才一次寫入；結算失敗會停在「重新同步獎勵」，後端 claimId 冪等可避免同一場重試時重複發放已成功的怪物掉落。
+- 勝利頁改顯示實際結算內容：金幣總額、射手 EXP、素材名稱／圖示／數量，以及實際掉落的素材箱／金幣箱／藥水箱與怪物卡片。
+- `FreeHunt` 的「複數討伐戰」入口移到 **STEP 3「指定討伐怪物」標題正下方、三張單怪卡之前**；只需要目前已選的族群＋T 階，不要求 `selectedMonster`。移除 `FreeHunt` 內部 lazy-render 的第二套 `MultiMonsterBattle`／`multiMode`，正式只由 `MemberApp page="multi-monster"` 渲染同一套戰鬥與玩家資料來源。
+- 驗證：`multiMonsterBattle.test.js`＋`battleRewardReceipt.test.js` focused tests 通過；production build 通過。狀態：本機完成，未 deploy / commit / push。
+
+## 2026-08-19｜下課結算統一＋月卡恢復後台審核＋手動扣除
+- 根據教練帳號實機測試修正前一版錯誤：學生／教練射手模式在前台選 1/2 小時後**不再直接減月卡 sessions**，改回 `monthlyCardRequests status=pending`，由後台核准後才真正扣除。
+- `MemberHome` 與 `DailyQuest` 共用新的 `ClassEndSettlementModal`：下課小視窗固定顯示今日累積箭數、預計結算箭露、今日里程碑獎勵、月卡剩餘時數；月卡只提供「不使用／申請 1h／申請 2h」，移除練箭頁舊的勾選框與 3 小時選項。
+- `submitClassEnd()` 清除所有 monthlyCard mutation，只負責下課與既有 daily quest/event point；`approveMonthlyCardRequest()` 改用 transaction 原子完成核准、扣卡與 `use_approved` log，避免重複核准與併發負數。
+- 後台月卡會員列表新增「➖ 扣除次數」：管理員可手動扣 1/2 次，`deductMonthlyCardSessions()` 以 transaction 驗證剩餘時數並留下 `admin_deduct` log。
+- 移除前一版 `validateMonthlyCardClassEnd`、`class_end_use` 前台直扣流程與 Firestore `monthlyCardSelfUseUpdateIsValid` 自助改卡權限；正式射手前台不再能直接改 `monthlyCard`。
+- 首頁月卡摘要仍固定顯示剩餘小時／到期日／剩餘天數，狀態改為「可申請扣抵」。
+- 驗證：相關 **5 suites / 18 tests PASS**；Vercel production build `Compiled successfully`。
+- 正式部署：`catarrow-2g5dn3kbg-broudes-1864s-projects.vercel.app`；`student.catgroup.com.tw` alias 已切至此版，HTTP 200，bundle=`main.5cb251c5.js`。`firestore.rules` 已成功發布到正式 Firebase project `catgroup-8d0bb`。未 commit / push。
+
+## 2026-08-19｜單人複數怪遭遇／攻擊模式定案
+- 複數怪前排固定為該族／該 T 的 3 隻 `encounter=normal` 怪物一起登場；每隻各自沿用既有 `selectVariant/applySoloVariant` 獨立抽弱化／普通／強悍，增加同一組怪的進場變數。
+- 後排只生成 0～2 根治療符文柱，不再混入一般怪或 ATK/DEF buff；符文柱有 HP、可直接指定攻擊、可被破壞，但不參與反擊。
+- 玩家六箭增加「單一集火」與「全員攻擊」：集火維持完整傷害與原本怪物溢傷；全員攻擊每箭對所有存活目標各自結算並套 -50% 傷害，貓咪／羈絆仍維持單體怪物行動。
+- UI 分成較緊密的 3 怪前排與後排符文柱，怪物顯示弱化／普通／強悍標籤；後排可點擊，AoE 模式以 ALL 標示。
+- 修正 `battle_intro.mp3` 載入／快取失敗可能卡住進場：2.5 秒進場 timer 與音效完全解耦，音效改 best-effort；同時射手名稱統一使用 `profile.nickname || profile.name || profile.displayName`。
+
+## 2026-08-19｜單人複數怪進場動畫後卡死修正
+- 實機測試確認進場動畫會永久停住。根因不是音效，而是 `MultiMonsterBattle` 初始化 `useEffect` 同時建立 2.5 秒 timer，且 dependency 含 `battleState`；`setBattleState(initial)` 後 React 立即執行上一輪 cleanup，把 timer 提前清掉。
+- 修正為兩段生命週期：遭遇初始化 effect 只建立 encounter／battle state 並切到 `screen="intro"`；另一個只監聽 `screen` 的 effect 在 `intro` 時獨立計時 2500ms 後切到 `input`。
+- 原則：任何會在 effect 內被 `setState` 改變的 dependency，不可同時掌管「下一畫面必須發生」的 transition timer，否則 cleanup 可能在 timer 觸發前先把它取消。
+
+## 2026-08-19｜單人複數怪 UI 重設
+- `MultiMonsterBattle.jsx` 保留 FREEBUFF 已完成的複數怪戰鬥邏輯，只重做 presentation/UI。
+- 原本「前後排文字 + 80px 小卡片牆」改成手機優先的沉浸式戰場；沿用 `/ui/dungeon-bg.webp` 與既有 `MonsterSVG`，沒有新增美術資產。
+- 2～4 隻前排怪依數量自適應排列；後排符文柱退到背景支援層。玩家直接點怪物本體鎖定，選中怪顯示 TARGET、腳底準星、強調血條，其他怪降低亮度。
+- 詳細資訊集中到單一 Target HUD；頂部只保留回合、敵數、玩家 HP；底部改成箭數進度 + 單一攻擊 CTA。回合結束也改為 RPG 戰報 overlay。
+- 未修改 `multiMonsterBattle` 傷害公式、遭遇生成、掉落與 phase 流程。
+
+## 2026-08-18 — 地下城組隊倒數權威修正：只有房主能推動回合
+- 根因確認：`useFirestoreRound` 曾明確允許非房主在全員 ready 後自行建立 5 秒本機倒數，倒數完還直接呼叫 `processRound()`。房主與隊友因此同時各跑一顆 timer；隊友收到 Firestore snapshot 後 effect 重建，會出現 `5 → 3 → 5 → 3`，但房主原 timer 仍繼續，所以畫面顯示 3 秒時戰鬥可能已開始。
+- 修正：移除非房主 countdown/process recovery effect。只有 `room.hostId === myId` 的房主能啟動 5 秒倒數與 `processRound()`；非房主只提交箭矢並等待權威 Firestore 結果。
+- `confirmNow()` 同樣加入 host/status guard，避免共用 UI 或刷新恢復路徑讓隊友推動回合。
+- 防禦層：`processDungeonRound()` 改用 Firestore transaction，以 `expectedRound + processing` 原子 claim；重複 resolver 只能得到 `already-processing` 或 `stale-round`，不能雙重結算，也不能解除真正 resolver 的 processing lock。
+
+## 2026-08-18 — 地下城倒數 5→0→5：技能 payload Firestore 拒寫與重試 UI 修正
+- 真正循環發生在 `useFirestoreRound`：5 秒倒數結束後 `processDungeonRound()` 若回 `{ok:false}`，舊程式會把 `guardRef` 清成 0；下一個 Firestore snapshot 看見同一 round 仍全員 ready，就重新建立 5 秒倒數，因此玩家看到 5→0→5。
+- 地下城技能回合的高風險來源是 `logEntry`：Boss／一般怪 ability 會帶巢狀 `statusResultsByMember/rawStatus/finalStatus/monsterEffect`，`dungeonDb` 原本直接 `arrayUnion(logEntry)`，未使用專案既有 `stripUndefinedDeep()`。任一巢狀 `undefined` 都可能被 Firestore 拒絕整筆 update，正好觸發上述循環。
+- 修正：`processDungeonRound` 在 `arrayUnion` 前 deep sanitize `logEntry`，且整個普通 update payload 也套 `stripUndefinedDeep`（Firestore sentinel 保持原樣）。
+- `useFirestoreRound` 同一 round 的 authority 結算失敗時不再清 guard／重播 5 秒 UI；改為最多 `maxRetries` 次 750ms 靜默重試，保留完整錯誤 reason；最終失敗會停止倒數並透過既有錯誤 callback 提示重新同步。
+- 不修改 Boss／一般怪技能數值、傷害、狀態倍率。
+
+## 2026-08-18 — 地下城一般怪技能後卡等待：空 miniRounds resolution 解鎖
+- 使用者回報考試族一般怪在技能後，下一回合送出分數會卡在等待且動畫不跑。全面比對後確認考試族 `pressure` 本身資料合法；真正共通根因在 `BattleScreen` 的 shared party/dungeon presentation gate。
+- 舊 gate 要求 `partyResolution.miniRounds.length > 0` 才啟動播放器，但地下城招牌技能 `ability`、一般怪族系異常 `familyStatusResults`、技能異常 `ability.statusResultsByMember` 都在 miniRounds 迴圈外播放。當權威 resolution 有技能／異常、但 miniRounds 為空或缺失時，effect 直接 return，`finally` 永遠不執行，`completedPartyResolutionKey` 無法追上最新 key，UI 因此永久停在 `resolution/waiting`。
+- 修正：新增 `shouldPlayPartyResolution()`，啟動條件改為「party mode + 有 resolution + 正數的新 resolution key」，不再依賴 miniRounds；miniRounds 一律正規化為安全陣列。即使沒有任何玩家攻擊 mini-round，也會繼續播放 dungeon ability／一般 party ability／族系異常／技能異常；就算完全沒有視覺內容，也會走既有 `try/catch/finally` 完成 key 解鎖。
+- 這是七族一般怪共通修正，不做考試族特判，也不修改技能數值、壓力強度或傷害公式。
+- 回歸測試新增：空 miniRounds + dungeon ability、空 miniRounds + exam family status、相同 key 不重播、null/0 key 不啟動。
+
+## 2026-08-18 — 訪客 Arcade：單人六箭演出＋BOSS 輸入／擊倒 UX 修正
+- 戰鬥 HUD 的玩家主名稱改為 `profile.nickname`，同行貓改放副標「同行：{cat.name}」；一般怪與 BOSS 都不再把貓名誤當玩家名稱。
+- 單人 6 箭改為 **第 1→6 箭逐箭 presentation**：每箭各自播放 `arrow_flight → arrow_hit` 並顯示「第 N 箭／分數」；但戰鬥權威計算仍只呼叫 **1 次 `resolveRound()`**，前 5 箭只做視覺演出，第 6 箭才一次套用本回合 `monsterHp/dmg`，避免動畫改變戰鬥公式。
+- BOSS 跳過通用 `battle_intro`；王房只使用 `BossEntrance` 的 `sfxWorldBossAppear()`，約 750ms 後才 `sfxBossUlt()`，修掉一般怪開戰音＋世界王登場音連續播放。
+- 擊殺改用正式打怪模式同語言的約 3 秒全螢幕擊倒層：怪物亮白／失色 → 紅色「擊倒」印章 → 金色「💀 擊倒！」＋怪名 → 本回合傷害／回合數；完整播完後才勝利號角與 `afterVictory`。普通怪與 BOSS 都適用，秒殺也不跳過。
+- 單人 BOSS 靶面平常不渲染在戰鬥版面；改為「🎯 本回合分數」摘要＋「輸入分數」按鈕。點擊後才開 `position:fixed; inset:0` 全螢幕 target overlay（安全區 padding、最大約 94vw/620px），保留拖曳放大鏡、撤回與清空；「完成輸入／關閉」只收 overlay，**不會提交戰鬥**，仍需回主畫面按攻擊。
+- 新增 `arcadeSoloPresentation.contract.test.js` 鎖住暱稱 HUD、BOSS 不播一般 intro、六箭逐箭且只 resolve 一次、全螢幕靶面、正式擊倒層五項契約。
+- 驗證：Arcade **11 suites / 149 tests PASS**；全專案 **235 suites / 2532 tests PASS**；production build 成功。狀態：**本機完成，尚未 deploy / commit / push**。
+
+## 2026-08-18 — 訪客 Arcade：分數輸入音效＋戰鬥音效時序校正
+- 共用記分板 `ArcadeArrowInput` 在每次有效 X／10～1／M 輸入成立後立即播放 `sfxTap`；BOSS 共用靶面 `ArcadeTarget` 也只在非 disabled／未填滿且真正 commit 落點後播放。快速「全 10／全 8／全 5／清空」與 BOSS 撤回／清空各只播一次，不模擬六次音效。
+- 戰鬥音效改以 **presentation 畫面事件** 為準：`attack → arrow_flight`、`impact → arrow_hit`、`kill → monster_death`、死亡演出後的 `settle → victory_fanfare`；失敗音則與真正進入 defeat／settle 結算畫面同步，不再由資料 state 提前觸發。
+- 移除單人／組隊原本 `victory_fanfare + sfxVictory()` 雙重勝利聲；勝利現在先聽怪物倒下，再聽勝利號角，避免兩個高潮音效疊在同一拍。
+- 組隊送分成功由錯誤的 `sfxCoinDrop()` 改為 `sfxSuccess()`；射手競技場 PvP 成功送分同樣補 `sfxSuccess()`。金幣聲只留在真正取得寶箱／獎勵的操作，結果頁不再無條件播金幣聲。
+- BOSS 過場改為 `sfxWorldBossAppear()` 先隨王現身播放，`sfxBossUlt()` 延後 **750ms** 對齊招式名／怒吼畫面；新增 timer 都會在下一次過場或 unmount 清理，避免殘留聲音。
+- 寶箱路移除 action 與 `phase === "chest"` 的雙重 `sfxOpenChest()`，改由寶箱畫面真正進場時只播一次。
+- 新增 `arcadeSoundTiming.contract.test.js` 鎖住輸入回饋、單一勝利聲、送分成功音與 BOSS 750ms 怒吼節點。核心原則：**UI input 立即回饋；Battle SFX 綁 presentation event，不綁提前的資料 state／render。**
+- 驗證：Arcade **10 suites / 144 tests PASS**；全專案 **234 suites / 2527 tests PASS**；production build 成功。2026-08-18 已部署 Vercel production：`catarrow-kt0oy5pzb-broudes-1864s-projects.vercel.app`（`dpl_ARXuTfLHHKyPCqpt4LcVSybPycr1`，Ready），`student.catgroup.com.tw` alias 已確認指向此版且 `?arcade` HTTP 200；未 commit / push。
+
+## 2026-08-18 — 訪客 Arcade：重新同步＋完整擊破演出＋射擊表現＋組隊 A→B→C
+- 新增組隊人工救援「🔄 重新同步」：只在玩家手動按下時 best-effort heartbeat 後執行 **1 次 `getTeamRoom()` read**，不加入 polling；會清掉本機 presentation timers/state，以 Firestore 權威房間覆蓋本機，若有最新 `lastResolution` 則允許完整重播該回合。
+- 修正最後一擊 presentation race：`lastResolution` 未播放或正在播放時，`route/result/defeat` 不得提前切頁；新增 `monsterHpBefore` 與最小 `monsterSnapshot`，即使 Firestore 同一 snapshot 已把 `room.monster` 換成下一關，畫面仍鎖定本回合真正被擊敗的怪物名稱／圖片／HP。
+- 單人與組隊 lethal hit 都改為完整演出：射箭 → 命中 → 貓咪技能（若觸發）→ 怪物反應（死亡不反擊）→ **💥 擊破！** → settle 結算 → 才進寶箱／叉路／下一關／結果；第一回合秒殺也不能跳過。
+- 組隊 `lastResolution.perPlayer` 改為 roster 順序演出：**A 攻擊 → A 命中／扣血 → B 攻擊 → B 命中／扣血 → C…**。即使前一位已把 presentation HP 打到 0，本權威回合後續玩家仍照順序播完。普通怪 per-player 傷害以權重整數分配，保證 `sum(perPlayer.dmg) === 實際 team dmg`。
+- 新增 `arcadePerformance.js`：命中率＝`>=5 分箭數 / 全部箭數`；穩定性＝`clamp(100 - stdDev / 5 * 100, 0, 100)`；另顯示平均每箭與獨立射擊評價 S/A/B/C。此射擊評價只供展示，**不改原本通關評價與金幣倍率**。
+- 新增剛好 **20 條互不重複繁中正向誇獎詞**，依射擊評價分 4 組、由成績＋visitor seed 穩定挑選，避免 rerender 時亂跳。
+- 隱私／成本：單人 raw `shotScores` 只存在本場 React state，不寫 profile/Firestore；組隊只多存 `shots/hitCount/scoreSqSum` 小型 aggregate，當回合 `roundArrows` 解析後清空，沒有永久 raw arrow history。
+- 驗證：Arcade **9 suites / 139 tests PASS**；全專案 **233 suites / 2522 tests PASS**；production build **Compiled successfully**。2026-08-18 已重新部署 Vercel production：`catarrow-b64t6vbeh-broudes-1864s-projects.vercel.app`（`dpl_QcYTkYkix4gtcZF5Lnhvk2z8ZC8j`，Ready），並確認 `student.catgroup.com.tw` alias 已切至此版；未 commit / push。
+
+## 2026-08-18 — 訪客 Arcade：怪物圖名修正＋BOSS 改用學籍世界王 identity
+- 根因：原訪客怪物是手寫名稱再指到另一套 `/monsters/*.webp`，導致畫面名稱與實際怪物圖不是同一隻；BOSS 也使用自創名稱搭無關怪物圖。
+- 普通怪改成 `sourceMonsterId` 單一 identity：哥布林=`temple_1`、大蟑螂=`insect_1`、狼人=`temple_3`、骷髏劍士=`temple_2`、鏡幕幽姬=`ghost_1`；名稱與圖片同源。組隊深淵衍生怪也改用底層 canonical name。
+- 新增 `buildVisitorWorldBoss()`：直接讀學籍 `WORLD_BOSSES` 的名稱／稱號／描述／pixelKey。訪客三王使用山魈頭領、狼人首領、怨靈大君；只重用 identity/外觀，學籍正式世界王能力完全不修改。
+- 訪客 BOSS：HP=115、DEF=1、ATK=5/6/7；`BOSS_INTERRUPT` 45→36；弱點圈 bonus 1.6→1.35；完全沒中弱點由傷害 ×0.5 改為 ×0.8。
+- 新手基準測試：6 箭平均 5 分（30 分／回合）、0 弱點命中時三王都在第 5 回合擊敗且玩家存活。8 張引用圖檔均存在；Arcade 131/131、全專案 231 suites / 2514 tests、production build PASS。
+- 狀態：本機完成，未 deploy / commit / push。
+
+## 2026-08-18 — 射手競技場 PvP 正式部署：Rules 403 替代架構
+- 第一次 Vercel production 已成功建立，但原設計 `arcadeRooms/{code}/duelSubmissions/{visitorId}` 需要新增子集合 rule；Firebase CLI 當時指向 `catarrow-83fef`，與正式 App 使用的 Firebase project `catgroup-8d0bb` 不一致，且 `firebase.projects.get` 回 403，因此不以 Rules 部署作為上線前提。
+- 改成 `arcadeRooms/DUELSUB_<roomCode>_<sessionKey>_<encodeURIComponent(visitorId)>`：每位玩家整場固定 1 顆 top-level 小文件、每回合覆寫；房主只對房內 2～8 顆 exact docs 監聽，roster 不變時 listener 跨回合持續存在；其他手機仍只讀 parent room；cleanup 仍用已知玩家 ID 批次刪除，0 額外 reads。
+- 最終上線前再補 `sessionKey`：新房建立時產生隨機場次鍵，防止 5 位房號日後重複使用時撞到異常關閉留下的舊 submission；legacy 無 sessionKey 房仍可沿用舊 top-level docId。
+- 這個替代方案不會污染既有 Team Adventure：既有房間都是精確 doc read／listener；唯一 collection query 是依 `expiresAt` 清理過期房，`DUELSUB_*` 文件不寫 `expiresAt`。
+- 線上權限驗證：使用正式 Firebase `catgroup-8d0bb` 匿名 client 實際寫入一顆 `arcadeRooms/DUELSUB_DEPLOYCHECK_*` 後成功刪除，確認 production rules 可直接使用。
+- 驗證：Arcade 128/128；全專案 231 suites / 2511 tests；本機 production build PASS；Vercel remote build Ready。
+- 正式 deployment：`catarrow-k4b2e8eaj-broudes-1864s-projects.vercel.app`；`student.catgroup.com.tw` alias 已切換至此版。未 commit / push。
+
+## 2026-08-18 — 訪客 Arcade：射手競技場 PvP v1（Local First，最多 8 人）
+- 新增 `ArcadeDuel.jsx`、`arcadeDuelLogic.js`、`arcadeDuelDb.js`：支援 1v1、3～8 人大亂鬥、4/6/8 人團隊戰；3/6 箭分別 80/130 HP；10=15 傷、X=20 傷，同回合多人鎖同一目標套 1/.85/.70/.55 圍攻保護，並採同步結算避免提交順序影響結果。
+- 擊倒者不離場，改為 `spirit` 繼續射箭支援；team 可選同隊存活者補血，ffa/duel 自動補目前最低 HP 存活者，避免早期淘汰後只能旁觀。
+- 多人同步維持 Local First：每位玩家每回合只覆寫自己固定的 `arcadeRooms/DUELSUB_<code>_<sessionKey>_<encodedVisitorId>` top-level 小文件，只含目標、總分、預算傷害、10/X/命中數；不存 raw arrows、不存完整 visitorProfile、不做 heartbeat。
+- **只有房主訂閱 submissions**；房主對房內 2～8 顆固定 exact docs 掛 listeners，roster 不變時跨回合不重掛；其他 7 支手機只訂閱 parent room。房主收齊後用純函式結算，再以 transaction 對 parent room 寫一次 `combat/lastResolution/round/result`。結束清理直接使用 `room.players` 已知 ID 批次 delete，0 額外 cleanup reads。
+- `ArcadeApp` 新增 Hub「⚔️ 射手競技場」與 `?arcade&duel=XXXXX` QR 直連；`arcadeDb` 新增本機 duel resume，保留房號、回合、未送箭、目標、本場統計與去重標記。
+- PvP 生涯 `duelStats` 刻意 local-only；新增 `profileForCloud()`，任何 `arcadeProfiles` 上傳前都剝除 duelStats；`mergeRemoteProfile()` 只做 max 合併，避免其他 Arcade 雲端同步把本機戰績洗掉。
+- 卡死保護：host lease 5 分鐘且無 heartbeat；4 分鐘回合超時可 force resolve，缺席視 0；戰鬥中離開標 forfeited/spirit，不再卡住 required submissions。既有 Team Adventure 新房增加 `kind:"team"`，舊無 kind 房仍相容，避免 5 位碼串到 PvP 房。
+- Firestore 協調最終改用既有 `arcadeRooms` collection 的 `DUELSUB_*` top-level 固定文件，不再依賴 nested rules；正式環境既有 `arcadeRooms` 權限即可使用。
+- 驗證：Arcade **127/127**；完整 React **231 suites / 2511 tests 全過**；production build `Compiled successfully`。2026-08-18 已部署 production；未 commit / push。
+
+## 2026-08-17 — 官網賽事成果：一鍵正式發布後端
+- `AdminWebsiteCompetitions` 新增「發布到正式官網」，呼叫 `asia-east1` callable `publishCompetitionWebsite`。
+- Function admin-only，重新讀 `websiteCompetitionResults` 並在 server-side 清洗公開欄位，不信任瀏覽器送入的 JSON；再產生 `/competitions` 靜態頁、首頁 runtime 與 sitemap。
+- 新增 `functions/competitionWebsitePublisher.js`：依 Vercel SHA1 file upload + Deployment API 建立 `catarrow-archery` production deployment。
+- Vercel 憑證改用 Firebase Secret Manager `CAT_ARCHERY_VERCEL`（JSON：token/teamId/projectName），不進 repo／前端。
+- `firebase.json` Functions predeploy 會執行 `npm run website:publisher:prepare`，將最新 `website/` 與 generator 同步進 gitignored 的 Functions bundle，避免以舊模板回滾正式站。
+- JSON 匯出仍保留為緊急 fallback。驗證：Functions 105/105、React 2480/2480、production build 成功。
+- 狀態：程式完成；尚未設定 Secret、尚未部署 `publishCompetitionWebsite`，因此正式後台按鈕目前尚未啟用。
+
+## 2026-08-17 — 官網帶隊比賽／賽事成果系統 v1.0
+- 新增獨立 `websiteCompetitionResults` 內容層，避免和館內 `competitions/results` 計分邏輯混用；後台可維護賽事基本資料、照片、參賽者、成績／名次、成果備註、賽事紀錄與草稿／發布狀態。
+- 官網採靜態發布：公開 JSON 經清洗後產生 `/competitions/`、`/competitions/<slug>/`、首頁最新賽事 runtime 與 sitemap；訪客不需 Firestore listener。
+- 公開匯出只使用管理者手動填寫的 `publicDisplayName`，會剝除內部 `linkedMemberId`，不自動帶 Email、電話或學籍個資。
+- 頁面定位為「第一次體驗 → 正確學習 → 固定練習 → 自備器材 → 正式比賽 → 持續成長」的長期教學與帶隊證明，不以獎牌炫耀為主。
+- v1 靜態限制：後台按發布只更新來源資料；真正官網更新需匯出 `competition-results.json`、執行 `npm run website:competitions` 後再手動部署。
+- 狀態：本機實作，未 commit / push / deploy。
+
+## 2026-08-17 — 射箭場官網：信任關鍵區塊改用真實照片
+- `website/index.html` 的「第一次來」、「Why Cat Archery」、「今天為什麼想來射箭？」與校外賽事區，改用既有壓縮過的真實場館／學員／親子／團體／器材／貓咪／賽事照片；首頁主視覺維持真實射箭照片，照片卡裁切統一為適合網站閱讀的比例。
+- 訓練系統主張改成「射箭是主體，遊戲是第二層體驗」，保留真實 App 截圖；只有學習路徑與冒險玩法等難以用單張現場照片準確表達的概念，繼續使用明確標示的插畫。
+- 為什麼：官網第一次接觸的客人需要先確認「場地真的存在、教學真的有人帶、不同族群真的會來」，信任資訊不該被 AI 插畫稀釋；插畫則留在概念說明，避免把示意圖誤當現場紀錄。
+- 狀態：僅本機修改，未 commit / push / deploy；官網仍需依既有流程另外手動部署。
+
 ## 2026-08-16 — 地下城組隊第一回合卡死：貓咪演出 fail-safe
 - 修正地下城組隊在第一回合送出後可能永久鎖住操作的 presentation 缺口：`BattleScreen` 的共享 `partyResolution` 非同步播放器現在有 `try/catch/finally`，即使貓咪卡片、音效或可選演出資料在播放途中拋錯，也一定會在未卸載時完成 `completedPartyResolutionKey`，不再讓下一回合永遠停在 resolution lock。
 - `dungeonDb.processDungeonRound()` 不再只在 `catTotalDmg > 0` 時產生貓咪 mini-round；尤尤／小安／點點等防禦型貓即使本回合為 0 直接傷害、只提供護盾／不倒／反攻，也會留下合法 `isCat` 權威演出資料，避免 Firestore 已套技能但客戶端沒有相對應回合資料。
@@ -5928,3 +6149,534 @@ match /systemBroadcasts/{id} { allow read: if request.auth != null; allow write:
 - Not deployed yet. Existing Firebase Trigger Email extension must remain active.
 
 - 2026-08-14：修正狩獵模式組隊戰鬥送出分數後卡在等待。PartyBattleRoom 移除獨立 postSubmitted useState，統一使用 useFirestoreRound.submitted；Firestore 將 member.ready 清回 false 後 UI 自動解鎖，避免下一回合永久等待。新增 PartyBattleRoom.submittedState.contract.test.js 防回歸。
+
+
+## 2026-08-16｜商店重置事件：根因調查 + 玩家復原
+- 事件：多位玩家貓貓村商店被重置歸零（level 1、tickets 0、家具全清）。
+- 根因：`collectExpedition` 帶 shopGoods 時呼叫 `initVillageShopIfNeeded(memberId, null)`；舊版（線上 db192d73）只看呼叫端傳入的 `village?.shop`（null 恆為 undefined）→ 每次探險拿到商店道具就整份覆寫 village.shop 回 Lv.1 預設。GPT 上次的修復（transaction 重讀）在本機程式碼，但從未部署上線，8/13~8/16 玩家持續中招。
+- 受害者（備份比對確認）：葉浩生、施聖凱、楊皇偉（老玩家、有實際營業進度被歸零）；莊淑惠（原本就無營業，損失極小）。
+- 復原：自 `D:\射箭系統備份\firebase\` 每日備份還原 village.shop（葉浩生/施聖凱用 8/14 備份、楊皇偉用 8/15 15:00 備份），tickets/revenue/served/家具/庫存/display/rush 全數還原，重置後新增的探險庫存合併保留。復原腳本：`scripts/dev/restore-shop-backup.cjs`（--dry-run / --apply）。
+- 防再發：今天部署的新版（main.2d44d3e9）含 transaction 重讀保護（villageShopDb.js initVillageShopIfNeeded），已上線，不會再覆寫既有商店。
+
+## 2026-08-16 組隊探險「打完就卡死」根因：寶箱房寫入含巢狀 undefined
+
+- 使用者回報：組隊探險打完（含蠍子王第一回合）送出分數後永久卡死；console 顯示 `[updateTeamExpeditionRoom] invalid-argument ... Unsupported field value: undefined`，且 Firestore SDK 對失敗寫入無窮重試（enqueueAndForget/backoff 迴圈）。
+- 根因：`EXPANSION_MATERIALS`（252 隻）的 `material` 物件**沒有 `icon` 欄位**（只有 id/name/kind/convertible/upgradeCount/upgradesToTier）。`createOrdinaryChestLoot` 直接把 `material.icon`（undefined）寫進 `chestChoices[].material` → 房主 `enterExplorationRoom` 對寶箱房寫入 9 欄位（activeRoomId/mapDungeonId/roomConfirms/roomChoices/chestChoices/chestEggType/roomResolution/chestClaims/expeditionMapState）時，巢狀 undefined 被 Firestore 拒收（400）→ 寫入永不成功 → 組隊卡死。choice 顯示層（:85）早有 `|| "🧱"` fallback，巢狀 material 漏了。
+- 修正：
+  1. `src/lib/dungeonChestLoot.js`：`material.icon || "🧱"` fallback（根因）。
+  2. `src/lib/expeditionTeamDb.js`：`updateTeamExpeditionRoom` 寫入邊界新增 `prune()` 深層剝除 undefined（防護層，未來任何欄位缺值都不會再整隊卡死，與 guildTeamDb 同慣例）。
+- 回歸測試：`dungeonChestLoot.test.js` 新增「10 family × 6 tier 的 loot 與 chestChoices 零 undefined」＋「material.icon fallback」；全套 224 suites / 2383 tests 全綠。
+
+## 2026-08-16 組隊遠征「打完王房領完寶箱後房間不會消失、可從存檔繼續」修復
+
+- 使用者回報：T6 組隊地下城中途存檔（保存進度並解散）→ 從大廳載入存檔建立房間 → 打完王房、領完寶箱、遠征完成後，**大廳仍顯示「您有保存的組隊進度」** → 可無限載入存檔重打王房重領寶箱。
+- 根因：`teamSavedProgress`（members 文件欄位）只在「放棄進度」（DungeonLobby 按鈕）與「開新關卡覆蓋」（DungeonSelectionPanel）時清除；**組隊遠征完成（`publishResult` 寫入 `expeditionPhase: "result"`）後從未清除**。單人端有對應防護（phase won/result 時清 activeExpedition + localStorage），組隊端漏了。
+- 修正：`TeamExpeditionBattle.jsx::publishResult` 成功寫入 result 後，host 呼叫 `clearTeamExpeditionSavedProgress(hostId)` 作廢存檔（輸贏都清，遠征確定結束）。
+- 驗證：全套 224 suites / 2383 tests 全綠。
+
+## 2026-08-17 訪客冒險系統（貓小隊 Arcade RPG）M0：PWA ＋ 入口 ＋ 匿名身份 ＋ 本機儲存
+
+- 產品規格確立（`docs/visitor-arcade/visitor-arcade-spec.md`）：射箭場裡掃 QR 就能玩的手機 Arcade RPG。最高原則 **Local First / Cloud When Necessary / Account Last**；獨立於學生系統，QR 固定帶 `?arcade` 永不變。
+- 新增 `?arcade` 路由（`src/App.jsx`）：不碰任何登入/學籍，直接進入訪客冒險。
+- 新增 `src/arcade/`：
+  - `arcadeData.js`：九隻同行貓（重用既有立繪）、暱稱驗證（限 10 字）、匿名 Visitor ID、`buildNewProfile` 本機 profile 建構、`isCompleteProfile` 完整性檢查。
+  - `arcadeDb.js`：本機儲存層，IndexedDB 為主、localStorage／記憶體降級；`visitorProfile` 與未來 `adventureSession` 分開保存。
+  - `ArcadeApp.jsx`：首次入場（暱稱＋選同行貓，10～20 秒內可開始）／「歡迎回來，繼續冒險」續玩（同一支手機第二次掃 QR 不再重新註冊）／大廳（同行貓、冒險紀錄、本機保存提示、清除進度）。
+- PWA：`public/manifest.json`、`public/sw.js`（network-first navigation + cache-first 同源靜態，跨域交給網路）、`index.html` manifest 連結、`index.js` production 註冊 SW；`sharp` 由既有 `baobao.webp` 產生 192/512 圖示。
+- 視覺：套用「貓小隊童話冒險 RPG 視覺系統」色盤（羊皮紙底、木質邊框、森林綠、焦糖橘、深夜藍、火焰紅），scoped CSS 不影響其他頁面。
+- 驗證：新增 `arcadeData.test.js`（7 tests）；全套 **225 suites / 2390 tests 全綠**；`npm run build` 成功（manifest/sw/icons 都進 build）。
+- M0 未含：三箭戰鬥、怪物、地下城、組隊（M1 起依規格 §10 極簡 Arcade UI 全新設計，不套用現有戰鬥畫面）。
+
+## 2026-08-17 訪客冒險系統 M1：6 箭回合戰鬥（貓森遺跡雛形）
+
+- 需求變更：三箭改為 **6 箭一回合**（每箭 0~10 分，總分 = 傷害）。
+- 新增 `src/arcade/arcadeBattle.js`（純引擎，可單元測試）：
+  - 6 箭結算：總分→傷害、怪物防禦、跨回合血量累進（`state.monsterHp`）。
+  - 怪物特殊射箭條件（規格 §9）：狼王突進（≥2 箭 ≥8 分閃避）、岩甲龜破甲（1 箭 10 分 ×1.5）、幽靈隱身（總分 ≥40 否則傷害 ×0.3）、魔王蓄力（總分 ≥45 打斷，否則大招 ×2）。
+  - 貓咪自動技能（§12）：atk 追擊 / heal 治療 / def 格擋；全脫靶貓咪救援 +5；九貓各有命中/失誤/Boss/救援台詞。
+  - 道具 buff：火焰箭（攻擊 ×1.2）、貓薄荷（技能率 +15%）。
+  - 貓森遺跡冒險：哥布林→毒甲蟲→狼王→森林魔王，評價 S/A/B/C 金幣加成。
+- 新增 `src/arcade/ArcadeAdventure.jsx`：極簡 Arcade 戰鬥 UI（玩家/怪物 HP 條、任務提示、6 箭 stepper＋快速填入、攻擊結算演出 log、寶箱三選一、冒險結果頁、失敗重試）——全新設計，不套用現有戰鬥畫面。
+- `arcadeData.js` 擴充：貓咪 skill/lines、寶箱道具（火焰箭/貓咪飯糰/貓薄荷）＋三選一。
+- 大廳：繼續冒險進入冒險、背包顯示、結算寫入 coins/statistics/inventory 並持久化。
+- 驗證：`arcadeBattle.test.js` + `arcadeData.test.js`（28 tests，含跨回合血量回歸測試）；全套 **226 suites / 2411 tests 全綠**；`npm run build` 成功；單機實測完整打完整座冒險（救援/治療/閃避/破甲/打斷大招/評價 S/金幣 177 存檔重載仍在）。
+
+## 2026-08-17 訪客冒險 M1.1：戰鬥音效＋動畫演出強化
+
+- 使用者回饋：戰鬥過程音效跟動畫太簡單。重用既有 `src/lib/battleSound.js`（`playBattleSound`）與 `public/sounds/*.mp3` 樣本＋Web Audio 合成＋震動，不新增音檔。
+- 演出序列（每回合自動依序播放）：
+  1. **射箭**：玩家側前撲 lunge ＋ 🏹 箭矢飛出動畫 ＋ `arrow_flight` 音效
+  2. **命中**：怪物震動 shake＋紅光 hitflash ＋ 💥 漂浮傷害數字（大傷害用 crit 音）＋ 怪物 HP 條動畫
+  3. **貓咪技能**：技能泡泡（🐱 妹妹：💚 治療！）＋ 補血/追擊/格擋各自音效（buff/cast/debuff）＋ 治療漂浮 💚
+  4. **怪物反擊**：怪物衝刺 lunge ＋ 玩家震動＋受擊閃光 ＋ 💢 受擊漂浮 ＋ 反擊/重擊音效
+  5. **結算**：log 逐行淡入 ＋ 勝利號角/失敗嘆息 ＋ 怪物死亡縮小淡出動畫
+- 其他強化：戰鬥進場音效＋怪物/貓咪彈跳進場、寶箱開箱音（open_chest）＋彩帶＋卡片依序彈入、結算金幣聲（coin_drop）、失敗螢幕抖動、演出中「戰鬥中…」點點動畫。
+- 修正：`react-hooks/exhaustive-deps` 不在本專案 eslint 規則集，移除該 disable 註解改為完整 deps。
+- 驗證：單機實測捕獲完整序列（飛箭 0.3s → 💥56 命中 0.5s → 💚+18 治療泡泡 1.3s → 💢7 反擊 1.8s → 結算）；全套 **226 suites / 2411 tests 全綠**；`npm run build` 成功。
+
+## 2026-08-17 訪客冒險 M1.2：九貓專屬喵叫聲（Web Audio 合成）
+
+- 新增 `src/arcade/arcadeCatVoice.js`：九隻貓各有獨立音色（base 音高 240~620Hz＋性格修飾）——
+  大娘低沉威嚴、哥哥溫暖厚實、妹妹高亢輕快、妞妞俐落精準、哈吉軟綿、寶寶奶聲奶氣、悠悠拖長音、小安細小發抖、顛顛神秘低沉。
+- 四種情境語調（`playCatVoice(catId, kind)`）：**atk 追擊**（短促雙喵＋強烈上揚）、**heal 治療**（長而溫柔）、**def 格擋**（低吼式平音）、**rescue 救援**（自信上揚單喵）。
+- 喵叫合成：頻率先升後降滑音（me-ow）＋顫音 LFO＋帶通濾波口腔共鳴＋開頭氣音；尊重全域 `getSoundEnabled()`／`getVibrationEnabled()` 開關，附震動回饋。
+- 接入 `ArcadeAdventure.jsx`：貓咪技能/救援階段與原技能音效並行播放專屬喵叫。
+- 驗證：`arcadeCatVoice.test.js`（9 貓齊全、4 語調齊全、無音訊環境不拋錯）；arcade 31 tests、全套 **227 suites / 2414 tests 全綠**；`npm run build` 成功；單機實測技能觸發時正常播放無錯誤。
+
+## 2026-08-17 訪客冒險 M2：月夜迷城（選路）＋深淵巢穴（撤退/繼續）
+
+- 三座地下城正式分家（大廳新增選擇冒險卡片：🌲貓森遺跡 ★☆☆／🌙月夜迷城 ★★☆／🔥深淵巢穴 ★★★）。
+- **🌙 月夜迷城**（`buildMoonLabyrinth`）：入口小怪 → 3 次岔路選擇 → 月夜狼王。
+  - 岔路三選一：📦 寶箱路（直接開箱）、❓ 神秘事件（流浪貓商人補血／貓薄荷技能率+15%／錢袋／陷阱偷襲／神祕光芒五種隨機）、⚔️ 菁英怪（`eliteVariant`：血量×1.6、攻擊×1.4、獎勵×2，金框特效）。
+  - Boss：月夜狼王（180HP，大招可打斷），岔路 3/3 顯示進度。
+- **🔥 深淵巢穴**（`abyssMonsterForFloor`）：樓層無盡縮放（血量/攻擊/防禦隨層數成長，最高 12 層）、「繼續深入 ×2」獎勵翻倍（lootMult 累乘）。
+  - 每層打完決策：🎒 帶著戰利品離開（保留全部）／繼續深入 ×2。
+  - **團滅 → 尚未帶出的深淵戰利品全部消失**（金幣歸零、評價按抵達層數 S/A/B/C，bestFloor 記入 profile）。
+- 演出與音效系統全面沿用：岔路/事件/決策畫面卡片彈入動畫、深淵怪物紅色濾鏡、精英金框，音效使用既有系統。
+- 修正：深淵決策畫面戰利品重複計算（abyssLoot 已含本層）、月夜魔王打完寶箱循環（pickChest 判斷 isBossFight 進結果頁）。
+- 驗證：新增 6 個 M2 引擎測試（模式定義/岔路/事件/精英/深淵縮放/深淵評價）；全套 **227 suites / 2420 tests 全綠**；`npm run build` 成功；單機實測：月夜迷城完整走完（寶箱路→事件→菁英→魔王，評價 S、金幣 323）、深淵巢穴 2 層撤退（評價 B、🪙91）、金幣累積 177→591 存檔正確。
+
+## 2026-08-17 — 訪客冒險：戰績分享卡片（M2.1）
+- 新增 `src/arcade/arcadeShare.js`：原生 canvas 繪製 1080×1620 冒險戰績卡（羊皮紙底＋木質邊框＋評價徽章＋同行貓立繪＋6 格戰績），無新依賴、可離線、PWA 相容
+- 結果頁（森林/月夜/深淵）新增「📤 分享戰績卡片」：手機 Web Share API 原生分享，不支援時自動降級下載 PNG
+- 修復：森林模式打到魔王時未設 isBossFight → Boss 擊殺數永遠是 0（月夜模式早已正確）
+- 測試：arcadeShare.test.js（gradeColors 純函式＋無 canvas 環境安全返回）；全套 228 suites / 2423 tests 全綠
+- 單機實測：森林冒險完成（👑 Boss 擊殺 1）＋深淵撤退（評價 C、🪙15）結果頁分享按鈕正常、canvas 1080×1620 繪製成功、分享流程完成 ✅
+
+## 2026-08-17 — 訪客冒險 M3：組隊模式（Team Attack）
+- 新增 `src/arcade/arcadeTeamLogic.js`：純邏輯（5 位數房間碼、Team Combo 倍率、怪物人數縮放、組隊回合結算、團隊評價）＋ 15 個單元測試
+- 新增 `src/arcade/arcadeTeamDb.js`：雲端協調層（Cloud for coordination）——`arcadeRooms/{roomCode}` 一房一文件，只同步最小欄位（身分＋每回合分數＋房間狀態），交易保護冪等（重送不重複計分），最後一位送出者在同一交易內解析整回合；6 小時過期＋離開自動清理
+- 新增 `src/arcade/ArcadeTeam.jsx`：組隊大廳（QR＋5 位數代碼＋即時隊友列表，2~4 人）／Team Attack 戰鬥（6 箭送出→全員到齊→TEAM BREAK 演出＋Combo 倍率）／結果頁（評價＋分享卡）
+- 規格 §16 全數實裝：3 Hits ×1.1 / 6 Hits ×1.25 / 9 Hits TEAM BREAK ×1.5；完美配合（全員 ≥30 分）額外 ×1.5、上限 ×2.0
+- 規格 §14 極簡加入：掃 QR（`?arcade&team=CODE`）或輸入代碼直接加入，免房間設定
+- firestore.rules 新增 `arcadeRooms`（免登入、比照 guestSessions）並已部署上線
+- 實測抓到並修掉：① 解析讀錯欄位（roundScore/roundHits 誤讀成累計 score/hits → 全隊總分恆為 0）② 解析後卡在結算畫面無法進入下一回合（加自動回到射箭畫面）③ Windows 大小寫檔名衝突（arcadeTeam.js vs ArcadeTeam.jsx 導致 webpack 解析錯檔，純邏輯改名 arcadeTeamLogic.js）
+- 全套 229 suites / 2438 tests 全綠；單機雙人完整跑通（哥布林→毒甲蟲→狼王→魔王，TEAM BREAK、評價 S、金幣 177、房間自動清理）
+
+## 2026-08-17 — 訪客冒險 M3.1：組隊房主心跳＋逾時清理
+- 問題：隊長中途離線（關瀏覽器/斷網）時，大廳無法開場、戰鬥中整房卡死（幽靈玩家 ready=false 永遠等不到解析）
+- 心跳：元件掛載期間每 25 秒 `heartbeatTeamRoom` 更新 `players.{id}.lastAt`
+- 逾時常數（arcadeTeamLogic）：HOST_STALE_MS=75s（大廳房主離線可被接管）、PLAYER_STALE_MS=180s（戰鬥/大廳離線移出）、RESULT_RETENTION_MS=30min
+- 三層清理（全部 runTransaction 冪等）：
+  1. `submitTeamRound` 交易內先清離線玩家再判 allReady → 剩餘玩家可正常解析，不會被幽靈卡死
+  2. 客戶端每 45 秒 `cleanupStaleRoom`（清離線、轉移房主、過期/結果保留期後刪房、全空刪房）
+  3. `startTeamRoom`/`joinTeamRoom` 進場時順手清離線（幽靈不計入人數）
+- 大廳 UI：離線玩家顯示「📴 離線」（灰階）、隊友計數只算在線；房主離線 75 秒後出現「👑 接管隊長」按鈕（`takeOverHost` 交易驗證房主真的離線才轉移）
+- 測試：isStaleAt / pruneStaleRoster 純函式＋3 個新測試；全套 229 suites / 2441 tests 全綠
+- 單機實測（真實 Firestore）：幽靈隊長離線 → 顯示離線＋接管按鈕 → 接管成為隊長 → 開場清除幽靈 → 戰鬥中把隊友設離線 → 獨自送出正常解析推進（138→25→擊殺）✅
+
+## 2026-08-17 — 訪客冒險 M3.2：組隊結果統計＋冒險紀錄最佳 Combo
+- 組隊結果頁新增兩列統計：全隊 Combo 累計次數（🔥 ×N）與個人最高單回合傷害（💥）
+- DB 解析時累計：room.combos（有 Combo 的回合數）、room.teamBreaks（TEAM BREAK 次數）、每人 players.{id}.bestRoundDamage
+- bestCombo 改為追蹤「最高倍率」數值（之前追蹤名稱邏輯有誤），顯示時用 comboLabel(mult) 轉名稱
+- 結束冒險時把 bestCombo 寫入 profile.statistics；大廳「冒險紀錄」在最佳 Combo > 1 時顯示「🔥 最佳 Combo：TEAM BREAK（組隊冒險）」
+- 分享戰績卡 stats 更新為：擊敗怪物／全隊 Combo／單回最高傷害／獲得金幣／最佳 Combo／團隊評價
+- 測試：comboLabel 純函式；全套 229 suites / 2442 tests 全綠
+- 單機實測：雙人全 10 打完 4 隻 → 結果頁 🔥 ×5 Combo、💥 120 單回最高、🏅 TEAM BREAK；回大廳冒險紀錄顯示最佳 Combo ✅
+
+## 2026-08-17 — 訪客冒險 M3.3：組隊防斷線
+- 問題：玩家戰鬥中斷線/重整 → 回到大廳找不到房間；輸入中的箭數全丟；離線時送出靜默失敗
+- 回鍋機制：`saveCurrentTeamRoom` 把 {roomCode, round, arrows} 存進 IndexedDB（800ms debounce），離開/完成時清除；ArcadeApp mount 時沒有 ?team 參數但有存檔房間 → 自動回到原房間
+- 重進支援：`joinTeamRoom` 允許「已在房內的玩家」在戰鬥中重連（更新 lastAt 恢復心跳）；新玩家仍只能進 waiting 房
+- 箭數恢復：重連後房間回合與存檔一致 → 只恢復一次輸入中的箭數（round 已推進則不恢復，避免舊箭誤植）
+- 送出狀態改從房間推導（players.{id}.ready），重連後不再猜錯
+- 離線偵測：online/offline 事件 → 頂部橫幅「📡 網路不穩，正在重連…」；離線時送出鈕停用（箭數已存本機）
+- 房間被刪（null snapshot）→ 自動清除存檔房間碼，下次直接回大廳
+- 單機實測：開場填全 8（48 分）→ reload → 自動回原房間、6 箭恢復 48 分 → 送出正常解析（48+60 → TEAM BREAK 秒殺哥布林）✅
+- 全套 229 suites / 2442 tests 全綠，build 成功
+
+## 2026-08-17｜組隊/單人輸入改為直接打 M~X 分數
+
+- 新增 `src/arcade/ArcadeArrowInput.jsx` 共用輸入元件：6 格直接輸入分數（M/X=0、1~10），輸入完自動跳到下一格（10 分支援第一碼 1 後直接滿 10），保留快速填入鈕
+- 套用到組隊戰鬥（ArcadeTeam.jsx）與單人冒險（ArcadeAdventure.jsx），取代原本 −/＋ stepper
+- 修復：join 失敗時沒清掉存檔房間 → 每次 reload 卡錯誤頁
+- 實測：自動跳格正確（8→9→10→下一格，27 分）；組隊 40+54=94 分 → 11 Hits TEAM BREAK ×2.0 → 188 擊殺哥布林
+- 全套 229 suites / 2442 tests 全綠，build 成功
+
+## 2026-08-17｜射箭輸入改為「下方固定記分板點選」
+
+- `ArcadeArrowInput.jsx` 重寫：上方 6 格顯示、下方固定記分板（M/X、1~10 大按鈕）直接點選，取代鍵盤輸入
+- 點記分板 → 填到目前游標格並自動跳下一格；點上方箭格可回頭改；10 分是單一按鈕
+- 值語意改為：**-1 = 未填**（顯示「－」淺色）、**0 = M/X 脫靶**（顯示紅 X）、1~10 = 分數——玩家可分辨「還沒填」與「故意脫靶」
+- 引擎（arcadeBattle）與組隊資料層（arcadeTeamDb）分數計算加 `Math.max(0,b)` 保護，未填不扣分
+- 組隊/單人共用同一元件；實測 8+M/X+9+10+7+6 = 40 分 → 火焰箭 48 傷害、跳格/M/X 顯示正確
+- 全套 229 suites / 2442 tests 全綠，build 成功
+
+## 2026-08-17｜記分板 M/X 分家：X = 內十 10 分、M = 脫靶 0 分
+
+- 修正：先前把「M/X」合成一個 0 分按鈕是錯的。對齊專案既有計分（src/lib/score.js）：**X = 內十環（最高，計 10 分）**、**M = 脫靶（0 分）**
+- 記分板改為 12 鍵照既有順序：`X 10 9 8 7 6 5 4 3 2 1 M`（X 金色最前、M 灰紅最後）
+- 值語意：-1=未填、0=M、1~10=分數、**11=X 內十**（引擎 clamp 計 10 分，hits 判定 `>=5` 不受影響）
+- 引擎（arcadeBattle）、組隊送出（arcadeTeamDb）、顯示 reduce 全部 `Math.min(10, Math.max(0, b))` 保護；斷線恢復保留 X 標記
+- 實測：X+9+M+6+7+X = 42 分 → 火焰箭 50 傷害；X 顯示金色「X」、M 顯示「0」紅、未填「－」
+- 全套 229 suites / 2442 tests 全綠，build 成功
+
+## 2026-08-17｜X 內十統計：完美射擊成就指標
+
+- 冒險中每次射出 X（內十）都會累計：單人 summary 加 `xCount`、組隊送出時記 `roundX`、解析時累計 `players.{id}.xCount`
+- 三種結果頁（森林/月夜、深淵、組隊）都顯示 **🎯 X 內十**，分享戰績卡同步加入（表格支援 7~8 格改用 4 欄排版）
+- 生涯累計寫入 `profile.statistics.xCount`，大廳冒險紀錄顯示 **🎯 X 內十**（成就指標）
+- 實測：貓森遺跡 8 回合全 X → 結果頁「X 內十 48」、分享卡 1080×1620 繪製成功、回大廳生涯 48 存檔正確
+- 全套 229 suites / 2442 tests 全綠，build 成功
+
+## 2026-08-17｜社群分享按鈕：LINE / Facebook / 複製戰績 / 存圖片
+
+- 分享戰績卡從「Web Share 或下載」擴充為完整社群分享列：
+  - **💬 LINE**：開啟 LINE 分享（帶文字戰績＋QR 網址）
+  - **📘 Facebook**：開啟 FB 分享（帶 QR 網址＋引言戰績）
+  - **📋 複製戰績**：把文字戰績複製到剪貼簿，可貼到任何社群
+  - **⬇️ 存圖片**：獨立下載 PNG 按鈕
+- 新增 `buildResultText(data)` 組戰績文字（評價＋各項統計＋QR 網址）、`getArcadeUrl()` 統一入口網址（本機 localhost、正式站 student.catgroup.com.tw/?arcade）
+- 實測：結果頁四顆按鈕全顯示；複製戰績「✅ 已複製」、存圖片「⬇️ 已下載」、LINE/FB 開分享視窗
+- 全套 229 suites / 2443 tests 全綠（新增 buildResultText 測試），build 成功
+
+## 2026-08-17｜分享改為「自動截圖 → 暫存 → 原生分享面板貼圖＋文字」
+
+- 結果頁一進來就**自動截圖**（canvas 繪製戰績卡並 `prepareShareBlob` 暫存 PNG），點分享零延遲
+- 主分享按鈕：手機 Web Share API 帶**圖片＋完整戰績文字**，跳出系統分享面板（LINE/FB/IG/其他直接貼圖送出）；不支援時降級下載
+- 保留 💬 LINE / 📘 Facebook 網頁版分享（文字＋QR 網址）與 📋 複製戰績、⬇️ 存圖片，涵蓋桌機與不支援 files share 的環境
+- 實測：結果頁自動繪製 1080×1620 完成（自動截圖確認），四顆社群按鈕齊全
+- 全套 229 suites / 2443 tests 全綠，build 成功
+
+## 2026-08-17｜分享管道專屬成功回饋文案
+
+- LINE/FB 專屬按鈕改走 `shareToSocial(canvas, data, channel)`：先試 Web Share（帶圖＋文字），不支援時按管道降級（LINE/FB 開各自網頁分享頁）
+- 成功回饋依管道區分：
+  - 💬 LINE：手機面板「✅ 已透過 LINE 貼圖送出！🐱」／網頁版「✅ 已開啟 LINE 分享頁，送出即可！」
+  - 📘 Facebook：手機面板「✅ 已透過 Facebook 送出戰績！」／網頁版「✅ 已開啟 Facebook 分享頁，發佈即可！」
+  - 📤 主按鈕：面板「✅ 已送出！選 LINE / FB / IG 直接貼圖🎉」
+- 移除死碼 `shareToLine`/`shareToFacebook`（併入 shareToSocial）
+- 實測：深淵結果頁 LINE/FB 降級文案正確顯示；全套 229 suites / 2443 tests 全綠，build 成功
+
+## 2026-08-17｜LINE 分享改深層連結：可選特定群組/好友
+
+- 💬 LINE 按鈕改為：手機偵測到後用 **`line://msg/text/` 深層連結**直接跳進 LINE App 的「選擇聊天對象」畫面（點群組/好友即可送出），不再是網頁版
+- 1.2 秒內頁面沒跳轉成功（桌機/沒裝 LINE）→ 自動降級 lineit 網頁版（也支援選對象）
+- 回饋文案分流：深層連結「✅ 已跳轉 LINE——選群組或好友送出！」／網頁版「✅ 已開啟 LINE 分享頁，選對象送出即可！」
+- 實測：手機 UA 偵測正確、桌機維持網頁版路徑；全套 229 suites / 2443 tests 全綠，build 成功
+
+## 2026-08-17｜LINE 深層連結改用官方格式（line:// 已棄用）
+
+- 查證 LINE 官方文件：`line://` scheme 已**棄用**（有第三方攔截攻擊風險），且官方**沒有**「帶公開圖片網址分享到群組」的深層連結
+- 💬 LINE 按鈕改為官方 **`https://line.me/R/share?text=`**：手機直接跳 LINE「分享到」畫面（可選群組/好友/多人聊天），桌機開網頁版；LINE 沒裝時自動跳下載頁
+- **帶圖分享**唯一官方路徑是系統分享面板（Web Share）選 LINE——那是主分享按鈕「📤 分享戰績卡片」的路徑（手機上帶圖＋文字，選 LINE 後可選群組送出）
+- 回饋文案分流維持：深層連結「✅ 已跳轉 LINE——選群組或好友送出！」／網頁版「✅ 已開啟 LINE 分享頁」
+- 全套 229 suites / 2443 tests 全綠，build 成功
+
+## ✅ 組隊冒險翻新：三關叉路 ＋ 世界王風格 BOSS 戰（M4）
+
+把組隊從「直線四戰」改成「三遺跡各有叉路 → BOSS 戰」，BOSS 用世界王精神的「團隊目標＋各自攻擊目標」協作設計。
+
+### 新冒險結構
+```
+🌲 貓森關 → 叉路 → 🌙 月夜關 → 叉路 → 🔥 深淵關 → 叉路 → 👑 BOSS 戰
+```
+- **每關打完房主選路**（其他隊友看到「等隊長選擇」）：寶箱路（下場攻擊 ×1.2）／菁英路（下場怪變強、獎勵 ×2）／神秘事件（隨機好壞）／深入險境（BOSS 狂暴、獎勵 ×1.5）／稍作休息（士氣 +20）
+- 四段進度條（✅ 貓森 → ✅ 月夜 → ✅ 深淵 → 👑）
+
+### BOSS 戰（世界王風格協作）
+- **🎯 團隊目標**：全隊總分 ≥ 門檻（依人數縮放）→ 打斷大招（傷害 ×1.5、士氣不扣）；沒達成 → BOSS 大招、全隊士氣 -25
+- **🎯 各自攻擊目標**：依位置分配（≥2 支 8 分／至少 1 支 10 或 X／總分 ≥35／≥3 支 6 分），達成 → 傷害滿額、沒達成 → 自己傷害減半
+- **💪 士氣條**：歸零 → 團滅（💀 失敗頁，給安慰評價 C）
+
+### 修掉的 bug
+- `submitTeamRound` 送 undefined 欄位（teamInterrupted/perPlayer/spirit）被 Firestore 拒收 → 全補預設值
+- 菁英路怪用 eliteVariant（血量 ×1.5、攻防上升、獎勵 ×2），deep 路 BOSS 狂暴化（HP ×1.3、ATK +5）
+
+### 實測（真實 Firestore，雙人全流程）
+胖胖＋阿B 完整走完：貓森 → 寶箱路 → 月夜 → 菁英路（精英深淵哥布林 311HP）→ 深淵 → 深入險境（狂暴森林魔王 478HP、士氣 100）→ 全 X 回合打斷大招（426 傷、士氣不掉）→ 擊殺 → **評價 S、金幣 390×1.5=585**（精英 ×2 + 深入 ×1.5 加成正確）✅
+
+全套 **229 suites / 2457 tests 全綠**、build 成功。
+
+## ✅ 組隊擴充：最多 8 人 ＋ 怪物能力/血量隨人數縮放
+
+組隊上限從 4 人提升到 8 人，怪物不只血量、連防禦與攻擊都隨人數成長。
+
+### 改動
+| 項目 | 內容 |
+|---|---|
+| `TEAM_MAX_PLAYERS` | 4 → **8**（大廳、加入、滿房判斷全部自動生效） |
+| `scaleMonsterForParty` | 2~8 人縮放：**HP ×(0.7+人數×0.8)**、**防禦 +max(0,人數−2)**、**攻擊 +max(0,人數−2)×2**——人越多怪越硬，但每人分擔難度大致持平 |
+| `PERSONAL_GOALS` | 4 → **8 種**個人目標（新增：總分 ≥30／≥4 支 5 分／≥1 支 9 分／不脫靶），8 人各拿一種不重複 |
+| 滿房訊息 | 「最多 4 人」→「最多 8 人」 |
+
+### 縮放實例（`buildTeamAdventure`）
+| 人數 | 哥布林 HP | 防禦 | 攻擊 | BOSS HP | 團隊目標 |
+|---|---|---|---|---|---|
+| 2 | 138 | 0 | 5 | 368 | 50 |
+| 4 | 234 | +2 | +4 | 622 | 100 |
+| 6 | 330 | +4 | +8 | 878 | 150 |
+| 8 | **426** | +6 | +12 | **1134** | 200 |
+
+### 實測（真實 Firestore）
+8 人房：8 位玩家全數加入 ✅、第 9 人被拒（「最多 8 人」）✅、開場哥布林 426HP（60×7.1 正確）✅。
+
+全套 **229 suites / 2463 tests 全綠**（新增 8 人縮放＋新個人目標測試）、build 成功。
+
+## ✅ 組隊叉路：全隊路線揭曉過場動畫＋音效
+
+房主選完路後，全隊（含房主與隊友）同步播放全螢幕揭曉過場，讓叉路選擇有儀式感。
+
+### 機制
+- `chooseTeamRoute` 寫入 **`routeChosenAt`（時間戳）＋`routeId`** 當觸發訊號；每個人的 UI 偵測到「新的路線選擇」就播過場（`revealAtRef` 防重播）
+- **過場內容**：深色漸層覆蓋層 → 路線大 icon 旋轉彈入 → 路線名＋效果描述逐行浮現 → 2.6 秒後自動淡出進戰鬥
+- **路線專屬音效**：
+  | 路線 | 音效 |
+  |---|---|
+  | 📦 寶箱路 | `sfxOpenChest`（開箱） |
+  | ⚔️ 菁英路 | `sfxEpic`（史詩） |
+  | ❓ 神秘事件 | `sfxGachaReveal`（抽卡揭曉） |
+  | 🔥 深入險境 | `sfxWorldBossAppear`（BOSS 登場） |
+  | 🛏️ 稍作休息 | `sfxBuff`（回復） |
+  | 其他 | `sfxPathSelect` |
+- **BOSS 模式差異**：kicker 顯示「BOSS 戰即將開始…」＋底部「👑 世界王級 BOSS 現身！」橫幅
+- 動畫採 CSS keyframes（pop/icon 旋轉/up 浮現），覆蓋層 z-index 120 蓋在戰鬥畫面上
+
+### 實測（真實 Firestore，雙人）
+- 貓森關通關 → 選寶箱路 → 揭曉動畫 📦「寶箱路」＋「🤝 全隊出發！」＋效果文字 ✅ → 2.6 秒淡出進狼王戰（atkBuff 1.2）✅
+- 深淵關通關 → 選深入險境 → **BOSS 揭曉：🔥「深入險境」＋「BOSS 戰即將開始…」＋「👑 世界王級 BOSS 現身！」** ✅ → 淡出進狂暴森林魔王 478HP 戰 ✅
+
+全套 **229 suites / 2463 tests 全綠**、build 成功。
+
+## ✅ 組隊 8 人版面：隊友列自動兩欄＋crowd 壓縮模式
+
+8 人房的大廳與戰鬥隊友列從「單排塞爆」改成自動換行兩欄＋人多縮小。
+
+### 改動
+| 項目 | 內容 |
+|---|---|
+| `.arcade-team-players` | flex → **CSS Grid `repeat(auto-fill, minmax(150px,1fr))`**：≤5 人單排、6+ 人自動兩欄換行 |
+| **crowd 模式**（`players.length >= 6`） | 大廳與戰鬥都啟用：欄寬收到 118px、頭像 38→**29px**、卡 padding 縮小、名字單行省略號 |
+| 適用畫面 | 組隊大廳（含離線顯示）＋戰鬥「已送出」隊友列 |
+
+### 實測（真實 Firestore，8 人房）
+- 大廳 8 人：crowd ✅、grid `166.5px×2` 兩欄、頭像 29px、**4 排** ✅（截圖確認阿G/阿E/阿F/阿H…排版整齊）
+- 戰鬥畫面（哥布林 426HP）：crowd ✅、`176.5px×2` 兩欄、29px、4 排 ✅
+
+全套 **229 suites / 2463 tests 全綠**、build 成功。
+
+## ✅ 組隊 BOSS 戰：彩色弱點圈視覺（人越多圈越多）
+
+BOSS 戰的「個人目標」升級成世界王風格的**彩色弱點圈**：每個隊友一個圈疊在 BOSS 立繪上，圈色/大小＝難度與報酬，人越多圈越多。
+
+### 機制
+- **`PERSONAL_GOALS` 加弱點圈語意**：每個目標帶 `color`（紅→橙→黃→綠→青→紫）、`size`（紅 34px 最小最痛 → 綠 52px 最好打）、`bonus`（命中加成 ×1.2~1.6）——沿用世界王「大小＝難度、顏色＝報酬」語意
+- **人越多圈越多**：`assignPersonalGoals` 依人數分派（2 人 2 圈、8 人 8 圈），8 人可拿到 6 種顏色各異的圈
+- **命中判定**：記分板輸入無靶面落點，所以命中＝達成自己的目標（`checkPersonalGoal` 不變）——命中 → 傷害×圈加成；沒中 → 傷害減半
+- **log 語意改寫**：`🎯 某某命中弱點圈！（傷害加成）`／`❌ 某某沒射中弱點圈（傷害減半）`
+
+### UI
+- 弱點圈疊在 BOSS 立繪上，沿橢圓排列（人少靠中間、人多散開）
+- **自己的圈高亮**：實線＋外圈光暈＋快速脈動，附目標標籤（如「至少 1 支 10 或 X」）與 ✅/⏳ 即時達成狀態
+- 其他人的圈半透明（0.92）、慢速脈動
+- 達成瞬間圈閃光（hit 動畫）
+
+### 實測（真實 Firestore，8 人完整打到 BOSS）
+狂暴森林魔王 1477HP（8 人縮放）→ **8 個弱點圈**全部渲染、6 種顏色、自己的圈高亮＋「本回合總分 ≥ 30」標籤 ✅ 團隊目標 200 分門檻（8 人縮放）✅ 截圖確認視覺正確。
+
+全套 **229 suites / 2466 tests 全綠**（+3 弱點圈測試）、build 成功。
+
+## 組隊 BOSS 戰套用世界王 UI（訪客冒險）
+
+把訪客組隊的 BOSS 戰畫面從「淺色卡片＋小圖」改成**世界王（Raid）視覺語言**：
+
+### 深色舞台
+- 整場 BOSS 戰切換成 `arcade-raid-stage` 深色漸層舞台（紫黑 radial-gradient），王背後有柔光暈（`arcade-raid-glow`）
+- 立繪放大到 196px 置中，呼吸動畫（breathe）＋受擊（flinch）／大招（roar）／倒下（fall）四種狀態
+
+### 世界王風 HUD
+- **頂部血條**：王名＋HP 數字＋漸層血條（>66% 紅、>33% 紫、低血深紅）
+- **士氣＝格狀槽**：20 格 cell（滿格＝可撐、≤30 自動紅色警告閃爍），沿用世界王破防槽語意
+- **漂浮傷害數字**：每回合每個隊友的傷害依個人順序漂浮（命中弱點金色大字 38px、普通白色 21px），最後再飄一個全隊總傷
+- **大招／打斷橫幅**：打斷「破綻！」綠色、大招「大招」紅色，掃過式動畫＋王對應動作
+
+### 保留
+- 彩色弱點圈（疊在大立繪上、自己的圈高亮脈動）
+- 團隊目標＋個人目標卡、四段進度條、路線揭曉過場
+
+### 實測
+- 單機完整雙人組隊：三關叉路 → 狂暴森林魔王 478HP（深色舞台＋頂部血條＋士氣格狀槽＋弱點圈全部渲染）→ 全 X 打斷大招（661 傷）→ S 評價、585 金幣 ✅
+- 全套 229 suites / 2466 tests 全綠、build 成功
+
+## 組隊 BOSS 戰：記分板輸入 → 靶面點擊（世界王弱點攻擊）
+
+用戶指出換成世界王 UI 後，記分板輸入根本無法使用弱點圈——現在 BOSS 戰改成**點靶面射箭**：
+
+### 靶面輸入（BossTarget）
+- 世界王風格的同心環靶（X 內十 → 1 環 → M 脫靶），點一下射一支箭、共 6 支
+- **自己的弱點圈彩色畫在靶面上**（圈色/大小＝難度：紅小最痛 → 綠大好打），射進圈＝弱點攻擊
+- 按住拖曳有**放大鏡**可微調（手機上點得準），放開才記錄
+- 「撤回上一箭」「清空」按鈕；目標卡顯示圈色＋「射進你的圈！」
+
+### 弱點命中（純邏輯）
+- 每支射進自己圈的箭＝一次弱點命中；命中 → 傷害滿額 × 圈加成 ×（多支進圈再疊 8%/支）
+- 沒射進圈 → 自己傷害減半；結算 log「🎯 命中弱點圈 ×N！」
+- 團隊目標（全隊總分 ≥ 門檻）不變，打斷大招一樣生效
+- 圈的靶面位置由 `rollBossRings` 生成（不重疊、整個在靶內），存進 `teamGoals.personal[].pos`
+
+### 順手修的 bug
+1. `checkPersonalGoal` 混 null（未填箭格）時崩潰 → 逐支判定前先過濾
+2. 斷線重連在 BOSS 戰把 -1 當「已填箭」→ BOSS 模式數字一律視為未填
+3. `heartbeatTeamRoom` 對已清理的玩家製造只有 lastAt 的幽靈欄位 → 改交易內先確認存在才寫
+4. `joinTeamRoom` 重連幽靈欄位時寫 undefined（catImage 等）被 Firestore 拒收 → 用完整 playerEntry 補齊所有欄位
+5. 重連遺失 `personalGoalId` → 解析時依名單位置兜底還原自己的圈
+
+### 實測（單機完整雙人組隊）
+- 點靶面 6/6 箭（真實分數）→ 送出 → 全隊總分 60 ≥ 50 **打斷大招** → 全 6 支進圈弱點命中（235 傷）→ BOSS 擊敗 → S 評價、585 金幣 ✅
+- 全套 229 suites / 2473 tests 全綠（+7 新測試）、build 成功
+
+## 王房前全螢幕過場（BossEntrance）：王現身＋招式名＋音效
+
+訪客冒險進王房前新增全螢幕電影式過場，播完才進戰鬥：
+
+### 過場內容（單人與組隊共用 BossEntrance）
+- 深色舞台＋放射光旋轉背景
+- 王圖從 **3.4 倍巨大縮放現身**（模糊→清晰＋紅色光暈＋呼吸動畫）
+- 王名金色大字（+「🔥 狂暴化——」前綴，狂暴 BOSS 用）
+- **招式名**橫幅「滅世魔焰」（ARCADE_BOSS 新增 `skillName` 欄位）
+- 標語（單人「打斷大招才有勝算！」／組隊「全隊合力討伐！」）
+- 音效：`sfxWorldBossAppear`＋`sfxBossUlt`（王怒吼）
+- 約 3.6 秒自動淡出
+
+### 觸發點
+- **組隊**：最後一關叉路（深入險境／稍作休息）→ 王房，取代原本的一般路線揭曉
+- **單人**：貓森遺跡狼王寶箱後進森林魔王、月夜迷城魔王戰前
+
+### 實測
+- 單人：過場「⚠️ 世界王級 BOSS 現身 👑 森林魔王 「滅世魔焰」」→ 3.6 秒淡出進魔王戰（160HP）✅
+- 組隊：過場「🔥 狂暴化—— 👑 狂暴森林魔王 「滅世魔焰」 全隊合力討伐！」→ 淡出進 raid 舞台（478HP）✅
+- 全套 229 suites / 2473 tests 全綠、build 成功
+
+## 單人森林魔王戰改為世界王深色舞台（保留記分板輸入）
+
+單人冒險最後的森林魔王／月夜魔王戰從淺色卡片換成 raid 深色舞台風格：
+
+- **深色舞台**：`arcade-raid-stage`（紫黑漸層＋柔光暈），與組隊 BOSS 戰同一視覺語言
+- **王立繪放大置中**（198px，附呼吸動畫）
+- **頂部血條**：王名＋HP 數字＋漸層血條（高血紅／中血紫／低血深紅警告）
+- **打斷大招橫幅**：維持既有記分板輸入（6 箭按鍵／全 10 快填），顯示「⚡ 打斷大招 0/45 總分 ≥45」門檻條與打斷成功提示「💥 打斷大招！…被中斷了！」
+- 玩家卡維持原樣（記分板輸入不變）
+
+### 實測（單機）
+- 貓森遺跡三關 → 森林魔王 160HP 進 raid 深色舞台（198px 立繪、頂部血條、打斷門檻條）✅
+- 全 10 送出 → 60 分 → 打斷大招成功（60/45）→ 57 傷害（含火焰箭 buff）→ 魔王反擊 -6 ✅
+- 全套 229 suites / 2473 tests 全綠、build 成功
+
+## 單人王戰改靶面點擊輸入＋單人版弱點圈（與組隊 BOSS 一致）
+
+單人冒險的森林魔王／月夜狼王戰從記分板按鍵改成**可點擊靶面**（保留打斷大招機制）：
+
+- **靶面輸入**：同心環靶（X 內十 → 1 環 → M 脫靶），點一下射 1 箭共 6 箭；按住拖曳有放大鏡微調；附「↩️ 撤回上一箭」「🗑️ 清空」
+- **單人版弱點圈**：王戰開場 roll 一個彩色弱點圈（SOLO_RING，紅圈 ×1.6 加成），畫在靶面上
+  - 射進圈 → 傷害加成 ×1.6（多支進圈再疊 8%/支）；全脫圈 → 傷害減半
+  - 打斷大招（總分 ≥45）機制不變——圈只影響傷害，可「犧牲 1 支箭進圈拿加成、其餘射靶心拿高分打斷」
+- **UI**：raid 深色舞台下顯示「🎯 靶面瞄準（n/6 箭）」＋打斷槽下方新增圈提示「射進弱點圈：傷害加成 ×1.6；脫靶減半」
+- **共用元件**：BossTarget 從 ArcadeTeam.jsx 抽到共用 `src/arcade/ArcadeTarget.jsx`（單人/組隊同一份，未來易維護）
+- **引擎**：`scoreOfArrow` 統一處理數字與 `{nx,ny,score}` 落點；`resolveRound` 支援靶面判定（weakHits/ringMet 回傳＋命中/脫圈 log）
+
+### 實測（單機完整貓森遺跡）
+- 3 小怪 → 王房過場 → 森林魔王 160HP raid 深色舞台＋靶面＋弱點圈 ✅
+- 6 箭全進圈：25 分 → 49 傷害（22×1.6×1.4，大招命中 -26）✅
+- 5 支靶心＋1 支進圈：54 分 → 82 傷害（51×1.6）＋打斷大招（反擊只剩 -6）✅
+- 6 支全脫圈：60 分 → 29 傷害（減半）→ 擊敗 → 評價 A ✅
+- 全套 229 suites / 2479 tests 全綠（+6 新測試）、build 成功
+
+### 月夜迷城實測補記（2026-08-17）
+- 月夜狼王進場觸發 BossEntrance 過場「⚠️ 世界王級 BOSS 現身 👑 月夜狼王 「滅世魔焰」 月夜魔王的領域！」→ 淡出進 raid 深色舞台（180HP 頂部血條＋打斷大招槽＋靶面＋弱點圈提示）✅
+- 6 箭全進圈：27 分 → 89 傷害（火焰箭 ×1.2＋追擊疊加）→ 大招命中 -32 ✅
+- 三岔路全程（寶箱路）正常走完到魔王，未發現異常
+
+## 單人王戰補上世界王風演出：漂浮傷害＋掃過式橫幅
+
+單人 Boss 戰（森林魔王／月夜狼王）的演出與組隊 raid 舞台對齊：
+
+- **漂浮傷害數字**：命中弱點圈 → 金色大字（weak 38px，`arcade-raid-dmg-weak` 上飄）；沒中 → 白色（normal 21px）；顯示實際傷害
+- **掃過式橫幅**：打斷大招 → 綠色「打斷！」；大招 → 紅色「大招」（`arcade-raid-banner` 縮放＋模糊掃過動畫）
+- **王動作**：impact 時 flinch；大招橫幅出現時王 **roar**（怒吼動畫，與組隊一致）
+- 每次攻擊前清空舊漂浮/橫幅，避免殘留
+
+### 實測（單機貓森遺跡王戰）
+- 6 箭進圈（19 分）→ 金色漂浮傷害 → 大招紅色橫幅＋王 roar ✅
+- 6 箭靶心（60 分）→ 打斷綠色「打斷！」橫幅 ✅（截圖另拍到 -35 漂浮傷害＝火焰箭減半）
+- 全套 229 suites / 2479 tests 全綠、build 成功
+
+## 深淵巢穴最深處新增深淵魔王（世界王風格 BOSS 戰）
+
+三種模式終於都有魔王戰：🌲 森林魔王／🌙 月夜狼王／🔥 深淵魔王。
+
+- **深淵王座**：第 12 層（ABYSS_MAX_FLOOR）＝深淵魔王戰。第 11 層打完抉擇畫面改顯示「👹 下一層：深淵王座！」＋按鈕「⚔️ 挑戰深淵魔王！」（原本是「已到最深處」死路）
+- **深淵魔王**（`abyssDeepBoss`）：hp 300、def 7、atk 22、招式名「深淵吞噬」、獎勵 200×lootMult（與樓層縮放一致）
+- **完整世界王體驗**：BossEntrance 過場（「深淵的王者甦醒了！」＋狂暴前綴）→ raid 深色舞台 → 靶面輸入＋弱點圈＋打斷大招槽（總分 ≥45）→ 漂浮傷害＋打斷/大招橫幅＋王動作
+- **勝利即完成**：擊敗深淵魔王直接進冒險完成（不再有撤退/繼續抉擇）；敗北＝團滅，深淵戰利品全消失（維持原規則）
+
+### 實測（單機完整 12 層，暫調 PLAYER_MAX_HP=500 驗證後還原 100）
+- 11 層 → 抉擇畫面「⚔️ 挑戰深淵魔王！」→ BossEntrance 過場 → 深淵魔王 300/300 raid 舞台＋靶面＋弱點圈 ✅
+- 6 箭進圈：37 分 → 83 傷害（×6 弱點命中＋火焰箭）＋大招橫幅 ✅
+- 擊敗 → 直接結算：評價 S 深淵征服者、12 層、帶出 617,165 戰利品 ✅
+- 全套 229 suites / 2480 tests 全綠、build 成功
+- 註：100 HP 下第 9 層前後容易團滅（高層反擊累積）——深淵高風險設計，見好就收是核心玩法；已用妹妹治療貓＋貓薄荷實測仍撐不到 12 層，平衡可後續調整
+
+## 單人王戰弱點圈命中加貓咪興奮喵叫
+
+- arcadeCatVoice.js 新增第五種情境 **weak**（弱點圈命中）：3 連聲興奮喵叫（音高更高更亮、上升更陡、顫音更強、手機震動更長）——每隻貓用自己的音色（哈吉軟綿、妹妹高亢、顛顛低沉…）
+- ArcadeAdventure.jsx：單人王戰 impact 時命中弱點圈（ringMet）→ `playCatVoice(cat.id, "weak")`；沒中不叫
+- 語音測試更新為五種情境齊全（atk/heal/def/rescue/weak）
+
+### 實測（單機貓森遺跡王戰）
+- 6 箭進圈攻擊 → oscillator 計數 = 6（3 聲 × 2 振盪器）＝興奮喵叫準確觸發 ✅
+- 全套 229 suites / 2480 tests 全綠、build 成功
+
+## BOSS 戰靶面改為 6~X 格式（貓小隊實際靶紙 half_17）
+
+共用 BossTarget 的靶面從 full_110（1-10 環）改成 **half_17**（17cm 五環半靶，6~10 環＋X），與貓小隊射箭場實際使用的靶紙一致：
+
+- **環結構**：6（外圈藍）→ 7/8（紅）→ 9/10（黃）→ **X 內十**（內十比例 0.1，比原本更大更好瞄）
+- **外圈脫靶 M**：點在靶紙外側的深色區（可點區）＝ M 脫靶
+- 命中判定/分數/弱點圈（r=0.13）全部沿用，只有環分佈變寬——玩家更容易射到高分，射中弱點圈＋打斷大招的組合更可行
+- 單人與組隊共用同一元件，兩者同時生效
+
+### 實測（單機貓森遺跡王戰）
+- 點靶心 → **X**；點 0.5R → **8 環**；點靶外 → **M 脫靶** ✅
+- 截圖確認外圈藍（6）→ 紅（7/8）→ 黃（9/10）→ X 中心 ✅
+- 全套 229 suites / 2480 tests 全綠、build 成功
+
+## 2026-08-17（📱 訪客冒險單人戰鬥：手機原地操作改造）
+- **問題**：玩家用手機玩時，輸入分數與看訊息都要一直上下滑動，體驗斷裂。
+- **做法**：單人冒險（含一般怪與王戰）的「輸入」與「訊息」拆開——輸入時版面壓緊（王立繪縮小、士氣槽收窄），送出後訊息改用**底部彈出面板（BattleResultSheet）覆蓋顯示**，不推擠版面、不用捲動；點「下一回合 →」收合回輸入畫面。
+- **CSS**：`.arcade-result-sheet` fixed 底部（z-index 70、滑入動畫）、`.arcade-raid-stage.input-mode` 把王立繪 196px→96px、士氣格縮小，騰出空間給靶面。
+- **實測**：單機貓森遺跡完整流程——一般怪（哥布林/毒甲蟲/狼王）與森林魔王戰都驗證：輸入畫面 compact、結算以底部面板覆蓋顯示、下一回合正常回到輸入 ✅；全套 229 suites / 2480 tests 全綠、build 成功。
+
+## 2026-08-17（📱 訪客冒險組隊 BOSS 戰：手機原地操作改造）
+- **延續單人版**：把單人實作的「輸入壓緊＋結算底部彈出面板」套用到組隊 BOSS 戰，組隊與單人現在共用同一個 `ArcadeResultSheet` 元件（`src/arcade/ArcadeResultSheet.jsx`，相容兩邊 result 欄位：`total`/`totalScore`、`comboMult`/`comboName`、`adventureDone` 等）。
+- **組隊 BOSS 戰**：輸入階段套 `.input-mode`（王立繪 196→96px、士氣槽收窄），送出後結算訊息以 fixed 底部面板覆蓋顯示（含完整 log、TEAM BREAK combo、士氣 note、打斷大招標記、勝利/冒險完成橫幅）；組隊維持 3.2s 自動推進（不設「下一回合」按鈕，與單人手動推進不同）。
+- **實測**：單機雙人組隊完整流程——三關叉路 → 狂暴森林魔王 478HP → 兩回合 240 傷害 ×2 → 擊敗 → S 評價／TEAM BREAK／293 金幣 ✅；結算面板固定覆蓋、自動回到 compact 輸入畫面 ✅；全套 229 suites / 2480 tests 全綠、build 成功。
+
+## 2026-08-17（🤝 組隊支援三種冒險模式＋BOSS 結算隊長門控）
+- **組隊可選冒險模式**：組隊大廳新增「🎲 選擇冒險模式」三張卡（隊長選、隊員即時看到；`arcadeRooms.mode`），與單人三模式對應：
+  - 🌲 貓森遺跡（新手）：哥布林 → 毒甲蟲 → 狼王 → 森林魔王
+  - 🌙 月夜迷城：哥布林 → 幽靈 → 岩甲龜 → 月夜狼王（招式名「月夜狼嚎」）
+  - 🔥 深淵巢穴：深淵哥布林 → 深淵狼王 → 深淵岩甲龜 → 深淵魔王（招式名「深淵吞噬」）
+  - `buildTeamAdventure(mode, playerCount)` 依模式建關卡＋BOSS，仍依人數縮放、叉路機制不變；未指定模式時預設 forest（相容舊呼叫）。
+- **組隊 BOSS 結算推進門控**：組隊 BOSS 戰未分勝負時不再自動推進——結算面板改為隊長按「**繼續 →**」才推進（`advanceTeamRound` 寫 `advanceRound` 訊號，全隊訂閱同步收起面板）；隊員顯示「👑 等待隊長繼續…」，隊長離線（超過 75s 沒心跳）時任一隊員可代按，不會卡死整房。一般關卡與勝利/潰散維持自動推進。
+- **共用元件**：`BattleResultSheet` 新增 `advance` prop（{ isHost, hostStale, onAdvance, busy }），單人不受影響。
+- **實測**：單機雙人組隊選**深淵模式**完整流程——三關深淵縮放怪 → 狂暴深淵魔王 897HP raid 舞台 → 送出回合後結算面板顯示「繼續 →」且不自動跳 → 推進訊號寫入後全隊回到靶面輸入 → 擊敗 → **S 評價／720 金幣** ✅；全套 229 suites / 2484 tests 全綠（+4 新模式測試）、build 成功。
+
+## 2026-08-17（🏆 組隊三模式成就統計：通關次數／最佳 Combo／最速通關）
+- 組隊結果頁新增「**🏆 {模式} 成就**」區塊，顯示該冒險模式的累計成就：通關次數、最佳 Combo（數值→comboLabel）、最速通關（m:ss）。結果頁標題也改為「🔥 深淵巢穴 完成！」（不再是通用的「組隊冒險完成」）。
+- **Local First**：統計存訪客本機 profile（`teamStats: { forest|moon|abyss: { wins, bestCombo, bestTimeMs } }`），不佔雲端；新訪客預設空物件。`updateTeamStats` 純函式：wins +1、bestCombo 取歷史較高、bestTimeMs 取歷史較短（0＝保留舊紀錄，避免無開始時間的舊房間洗掉最速）。
+- **最速通關計時**：`startTeamRoom` 寫 `startedAt`，BOSS 擊敗時 `result.durationMs = finishedAt - startedAt`，結果頁顯示本次耗時。
+- **實測**：單機雙人組隊連續兩場深淵模式——第一場結束寫入 `{wins:1, bestCombo:1.5, bestTimeMs:63864}`；第二場結束累計 `{wins:2, bestCombo:1.5, bestTimeMs:57093}`（0:57 比 1:04 快，正確取較短）✅；結果頁成就區塊顯示通關 1→2、本次耗時 0:57 ✅；全套 229 suites / 2490 tests 全綠（+6）、build 成功。
+
+## 2026-08-17（🤝 大廳組隊冒險成就總覽卡）
+- 單人大廳（ArcadeHub）新增「**🤝 組隊冒險成就**」區塊：三模式各一張卡，顯示該模式的累計成就——🏆 通關次數、🏅 最佳 Combo（comboLabel）、⚡ 最速通關（m:ss）；未挑戰過的模式顯示「還沒挑戰過 · 和朋友組隊打一場吧！」（半透明鎖定樣式）。
+- 資料源即本機 `profile.teamStats`（前一版實作），與組隊結果頁成就區塊共用同一份統計；`TEAM_MODES` 統一來源，避免模式清單重複定義。
+- **實測**：單機大廳——深淵巢穴卡顯示「通關 2 次／TEAM BREAK／0:57」✅、貓森與月夜卡顯示未挑戰 ✅、與結果頁統計一致 ✅；全套 229 suites / 2490 tests 全綠、build 成功。
+
+## 2026-08-17（☁️ 訪客冒險 M1：雲端保存）
+- 新增 Firestore 集合 `arcadeProfiles/{visitorId}`（免登入，visitorId 為 key），把訪客進度從純本機升級為「本機為主、雲端備份」。 firestore.rules 已開放讀寫。
+- **合併策略**（`mergeRemoteProfile` 純函式，可測試）：lastPlayedAt 新者勝 identity 欄位，數值欄位（coins/inventory/statistics/bestCombo/bestTimeMs）兩邊取 max（離線打的新成績不會被雲端舊版覆蓋），achievements 併集不重複。
+- **載入時同步**（`syncProfileOnLoad`）：本機+雲端→合併→存回兩邊；本機有雲端無→首次上傳；本機無雲端有→**新裝置自動還原**（寫入本機 IndexedDB）。
+- **存檔時推雲端**（`saveVisitorProfileWithCloud`）：每 15 秒節流推最後一次（避免過度寫入 Firestore），本機先存不等雲端。
+- **離線→上線補傳**（`setupCloudSyncListener`）：偵測 `online` 事件，自動把排隊中的 profile 推雲端。
+- ArcadeApp.jsx 已接線：載入→syncProfileOnLoad、存檔→saveVisitorProfileWithCloud、useEffect 監聽離線恢復。
+- 測試：`arcadeDb.test.js` 新增 7 個合併邏輯單元測試（數值取 max、teamStats 獨立、inventory 合併、achievements 併集等）✅；全套 230 suites / 2497 tests 全綠、build 成功。

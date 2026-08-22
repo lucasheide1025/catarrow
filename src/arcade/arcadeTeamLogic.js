@@ -2,6 +2,12 @@
 // 規格 §14-16：掃 QR／代碼加入、Team Attack、Combo 倍率。
 // 最高原則：Cloud for coordination——雲端只協調，不搬整份 visitorProfile。
 import { ARCADE_MONSTERS, ARCADE_BOSS, MOON_BOSS, ABYSS_DEEP_BOSS, RED_MIN } from "./arcadeBattle";
+import {
+  applyArcadeCardProcs,
+  arcadeEffectiveDefense,
+  arcadeHighQualityHitCount,
+  tickArcadeStatuses,
+} from "./arcadeProgression";
 
 export const TEAM_MIN_PLAYERS = 2;
 export const TEAM_MAX_PLAYERS = 8;
@@ -154,7 +160,9 @@ export function applyPartyMonsterAttack(players, attack, enabled = true) {
     const hpBefore = Math.max(0, Number.isFinite(Number(player?.hp)) ? Number(player.hp) : 100);
     const wasAlive = player?.alive !== false && hpBefore > 0;
     if (!enabled || !wasAlive || amount <= 0) return { ...player, hp: hpBefore, maxHp: Number(player?.maxHp) || 100, alive: wasAlive };
-    const hpAfter = Math.max(0, hpBefore - amount);
+    // 守護卡已經在 combat snapshot 的 DEF 內；怪物反擊統一吃實際射手防禦。
+    const mitigated = Math.max(1, amount - Math.max(0, Number(player?.def) || 0));
+    const hpAfter = Math.max(0, hpBefore - mitigated);
     const applied = hpBefore - hpAfter;
     const alive = hpAfter > 0;
     partyDamage.push({ visitorId: player.visitorId, amount: applied, hpBefore, hpAfter, alive });
@@ -421,6 +429,10 @@ export function resolveTeamBossRound(room, players) {
   const combo = teamCombo(activePlayers.map((p) => ({ score: p.roundScore || 0, hits: p.roundHits || 0 })));
   const teamInterrupted = totalScore >= teamMin;
   const teamMult = (teamInterrupted ? 1.5 : 1) * (room.teamGoals?.atkBuff || 1);
+  // 舊狀態先 tick；本回合新觸發的卡片從下一回合開始作用，避免隊員順序影響同拍傷害。
+  const statusTick = tickArcadeStatuses(room.monsterStatuses || []);
+  let monsterStatuses = statusTick.statuses;
+  const effectiveDef = arcadeEffectiveDefense(monster.def || 0, statusTick.statuses);
 
   // 每人：瞄準自己的弱點圈射（靶面落點判定）→ 命中傷害滿額×加成；沒命中 → 傷害減半
   const perPlayer = activePlayers.map((p) => {
@@ -440,11 +452,19 @@ export function resolveTeamBossRound(room, players) {
     const met = shots.length > 0
       ? weakHits > 0
       : checkPersonalGoal(p.personalGoalId, p.roundArrows, ring?.pos);
-    const full = Math.max(1, Math.max(0, Math.round((p.roundScore || 0) * combo.totalMult * teamMult)) - (monster.def || 0));
+    const atkScale = Math.max(0.5, (Number(p.atk) || 10) / 10);
+    const full = Math.max(1, Math.max(0, Math.round((p.roundScore || 0) * combo.totalMult * teamMult * atkScale)) - effectiveDef);
     // 命中：滿額 × 圈加成 ×（多支進圈再疊 8%/支，最多 ×1.24）；沒中：減半
     const dmg = met
       ? Math.max(1, Math.round(full * spot.bonus * (1 + 0.08 * Math.max(0, weakHits - 1))))
       : Math.max(1, Math.round(full / 2));
+    const proc = applyArcadeCardProcs({
+      cardEffects: p.cardEffects || [],
+      statuses: monsterStatuses,
+      qualityHits: arcadeHighQualityHitCount(p.roundArrows || []),
+      seed: `team:${room.sessionKey || room.roomCode || "room"}:${room.round || 1}:${p.visitorId}:${monster.id || "monster"}`,
+    });
+    monsterStatuses = proc.statuses;
     return {
       visitorId: p.visitorId,
       nickname: p.nickname || "隊友",
@@ -452,10 +472,11 @@ export function resolveTeamBossRound(room, players) {
       catImage: p.catImage || "",
       score: p.roundScore || 0,
       hits: p.roundHits || 0,
-      met, weakHits, dmg, raw: full, spotColor: spot.color,
+      met, weakHits, dmg, raw: full, spotColor: spot.color, procs: proc.procs,
     };
   });
-  const dmg = perPlayer.reduce((s, x) => s + x.dmg, 0);
+  const attackDamage = perPlayer.reduce((s, x) => s + x.dmg, 0);
+  const dmg = attackDamage + statusTick.damage;
 
   const monsterHp = Math.max(0, (room.monsterHp || monster.hp) - dmg);
   const victory = monsterHp <= 0;
@@ -485,6 +506,7 @@ export function resolveTeamBossRound(room, players) {
 
   return {
     combo, totalScore, teamInterrupted, perPlayer, dmg, monsterHp,
+    monsterStatuses, statusDamage: statusTick.damage,
     partyDamage: counter.partyDamage,
     victory, spirit, defeat, log, comboLabel: combo.comboName,
   };
@@ -497,31 +519,36 @@ export function resolveTeamRound(room, players) {
   const combo = teamCombo(activePlayers.map((p) => ({ score: p.roundScore || 0, hits: p.roundHits || 0 })));
   const totalScore = activePlayers.reduce((s, p) => s + (p.roundScore || 0), 0);
   const atkBuff = room.atkBuff || 1; // 寶箱路/神秘事件：全隊攻擊變強
-  const dmg = Math.max(1, Math.round(totalScore * combo.totalMult * atkBuff - (monster.def || 0)));
+  const statusTick = tickArcadeStatuses(room.monsterStatuses || []);
+  let monsterStatuses = statusTick.statuses;
+  const effectiveDef = arcadeEffectiveDefense(monster.def || 0, statusTick.statuses);
+  const perPlayer = activePlayers.map((p) => {
+    const atkScale = Math.max(0.5, (Number(p.atk) || 10) / 10);
+    const dmg = Math.max(1, Math.round((Number(p.roundScore) || 0) * combo.totalMult * atkBuff * atkScale - effectiveDef));
+    const proc = applyArcadeCardProcs({
+      cardEffects: p.cardEffects || [],
+      statuses: monsterStatuses,
+      qualityHits: arcadeHighQualityHitCount(p.roundArrows || []),
+      seed: `team:${room.sessionKey || room.roomCode || "room"}:${room.round || 1}:${p.visitorId}:${monster.id || "monster"}`,
+    });
+    monsterStatuses = proc.statuses;
+    return {
+      visitorId: p.visitorId,
+      nickname: p.nickname || "隊友",
+      catName: p.catName || "貓貓",
+      catImage: p.catImage || "",
+      score: p.roundScore || 0,
+      hits: p.roundHits || 0,
+      dmg,
+      met: true,
+      procs: proc.procs,
+    };
+  });
+  const attackDamage = perPlayer.reduce((s, p) => s + p.dmg, 0);
+  const dmg = attackDamage + statusTick.damage;
   const monsterHp = Math.max(0, (room.monsterHp || monster.hp) - dmg);
   const victory = monsterHp <= 0;
   const counter = applyPartyMonsterAttack(players, monster.atk, !victory);
-  // A → B → C 依 roster 播放；個人傷害加總必須精確等於真正扣掉的 dmg。
-  const weights = activePlayers.map((p) => Math.max(0, (p.roundScore || 0) * combo.totalMult * atkBuff));
-  const weightSum = weights.reduce((s, v) => s + v, 0);
-  const shares = weights.map((w, i) => {
-    const exact = weightSum > 0 ? (dmg * w) / weightSum : (i === 0 ? dmg : 0);
-    return { i, base: Math.floor(exact), frac: exact - Math.floor(exact) };
-  });
-  let remainder = dmg - shares.reduce((s, x) => s + x.base, 0);
-  [...shares].sort((a, b) => b.frac - a.frac || a.i - b.i).forEach((x) => {
-    if (remainder > 0) { shares[x.i].base += 1; remainder -= 1; }
-  });
-  const perPlayer = activePlayers.map((p, i) => ({
-    visitorId: p.visitorId,
-    nickname: p.nickname || "隊友",
-    catName: p.catName || "貓貓",
-    catImage: p.catImage || "",
-    score: p.roundScore || 0,
-    hits: p.roundHits || 0,
-    dmg: shares[i]?.base || 0,
-    met: true,
-  }));
   const log = [];
   log.push({ kind: "info", text: `🎯 全隊總分 ${totalScore} 分！` });
   if (combo.hits >= 3) {
@@ -538,6 +565,8 @@ export function resolveTeamRound(room, players) {
     perPlayer,
     dmg,
     monsterHp,
+    monsterStatuses,
+    statusDamage: statusTick.damage,
     victory,
     defeat: !victory && counter.defeat,
     partyDamage: counter.partyDamage,

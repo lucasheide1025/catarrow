@@ -889,6 +889,14 @@ export function sfxBattleIntro() {
   sample("battle_intro", 0.85, sfxBattleIntroSynth, [0, 60, 50, 60, 50, 100, 80, 200]);
 }
 
+// 複數怪戰鬥使用：完全不依賴 mp3/sample cache。
+export function sfxBattleIntroSafe() {
+  try {
+    sfxBattleIntroSynth();
+    vibrate([0, 60, 50, 60, 50, 100, 80, 200]);
+  } catch {}
+}
+
 function sfxBattleIntroSynth() {
   const c = ctx(); if (!c) return;
   const t = c.currentTime;

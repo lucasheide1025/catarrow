@@ -1,0 +1,11 @@
+"use strict";
+const test=require("node:test");
+const assert=require("node:assert/strict");
+const {buildDungeonMultiReward}=require("./dungeonMultiReward");
+
+function room(){return{dungeonSolo:true,dungeonMulti:true,combatVersion:2,status:"victory",expeditionDifficulty:1,expeditionRoomType:"monster",multiFamily:"ghost",multiTier:1,monster:{id:"ghost_t1_normal_a",family:"ghost"},members:{m1:{}},encounter:{primaryTargetId:"primary"},targetOrder:["primary","add_1","add_2"],targets:{primary:{id:"ghost_t1_normal_a",instanceId:"primary",currentHp:0,alive:false},add_1:{id:"ghost_1",instanceId:"add_1",currentHp:0,alive:false},add_2:{id:"ghost_t1_normal_b",instanceId:"add_2",currentHp:0,alive:false}}};}
+
+test("solo dungeon multi derives per-target material/card and one tile envelope",()=>{const reward=buildDungeonMultiReward({room:room(),battleId:"b1",memberId:"m1"});assert.equal(reward.targetInstanceIds.length,3);assert.equal(reward.chests.length,3);assert.ok(Object.values(reward.materialTotals).reduce((a,b)=>a+b,0)>=3);assert.ok(reward.coins>0);assert.ok(reward.archerXP>0);assert.match(reward.claimId,/dungeon_multi_solo/);});
+test("reward is deterministic for an idempotent claim replay",()=>{const input={room:room(),battleId:"b1",memberId:"m1"};assert.deepEqual(buildDungeonMultiReward(input),buildDungeonMultiReward(input));});
+test("fails closed without terminal v2 room proof",()=>{assert.throws(()=>buildDungeonMultiReward({room:{...room(),status:"active"},battleId:"b1",memberId:"m1"}),/not_terminal/);});
+test("rejects forged catalog roles, family, tier and primary identity",()=>{const base=room();assert.throws(()=>buildDungeonMultiReward({room:{...base,targets:{...base.targets,add_1:{...base.targets.add_1,id:"ghost_t1_boss"}}},battleId:"b1",memberId:"m1"}),/target_role_invalid/);assert.throws(()=>buildDungeonMultiReward({room:{...base,multiFamily:"mountain"},battleId:"b1",memberId:"m1"}),/catalog_mismatch/);assert.throws(()=>buildDungeonMultiReward({room:{...base,multiTier:2},battleId:"b1",memberId:"m1"}),/catalog_mismatch/);assert.throws(()=>buildDungeonMultiReward({room:{...base,monster:{...base.monster,id:"ghost_1"}},battleId:"b1",memberId:"m1"}),/primary_mismatch/);});

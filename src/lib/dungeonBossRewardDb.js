@@ -23,3 +23,17 @@ export async function claimDungeonNormalCard({ battleId, memberId, monsterId }) 
   const response=await callable({battleId,memberId,monsterId});
   return response.data;
 }
+
+export async function claimDungeonEncounterTargetCard({ battleId, memberId, monsterId, targetInstanceId }) {
+  if(!battleId||!memberId||!monsterId||!targetInstanceId)throw new Error("invalid_dungeon_target_card_identity");
+  const callable=httpsCallable(functions,"claimDungeonEncounterTargetCard");
+  const response=await callable({battleId,memberId,monsterId,targetInstanceId});
+  return response.data;
+}
+
+export async function claimDungeonMultiSoloReward({battleId,memberId}){
+  if(!battleId||!memberId)throw new Error("invalid_dungeon_multi_reward_identity");
+  const callable=httpsCallable(functions,"claimDungeonMultiSoloReward");
+  const response=await callable({battleId,memberId});
+  return response.data;
+}

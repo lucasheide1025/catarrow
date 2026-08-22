@@ -7,6 +7,7 @@ import {
   saveWebsiteDraft,
   uploadWebsiteImage,
 } from "../../lib/websiteCms";
+import AdminWebsiteCompetitions from "./AdminWebsiteCompetitions";
 
 const PUBLIC_ORIGIN = "https://archery.catgroup.com.tw";
 const cloneEmpty = () => ({ text: {}, images: {} });
@@ -155,6 +156,7 @@ export default function AdminWebsiteCms() {
               }} />
           </div>
         </div>
+        <AdminWebsiteCompetitions />
       </div>
     </div>
   );

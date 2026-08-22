@@ -14,4 +14,6 @@
   <url><loc>https://archery.catgroup.com.tw/friends-group/</loc><lastmod>2026-07-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://archery.catgroup.com.tw/rainy-day/</loc><lastmod>2026-07-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
   <url><loc>https://archery.catgroup.com.tw/sunny-day/</loc><lastmod>2026-07-29</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+
+  <url><!-- competition-generated --><loc>https://archery.catgroup.com.tw/competitions/</loc><lastmod>2026-08-17</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>
 </urlset>

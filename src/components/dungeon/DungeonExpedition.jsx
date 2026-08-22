@@ -5,11 +5,15 @@
 // HP / buff 全程跨房間、跨樓層持續；功能房走「本地單人模式」不寫 Firestore
 
 import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from "react";
+import DungeonFloorIntro from "./DungeonFloorIntro";
 import { onSnapshot, doc } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import { drawExpeditionBoss } from "../../lib/monsterData";
 import { drawDungeonFloorMonsters, drawDungeonFallbackMonster } from "../../lib/dungeonExpansionMonsters";
 import { resolveDungeonBossEncounter } from "../../lib/dungeonBossEncounter";
+import { resolveOrRestoreDungeonEncounter } from "../../lib/dungeonCombatEncounter";
+import { createTeamExpeditionBattleRoom } from "../../lib/expeditionTeamDb";
+import { startMultiMonsterPartyBattle } from "../../lib/multiMonsterPartyDb";
 import { getRestoredExpeditionPhase, isRestorableExpeditionMapState } from "../../lib/expeditionMapState";
 import { buildExpeditionMemberData } from "../../lib/expeditionMemberData";
 import { buildCombatModifiers } from "../../lib/combatModifiers";
@@ -30,6 +34,7 @@ import {
   GRID_SIZE,
 } from "../../lib/expeditionGrid";
 import { isInlineRoom, resolveInlineRoom } from "../../lib/dungeonInlineRooms";
+import { applyDungeonRouteImmediateEffect, chooseDungeonRouteMark, resolveDungeonRouteSequence } from "../../lib/dungeonRouteV2";
 import {
   createExpeditionBattleRoom,
   cleanupExpeditionRoom,
@@ -70,6 +75,7 @@ import {
   collectBattleStats,
   collectBattleArrows,
   createExpeditionKillLoot,
+  createDungeonEncounterLoot,
   emptyExpeditionLoot,
   mergeExpeditionLoot,
   mergeExpeditionStats,
@@ -92,6 +98,7 @@ import DungeonTreasureRoom from "./DungeonTreasureRoom";
 import { GridMapStage, BranchStage } from "./DungeonStages";
 
 const DungeonBossRewardRoom = lazy(() => import("./DungeonBossRewardRoom"));
+const MultiMonsterPartyRoom = lazy(() => import("../battle/MultiMonsterPartyRoom"));
 
 // ── 樓層名稱 ────────────────────────────────────────────
 const FLOOR_LABELS = [
@@ -277,7 +284,7 @@ function ExpeditionBattleRoom({
 }
 
 // ── 樓層過場動畫 ────────────────────────────────────────
-function FloorIntro({ floorIndex, difficultyTier, onStart }) {
+function LegacyFloorIntro({ floorIndex, difficultyTier, onStart }) {
   const [show, setShow] = useState(false);
   const [canStart, setCanStart] = useState(false);
 
@@ -445,6 +452,7 @@ export default function DungeonExpedition({
   const [branchFloor, setBranchFloor] = useState(null);
   const [branchChoice, setBranchChoice] = useState(null);
   const [branchStep, setBranchStep] = useState(0);
+  const [introSeenFloors, setIntroSeenFloors] = useState(() => excavation?.mapState?.introSeenFloors || []);
   // 進行中的房間
   const [pendingRoom, setPendingRoom] = useState(null);
   const [monsterPool, setMonsterPool] = useState({ monsters: [], elite: null, boss: null });
@@ -481,8 +489,7 @@ export default function DungeonExpedition({
   // 遠征已結束（領獎/放棄）後，禁止自動存檔 effect 再把進度寫回 → 否則「領完獎還能從第三層續玩」重複打王
   const expeditionEndedRef = useRef(false);
   const clearCountedRef = useRef(false); // 防重複計「突破地下城次數」
-  useEffect(() => {
-    if (!myId || expeditionEndedRef.current || phase === "intro" || phase === "consume" || phase === "entry_error" || phase === "result" || phase === "won") return;
+  const buildActiveExpeditionPayload = useCallback((pendingRoomOverride = pendingRoom) => {
     const mapState = {
       floorIndex,
       gridFloor,
@@ -491,8 +498,10 @@ export default function DungeonExpedition({
       branchFloor,
       branchChoice,
       branchStep,
+      pendingRoom: pendingRoomOverride,
+      introSeenFloors,
     };
-    const payload = {
+    return {
       family, difficultyTier, isHidden, floorsCleared,
       hp: playerState?.hp, maxHP: playerState?.maxHP,
       atk:playerState?.atk, def:playerState?.def,
@@ -506,6 +515,10 @@ export default function DungeonExpedition({
       bossEncounter: expansionBossEncounter,
       mapState,
     };
+  }, [family, difficultyTier, isHidden, floorsCleared, playerState?.hp, playerState?.maxHP, playerState?.atk, playerState?.def, playerState?.wbBonus, playerState?.restBonuses, playerState?.merchantBonuses, runLootMult, arrowsPerRound, targetFmt, expansionBossEncounter, floorIndex, gridFloor, playerPos, visitedIds, branchFloor, branchChoice, branchStep, pendingRoom, introSeenFloors]);
+  useEffect(() => {
+    if (!myId || expeditionEndedRef.current || phase === "intro" || phase === "consume" || phase === "entry_error" || phase === "result" || phase === "won") return;
+    const payload = buildActiveExpeditionPayload();
 
     // 1. 同步寫入 localStorage 備份（瞬發）
     try {
@@ -514,7 +527,7 @@ export default function DungeonExpedition({
 
     // 2. 雲端只需要最後一份續玩狀態：連續走格/探索時合併寫入，避免每一步都 updateDoc。
     queueActiveExpeditionProgress(myId, payload);
-  }, [myId, family, difficultyTier, isHidden, floorsCleared, playerState?.hp, playerState?.maxHP, playerState?.atk, playerState?.def, playerState?.wbBonus, playerState?.restBonuses, playerState?.merchantBonuses, runLootMult, arrowsPerRound, targetFmt, expansionBossEncounter, floorIndex, gridFloor, playerPos, visitedIds, branchFloor, branchChoice, branchStep, phase]);
+  }, [myId, buildActiveExpeditionPayload, phase]);
 
   // localStorage 每一步已同步；雲端 pending 狀態在切背景、關頁或離開元件時補寫最後一份。
   useEffect(() => {
@@ -571,6 +584,7 @@ export default function DungeonExpedition({
       setBranchChoice(restoredMapState.branchChoice || null);
       setBranchStep(restoredMapState.branchStep || 0);
       setPendingRoom(restoredMapState.pendingRoom || null);
+      setIntroSeenFloors(restoredMapState.introSeenFloors || []);
       setPhase(getRestoredExpeditionPhase(restoredMapState, fi));
     } else {
       if (fi < 2) {
@@ -637,6 +651,7 @@ export default function DungeonExpedition({
   // ── 分支序列（第 3 層）──────────────────────────────────
   const branchSeq = useMemo(() => {
     if (!branchFloor || !branchChoice) return [];
+    if (branchFloor.routeVersion === 2) return resolveDungeonRouteSequence(branchFloor.route,branchFloor.boss,branchFloor.treasure);
     const b = branchFloor.branches[branchChoice];
     return [...b.rooms, branchFloor.boss, branchFloor.treasure];
   }, [branchFloor, branchChoice]);
@@ -892,7 +907,7 @@ export default function DungeonExpedition({
   }, [family, difficultyTier, myId, gridFloor, markRoomCleared, applyEventEffect]);
 
   // ── 進入房間 ────────────────────────────────────────────
-  const enterRoom = useCallback((room) => {
+  const enterRoom = useCallback(async (room) => {
     const r = { ...room };
     // 輕量房：不進全螢幕，原地結算（正常流程由 handleCellClick 踩到即處理；
     // 這裡是回退路徑——舊存檔的「進入」按鈕也會走到這，不可掉進 default 空白畫面）
@@ -921,9 +936,74 @@ export default function DungeonExpedition({
       }
       r.monster = {
         ...mon,
-        hp:  Math.round((mon.hp  || 100) * (mods.monsterHpMult  || 1)),
-        atk: Math.round((mon.atk || 10) * (mods.monsterAtkMult || 1)),
+        hp:  Math.round((mon.hp  || 100) * (mods.monsterHpMult  || 1) * (r.threatMultiplier || 1)),
+        maxHP:Math.round((mon.maxHP || mon.hp || 100) * (mods.monsterHpMult || 1) * (r.threatMultiplier || 1)),
+        atk: Math.round((mon.atk || 10) * (mods.monsterAtkMult || 1) * (r.threatMultiplier || 1)),
+        def: Math.round((mon.def || 0) * (r.bossDefenseMultiplier || 1)),
       };
+      try {
+        r.encounter = resolveOrRestoreDungeonEncounter({
+          encounter:r.encounter,
+          runId:expansionRunIdRef.current,
+          floorIndex,
+          roomId:r.id,
+          roomType:r.type,
+          family,
+          difficultyTier,
+          primaryMonster:r.monster,
+        });
+        if (r.encounter?.kind === "multi" && !r.multiBattleRoomId) {
+          const created = await createTeamExpeditionBattleRoom({
+            members:[{
+              memberId:myId,
+              name:profile?.nickname || profile?.name || "射手",
+              ...playerState,
+              alive:(playerState?.hp ?? 0) > 0,
+              catId:profile?.equippedCatId || profile?.catId || "",
+              catName:profile?.catName || "",
+              catType:profile?.catType || "",
+              catXP:profile?.catXP || 0,
+              catBond:profile?.catBond || 0,
+            }],
+            hostId:myId,
+            monster:r.monster,
+            difficultyTier,
+            floorIndex,
+            roomType:r.type === "boss_battle" ? "boss" : r.type === "elite_battle" ? "elite" : "monster",
+            arrowsPerRound,
+            targetFmt,
+            encounter:r.encounter,
+            dungeonSolo:true,
+            lootMult:runLootMult * (r.dropMultiplier || 1),
+          });
+          if (!created?.ok) throw new Error(created?.reason || "dungeon_multi_room_create_failed");
+          const started = await startMultiMonsterPartyBattle(created.roomId, myId, { dungeonMode:true });
+          if (!started?.ok) {
+            await cleanupExpeditionRoom(created.roomId).catch(() => {});
+            throw new Error(started?.reason || "dungeon_multi_start_failed");
+          }
+          r.multiBattleRoomId = created.roomId;
+
+          // claimDungeonMultiSoloReward 會以 members.activeExpedition.mapState.pendingRoom
+          // 作為「這一趟遠征真的正在打這個 encounter」的防偽證據。一般探索存檔採 5 秒 trailing
+          // write，但這個 identity 在戰鬥開始前必須先落到 Firestore，否則快速結束戰鬥時會
+          // 因雲端仍是上一個 pendingRoom 而被誤判 dungeon_multi_run_mismatch。
+          const battleSnapshot = buildActiveExpeditionPayload(r);
+          try {
+            localStorage.setItem(`active_expedition_${myId || "guest"}`, JSON.stringify(battleSnapshot));
+          } catch {}
+          queueActiveExpeditionProgress(myId, battleSnapshot);
+          const persisted = await flushActiveExpeditionProgress(myId);
+          if (!persisted?.ok) {
+            await cleanupExpeditionRoom(created.roomId).catch(() => {});
+            throw new Error(persisted?.reason || "dungeon_multi_progress_sync_failed");
+          }
+        }
+      } catch (encounterError) {
+        console.warn("dungeon multi encounter init failed, falling back to legacy single battle", encounterError);
+        r.encounter = null;
+        r.multiBattleRoomId = null;
+      }
       setPendingRoom(r);
       setPhase("battle");
       return;
@@ -941,7 +1021,7 @@ export default function DungeonExpedition({
     }
     setPendingRoom(r);
     setPhase("func_room");
-  }, [monsterPool, fixedBoss, difficultyTier, floorIndex, markRoomCleared, resolveInlineStep]);
+  }, [monsterPool, fixedBoss, difficultyTier, floorIndex, family, markRoomCleared, resolveInlineStep, myId, profile, playerState, arrowsPerRound, targetFmt, runLootMult, buildActiveExpeditionPayload]);
 
   // ── 格子點擊移動 ────────────────────────────────────────
   const handleCellClick = useCallback((room) => {
@@ -971,8 +1051,17 @@ export default function DungeonExpedition({
   // ── 分支操作（第 3 層）──────────────────────────────────
   const handleChooseBranch = useCallback((key) => {
     sfxPathSelect();
+    if (branchFloor?.routeVersion === 2) {
+      const route=chooseDungeonRouteMark(branchFloor.route,key);
+      setBranchFloor(prev=>({...prev,route}));
+      if (route!==branchFloor.route) {
+        setPlayerState(previous => applyDungeonRouteImmediateEffect(previous, key));
+        setBranchChoice("A");
+      }
+      return;
+    }
     setBranchChoice(key); // 選定即鎖
-  }, []);
+  }, [branchFloor]);
 
   const handleBranchNext = useCallback(() => {
     const room = branchSeq[branchStep];
@@ -1030,6 +1119,29 @@ export default function DungeonExpedition({
       return;
     }
     const killedMonster = battle?.monster || pendingRoom?.monster;
+    if (battle?.dungeonReward) {
+      const reward=battle.dungeonReward;
+      setKillTotals(previous=>({coins:previous.coins+(reward.coins||0),archerXP:previous.archerXP+(reward.archerXP||0),kills:previous.kills+1}));
+      setRunLoot(previous=>mergeExpeditionLoot(previous,{
+        chests:reward.chests||[],
+        defeated:(battle.monsters||[]).filter(target=>target?.alive===false||Number(target?.currentHp)<=0).map(target=>({id:target.id,name:target.name,family:target.family,tier:target.tier})),
+        treasure:(reward.collectibles||[]).map(drop=>COLLECTIBLE_MAP[drop.itemId]).filter(Boolean).map(item=>({...item,kind:"collectible"})),
+        bonusCoins:0,bonusArrowDew:0,
+      }));
+      const resultBase={
+        monster:killedMonster,
+        isBoss:pendingRoom?.type==="boss_battle",
+        chests:reward.chests||[],coins:reward.coins||0,archerXP:reward.archerXP||0,
+        card:reward.cards?.[0]||null,cards:reward.cards||[],lootMult:runLootMult,
+        collectibles:(reward.collectibles||[]).map(drop=>COLLECTIBLE_MAP[drop.itemId]).filter(Boolean),
+        self:{id:myId,name:profile?.nickname||profile?.name||"射手",arrows:[],dmgDealt:0,dmgTaken:0,crits:0},
+      };
+      if(pendingRoom?.type==="boss_battle"&&killedMonster?.expansionVersion===1&&battle?.id){
+        try{const claim=await claimBossReward({battleId:battle.id,monsterId:killedMonster.id});setKillResult({...resultBase,bossDrops:bossDropsFromEnvelope(claim?.envelope)});}
+        catch(error){setBossRewardRetry({battleId:battle.id,monsterId:killedMonster.id,resultBase,error:error?.message||"Boss 獎勵同步失敗"});setPhase("boss_reward_retry");return{preserveRoom:true};}
+      }else setKillResult(resultBase);
+      return;
+    }
     let serverCardClaim = null;
     if (killedMonster?.expansionVersion === 1 && battle?.id && !isGuest
       && !["miniBoss", "boss"].includes(killedMonster.encounter)) {
@@ -1040,7 +1152,14 @@ export default function DungeonExpedition({
         console.warn("dungeon normal card claim failed; continuing settlement", cardError);
       }
     }
-    const killLoot = createExpeditionKillLoot(killedMonster, runLootMult, {
+    const effectiveLootMult = runLootMult * (pendingRoom?.dropMultiplier || 1);
+    const killLoot = battle?.encounter?.kind === "multi" ? createDungeonEncounterLoot({
+      ...battle.encounter,
+      targets:battle.monsters || battle.encounter.targets,
+    }, effectiveLootMult, {
+      roomType: pendingRoom?.type === "boss_battle" ? "boss"
+        : pendingRoom?.type === "elite_battle" ? "elite" : "monster",
+    }) : createExpeditionKillLoot(killedMonster, effectiveLootMult, {
       roomType: pendingRoom?.type === "boss_battle" ? "boss"
         : pendingRoom?.type === "elite_battle" ? "elite" : "monster",
     });
@@ -1342,9 +1461,13 @@ export default function DungeonExpedition({
 
   if (phase === "floor_intro") {
     return (
-      <FloorIntro
+      <DungeonFloorIntro
         floorIndex={floorIndex}
         difficultyTier={difficultyTier}
+        family={family}
+        introKey={myId || "guest"}
+        hasSeen={introSeenFloors.includes(floorIndex)}
+        onSeen={() => setIntroSeenFloors(previous => previous.includes(floorIndex) ? previous : [...previous, floorIndex])}
         onStart={() => setPhase(floorIndex < 2 ? "grid" : "branch")}
       />
     );
@@ -1474,6 +1597,7 @@ export default function DungeonExpedition({
       <DungeonTreasureRoom
         difficultyTier={difficultyTier}
         family={family}
+        rewardMultiplier={Math.max(.5,1+(branchFloor?.route?.modifiers?.treasurePct||0)+(branchFloor?.route?.modifiers?.rarePct||0)+(branchFloor?.route?.modifiers?.collectiblePct||0))}
         onLoot={handleTreasureLoot}
         onClaim={() => { sfxDungeonClearResult(); showResult(true, 3); }}
       />
@@ -1481,6 +1605,20 @@ export default function DungeonExpedition({
   }
 
   if (phase === "battle" && pendingRoom?.monster && playerState) {
+    if (pendingRoom.encounter?.kind === "multi") {
+      return (
+        <Suspense fallback={<div className="min-h-[100dvh] bg-slate-950 text-slate-300 flex items-center justify-center">正在建立複數怪物遭遇…</div>}>
+          <MultiMonsterPartyRoom
+            roomId={pendingRoom.multiBattleRoomId}
+            dungeonMode
+            memberProfile={{ ...profile, id:myId }}
+            sharedData={{ cardData:cardColl }}
+            onLeave={handleAbandon}
+            onDungeonDone={({won,members,battle}) => handleBattleDone({ won, member:members?.[myId], battle })}
+          />
+        </Suspense>
+      );
+    }
     return (
       <>
       {/* 掉落倍率改顯示在樓層畫面的頂端狀態列（PlayerStatusBar），戰鬥中不再放浮動角標 */}

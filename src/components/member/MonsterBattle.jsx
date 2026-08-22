@@ -54,6 +54,8 @@ import { isMonsterExpansionEnabled } from "../../lib/monsterExpansionFeature";
 import { buildSoloExpansionReward, normalizeSoloRewardMaterials } from "../../lib/soloRewardEngine";
 import { claimMonsterBattleReward, flushPendingMonsterBattleRewards } from "../../lib/monsterRewardDb";
 import { getFreeHuntBattleMonster } from "../../lib/freeHuntCatalog";
+import { FREE_HUNT_DAILY_LIMIT, FREE_HUNT_QUOTA_MODE, getFreeHuntRemaining } from "../../lib/freeHuntQuota";
+import { consumeFreeHuntAttempt, freeHuntQuotaErrorMessage } from "../../lib/freeHuntQuotaDb";
 import { FREE_HUNT_FACES, FREE_HUNT_DISTANCES, getFreeHuntEnvironment } from "../../lib/freeHuntEnvironment";
 import { writeHuntBattleResume, clearHuntBattleResume } from "../../lib/huntBattleResume";
 import { createSyncingReceipt, normalizeBattleRewardReceipt } from "../../lib/battleRewardReceipt";
@@ -458,21 +460,26 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     const unsub = sharedData?.dexGrants === undefined ? subscribeDexGrants(profile.id, setDexGrants) : null;
     const unsubPotions = subscribePotions(profile.id, setPotionInv);
 
-    const cached_dcnt = ssGet("mb_dailyCfg");
-    if (cached_dcnt) {
-      setDailyMax(cached_dcnt.dailyMax||5);
-      checkMonsterDailyLimit(profile.id, cached_dcnt.dailyMax||5).then(left=>setDailyLeft(left));
+    if (huntMonsterId) {
+      setDailyMax(FREE_HUNT_DAILY_LIMIT);
+      setDailyLeft(getFreeHuntRemaining(profile, FREE_HUNT_QUOTA_MODE.SINGLE));
     } else {
-      getMonsterDailyConfig().then(cfg => {
-        setDailyMax(cfg.dailyMax||5);
-        ssSet("mb_dailyCfg", cfg);
-        checkMonsterDailyLimit(profile.id, cfg.dailyMax||5).then(left=>setDailyLeft(left));
-      }).catch(()=>setDailyLeft(5));
+      const cached_dcnt = ssGet("mb_dailyCfg");
+      if (cached_dcnt) {
+        setDailyMax(cached_dcnt.dailyMax||5);
+        checkMonsterDailyLimit(profile.id, cached_dcnt.dailyMax||5).then(left=>setDailyLeft(left));
+      } else {
+        getMonsterDailyConfig().then(cfg => {
+          setDailyMax(cfg.dailyMax||5);
+          ssSet("mb_dailyCfg", cfg);
+          checkMonsterDailyLimit(profile.id, cfg.dailyMax||5).then(left=>setDailyLeft(left));
+        }).catch(()=>setDailyLeft(5));
+      }
     }
 
     const unsubEvent = subscribeMonsterEventConfig(setEventConfig);
     return () => { unsub && unsub(); unsubPotions && unsubPotions(); unsubEvent && unsubEvent(); };
-  }, [profile?.id, sharedData?.certRecords, sharedData?.certification, sharedData?.dexConfig, sharedData?.dexGrants]); // eslint-disable-line
+  }, [profile?.id, profile?.freeHuntUsage?.date, profile?.freeHuntUsage?.single, huntMonsterId, sharedData?.certRecords, sharedData?.certification, sharedData?.dexConfig, sharedData?.dexGrants]); // eslint-disable-line
 
   useEffect(() => {
     if (isLimitedAccount || !profile || !certRecords) return;
@@ -725,13 +732,28 @@ export default function MonsterBattle({ onBack, isGuest = false, kidMode = false
     setBattleRuntimeSnapshot(null);
     battleEndHandledRef.current = false;
     shootingPerformanceSavedRef.current = false;
-    battleSessionIdRef.current = profile?.id && !isLimitedAccount
-      ? `monster_${profile.id}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-      : null;
-    // 記錄每日場次改成「背景執行、不 await」：這是一次 Firestore 寫入，網路偶爾很慢時
-    // 若 await 會把後面的進場（setPhase("battle_intro")）一起卡住，造成「按了開始挑戰卻無法進場」。
-    // 場次上限的檢查在按鈕出現前就做過了，這裡只是記錄，不需要擋住進場。
-    if (profile?.id && !questContext) { recordMonsterSession(profile.id).catch(()=>{}); setDailyLeft(l=>Math.max(0,(l||1)-1)); }
+    if (profile?.id && !isLimitedAccount) {
+      const freshBattleId = `monster_${profile.id}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      battleSessionIdRef.current = huntMonsterId ? (battleSessionIdRef.current || freshBattleId) : freshBattleId;
+    } else {
+      battleSessionIdRef.current = null;
+    }
+    if (huntMonsterId && profile?.id && !questContext) {
+      try {
+        const quota = await consumeFreeHuntAttempt({
+          memberId:profile.id, mode:FREE_HUNT_QUOTA_MODE.SINGLE, battleId:battleSessionIdRef.current,
+        });
+        setDailyMax(FREE_HUNT_DAILY_LIMIT);
+        setDailyLeft(quota.remaining);
+      } catch (error) {
+        window.alert(freeHuntQuotaErrorMessage(error, FREE_HUNT_QUOTA_MODE.SINGLE));
+        return;
+      }
+    } else if (profile?.id && !questContext) {
+      // 舊一般打怪仍沿用原本每日計數；自由狩獵改由上方 server quota 權威扣除。
+      recordMonsterSession(profile.id).catch(()=>{});
+      setDailyLeft(l=>Math.max(0,(l||1)-1));
+    }
 
     // ⚗️ 戰前喝藥：消耗藥劑、計算本場加成（只影響當場）
     const buffs = calcPotionBuffs(selectedPotions);

@@ -1,3 +1,23 @@
+## 訪客 Arcade 單人地下城：共用 presentation、獨立規則層（2026-08-22）
+- `ArcadeDungeonRun` 是訪客單人地下城 Local First controller；重用 `GridMapStage`、`BranchStage` 與五種 `localMode` 房 UI，但不重用學生 `DungeonExpedition` 的 `members.activeExpedition`、裝備、卡片、學生獎勵或 Firestore 戰鬥流程。
+- `ArcadeBattleScreenAdapter` 把共用 `BattleScreen` 降成 presentation/input shell：`externalBattle` 受控、`isolateStudentProgression` 關閉學生卡片／裝備來源、`hideLeaveControl` 關閉學生 standalone 離場；`arcadeBattle.resolveRound()` 是訪客唯一 combat authority。
+- 同行貓仍可參與訪客 resolver，但**不得**把 visitor cat 轉成學生貓戰鬥物件再傳給 `BattleScreen`，否則會雙重套用貓咪邏輯。
+- run-time state（HP、Buff、runCoins、inventoryDelta、visited/cleared rooms、branch step、pending battle）存 `adventureSession.runtime`；同 runId 必須精確 resume。
+- `expeditionGrid.generateGridFloor(floorIndex,tier,random=Math.random)` 新增 optional RNG；訪客 config 傳 seeded RNG 以鎖定地圖，其他既有學生 caller 不傳時行為完全維持原樣。
+- 永久 visitor progression 只在終局 `clear / retreat / defeat` 由 `applyArcadeSettlement` 冪等寫入 IndexedDB profile。中途返回大廳屬於 pause，不得把 runCoins／inventoryDelta 提前 bank。
+- 🌲 forest 2 層；🌙 moon 3 層；🔥 abyss 3 層。moon／abyss 最終層使用共用 `BranchStage` A/B/C 序列；abyss defeat 丟失未帶出金幣但仍給 XP。
+- 驗證：focused **6 suites / 30 tests**、Arcade **18 suites / 195 tests**、production build、scoped `git diff --check` 全通過。本次共享地下城改動尚未部署／commit／push。
+
+## 地下城單人複數遭遇：權威 claim snapshot barrier（2026-08-22）
+- 單人地下城的複數遭遇雖使用 `MultiMonsterPartyRoom` 戰鬥核心，但獎勵走專用 `claimDungeonMultiSoloReward`；Cloud Function 以 `members.activeExpedition.mapState.pendingRoom.multiBattleRoomId` 與 `pendingRoom.encounter.encounterId` 對照 `dungeonRooms/{battleId}`，作為本趟遠征的 anti-forgery 證據。
+- `activeExpedition` 的普通地圖移動仍採 **5 秒 trailing write** 節省 Firestore writes；但複數戰 identity 不可等 5 秒。房建立／啟動後，必須先把含 `multiBattleRoomId + encounterId` 的同一份 activeExpedition snapshot `flush` 成功，才能渲染戰鬥。
+- 不可用「移除 `dungeon_multi_run_mismatch`」處理同步問題。若 snapshot 寫入失敗，應阻止進場並清理剛建立的房；否則玩家會完成一場後端必定拒領的戰鬥。
+
+## 複數討伐 presentation / cosmetics（2026-08-20）
+- `MultiMonsterBattle`：進場顯示射手 `avatarId` 的 `PlayerAvatar`，並顯示 `equippedCat` 對應 `CatSVG`、名稱、類型與羈絆；主 HUD 同樣使用真實頭像／貓圖，不再以 emoji 代替角色外觀。
+- `MultiMonsterPartyRoom`：共享戰鬥資料仍只有 targets/member HP/submission/round 等權威狀態；背景、怪物圖片、party intro、角色列都是 presentation layer。玩家 cosmetic snapshot (`avatarId/catId/catName/catType/bondLv`) 只跟 waiting 階段原有能力同步一起更新，開戰後不做 cosmetic heartbeat/per-round writes。
+- 組隊畫面正式採「隊伍 HUD → 前後排怪物戰場 → 隊伍狀態 → 分數輸入」層級；不得為了動畫把完整 battle log 或逐幀資料寫回 Firestore。
+
 ## 自由狩獵：弓種加成（2026-08-13）
 - 最終倍率公式：`distanceMult × faceMult × bowMult`。
 - `bowMult`：裸弓 ×1、獵弓／複合弓 ×1、傳統弓 ×2；其他或缺值 ×1。
@@ -29,6 +49,26 @@
 - Free Hunt 單人即使共用 `MonsterBattle` 戰鬥核心，也禁止進 legacy `phase="select"`：勝敗結算「換對手」、戰鬥離開、模式返回都透過 `returnToOpponentSelection()`，有 `huntMonsterId` 時回 `FreeHunt`。
 - Free Hunt 組隊房的怪物真本是 `fixedHuntMonster`（由 `huntMonsterId/monsterSnapshot` 解析）；不讀 `drawnMonsters`、不重抽，也不讓 `challengeLevel` 決定 Free Hunt 開戰目標。
 - 架構決策：Phase 1 不把 solo 強制改成 Firestore room。未來若要真正統一底層，再把 solo 視為 `partySize=1` 的 hunt room；本階段先避免重寫穩定戰鬥核心。
+
+### 複數討伐戰（2026-08-19）
+- 玩家 HUD 常駐顯示戰鬥中的 **HP / ATK / DEF**。`getMultiMonsterPlayerStats()` 是 UI 與公式共用的有效值真本：`baseAtk/baseDef` 保留進場基準，暫時 `atkMult/defMult`、`atkFlat/defFlat` 與玩家 `statuses` 疊上後得到目前 ATK/DEF；`fear/atkDown` 降 ATK、`armorBreak/defDown` 降 DEF。技能只要改 battle state，React HUD 會跟著目前 state 更新；ATK/DEF 與基礎值不同時另顯示 `+/-` 差額。
+- 複數戰箭傷、玩家 ATK 型異常傷害與怪物反擊防禦都讀同一組 live stats；不可讓 HUD 顯示一個值、傷害公式卻繼續讀舊 profile 常數。
+- 入口直接位於 STEP 3「指定討伐怪物」標題下方；它是同一個族群／T 階的**群體遭遇入口**，不需要先點三張單怪卡中的任何一隻。單人按鈕只把 `{ family, tierIndex }` 交給父層；`MemberApp` 與教練射手模式 `AdminApp` 都統一轉成 `{ family, tier }` 並由 `page="multi-monster"` 渲染同一個 `MultiMonsterBattle`。
+- 複數入口固定提供 **⚔️ 單人討伐／🤝 建立隊伍／🔎 加入隊伍**。複數等待房用 `huntType="multi" + multiMonster=true + multiFamily + multiTier` 辨識；`filterPartyLobbyRooms(...,{huntType:"multi"})` 只列複數房，而既有單怪 Free Hunt join/create 明確排除 multi 房。
+- 複數組隊已改成專用 `MultiMonsterPartyRoom.jsx` + `multiMonsterPartyDb.js` + `multiMonsterPartyBattle.js`，**不進 `PartyBattleRoom`、不呼叫單怪 `processPartyRound()`**。房型仍以 `huntType="multi" + multiMonster=true + multiFamily + multiTier` 辨識，單怪／複數房永久維持兩套戰鬥契約。
+- 等待室最多 8 人，房主設定 3／6 箭。所有成員先把正式 `maxHp/baseAtk/baseDef` 與 `atkMult/defMult/atkFlat/defFlat/statuses` 同步進 room member；任一成員三圍尚未完成時 `startMultiMonsterPartyBattle()` 回 `member_stats_pending`，避免以預設能力值開戰。
+- 開戰 transaction 只生成一次共享 encounter：三隻前排＋0～2 符文柱、各怪獨立 variant，以及 `encounterSeed/targets/targetOrder` 都寫入 `partyRooms/{roomId}`。之後所有裝置只看這份權威狀態，不各自重抽怪物。
+- 每輪每位存活玩家只送自己的 `arrows + attackMode + targetId`。只有**目前 Firestore `room.hostId`** 能用 `expectedRound` transaction 結算；resolver 以 `encounterSeed + round` 的 deterministic RNG 執行，固定順序為 **所有玩家攻擊 → 所有存活符文各治療一次 → 每隻存活前排怪各反擊一次**。重複處理同一 round 只會得到 stale round。
+- 組隊集火為完整傷害；全員攻擊每箭對所有當下存活目標分別套 50%。若先出手隊員已擊倒後手原本的 focus target，後手會自動改鎖第一個存活目標。隊員卡固定以 `getMultiMonsterPlayerStats()` 顯示 Firestore 當下 HP／有效 ATK／有效 DEF，因此技能／狀態只要改 room state，所有裝置會同步看到變動。
+- 每輪只保存一份 bounded `lastResolution`（攻擊、扣血、擊倒、符文治療、怪反擊、隊員倒下與 before/after HP），不累積無界 log；重新整理時 `MemberApp` 用 `member_multi_monster_party_room`、`AdminApp` 用 `admin_multi_monster_party_room` 接回同一 room，再由 room status 決定等待／戰鬥／結果。
+- 主動離房若是房主，且房內仍有隊員，transaction 轉交 `hostId` 給下一位隊員；因此新房主能接續下一輪權威結算。**目前 v1 沒有 heartbeat／lease，所以房主瀏覽器直接崩潰或長時間斷網時不會自動 timeout 換房主。**
+- 多人勝利只看三隻非符文前排是否全倒；符文即使仍存活也不阻止勝利。獎勵採**每位參戰者自行請領**：對三隻倒下前排分別使用穩定 `roomId + targetId` battleId 呼叫現行 `claimMonsterBattleReward`，claim identity 再包含 memberId，因此不同玩家互不搶 claim；符文柱永遠不進獎勵。成功後個人 `rewardClaimed=true`，房主預設等全員領完才清房。
+- 前排固定生成該族／該 T 的 3 隻 `encounter=normal` 怪物；三隻各自獨立抽弱化／普通／強悍。後排另生成 0～2 根治療符文柱；符文柱有 HP、可被指定／AoE 攻擊、每回合治療存活前排，但不反擊且**沒有任何掉寶／EXP**。
+- 六箭可切「單一集火」與「全員攻擊」。集火維持完整傷害與原本溢傷；全員攻擊每箭對所有存活目標各自結算，最終傷害固定向下取整為集火的 50%。貓咪／羈絆攻擊仍維持單體，不跟著 AoE 擴散。
+- 所有致死來源（射箭、貓咪、異常、反傷）都必須先產生 `MONSTER_KILLED`，UI 才播放同一套約 1.15 秒擊倒 presentation；戰鬥引擎不能只把 `alive=false` 而略過死亡事件。
+- 勝利後只有三隻非符文怪可領獎：每隻使用獨立穩定 battleId 呼叫現行 `claimMonsterBattleReward`，固定 `mode=student / challengeLevel=standard`。弱化／普通／強悍是**戰鬥變體，不是掉寶難度**。
+- 三筆 claim 回執以 `aggregateMultiMonsterRewardClaims(defeated, claims, MONSTER_TIER_XP)` 合併金幣、素材、寶箱、卡片與射手 EXP；EXP 等權威掉落全部成功後才一次增加。若同步失敗，畫面提供重新同步；同一 mounted battle 的掉落 claim 使用後端冪等 claimId 防重複。
+- 結算頁必須顯示權威實際結果：金幣、射手 EXP、素材清單、寶箱與怪物卡；不可再使用本機自算的平行掉落公式。
 > 最後更新：2026-07-25（補記大富翁/裝備專精/殭屍三系統，實查原始碼；成本控制歸 ai-guide 鐵律）
 
 🔗 **在 Obsidian 中開啟**：`obsidian://open?vault=Obsidian%20Vault&file=catarrow%2Fgame-systems`

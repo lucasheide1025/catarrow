@@ -25,7 +25,7 @@ import {
 } from "./dungeonData";
 import { createOrdinaryChestLoot } from "./dungeonChestLoot";
 import { resolveWorldBossCardEffects } from "./worldBossCards";
-import { planDungeonRoundAbility, tickDungeonStatuses, getStatusStatMods } from "./dungeonAbilityRound";
+import { planDungeonRoundAbility, tickDungeonStatuses, getStatusStatMods, mergeDungeonPostRoundStatuses, nextDungeonMonsterAbilityState } from "./dungeonAbilityRound";
 import {
   mergeAllStatuses, mergeMonsterStatus, monsterStatMods, rollInflictForArrows, tickMonsterStatuses,
 } from "./monsterStatus";
@@ -33,6 +33,7 @@ import { mergeCombatStatus } from "./soloMonsterAbilityEngine";
 import { applyGlareToDamageBreakdown, applyIncomingHealing, deterministicStatusRoll, getPlayerStatusModifiers, resolveFamilyOrdinaryStatusForParty } from "./familyPlayerStatus";
 import { resolveFamilyModifiers } from "./monsterCards";
 import { consumeCatDeathGuard, getCatGuardAtkBonus, recordCatShieldAbsorption, resolveAuthoritativeCatRound } from "./catBattleEngine";
+import { stripUndefinedDeep } from "./firestoreSafeWrite";
 
 const D = "dungeonRooms";
 
@@ -591,7 +592,6 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
             message: `⚡ ${room.monster?.name || "怪物"} 發動「${abilityPlan.name}」，${members[id]?.name || "射手"} 受到 ${damage} 傷害！`,
           });
         }
-        for (const [id, statuses] of Object.entries(abilityPlan.statusesByMember)) abilityStatuses[id] = statuses;
         if (abilityPlan.monsterEffect.shieldHp > 0) monsterHP += abilityPlan.monsterEffect.shieldHp;
         miniRounds.push({
           miniRound: "ability", isCounter: false, isAbility: true,
@@ -677,16 +677,12 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       Object.fromEntries(aliveIds.map(id => [id, members[id].maxHP || 100])),
     );
     for (const [id, hp] of Object.entries(statusTick.memberHP)) memberHPNow[id] = hp;
-    const abilityStatusesAfter = { ...statusTick.statuses };
-    for (const result of familyStatusResults) {
-      if (!result.finalStatus) continue;
-      abilityStatusesAfter[result.targetId] = mergeCombatStatus(abilityStatusesAfter[result.targetId] || [], result.finalStatus);
-    }
-    const monsterAbilityStateAfter = abilityPlan?.monsterEffect.reductionDuration > 0
-      ? { reductionPct: abilityPlan.monsterEffect.reductionPct, reductionDuration: abilityPlan.monsterEffect.reductionDuration }
-      : (monsterAbilityStateBefore?.reductionDuration > 0
-        ? { ...monsterAbilityStateBefore, reductionDuration: monsterAbilityStateBefore.reductionDuration - 1 }
-        : null);
+    const abilityStatusesAfter = mergeDungeonPostRoundStatuses(
+      statusTick.statuses,
+      abilityPlan?.statusResultsByMember || {},
+      familyStatusResults,
+    );
+    const monsterAbilityStateAfter = nextDungeonMonsterAbilityState(monsterAbilityStateBefore, abilityPlan?.monsterEffect);
 
     // Step 5b：更新成員 HP（含復活符 + 前後衛死亡邏輯）
     // 先快照各人的顯示分組（動畫播放期間讓客戶端知道回合開始前的位置）
@@ -860,10 +856,11 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       nextMods.dynamicDefMult = Math.max(0.7, 1 + diffAdj * 0.5);
     }
 
-    await updateDoc(doc(db, D, roomId), {
+    const safeLogEntry = stripUndefinedDeep(logEntry);
+    await updateDoc(doc(db, D, roomId), stripUndefinedDeep({
       ...memberUpd,
       monsterHP, monsterStatuses, round: round + 1,   // ☠️ 異常帶到下一回合
-      log: arrayUnion(logEntry),
+      log: arrayUnion(safeLogEntry),
       result, status: newStatus,
       pendingDungeonNextStatus,
       processing: false,
@@ -877,7 +874,7 @@ export async function processDungeonRound(roomId, room, calcDmgFn, calcCtrFn) {
       ...(pendingDungeonNextStatus === "path_select"
         ? { pathOptions: generatePathOptions(), chosenPath: null }
         : {}),
-    });
+    }));
 
     return { ok:true, won:monsterHP <= 0, lost:result === "lose" };
   } catch (e) {

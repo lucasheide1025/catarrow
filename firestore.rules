@@ -421,7 +421,14 @@ service cloud.firestore {
 
     // partyRooms / partyConfig：登入者可讀寫
     match /partyRooms/{docId} {
-      allow read, write: if isLoggedIn();
+      allow read, create: if isLoggedIn();
+      allow delete: if isLoggedIn()
+        && resource.data.get("combatVersion", 1) != 2;
+      // v2 multi-monster rooms are server authoritative after combat starts.
+      // Admin SDK callables bypass rules; clients retain subscription access.
+      allow update: if isLoggedIn()
+        && resource.data.get("combatVersion", 1) != 2
+        && request.resource.data.get("combatVersion", 1) != 2;
     }
     match /partyConfig/{docId} {
       allow read:  if isLoggedIn();
@@ -466,6 +473,23 @@ service cloud.firestore {
 
     // guestSessions：訪客戰鬥，免登入可讀寫（3小時過期）
     match /guestSessions/{docId} {
+      allow read, write: if true;
+    }
+
+    // arcadeRooms：訪客冒險組隊房間（M3）。免登入（跟 guestSessions 同取捨），
+    // 5 位數房間碼就是鑰匙，6 小時過期（expiresAt）；房內只有身分＋每回合分數，
+    // 沒有經濟資料——金幣一律寫回各人本機 visitorProfile（Local First）。
+    match /arcadeRooms/{roomCode} {
+      allow read, write: if true;
+
+      // 射手競技場 submission 也使用本 collection 的固定 top-level `DUELSUB_*` 文件。
+      // 每位玩家整場固定一顆、每回合覆寫；不含完整 profile／經濟資料，不需要子集合規則。
+    }
+
+    // arcadeProfiles：訪客冒險雲端保存（M1）。免登入，visitorId 為 key。
+    // 資料內容：nickname / coins / inventory / statistics / teamStats / catLevel / achievements…
+    // 衝突解決：lastPlayedAt 時戳新者勝（前端合併），同一 visitorId 只有一份。
+    match /arcadeProfiles/{visitorId} {
       allow read, write: if true;
     }
 
@@ -555,6 +579,10 @@ service cloud.firestore {
     match /websiteContent/{pageId} {
       allow read, write: if isAdmin();
     }
+    // 官網賽事成果原始資料：只供管理者維護；公開網站使用靜態匯出，不匿名讀 Firestore。
+    match /websiteCompetitionResults/{resultId} {
+      allow read, write: if isAdmin();
+    }
     match /publicWebsiteContent/{pageId} {
       allow read: if true;
       allow write: if isAdmin()
@@ -579,9 +607,15 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // dungeonRooms：地下城多人房間，登入者可讀寫
+    // dungeonRooms：legacy rooms keep the existing client flow. Once a v2
+    // multi battle starts, only Admin SDK callables may mutate authority state.
     match /dungeonRooms/{roomId} {
-      allow read, write: if isLoggedIn();
+      allow read, create: if isLoggedIn();
+      allow delete: if isLoggedIn()
+        && resource.data.get("combatVersion", 1) != 2;
+      allow update: if isLoggedIn()
+        && resource.data.get("combatVersion", 1) != 2
+        && request.resource.data.get("combatVersion", 1) != 2;
     }
 
     // villageBoardRooms：貓貓村大富翁組隊房間，登入者可讀寫

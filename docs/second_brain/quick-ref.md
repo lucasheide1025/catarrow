@@ -1,3 +1,128 @@
+## 🐛 Arcade Dungeon `visitedIds` 型別邊界（2026-08-22）
+- `arcadeDungeonRunLogic` 的 `visitedIds/clearedIds` 保持 **Array**，因為會持久化到 `adventureSession.runtime`，並可能走 JSON localStorage fallback。
+- 共用 `GridMapStage/DungeonMapView` 的 `visitedIds` 契約是 **Set**，會呼叫 `.has()`；`ArcadeDungeonRun` render adapter 必須轉成 memoized `visitedIdSet` 再傳入。
+- 不要把 visitor runtime 改成 Set，也不要放寬學生地下城共用元件；持久化型別與 presentation 型別在 adapter 邊界轉換。
+
+## 🗺️ 訪客 Arcade 單人地下城共用 UI（2026-08-22）
+- 主控制器：`src/arcade/ArcadeDungeonRun.jsx`；純 runtime：`arcadeDungeonRunLogic.js`。訪客仍是 Local First，永久資料不寫學生 `members`，也不做永久 visitor Firestore profile sync。
+- Presentation 共用：`GridMapStage`／`BranchStage`；重量房 `DungeonShop`／`DungeonTrap`／`DungeonEvent`／`DungeonChest`／`DungeonRest` 一律 `localMode`。
+- 戰鬥共用：`ArcadeBattleScreenAdapter → BattleScreen`。Arcade 固定 `externalBattle + isolateStudentProgression + hideLeaveControl`，**傷害／貓技能／訪客卡片只由 `arcadeBattle.resolveRound()` 計算**；不要再把學生 cat/cards/equipment authority 塞回 `BattleScreen`。
+- 本趟 HP／Buff／金幣／地圖／清房狀態存在 IndexedDB `adventureSession.runtime`；同 `runId` reload／接管要直接 resume，不重抽地圖。
+- 訪客 `generateGridFloor` 使用 optional seeded RNG；shared `expeditionGrid` 預設仍 `Math.random`，所以學生地下城不受影響。
+- 終局唯一永久寫入點：`clear / retreat / defeat → buildArcadeDungeonSettlement → applyArcadeSettlement`；settlement id=`${runId}:dungeon` 冪等。途中「返回」只暫停並保留 session，不 bank 戰利品。
+- 樓層：forest=2；moon=3；abyss=3。moon/abyss 最終層共用 A/B/C `BranchStage`。abyss defeat：本趟未帶出金幣=0，但 XP 仍發放。
+- 驗證：focused **6/30**、全 Arcade **18/195**、production build、scoped diff-check 全 PASS。狀態：本機完成，這批新 shared-dungeon 改動未 deploy / commit / push。
+
+## ⚔️ 地下城單人複數 reward identity（2026-08-22）
+- Server：`functions/index.js::claimDungeonMultiSoloReward` 驗證 `members.activeExpedition.mapState.pendingRoom.multiBattleRoomId === battleId`，且 `pendingRoom.encounter.encounterId === dungeonRooms/{battleId}.encounter.encounterId`；不吻合回 `dungeon_multi_run_mismatch`。
+- Client：`DungeonExpedition.jsx` 一般 activeExpedition 仍由 `queueActiveExpeditionProgress` 做 5 秒 trailing write；唯獨建立單人複數地下城房後，會用同一 activeExpedition payload builder 帶入新 `pendingRoom`，再 `queue + await flushActiveExpeditionProgress(myId)`，成功後才進 battle。
+- 除錯規則：看到 `dungeon_multi_run_mismatch` 先比對 **Firestore member.activeExpedition pendingRoom vs dungeonRooms battleId/encounterId**；不要先改 CORS、掉寶或放寬 Cloud Function 驗證。
+
+## 🔌 訪客 Arcade 組隊斷線恢復／房號加入（2026-08-21）
+
+- 入口：`ArcadeApp.jsx` 大廳可輸入 5 位房號；QR 深連結照舊。
+- `ArcadeTeam.jsx`：`joinCode` = 尚未驗證的輸入；`roomCode` = 已通過權威確認、才允許掛 snapshot 的房間。不要把兩者合回同一 state，否則 outsider 輸入 active 房號時會先訂閱到不該看的房。
+- `arcadeTeamLogic.js`：`normalizeRoomCode()`、`decideTeamRoomEntry()`、`resumeArrowsForRoom()` 是共用純邏輯。
+- `arcadeTeamDb.js/getTeamRoom()`：**null 只代表確認不存在**；network/Firestore error 必須 throw，呼叫端才能保留 IndexedDB resume。
+- 加入：waiting outsider → join；active 原隊員 → reconnect；active outsider → reject；原隊員 result/defeat 在房間保留期內仍可返回看結算。
+- 本機箭：same round 恢復；remote round advanced 則丟舊 arrows。權威 room 尚未載入前不要用 round=0 覆寫 resume。
+- `onSnapshot` error 留在原畫面，不清房；人工「重新同步」才做單次 `getTeamRoom()`，禁止新增 polling。
+- 房號在 waiting / fighting / route / result / defeat 常駐顯示。
+- 驗證：Arcade 11 suites / 155 tests PASS；production build PASS。
+
+## 🎭 複數討伐角色外觀／組隊戰場 UI（2026-08-20）
+- 單人 `MultiMonsterBattle` 的進場與 HUD 不再用 `🏹/🐱` 佔位：射手固定讀 `members.avatarId → PlayerAvatar`，同行貓讀 `members.equippedCat → useCatCompanion(profile) → CatSVG`，教練射手模式也必須傳 resolved member profile，避免誤讀 auth profile。
+- 組隊 `MultiMonsterPartyRoom` 等待室既有能力同步 transaction 會一起保存 `avatarId/catId/catName/catType/bondLv`；這些只是 cosmetic snapshot，**只在 waiting 同一筆角色同步寫入，沒有新增每回合 Firestore writes**。
+- 組隊 active UI 使用 `getBattleBackgroundUrl(multiFamily)`、`getBattleMonsterSources(monster.id)`、PlayerAvatar/CatSVG：包含 party intro、三前排＋後排符文戰場、round/arrows/mode HUD、隊伍頭像列與角色 HP 卡。intro/timer/演出完全 local-only，不進 Firestore。
+
+## ⚔️ 複數討伐組隊同步 v1（2026-08-20）
+- UI：`src/components/battle/MultiMonsterPartyRoom.jsx`；Firestore adapter：`src/lib/multiMonsterPartyDb.js`；純權威 resolver：`src/lib/multiMonsterPartyBattle.js`。
+- 仍使用既有 `partyRooms`，只接受 `huntType="multi" + multiMonster=true`。**絕對不要把 multi room 丟進 `PartyBattleRoom`／`processPartyRound()`**；單怪自由狩獵契約不動。
+- room 核心欄位：`status(waiting|active|victory|defeat|completed)`、`hostId`、`multiFamily/multiTier`、`encounterSeed`、`round`、`arrowsPerRound`、`targets` map、`targetOrder`、`members` map、bounded `lastResolution`。
+- member 戰鬥欄位：`hp/maxHp/baseAtk/baseDef/atkMult/defMult/atkFlat/defFlat/statuses/alive/ready/submission/rewardClaimed`，另保留自己的 `huntDistanceM/huntTargetFmt/bowType`。等待室開始前要求所有 member 已有正式 `maxHp/baseAtk/baseDef`；否則 `member_stats_pending`，房主不能開戰。
+- 開戰：房主 transaction 以 `generateMultiMonsterEncounter` 只建一次「同族同 T 三前排＋0～2 治療符文」，並持久化 deterministic `encounterSeed`。所有客戶端訂閱同一份 targets/member HP。
+- 送箭：每人只寫自己的 `arrows + attackMode(focus|all) + targetId`；3／6 箭為整房共用且只有房主等待室可改。權威 resolver 只認當下 `room.hostId`，用 `expectedRound` transaction 防重複，seed=`encounterSeed + round`。
+- 每輪順序固定：**所有玩家攻擊 → 符文治療一次 → 存活前排怪反擊**。focus 100%；all 每箭對各存活目標 50%；focus 目標若已被前一名玩家擊倒會改鎖第一個存活目標。隊員 HP／有效 ATK／有效 DEF 用 `getMultiMonsterPlayerStats()` 即時顯示。
+- 重連：會員 session key=`member_multi_monster_party_room`；教練射手模式=`admin_multi_monster_party_room`。刷新後重新訂閱 room 即恢復。主動房主離開會把 `hostId` 交給下一位；**v1 尚未做 crash/斷網 heartbeat timeout 自動換房主**。
+- 勝利／獎勵：勝利只看三隻前排；符文不算。每位玩家自行 claim 三隻倒下前排，stable battleId=`roomId + target instanceId`，現行 claim identity 另含 memberId，所以每人可各領一份；符文永遠 0 獎勵。個人領完寫 `rewardClaimed`，房主預設等全員領完才關房。
+
+## 💰 會計自訂金額／預約課次結帳綁定（2026-08-20）
+- 會計 UI：`src/components/admin/BillingSystem.jsx`。方案仍用 `bookingPricing` 自動帶標準價，但 `amountInput` 可手動修改；`parseBillingAmount()`（`src/lib/billingAmount.js`）只接受 0～10,000,000 的 TWD 整數。真正寫入 `billingRecords.finalPrice` 的是驗證後 `chargedAmount`，不是重新計算的方案價。
+- Booking ↔ checkin/billing matcher：`src/lib/bookingCheckoutLink.js`。核心原則：**`classEnded` 是一筆課次的狀態，不代表同 member 同日所有 booking 都已下課。**
+- `checkinMatchesBooking()`：有 `checkin.bookingId` 時只認 `booking.id` 精確相等；legacy 無 bookingId 時，只認 booking 自己已保存的 `booking.checkinId === resolvedCheckinId`，不允許拿 `${memberId}_${date}` 臨時計算值污染新 booking。
+- `billingRecordMatchesBooking()`：優先 `record.bookingId === booking.id`；legacy `record.checkinId` 只有 booking 自己也已有同一 `checkinId` 才算同一課次。
+- `AdminBooking.openCheckout(booking,false)`：沒有該 booking 精確／安全匹配且 `classEnded=true` 的 checkin → 顯示提示後 return；**不能自動改成 force checkout**。`openCheckout(booking,true)` 仍是教練明確使用的「⚡ 強制結帳」。
+- `completeBookingForMemberOnDate()`：checkin 有 bookingId → 只回寫該 booking；legacy 用 `selectLegacyBookingForCheckin()`，只有 persisted checkinId、報到時間、目前時間或單一候選能唯一判定時才連動，沒有唯一答案就不猜。
+- 驗證：focused **4 suites / 18 tests PASS**；production build PASS。2026-08-20 已部署 `catarrow-6iuk9vhox-broudes-1864s-projects.vercel.app`（Ready），`student.catgroup.com.tw` 已確認指向此版、HTTP 200、主 bundle=`main.0f3b697a.js`；`2798.6f9a62d8.chunk.js`（會計自訂金額）與 `3990.38a532e4.chunk.js`（課次結帳隔離）和本機 verified build SHA-256 完全一致。未 deploy Firebase Rules / Functions，未 commit / push。
+
+## 🎫 下課結算／月卡後台審核（2026-08-19）
+- 共用 UI：`src/components/member/ClassEndSettlementModal.jsx`；首頁 `MemberHome` 與練箭 `DailyQuest` 都使用。點下課固定顯示今日累積箭數、下課箭露預覽、里程碑獎勵、月卡剩餘時數；月卡選項只有 0／1／2 小時。
+- 月卡使用流程：0h＝直接下課、不送申請；1/2h＝`submitMonthlyCardRequest()` 建立 `monthlyCardRequests status=pending`，**前台不直接扣卡**。已有 pending 或剩餘時數不足時不能重複送。
+- 權威下課：`src/lib/db.js::submitClassEnd(memberId, checkinDocId)` 永遠不修改 `monthlyCard`；只結束 checkin、增加 `dailyQuestCount/eventPoints`，既有 rush／箭露／里程碑結算維持原流程。
+- 後台核准：`approveMonthlyCardRequest()` 用同一 Firestore transaction 原子完成 `monthlyCard.sessions - hours`、request approved、`monthlyCardLogs action=use_approved`，避免雙核准或負數 race。教練帳號切射手模式與一般學生相同，選 1/2h 後先出現在後台待審核。
+- 後台手動扣除：`AdminMonthlyCard` 的「➖ 扣除次數」可扣 1/2 次；`deductMonthlyCardSessions()` 用 transaction 防負數並留下 `monthlyCardLogs action=admin_deduct`。1 session = 1 小時。
+- 首頁固定月卡卡片顯示剩餘 X 小時、到期日、剩餘天數；有效狀態文案為「可申請扣抵」。
+- Rules：正式射手自己的 member update 不再允許改 `monthlyCard`；`monthlyCardRequests` 登入者可 create，admin 才能 update/delete。
+- 驗證：本功能 targeted **5 suites / 18 tests PASS**；Vercel production build `Compiled successfully`。2026-08-19 已部署 `catarrow-2g5dn3kbg-broudes-1864s-projects.vercel.app`，`student.catgroup.com.tw` alias 已切至此版；正式站 HTTP 200，bundle=`main.5cb251c5.js`。`firestore.rules` 已明確部署到正式 Firebase project `catgroup-8d0bb`。**未 commit / push。**
+
+## 🎯 訪客 Arcade 單人戰鬥 presentation／BOSS 輸入（2026-08-18）
+- **HUD 身分**：玩家主名稱固定 `profile.nickname`；`cat.name` 只能作同行貓副標，不可再當玩家名稱。
+- **6 箭逐箭**：`ArcadeAdventure.attack()` 仍只做 1 次 `resolveRound()`；之後用 `arrowPresentation` 依序播 6 組 flight/impact。前 5 箭不改權威 HP，第 6 箭才套 `r.monsterHp/r.dmg`。這是 presentation，不是 6 次戰鬥結算。
+- **BOSS 音效**：通用 battle intro effect 在 `isBossFight || monster.ability === "boss"` 時直接 skip；BOSS 只走 `BossEntrance` 世界王登場聲與 750ms 後怒吼。
+- **正式擊倒層**：`killBurst` 保存 `{name,image,damage,rounds,boss}` 快照；`arcade-knockdown-overlay` 播約 3 秒「閃白→怪物失色→擊倒印章→擊倒標題→戰績」，之後才 `victory_fanfare → afterVictory`。
+- **BOSS 靶面**：平常只顯示 `arcade-boss-score-launcher`；`targetOpen` 才顯示 `arcade-target-overlay` 全螢幕 BossTarget。關閉／完成輸入不 submit；6 箭未滿時攻擊按鈕 disabled。
+- 回歸測試：`src/arcade/arcadeSoloPresentation.contract.test.js`。驗證：Arcade **11 suites / 149 tests**；全專案 **235 suites / 2532 tests**；production build PASS。狀態：**本機完成，尚未 deploy / commit / push**。
+
+## 🔊 訪客 Arcade 音效時序原則（2026-08-18）
+- **輸入音 immediate**：`ArcadeArrowInput.pick()` 與 `ArcadeTarget.commit()` 在有效輸入成立後立即 `sfxTap()`；無效／disabled／已填滿不應發聲。批次快填、撤回、清空一次操作只播一次。
+- **戰鬥音綁 presentation stage**：`attack=arrow_flight` → `impact=arrow_hit` → `kill=monster_death` → `settle=victory_fanfare`；失敗聲要和真正顯示失敗／結算的節點一致。不要因 Firestore／React state 已先更新就提前播。
+- **禁止雙重勝利聲**：`playBattleSound("victory_fanfare")` 本身已會呼叫勝利 SFX，旁邊不可再加 `sfxVictory()`。
+- **送分不是獎勵**：Team／Duel 成功 submit 使用 `sfxSuccess()`；`sfxCoinDrop()` 只屬於真正取得金幣／寶箱獎勵。
+- **BOSS 過場**：王現身立即 `sfxWorldBossAppear()`；招式／怒吼約 **750ms** 後才 `sfxBossUlt()`，並清理 timeout，避免換頁後殘響。
+- **寶箱只開一次**：由 `phase === "chest"` 畫面進場統一播放 `sfxOpenChest()`；不要在前一個 route action 再先播一次。
+- 回歸測試：`src/arcade/arcadeSoundTiming.contract.test.js`。驗證：Arcade 10 suites / 144 tests；全專案 234 suites / 2527 tests；production build PASS。2026-08-18 已部署 `catarrow-kt0oy5pzb-broudes-1864s-projects.vercel.app`（`dpl_ARXuTfLHHKyPCqpt4LcVSybPycr1`，Ready），`student.catgroup.com.tw` alias 已確認指向此版且 `?arcade` HTTP 200；未 commit / push。
+
+## 🎬 訪客 Arcade 戰鬥 presentation / 防卡（2026-08-18）
+- **手動重新同步**：`ArcadeTeam.handleResync()`；按一次才 heartbeat + `getTeamRoom(roomCode)` **1 read**，沒有 polling。清本機 timer/fx/resolution 後用權威 room 覆蓋；若 fresh `lastResolution` 存在，將 `resRoundRef` 回退 1 讓最新回合重播。
+- **最後一擊不得跳演出**：`presentationPending = unread lastResolution || resolution`；`route/result/defeat` 都需 `!presentationPending` 才能 render。`lastResolution.monsterHpBefore + monsterSnapshot` 鎖住被擊敗怪物，不會在下一關已寫入時顯示錯圖。
+- **單人 lethal pipeline**：attack → impact → cat（若有）→ counter/monster reaction → `kill` → `settle` → afterVictory；第一回合秒殺照播。普通怪與 BOSS 都有 `💥 擊破！` overlay／死亡或 fall 動畫。
+- **組隊 sequential pipeline**：`lastResolution.perPlayer` 依 roster 順序 A→B→C…；每人各自 arrow flight → impact → 個人漂浮傷害 → presentation HP 扣血。就算 A 已視覺擊殺，也播完同一權威回合的 B/C。普通怪個人傷害總和必須精確等於 team dmg。
+- **射擊表現**：命中=`score>=5`；命中率=`hits/shots`；穩定性=`clamp(100 - stdDev/5*100,0,100)`；平均每箭；展示評價 S>=85/A>=72/B>=58/C。與遊戲通關 grade / coin multiplier 分離。
+- **誇獎詞**：`ARCADE_PRAISE_LINES` 剛好 20 條唯一繁中句子，S/A/B/C 各 5 條，依成績＋seed 決定固定一句。
+- **雲端成本**：單人 raw shot history 不上傳；組隊只留 `shots/hitCount/scoreSqSum` aggregates，`roundArrows` resolve 後清空。重新同步平常 0 read，只有玩家手動按才 +1 room read。
+- 驗證：Arcade 9 suites / 139 tests；全專案 233 suites / 2522 tests；production build PASS。狀態：**2026-08-18 已重新部署 Vercel production** `catarrow-b64t6vbeh-broudes-1864s-projects.vercel.app`（Ready），`student.catgroup.com.tw` alias 已確認指向此版；未 commit / push。
+
+## 👹 訪客 Arcade 怪物／世界王 identity（2026-08-18）
+- 普通怪 gameplay id 保持舊版相容，但名稱＋圖片由同一 `sourceMonsterId` 綁定：`goblin→temple_1 哥布林`、`beetle→insect_1 大蟑螂`、`wolf→temple_3 狼人`、`turtle→temple_2 骷髏劍士`、`ghost→ghost_1 鏡幕幽姬`；圖片固定 `/monsters/<sourceMonsterId>.webp`。
+- 單人三種 BOSS identity 直接讀 `src/lib/worldBossData.js::WORLD_BOSSES`：貓森 `forest_boss_small`＝山魈頭領／`forest_boss.webp`；月夜 `western_boss_small`＝狼人首領／`western_boss.webp`；深淵 `ghost_boss`＝怨靈大君／`ghost_boss.webp`。
+- 訪客 BOSS 只借名稱／稱號／描述／pixelKey 外觀；**學籍正式世界王 HP/ATK/DEF 完全不修改**。訪客三王 HP=115、DEF=1、ATK=5/6/7。
+- 新手平衡：`BOSS_INTERRUPT=36`；弱點圈基礎 bonus `1.35`；完全沒中弱點仍保留 `0.8` 傷害。6 箭平均 5 分＝30 分／回合時，每回合 23 傷，三王均第 5 回合擊敗且玩家存活。
+- 驗證：8 張引用圖存在；Arcade 131/131；全專案 231 suites / 2514 tests；production build PASS。狀態：**本機完成，尚未重新 deploy / commit / push**。
+
+## ⚔️ 訪客 Arcade 射手競技場（2026-08-18）
+- 入口：`?arcade` Hub →「射手競技場」；QR 直連 `?arcade&duel=XXXXX`。最多 8 人。
+- 模式：`duel`=2 人、`ffa`=3～8 人、`team`=4/6/8 人；3 箭 MaxHP 80、6 箭 MaxHP 130。10=15 傷、X=20 傷；圍攻保護 1/0.85/0.70/0.55。
+- 核心：`src/arcade/arcadeDuelLogic.js`（純函式）／`ArcadeDuel.jsx`（UI）／`arcadeDuelDb.js`（最小雲端協調）。倒下後改 `spirit`，仍可射箭支援。
+- **成本鐵律**：逐箭與 PvP 生涯不進 Firestore；每位玩家每回合只覆寫 `arcadeRooms/DUELSUB_<code>_<sessionKey>_<encodedVisitorId>` 一顆固定小摘要。只有房主對房內 2～8 顆固定 submission 文件掛 exact-doc listeners，且 roster 不變時跨回合持續使用；其他手機只訂閱 parent room。房主收齊後 parent 只寫一次結果。沒有 heartbeat。
+- submission 不存 raw arrows／完整 visitorProfile；結束依 `room.players` 已知 id 批次 delete，**0 cleanup reads**。
+- 每個新競技場會建立隨機 `sessionKey`；submission docId 同時含房號＋sessionKey＋visitorId，所以 5 位房號未來重複使用也不會讀到舊回合。沒有 sessionKey 的短暫舊房保留 legacy docId fallback。
+- 本機斷線恢復：`arcadeDb.js` 的 `load/save/clearCurrentDuelRoom()`；保存房號、round、未送箭、target、本場統計、已看 resolution 等。
+- PvP 生涯：`profile.duelStats` 僅本機；`profileForCloud()` 必須在 `arcadeProfiles` 上傳前剝除，`mergeRemoteProfile()` 只為防雲端合併洗掉本機值。
+- 房主 lease 5 分鐘；回合 4 分鐘可 force resolve，缺席視 0；戰鬥中離開標 forfeited/spirit，避免卡房。
+- Firestore Rules：submission 改用既有 `arcadeRooms` collection 的 `DUELSUB_*` top-level 文件，直接沿用正式環境既有 `arcadeRooms` 規則，不需要新增子集合 rule。2026-08-18 已用匿名 production client 實測 write + delete 成功。
+- 驗證：Arcade 128/128；全專案 231 suites / 2511 tests；production build PASS。2026-08-18 已部署 Vercel production 並把 `student.catgroup.com.tw` alias 指向 `catarrow-k4b2e8eaj-broudes-1864s-projects.vercel.app`；未 commit / push。
+
+## 官網賽事成果快速參考（2026-08-17）
+- Admin UI：`src/components/admin/AdminWebsiteCompetitions.jsx`（由 `AdminWebsiteCms.jsx` 掛載）
+- Firestore：`websiteCompetitionResults`，只給 admin 讀寫；官網不直讀。
+- 公開快照：`website/assets/competition-results.json`；產生器：`scripts/website/generate-competition-pages.cjs`；指令：`npm run website:competitions`。
+- 公開頁：`website/competitions/index.html`、`website/competitions/<slug>/index.html`；首頁 runtime：`website/assets/competition-results-runtime.js`。
+- 隱私：`linkedMemberId` 僅內部，public sanitizer 一律剝除；Email/電話不自動帶入。
+- 一鍵正式發布：後台「發布到正式官網」→ `asia-east1` callable `publishCompetitionWebsite` → admin 驗證 → 重新讀 `websiteCompetitionResults` → server-side sanitizer → 產生 `/competitions`、runtime、sitemap → Vercel REST API 建立 `catarrow-archery` production deployment。
+- Vercel 憑證：Firebase Secret Manager `CAT_ARCHERY_VERCEL`，值為 JSON `{"token":"...","teamId":"...","projectName":"catarrow-archery"}`；絕不可寫入 repo 或前端。
+- Functions 部署前：`firebase.json` predeploy 自動執行 `npm run website:publisher:prepare`，把最新 `website/` 與 generator 複製到 gitignored 的 `functions/website-template/`、`functions/website-publisher-tools/`。
+- JSON 匯出仍保留作緊急 fallback。程式已完成；首次啟用前仍需設定 Secret 並部署 `publishCompetitionWebsite` Function。
+
 ## 自由狩獵弓種倍率（2026-08-13）
 - `freeHuntEnvironment.js` 最終倍率 = **距離倍率 × 靶紙倍率 × 弓種倍率**。
 - 裸弓 `recurve_bare` ×1、獵弓／既有複合弓 `compound` ×1、傳統弓 `traditional` ×2；`recurve_full` 與未知/舊資料回退 ×1。

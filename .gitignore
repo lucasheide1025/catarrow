@@ -63,3 +63,6 @@ build-prepared-shop-hotfix.mjs
 # Local AI/tool state �X never commit
 .coding-tools/
 .claude/settings.local.json
+# Generated Firebase competition website publisher bundle
+functions/website-template/
+functions/website-publisher-tools/

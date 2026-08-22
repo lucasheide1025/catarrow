@@ -12,7 +12,7 @@ import {
   resetPartyRoom, sendPartyCheer, clearPartyProcessing,
   applyPartyCarryPotion, applyPartyUtilityPotion, updatePartyMemberHuntEnvironment,
 } from "../../lib/partyDb";
-import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, useCoinShopSpecialTicket, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs, addArrowdew, addArcherXP, recordPotionUsed, addRoundArrows, recordGuestBattleStats, finalizeGameShootingSession, addPartyDamage } from "../../lib/db";
+import { subscribePotions, usePotions, checkPartyBattleLimit, recordPartyBattleSession, useCoinShopSpecialTicket, addCoins, addMaterials, addMonsterCard, recordBattleDex, subscribeCardCollection, addChests, addPracticeLog, subscribePracticeLogs, addArrowdew, addArcherXP, recordPotionUsed, recordBattleRoundArrows, recordGuestBattleStats, finalizeGameShootingSession, addPartyDamage } from "../../lib/db";
 import { MONSTER_TIER_XP, PARTY_XP_MULT, PARTY_BONUS_CHEST_CHANCE, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_TIER_XP } from "../../lib/catLevel";
@@ -51,6 +51,8 @@ import { isMonsterExpansionEnabled } from "../../lib/monsterExpansionFeature";
 import { SOLO_CHALLENGE_LEVELS, getPartyChallengeProfile } from "../../lib/monsterExpansionAdapter";
 import { getFreeHuntBattleMonster } from "../../lib/freeHuntCatalog";
 import { FREE_HUNT_FACES, FREE_HUNT_DISTANCES, getFreeHuntEnvironment, getPartyMemberFreeHuntEnvironment } from "../../lib/freeHuntEnvironment";
+import { FREE_HUNT_QUOTA_MODE, getFreeHuntRemaining } from "../../lib/freeHuntQuota";
+import { consumeFreeHuntAttempt, freeHuntQuotaErrorMessage } from "../../lib/freeHuntQuotaDb";
 import { buildBattleStatProvenance } from "../../lib/battleStatProvenance";
 import { createSyncingReceipt, normalizeBattleRewardReceipt } from "../../lib/battleRewardReceipt";
 import HuntBattleReport from "../battle/HuntBattleReport";
@@ -231,7 +233,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     onSubmitError: (reason) => { alert("送出失敗，請重試（" + reason + "）"); },
     onSubmitSuccess: (submittedArrows) => {
       if (myId && Array.isArray(submittedArrows) && submittedArrows.length > 0) {
-        addRoundArrows(myId, submittedArrows.length, { accountType: profile?.accountType || "official" }).catch(() => {});
+        recordBattleRoundArrows({ memberId:myId, battleId:roomId, round:room?.round || 1, count:submittedArrows.length, accountType:profile?.accountType || "official" }).catch(() => {});
       }
     },
   });
@@ -310,6 +312,8 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
   const [cardCollectionVersion, setCardCollectionVersion] = useState(0);
   const [equipSpecSlots, setEquipSpecSlots] = useState(null);
   const partyRecordedRef  = useRef(false); // 每日次數記錄（只記一次）
+  const freeHuntStartIdRef = useRef(null);
+  const previousRoomStatusRef = useRef(null);
   const dexRecordedRef    = useRef(false); // 圖鑑記錄（每場只記一次）
   const lossPracticeRecordedRef = useRef(false);
   const autoClaimFiredRef = useRef(false); // 自動領取寶箱（每場只觸發一次）
@@ -349,6 +353,13 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     try { myInflictRef.current = calcCardCombatEffectsFromCollection(cardCollRef.current || {}, { enemyFamily:room?.monster?.family, enemyClass:(room?.monster?.bossTagged || room?.monster?.encounter === "boss") ? "boss" : "monster" }).inflict || {}; }
     catch { myInflictRef.current = {}; }
   }, [room?.monster?.family, room?.monster?.bossTagged, room?.monster?.encounter, cardCollectionVersion]);
+
+  useEffect(() => {
+    const currentStatus = room?.status || null;
+    const previousStatus = previousRoomStatusRef.current;
+    if (currentStatus === "waiting" && previousStatus && previousStatus !== "waiting") freeHuntStartIdRef.current = null;
+    previousRoomStatusRef.current = currentStatus;
+  }, [room?.status]);
 
   // 下一場重置：room 回到 waiting 時清掉所有 one-time ref 與本地狀態
   useEffect(() => {
@@ -463,11 +474,15 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     if (serverRole === "front") setMyRearChoice(null);
   }, [room?.members?.[myId]?.role, myId]);
 
-  // 房主：進入等待室時預查今日剩餘次數（訪客無限制，略過）
+  // 房主：自由狩獵使用獨立單怪額度；舊組隊模式保留原本的組隊次數。
   useEffect(() => {
     if (!myId || !isHost || isLimitedAccount) return;
+    if (isFreeHuntParty) {
+      setPartyBattleLeft(getFreeHuntRemaining(profile, FREE_HUNT_QUOTA_MODE.SINGLE));
+      return;
+    }
     checkPartyBattleLimit(myId).then(setPartyBattleLeft);
-  }, [myId, isHost, isLimitedAccount]); // eslint-disable-line
+  }, [myId, isHost, isLimitedAccount, isFreeHuntParty, profile?.freeHuntUsage?.date, profile?.freeHuntUsage?.single]); // eslint-disable-line
 
   // 房主：依自身戰力抽出 6 隻怪物候選（每族1隻）
   useEffect(() => {
@@ -486,15 +501,15 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
     return () => { cancelled = true; };
   }, [isHost, room?.status]); // eslint-disable-line
 
-  // 戰鬥開始時只扣房主的進場次數（其他隊員不扣）
+  // 舊組隊模式仍只扣房主；自由狩獵已在開戰前由 server quota 原子扣除。
   useEffect(() => {
     if (!room || !myId || room.status !== "active" || partyRecordedRef.current) return;
     partyRecordedRef.current = true;
-    if (!isLimitedAccount && isHost) {
+    if (!isLimitedAccount && isHost && !isFreeHuntParty) {
       recordPartyBattleSession(myId).catch(() => {});
       setPartyBattleLeft(l => Math.max(0, (l ?? 1) - 1));
     }
-  }, [room?.status, isLimitedAccount]); // eslint-disable-line
+  }, [room?.status, isLimitedAccount, isFreeHuntParty]); // eslint-disable-line
 
   // 訂閱藥水庫存
   useEffect(() => {
@@ -877,23 +892,30 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
       return;
     }
     if (partyBattleLeft !== null && partyBattleLeft <= 0) {
-      setStartError("今日組隊打怪次數已達上限（5次）");
+      setStartError(isFreeHuntParty ? "今日指定單怪次數已用完（5/5）" : "今日組隊打怪次數已達上限（5次）");
       return;
     }
     setStartError("");
     setStarting(true);
-    await startPartyBattle(
-      roomId,
-      isFreeHuntParty ? room : { ...room, challengeLevel },
-      startMonster,
-      setupMode,
-      "preset",
-      isFreeHuntParty ? huntDistanceM : 18,
-      isFreeHuntParty ? huntTargetFmt : targetFmt,
-      pickBg(startMonster.family),
-      targetMode ? "target" : "button"
-    );
-    setStarting(false);
+    try {
+      let battleInstanceIdOverride = "";
+      if (isFreeHuntParty) {
+        battleInstanceIdOverride = freeHuntStartIdRef.current || `free_hunt_party_${roomId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        freeHuntStartIdRef.current = battleInstanceIdOverride;
+        const quota = await consumeFreeHuntAttempt({ memberId:myId, mode:FREE_HUNT_QUOTA_MODE.SINGLE, battleId:battleInstanceIdOverride, roomId });
+        setPartyBattleLeft(quota.remaining);
+      }
+      const result = await startPartyBattle(
+        roomId, isFreeHuntParty ? room : { ...room, challengeLevel }, startMonster, setupMode, "preset",
+        isFreeHuntParty ? huntDistanceM : 18, isFreeHuntParty ? huntTargetFmt : targetFmt, pickBg(startMonster.family),
+        targetMode ? "target" : "button", battleInstanceIdOverride
+      );
+      if (!result?.ok) setStartError(result?.reason || "開始戰鬥失敗");
+    } catch (error) {
+      setStartError(isFreeHuntParty ? freeHuntQuotaErrorMessage(error, FREE_HUNT_QUOTA_MODE.SINGLE) : (error?.message || "開始戰鬥失敗"));
+    } finally {
+      setStarting(false);
+    }
   }
   async function handleLeave() {
     // 防誤觸確認。⚠️ 房主離開 = leavePartyRoom 把房間設成 completed ＝ 整房解散，
@@ -1145,7 +1167,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
 
         {isHost ? (
           <div className="flex flex-col gap-2">
-            {partyBattleLeft !== null && <div className={`text-center text-xs font-bold ${partyBattleLeft > 0 ? "text-emerald-400" : "text-red-400"}`}>今日組隊剩餘 {partyBattleLeft}/5 次</div>}
+            {partyBattleLeft !== null && <div className={`text-center text-xs font-bold ${partyBattleLeft > 0 ? "text-emerald-400" : "text-red-400"}`}>今日指定單怪剩餘 {partyBattleLeft}/5 次（只扣房主）</div>}
             {startError && <div className="rounded-xl border border-red-500/50 bg-red-900/50 px-3 py-2 text-center text-xs font-bold text-red-300">{startError}</div>}
             <button onClick={handleStart}
               disabled={!huntMonster || starting || (memberList.length < 1 || (memberList.length < 2 && !hasCat)) || (partyBattleLeft !== null && partyBattleLeft <= 0)}
@@ -1154,7 +1176,7 @@ export default function PartyBattleRoom({ roomId, isHost, onLeave, guestOverride
             </button>
           </div>
         ) : (
-          <div className="py-5 text-center text-sm font-bold text-slate-400 animate-pulse">等待隊長開始戰鬥…</div>
+          <div className="py-5 text-center text-sm font-bold text-slate-400 animate-pulse">等待隊長開始戰鬥…（隊友不扣次數）</div>
         )}
       </div>
     );

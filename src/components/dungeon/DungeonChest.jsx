@@ -96,12 +96,15 @@ export default function DungeonChest({
       setCardState("revealed");
       const selected = choices[index];
       try {
+        if (localMode) {
+          if (selected.type === "coins") onLocalEffect?.({ type: "coins", value: selected.value });
+          else onLocalEffect?.({ type: "chest_reward", reward: selected });
+          setAnimPhase("done");
+          return;
+        }
         if (selected.type === "coins") {
-          if (localMode) onLocalEffect?.({ type: "coins", value: selected.value });
-          else {
-            const { addCoins } = await import("../../lib/db");
-            await addCoins(memberId, selected.value);
-          }
+          const { addCoins } = await import("../../lib/db");
+          await addCoins(memberId, selected.value);
         } else if (selected.type === "material" && selected.material) {
           const { addMaterials } = await import("../../lib/db");
           await addMaterials(memberId, Array.from(

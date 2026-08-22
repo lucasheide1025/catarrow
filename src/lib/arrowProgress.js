@@ -65,3 +65,19 @@ export function createRoundArrowRecorder({ identifyLocalOnly, enqueueOfficial, a
     });
   };
 }
+
+export function roundArrowReceiptKey(memberId, battleId, round) {
+  return `catarrow.recorded-battle-round.v1.${memberId}.${encodeURIComponent(String(battleId || ""))}.${Number(round)}`;
+}
+
+// Marks the authoritative battle/round before invoking the existing pending
+// operation pipeline. Replays, refreshes and duplicate callbacks become no-ops.
+export function createIdempotentBattleRoundRecorder({ record, storage = typeof localStorage === "undefined" ? null : localStorage }) {
+  return function recordBattleRound({ memberId, battleId, round, count, accountType }) {
+    if (!storage || !memberId || !battleId || !Number.isInteger(Number(round)) || Number(round) < 1 || !Number.isFinite(Number(count)) || Number(count) <= 0) return Promise.resolve({ recorded:false });
+    const key=roundArrowReceiptKey(memberId,battleId,round);
+    if(storage.getItem(key)==="1")return Promise.resolve({recorded:false,duplicate:true});
+    storage.setItem(key,"1");
+    return Promise.resolve(record(memberId,Number(count),{accountType})).then(()=>({recorded:true,key}));
+  };
+}

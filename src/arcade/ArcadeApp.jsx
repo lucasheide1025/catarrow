@@ -9,15 +9,28 @@ import {
   buildNewProfile,
   isCompleteProfile,
 } from "./arcadeData";
-import { loadVisitorProfile, saveVisitorProfile, clearVisitorProfile, loadCurrentTeamRoom, loadCurrentDuelRoom, syncProfileOnLoad, saveVisitorProfileWithCloud, setupCloudSyncListener } from "./arcadeDb";
+import {
+  loadVisitorProfile,
+  saveVisitorProfile,
+  clearVisitorProfile,
+  loadCurrentTeamRoom,
+  loadCurrentDuelRoom,
+  mutateVisitorProfile,
+  subscribeVisitorProfileChanges,
+  claimAdventureSession,
+  heartbeatAdventureSession,
+  clearAdventureSession,
+  markAdventureSessionSettled,
+} from "./arcadeDb";
 import { CHEST_ITEMS } from "./arcadeData";
 import { ADVENTURE_TYPES } from "./arcadeBattle";
 import { comboLabel, formatTeamDuration, emptyTeamStats, TEAM_MODES, normalizeRoomCode, isValidRoomCode } from "./arcadeTeamLogic";
 import { levelProgress, xpForLevel } from "./arcadeShop";
+import { getArcadePlayerStats } from "./arcadeProgression";
 import { ArcadeActionDock, ArcadeBrand, ArcadePlayerBar, ArcadeShell, DungeonCarousel } from "./ArcadeGameUi";
 import "./arcadeGame.css";
 
-const ArcadeAdventure = lazy(() => import("./ArcadeAdventure"));
+const ArcadeDungeonRun = lazy(() => import("./ArcadeDungeonRun"));
 const ArcadeTeam = lazy(() => import("./ArcadeTeam"));
 const ArcadeDuel = lazy(() => import("./ArcadeDuel"));
 const ArcadeShop = lazy(() => import("./ArcadeShop.jsx"));
@@ -465,6 +478,7 @@ export default function ArcadeApp() {
   const [duelCode, setDuelCode] = useState(""); // ?duel= 掃 QR 直連的競技場
   const [duelSaved, setDuelSaved] = useState(null); // PvP 全部暫存只在本機
   const [profile, setProfile] = useState(null);
+  const [adventureSession, setAdventureSession] = useState(null);
   const [nickname, setNickname] = useState("");
   const [catId, setCatId] = useState(DEFAULT_CAT_ID);
   const [busy, setBusy] = useState(false);
@@ -474,19 +488,12 @@ export default function ArcadeApp() {
     mountArcadeCss();
   }, []);
 
-  // M1 雲端保存：離線→上線自動補傳
-  useEffect(() => setupCloudSyncListener(), []);
+  useEffect(() => subscribeVisitorProfileChanges((latest) => setProfile(latest)), []);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      // M1：載入時同步雲端（離線降級為純本機）
-      let saved = null;
-      try {
-        saved = await syncProfileOnLoad();
-      } catch {
-        saved = await loadVisitorProfile();
-      }
+      const saved = await loadVisitorProfile();
       if (cancelled) return;
       const params = new URLSearchParams(window.location.search);
       const team = params.get("team") || "";
@@ -533,8 +540,8 @@ export default function ArcadeApp() {
     if (busy) return;
     setBusy(true);
     const p = buildNewProfile({ nickname, catId });
-    await saveVisitorProfileWithCloud(p);
-    setProfile(p);
+    const saved = await saveVisitorProfile(p);
+    setProfile(saved);
     const params = new URLSearchParams(window.location.search);
     const duel = params.get("duel") || "";
     const team = params.get("team") || "";
@@ -554,15 +561,67 @@ export default function ArcadeApp() {
   }
 
   async function handleSaveProfile(updated) {
-    setProfile(updated);
-    await saveVisitorProfileWithCloud(updated);
+    const saved = await saveVisitorProfile(updated);
+    setProfile(saved);
+    return saved;
   }
 
   async function handleSaveProfileLocal(updated) {
-    // PvP 生涯資料刻意只落在 IndexedDB/localStorage，不觸發 arcadeProfiles 雲端寫入。
-    setProfile(updated);
-    await saveVisitorProfile(updated);
+    const saved = await saveVisitorProfile(updated);
+    setProfile(saved);
+    return saved;
   }
+
+  async function handleMutateProfile(mutator) {
+    const saved = await mutateVisitorProfile(mutator);
+    setProfile(saved);
+    return saved;
+  }
+
+  async function enterAdventure(nextMode = "forest") {
+    const wantedMode = nextMode || "forest";
+    let claim = await claimAdventureSession(wantedMode);
+    if (!claim.ok && claim.conflict) {
+      const otherMode = claim.session?.mode || "另一座地下城";
+      const takeOver = window.confirm(`同一瀏覽器的另一個分頁正在進行 ${otherMode}。要由這個分頁接管嗎？`);
+      if (!takeOver) {
+        setToast("另一個分頁仍在冒險中");
+        return;
+      }
+      claim = await claimAdventureSession(wantedMode, { force: true });
+    }
+    if (!claim.ok) {
+      setToast("目前無法開始冒險，請再試一次");
+      return;
+    }
+    setMode(wantedMode);
+    setAdventureSession(claim.session);
+    setPhase("adventure");
+  }
+
+  async function exitAdventure(options = {}) {
+    const preserveSession = options?.preserveSession === true;
+    if (!preserveSession && adventureSession?.runId) await clearAdventureSession(adventureSession.runId);
+    setAdventureSession(null);
+    setPhase("hub");
+  }
+
+  async function replayAdventure() {
+    if (adventureSession?.runId) await clearAdventureSession(adventureSession.runId);
+    const claim = await claimAdventureSession(mode, { force: true });
+    if (!claim.ok) {
+      setToast("無法建立下一場冒險");
+      return;
+    }
+    setAdventureSession(claim.session);
+  }
+
+  useEffect(() => {
+    if (phase !== "adventure" || !adventureSession?.runId) return undefined;
+    heartbeatAdventureSession(adventureSession.runId);
+    const timer = setInterval(() => heartbeatAdventureSession(adventureSession.runId), 10000);
+    return () => clearInterval(timer);
+  }, [phase, adventureSession?.runId]);
 
   let content = null;
   if (phase === "loading") {
@@ -580,11 +639,16 @@ export default function ArcadeApp() {
     );
   } else if (phase === "adventure") {
     content = (
-      <ArcadeAdventure
+      <ArcadeDungeonRun
+        key={adventureSession?.runId || `adventure-${mode}`}
         mode={mode}
         profile={profile}
-        onSave={handleSaveProfile}
-        onExit={() => setPhase("hub")}
+        runId={adventureSession?.runId}
+        session={adventureSession}
+        onMutate={handleMutateProfile}
+        onSettled={() => adventureSession?.runId && markAdventureSessionSettled(adventureSession.runId)}
+        onReplay={replayAdventure}
+        onExit={exitAdventure}
         onToast={setToast}
       />
     );
@@ -593,6 +657,7 @@ export default function ArcadeApp() {
       <ArcadeShop
         profile={profile}
         onSave={handleSaveProfile}
+        onMutate={handleMutateProfile}
         onExit={() => setPhase("hub")}
         onToast={setToast}
       />
@@ -610,6 +675,7 @@ export default function ArcadeApp() {
         initialSeenResolutionRound={duelSaved?.seenResolutionRound || 0}
         initialResultSaved={!!duelSaved?.resultSaved}
         onSaveLocal={handleSaveProfileLocal}
+        onMutate={handleMutateProfile}
         onExit={() => { setDuelCode(""); setDuelSaved(null); setPhase("hub"); }}
       />
     );
@@ -621,6 +687,7 @@ export default function ArcadeApp() {
         initialRound={teamSaved?.round || 0}
         initialArrows={teamSaved?.arrows || null}
         onSave={handleSaveProfile}
+        onMutate={handleMutateProfile}
         onExit={() => { setTeamCode(""); setTeamSaved(null); setPhase("hub"); }}
         onToast={setToast}
       />
@@ -629,7 +696,7 @@ export default function ArcadeApp() {
     content = (
       <ArcadeHub
         profile={profile}
-        onAdventure={(m) => { setMode(m || "forest"); setPhase("adventure"); }}
+        onAdventure={enterAdventure}
         onTeam={(code = "") => { setTeamCode(normalizeRoomCode(code)); setTeamSaved(null); setPhase("team"); }}
         onDuel={() => { setDuelCode(""); setDuelSaved(null); setPhase("duel"); }}
         onShop={() => setPhase("shop")}
@@ -716,8 +783,8 @@ function ArcadeHub({ profile, onAdventure, onTeam, onDuel, onShop, onReset, onTo
   const dungeonCards = Object.values(ADVENTURE_TYPES);
   const cat = arcadeCatById(profile.selectedCat) || arcadeCatById(DEFAULT_CAT_ID);
   const stats = profile.statistics || {};
-  const catMeta = profile.cats?.[cat?.id] || { level: 1 };
   const inventory = profile.inventory || {};
+  const playerStats = getArcadePlayerStats(profile);
   const itemNames = ["fire_arrow", "cat_riceball", "catnip"]
     .filter((id) => (inventory[id] || 0) > 0)
     .map((id) => `${CHEST_ITEMS[id].icon} ${CHEST_ITEMS[id].name} ×${inventory[id]}`);
@@ -726,10 +793,10 @@ function ArcadeHub({ profile, onAdventure, onTeam, onDuel, onShop, onReset, onTo
         <ArcadePlayerBar
           profile={profile}
           cat={cat}
-          level={profile.catLevel || 1}
-          xp={profile.xp || 0}
-          xpMax={xpForLevel(profile.catLevel || 1)}
-          progress={levelProgress(profile.catLevel || 1, profile.xp || 0)}
+          level={profile.playerLevel || 1}
+          xp={profile.playerXp || 0}
+          xpMax={xpForLevel(profile.playerLevel || 1)}
+          progress={levelProgress(profile.playerLevel || 1, profile.playerXp || 0)}
           onReset={onReset}
         />
 
@@ -741,6 +808,14 @@ function ArcadeHub({ profile, onAdventure, onTeam, onDuel, onShop, onReset, onTo
         </section>
 
         <DungeonCarousel dungeons={dungeonCards} onSelect={onAdventure} />
+
+        <div className="arcade-section-title">射手能力</div>
+        <div className="arcade-stats">
+          <div className="arcade-stat"><div className="arcade-stat-v">Lv.{playerStats.level}</div><div className="arcade-stat-l">射手等級</div></div>
+          <div className="arcade-stat"><div className="arcade-stat-v">❤️ {playerStats.maxHp}</div><div className="arcade-stat-l">HP</div></div>
+          <div className="arcade-stat"><div className="arcade-stat-v">⚔️ {playerStats.atk}</div><div className="arcade-stat-l">ATK</div></div>
+          <div className="arcade-stat"><div className="arcade-stat-v">🛡️ {playerStats.def}</div><div className="arcade-stat-l">DEF</div></div>
+        </div>
 
         <div className="arcade-section-heading">
           <div><span>ARCADE KEYS</span><h2>多人與補給</h2></div>
@@ -797,7 +872,7 @@ function ArcadeHub({ profile, onAdventure, onTeam, onDuel, onShop, onReset, onTo
         <div className="arcade-card arcade-hub-cat">
           <img src={cat?.image} alt={cat?.name} width="96" height="96" loading="lazy" />
           <div style={{ flex: 1 }}>
-            <div className="arcade-hub-cat-name">{cat?.name} <span style={{ fontSize: 13, color: "#8a6a3b" }}>Lv.{catMeta.level || 1}</span></div>
+            <div className="arcade-hub-cat-name">{cat?.name}</div>
             <div className="arcade-hub-cat-motto">{cat?.motto}</div>
             <div style={{ marginTop: 8 }}>
               <span className="arcade-cat-role">{cat?.role}</span>
@@ -859,7 +934,7 @@ function ArcadeHub({ profile, onAdventure, onTeam, onDuel, onShop, onReset, onTo
         )}
 
         <div className="arcade-note blue" style={{ marginTop: 14 }}>
-          💾 <strong>訪客進度保存在本裝置。</strong>清除瀏覽器資料、無痕模式或換手機，都會讓進度消失。想要雲端保存的功能會在之後開放。
+          💾 <strong>訪客進度保存在這個瀏覽器。</strong>同一瀏覽器的分頁會自動同步；清除瀏覽器資料、無痕模式或換瀏覽器都會有不同進度。
         </div>
           </div>
         </details>

@@ -1,5 +1,10 @@
 // src/arcade/arcadeShop.js — 金幣商店（M2）＋等級系統（M3）
 // 所有函式為純函式（無副作用），可單元測試。
+import {
+  applyPlayerXp,
+  playerLevelProgress,
+  xpForPlayerLevel,
+} from "./arcadeProgression";
 
 // ── M2：商店商品 ─────────────────────────────────────────────
 export const SHOP_ITEMS = [
@@ -38,7 +43,7 @@ export function buyItem(profile, itemId, qty = 1) {
 // 玩家（冒險者）等級：透過冒險獲得 XP，升級解鎖獎勵。
 // 升級曲線：Lv.N 需要 N × 100 XP（Lv1→2: 100, Lv2→3: 200...）
 export function xpForLevel(level) {
-  return Math.max(1, level || 1) * 100;
+  return xpForPlayerLevel(level);
 }
 
 /** 冒險結束後獲得的 XP（依難度與評等） */
@@ -53,42 +58,10 @@ export function calcBattleXP({ mode = "forest", grade = "C", isTeam = false, bos
 
 /** 升級處理純函式：回傳 { updated, levelsGained, rewards } */
 export function applyLevelUp(profile, xpGained) {
-  const prevLevel = profile.catLevel || 1;
-  const prevXP = profile.xp || 0;
-  let newXP = prevXP + xpGained;
-  let newLevel = prevLevel;
-  let levelsGained = 0;
-  const rewards = [];
-  while (newXP >= xpForLevel(newLevel)) {
-    newXP -= xpForLevel(newLevel);
-    newLevel += 1;
-    levelsGained += 1;
-    // 每級獎勵：金幣 + 素材
-    const coinReward = 50 * newLevel;
-    rewards.push({ type: "coins", amount: coinReward, msg: `升級獎勵 +${coinReward} 金幣！` });
-    if (newLevel % 3 === 0) {
-      rewards.push({ type: "item", itemId: "cat_fur", amount: 1, msg: "🎁 贈送貓毛 ×1！" });
-    }
-    if (newLevel % 5 === 0) {
-      rewards.push({ type: "item", itemId: "lucky_clover", amount: 1, msg: "🎁 贈送幸運草 ×1！" });
-    }
-  }
-  // 把獎勵套用到 profile
-  let updated = { ...profile, catLevel: newLevel, xp: newXP };
-  for (const r of rewards) {
-    if (r.type === "coins") {
-      updated = { ...updated, coins: (updated.coins || 0) + r.amount };
-    } else if (r.type === "item") {
-      const inv = { ...(updated.inventory || {}) };
-      inv[r.itemId] = (inv[r.itemId] || 0) + r.amount;
-      updated = { ...updated, inventory: inv };
-    }
-  }
-  return { updated, levelsGained, rewards };
+  return applyPlayerXp(profile, xpGained);
 }
 
 /** 升級進度百分比（0~100），供進度條顯示 */
 export function levelProgress(catLevel, xp) {
-  const need = xpForLevel(catLevel || 1);
-  return Math.min(100, Math.round(((xp || 0) / need) * 100));
+  return playerLevelProgress(catLevel, xp);
 }

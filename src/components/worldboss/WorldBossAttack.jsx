@@ -10,7 +10,7 @@ import { calcCardCombatEffectsFromCollection } from "../../lib/cardTalents";
 import { attackWorldBoss, hireWorldBossBot, distributeWorldBossRewards } from "../../lib/worldBossDb";
 import { shouldShowWorldBossVictory } from "../../lib/worldBossState";
 import { worldBossWeaponLabel } from "../../lib/worldBossPresentation";
-import { addPracticeLog, getCertRecords, subscribeCertification, subscribeCardCollection, addArcherXP, addAdventurerXP, addArrowdew, addGachaCoins, addRoundArrows, addCoins, recordGuestBattleStats, subscribePotions, usePotions, recordPotionUsed, finalizeGameShootingSession, subscribeLocalTodayArrows, initializeTodayArrows, getLocalTodayArrows } from "../../lib/db";
+import { addPracticeLog, getCertRecords, subscribeCertification, subscribeCardCollection, addArcherXP, addAdventurerXP, addArrowdew, addGachaCoins, recordBattleRoundArrows, addCoins, recordGuestBattleStats, subscribePotions, usePotions, recordPotionUsed, finalizeGameShootingSession, subscribeLocalTodayArrows, initializeTodayArrows, getLocalTodayArrows } from "../../lib/db";
 import { addCatXP } from "../../lib/catDb";
 import { CAT_BOSS_XP } from "../../lib/catLevel";
 import { WORLD_BOSS_XP_CAP, WORLD_BOSS_XP_MULT, archerLevelFromXP, archerLevelBonus } from "../../lib/archerLevel";
@@ -811,9 +811,17 @@ export default function WorldBossAttack({ event, onBack, guestOverride, onComple
     setAllRounds(nextRounds);
     // ★ 今日/終身箭數：每回合送出當下就記，不要等結算。
     //   結算前任何中斷（退出戰鬥、王已被別人打死、活動過期、斷網）都不會再吃掉已射出的箭。
-    if (!isGuest && myId && fullArrows.length > 0) {
-      addRoundArrows(myId, fullArrows.length, { accountType: profile?.accountType || "official" }).catch(() => {});
-      wbRecordedArrowsRef.current += fullArrows.length;
+    const physicalArrowCount = fullArrows.filter(arrow => !arrow?.consumableId).length;
+    if (myId && physicalArrowCount > 0) {
+      recordBattleRoundArrows({
+        memberId:myId,
+        battleId:sortieId,
+        round:nextRounds.length,
+        count:physicalArrowCount,
+        accountType:profile?.accountType || (isGuest ? "guest" : "official"),
+      }).then(result => {
+        if (result?.recorded) wbRecordedArrowsRef.current += physicalArrowCount;
+      }).catch(() => {});
     }
     setRoundSummary(roundData);
     sfxRoundEnd();

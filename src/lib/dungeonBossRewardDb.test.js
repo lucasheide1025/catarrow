@@ -6,7 +6,7 @@ jest.mock("firebase/functions", () => ({
 }));
 jest.mock("./firebase", () => ({ __esModule:true, default:{} }));
 
-const { createDungeonBossRewardClaim, claimDungeonBossChoices } = require("./dungeonBossRewardDb");
+const { createDungeonBossRewardClaim, claimDungeonBossChoices, claimDungeonMultiSoloReward } = require("./dungeonBossRewardDb");
 const { httpsCallable } = require("firebase/functions");
 
 beforeEach(() => {
@@ -26,6 +26,13 @@ test("choice rewards are requested from the trusted callable", async () => {
   const result = await claimDungeonBossChoices({ claimId:"claim", memberId:"m1", selectedOptionIds:["a"] });
   expect(global.mockCallable).toHaveBeenCalledWith("claimDungeonBossChoices", { claimId:"claim", memberId:"m1", selectedOptionIds:["a"] });
   expect(result.selectedOptionIds).toEqual(["a"]);
+});
+
+test("solo dungeon multi settlement uses one authoritative callable",async()=>{
+  global.mockCallable.mockResolvedValue({data:{ok:true,reward:{coins:50,materialTotals:{m:3}}}});
+  const result=await claimDungeonMultiSoloReward({battleId:"room1",memberId:"m1"});
+  expect(global.mockCallable).toHaveBeenCalledWith("claimDungeonMultiSoloReward",{battleId:"room1",memberId:"m1"});
+  expect(result.reward.coins).toBe(50);
 });
 
 test("invalid identities fail before a network call", async () => {

@@ -130,6 +130,10 @@ export async function createPartyRoom(hostId, hostName, type, extraData = {}) {
     }
     if (type === "battle") {
       Object.assign(base, {
+        huntType: extraData.huntType || (extraData.multiMonster ? "multi" : (extraData.huntMonsterId ? "single" : null)),
+        multiMonster: extraData.multiMonster === true,
+        multiFamily: extraData.multiFamily || null,
+        multiTier: extraData.multiTier == null ? null : (Number(extraData.multiTier) || null),
         huntMonsterId: extraData.huntMonsterId || null,
         monsterId: extraData.monsterId || extraData.huntMonsterId || null,
         monsterSnapshot: stripUndefinedDeep(extraData.monsterSnapshot || null),
@@ -295,8 +299,12 @@ const MODE_SCALE = {
 };
 
 // ── Battle：房主設定怪物 & 開始 ───────────────────────────────
-export async function startPartyBattle(roomId, room, monster, mode, distanceMode, distance, targetFormat = "full_110", battleBackground = "", targetInputMode = "button") {
+export async function startPartyBattle(roomId, room, monster, mode, distanceMode, distance, targetFormat = "full_110", battleBackground = "", targetInputMode = "button", battleInstanceIdOverride = "") {
   try {
+    const requestedBattleId = String(battleInstanceIdOverride || "").trim();
+    const battleInstanceId = requestedBattleId && !requestedBattleId.includes("/") && requestedBattleId.length <= 240
+      ? requestedBattleId
+      : `${roomId}_${Date.now()}`;
     const memberIds = Object.keys(room.members || {});
     const playerCount = memberIds.length;
     const ms         = MODE_SCALE[mode] || MODE_SCALE.student;
@@ -354,7 +362,7 @@ export async function startPartyBattle(roomId, room, monster, mode, distanceMode
       monsterCardId: monster.cardId || monster.id,
       monsterHP: scaledHP,
       monsterMaxHP: scaledHP,
-      battleInstanceId:`${roomId}_${Date.now()}`,
+      battleInstanceId,
       hpMult, rewardMult,
       // 供全房 UI 顯示：強度檔位＋人數加成明細
       challengeLevel: room.challengeLevel || "standard",
@@ -377,7 +385,7 @@ export async function startPartyBattle(roomId, room, monster, mode, distanceMode
       monsterAbilityPreview: null,
       monsterSignatureState: null,
     }));
-    return { ok: true };
+    return { ok: true, battleInstanceId };
   } catch (e) {
     return { ok: false, reason: e.message };
   }

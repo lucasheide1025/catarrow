@@ -2,6 +2,8 @@
 // 定位：射箭場裡，掃 QR 就能玩的手機 Arcade RPG。射箭是主體，遊戲是第二層體驗。
 // 最高原則：Local First / Cloud When Necessary / Account Last
 
+import { normalizeArcadeProfile } from "./arcadeProgression";
+
 // ── 九隻同行貓 ──────────────────────────────────────────────
 // 第一版重用既有貓貓立繪（public/cats/），之後再以「貓小隊童話冒險 RPG 視覺系統」
 // base prompt 生成替換。角色名與個性沿用射箭場真實貓咪。
@@ -63,13 +65,13 @@ export function buildNewProfile({ nickname, catId }) {
   const name = validateNickname(nickname) || "小勇者";
   const cat = arcadeCatById(catId) || arcadeCatById(DEFAULT_CAT_ID);
   const now = Date.now();
-  return {
+  return normalizeArcadeProfile({
     visitorId: makeVisitorId(),
     nickname: name,
     selectedCat: cat.id,
     cats: { [cat.id]: { id: cat.id, level: 1, xp: 0, bond: 0 } },
-    catLevel: 1,
-    xp: 0, // 冒險者等級經驗（M3）
+    playerLevel: 1,
+    playerXp: 0,
     inventory: {},
     coins: 0,
     dungeonProgress: {},
@@ -79,7 +81,7 @@ export function buildNewProfile({ nickname, catId }) {
     teamStats: {},
     createdAt: now,
     lastPlayedAt: now,
-  };
+  });
 }
 
 // 完整性檢查：判斷讀回的資料是不是有效訪客 profile

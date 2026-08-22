@@ -1,3 +1,15 @@
+## 2026-08-22 Current Implementation Override：單人地下城共用學籍 UI、Arcade 規則完全隔離
+
+- 單人冒險主控制器改為 `ArcadeDungeonRun.jsx`，維持 **Local First**；`GridMapStage`／`BranchStage` 直接重用學籍地下城 presentation，但不重用 `DungeonExpedition` 的學生資料與 Firestore 流程。
+- 五種重量房共用既有 UI：`DungeonShop`／`DungeonTrap`／`DungeonEvent`／`DungeonChest`／`DungeonRest` 全部走 `localMode`。HP、Buff、本趟金幣、房間／地圖進度只存在 `adventureSession`／IndexedDB。
+- 戰鬥由 `ArcadeBattleScreenAdapter` 接 `BattleScreen`；`BattleScreen` 只負責輸入與演出，固定使用 `externalBattle + isolateStudentProgression + hideLeaveControl`。**唯一訪客戰鬥權威是 `arcadeBattle.resolveRound()`**，學生卡片、學生裝備、學生同行貓資料不會進 Arcade 計算。
+- 同一 `runId` 的地圖與進度可在 reload／同瀏覽器接管後原樣恢復；訪客網格改用 seeded RNG，`expeditionGrid` 的既有學生呼叫若未傳 RNG 仍維持 `Math.random`，學生行為不變。
+- 永久 `visitorProfile` 只在終局 `clear / retreat / defeat` 透過冪等 `applyArcadeSettlement()` 更新；途中按返回只暫停並保留 run，**不會提前把本趟戰利品存入永久進度**。
+- 地下城：🌲貓森遺跡 2 層；🌙月夜迷城 3 層；🔥深淵巢穴 3 層。月夜／深淵最終層共用 `BranchStage` A/B/C 路線。深淵團滅會失去尚未帶出的本趟金幣，但仍取得 EXP。
+- 永久訪客進度仍不做 Firestore profile sync；多人雲端只保留協調用途。
+- 驗證：focused **6 suites / 30 tests PASS**；完整 Arcade **18 suites / 195 tests PASS**；`npm run build` PASS；scoped `git diff --check` PASS。
+- 狀態：本機完成；**本次 ArcadeDungeonRun 共享地下城改動尚未 deploy / commit / push**。
+
 ## 2026-08-21 Current Implementation Override：組隊房號加入＋斷線恢復
 
 - **QR 保留，房號補齊**：組隊仍可掃 QR；訪客大廳與錯誤恢復入口新增 5 位數房號，可手動加入或返回原戰鬥。

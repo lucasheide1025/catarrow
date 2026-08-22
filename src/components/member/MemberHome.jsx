@@ -2,7 +2,8 @@
 import { useState, useEffect } from "react";
 import { cachedFetch } from "../../lib/localCache";
 import { suggestNextActions } from "../../lib/homeSuggestions";
-import { getMemberResults, subscribePendingBadgeLogs, submitMonthlyCardRequest, subscribeMyMonthlyRequests, checkExpireMonthlyCard, getCertRecords, getCompetitions, getMyCompResults } from "../../lib/db";
+import { getMemberResults, subscribePendingBadgeLogs, subscribeMyMonthlyRequests, submitMonthlyCardRequest, checkExpireMonthlyCard, getCertRecords, getCompetitions, getMyCompResults } from "../../lib/db";
+import { getMonthlyCardStatus } from "../../lib/monthlyCardStats";
 import { computeDexStats } from "../../lib/achievementDex";
 import { getCohort, cohortLabel } from "../../lib/cohort";
 import { useAuth } from "../../hooks/useAuth";
@@ -31,6 +32,7 @@ import { SectionHeader, StatBar, HubTile } from "../shared/Widgets";
 import ShareCard from "./ShareCard";
 import HomeLeaderboardBlock from "./HomeLeaderboardBlock";
 import MemberFeatureArt from "./MemberFeatureArt";
+import ClassEndSettlementModal from "./ClassEndSettlementModal";
 
 // ── 4 大功能 Hub 入口（HubTile CSS 漸層底，取代 cell-*.webp）──
 const HOME_HUBS = [
@@ -116,10 +118,7 @@ export default function MemberHome({
   const [showThemePicker, setShowThemePicker] = useState(false);
   // 月卡
   const [monthlyReqs, setMonthlyReqs]     = useState([]);
-  const [showCardModal, setShowCardModal] = useState(false);
-  const [cardHours, setCardHours]         = useState(1);
-  const [cardBusy, setCardBusy]           = useState(false);
-  const [cardMsg, setCardMsg]             = useState("");
+  const [showClassEndModal, setShowClassEndModal] = useState(false);
   const [notifCat, setNotifCat]           = useState("全部");
   // 進行中卡資料
   const [villageGoal, setVillageGoal]     = useState(null);
@@ -220,17 +219,34 @@ export default function MemberHome({
   const archerLevel = archerLevelFromXP(profile?.archerXP || 0);
   const adventurerLevel = levelFromXP(profile?.adventurerXP || 0);   // 舊冒險者等級：成就/圖鑑仍在用
   const guildRankInfo = useGuildRank(profile?.id);                   // 新公會：階級由聲望決定
+  const monthlyCardStatus = getMonthlyCardStatus(profile?.monthlyCard || null, nowMs);
+  const monthlyCardExpiryLabel = monthlyCardStatus.expiresMs
+    ? new Date(monthlyCardStatus.expiresMs).toLocaleDateString("zh-TW", { year:"numeric", month:"2-digit", day:"2-digit" })
+    : "未設定";
 
-  async function submitCardRequest() {
-    setCardBusy(true); setCardMsg("");
+  function handleClassEndClick() {
+    if (!onClassEnd || classEndBusy) return;
+    setShowClassEndModal(true);
+  }
+
+  async function finishClassEnd(monthlyCardHours) {
+    if (!onClassEnd || classEndBusy) return;
     const hasPending = monthlyReqs.some(r => r.status === "pending");
-    const res = await submitMonthlyCardRequest(
-      profile.id, profile.nickname || profile.name, cardHours,
-      profile?.monthlyCard || null, hasPending
-    );
-    if (res.ok) { setCardMsg("✅ 已送出，等待教練審核"); }
-    else { setCardMsg("❌ " + res.reason); }
-    setCardBusy(false);
+    if (monthlyCardHours > 0) {
+      const request = await submitMonthlyCardRequest(
+        profile.id,
+        profile.nickname || profile.name || "射手",
+        monthlyCardHours,
+        profile.monthlyCard || null,
+        hasPending,
+      );
+      if (!request?.ok) {
+        window.alert(request?.reason || "月卡扣抵申請送出失敗。");
+        return;
+      }
+    }
+    const ok = await onClassEnd();
+    if (ok !== false) setShowClassEndModal(false);
   }
 
   return (
@@ -275,7 +291,7 @@ export default function MemberHome({
         <div style={{ position:"relative", display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginTop:12, padding:"10px 12px", borderRadius:12, background:"rgba(2,6,23,.48)", border:"1px solid rgba(255,255,255,.1)" }}>
           <div><div style={{ color:"#fff", fontSize:13, fontWeight:900 }}>{checkinMeta.icon} {checkinMeta.label}</div><div style={{ color:"rgba(236,254,255,.62)", fontSize:10, marginTop:2 }}>今日 {todayArrows} 箭</div></div>
           {checkinMeta.action === "checkin" && <button onClick={onCheckin} disabled={!onCheckin || checkinBusy} style={{ minHeight:40, padding:"0 15px", border:0, borderRadius:10, background:"#0d9488", color:"#fff", fontSize:12, fontWeight:900, cursor:"pointer", opacity:checkinBusy ? .6 : 1 }}>{checkinBusy ? "報到中…" : "報到"}</button>}
-          {checkinMeta.action === "classEnd" && <button onClick={onClassEnd} disabled={!onClassEnd || classEndBusy} style={{ minHeight:40, padding:"0 15px", border:"1px solid rgba(251,191,36,.45)", borderRadius:10, background:"rgba(120,53,15,.72)", color:"#fef3c7", fontSize:12, fontWeight:900, cursor:"pointer", opacity:classEndBusy ? .6 : 1 }}>{classEndBusy ? "下課中…" : "下課"}</button>}
+          {checkinMeta.action === "classEnd" && <button onClick={handleClassEndClick} disabled={!onClassEnd || classEndBusy} style={{ minHeight:40, padding:"0 15px", border:"1px solid rgba(251,191,36,.45)", borderRadius:10, background:"rgba(120,53,15,.72)", color:"#fef3c7", fontSize:12, fontWeight:900, cursor:"pointer", opacity:classEndBusy ? .6 : 1 }}>{classEndBusy ? "下課中…" : "下課"}</button>}
         </div>
         <div style={{ position:"relative", display:"grid", gridTemplateColumns:"minmax(0, 1.45fr) minmax(0, 1fr)", gap:8, marginTop:10 }}>
           <button onClick={() => onPageChange("adventure-hub")} style={{ minHeight:48, border:0, borderRadius:10, background:"linear-gradient(135deg,#fbbf24,#f97316)", color:"#431407", fontSize:14, fontWeight:900, cursor:"pointer", boxShadow:"0 8px 18px rgba(249,115,22,.22)" }}>🗺️ 選擇冒險</button>
@@ -287,41 +303,49 @@ export default function MemberHome({
         <button onClick={() => setShowShare(true)} style={{ position:"relative", marginTop:10, border:0, background:"transparent", color:"#a5f3fc", fontSize:11, fontWeight:900, padding:0, cursor:"pointer" }}>分享射手名片</button>
       </section>
 
-      {/* 月卡申請 Modal */}
-      {showCardModal && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4"
-          onClick={() => !cardBusy && setShowCardModal(false)}>
-          <div className="bg-white rounded-2xl p-5 w-full max-w-sm" onClick={e => e.stopPropagation()}>
-            <div className="font-black text-gray-800 text-lg mb-1">🎫 月卡扣抵使用</div>
-            <div className="text-gray-500 text-sm mb-4">選擇本次練習時數，送出後等待教練核准，核准後扣除 1 次月卡。</div>
-            <div className="flex gap-3 mb-4">
-              {[1, 2].map(h => (
-                <button key={h} onClick={() => setCardHours(h)}
-                  className={`flex-1 py-4 rounded-2xl font-black text-lg border-2 transition-all active:scale-95 ${
-                    cardHours === h ? "bg-blue-600 text-white border-blue-600" : "bg-gray-50 text-gray-700 border-gray-200"
-                  }`}>
-                  {h} 小時
-                </button>
-              ))}
-            </div>
-            {cardMsg && (
-              <div className={`text-sm font-bold mb-3 ${cardMsg.startsWith("✅") ? "text-emerald-700" : "text-red-600"}`}>
-                {cardMsg}
+      {/* 月卡狀態固定放在今日行動卡正下方，正式射手／教練射手模式共用 profile.monthlyCard。 */}
+      <div style={{
+        display:"flex", alignItems:"center", justifyContent:"space-between", gap:12,
+        padding:"12px 14px", borderRadius:12,
+        background:"linear-gradient(135deg,rgba(30,64,175,.24),rgba(76,29,149,.22))",
+        border:"1px solid rgba(129,140,248,.28)", boxShadow:"0 8px 20px rgba(0,0,0,.16)",
+      }}>
+        <div style={{ minWidth:0 }}>
+          <div style={{ color:"#c7d2fe", fontSize:11, fontWeight:900 }}>🎫 月卡</div>
+          {monthlyCardStatus.hasCard ? (
+            <>
+              <div style={{ color:"#fff", fontSize:17, fontWeight:950, marginTop:2 }}>剩餘 {monthlyCardStatus.sessions} 小時</div>
+              <div style={{ color:"rgba(224,231,255,.72)", fontSize:10, marginTop:2 }}>
+                到期 {monthlyCardExpiryLabel}{monthlyCardStatus.daysRemaining > 0 ? ` · 剩 ${monthlyCardStatus.daysRemaining} 天` : ""}
               </div>
-            )}
-            <div className="flex gap-2">
-              <button onClick={() => setShowCardModal(false)}
-                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 font-bold text-sm">
-                取消
-              </button>
-              <button onClick={submitCardRequest} disabled={cardBusy || cardMsg.startsWith("✅")}
-                className="flex-1 py-2.5 rounded-xl bg-blue-600 text-white font-black text-sm disabled:opacity-40 active:scale-95 transition-transform">
-                {cardBusy ? "送出中…" : "送出申請"}
-              </button>
-            </div>
-          </div>
+            </>
+          ) : (
+            <div style={{ color:"rgba(224,231,255,.7)", fontSize:12, fontWeight:800, marginTop:3 }}>尚未持有月卡</div>
+          )}
         </div>
-      )}
+        <span style={{
+          flexShrink:0, fontSize:10, fontWeight:900, padding:"5px 9px", borderRadius:999,
+          background:monthlyCardStatus.state === "usable" ? "rgba(34,197,94,.18)" : "rgba(148,163,184,.16)",
+          color:monthlyCardStatus.state === "usable" ? "#86efac" : "#cbd5e1",
+          border:`1px solid ${monthlyCardStatus.state === "usable" ? "rgba(34,197,94,.3)" : "rgba(148,163,184,.2)"}`,
+        }}>
+          {monthlyCardStatus.state === "usable" ? "可申請扣抵"
+            : monthlyCardStatus.state === "empty" ? "時數已用完"
+            : monthlyCardStatus.state === "expired" ? "已到期"
+            : monthlyCardStatus.state === "inactive" ? "未啟用"
+            : "無月卡"}
+        </span>
+      </div>
+
+      <ClassEndSettlementModal
+        open={showClassEndModal}
+        todayArrows={todayArrows}
+        monthlyCard={profile?.monthlyCard || null}
+        hasPending={monthlyReqs.some(r => r.status === "pending")}
+        busy={classEndBusy}
+        onClose={() => setShowClassEndModal(false)}
+        onConfirm={finishClassEnd}
+      />
 
       {/* ── 教練新回饋通知 ── */}
       {profile?.hasNewLearnLog && (
@@ -1032,36 +1056,6 @@ export default function MemberHome({
                       <span style={{ fontSize:8, color:"rgba(255,255,255,0.4)", textAlign:"center" }}>{c.label}</span>
                     </button>
                   ))}
-                </div>
-              );
-            })()}
-            {/* 月卡資訊 */}
-            {(() => {
-              const card = profile?.monthlyCard;
-              const expires = card?.expiresAt?.toDate ? card.expiresAt.toDate() : null;
-              const days = expires ? Math.ceil((expires - Date.now()) / 86400000) : null;
-              const active = card?.active && days !== null && days > 0;
-              const hasPending = monthlyReqs.some(r => r.status === "pending");
-              if (!active) return null;
-              return (
-                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:8, paddingTop:8, borderTop:"1px solid rgba(255,255,255,0.08)" }}>
-                  <div>
-                    <div style={{ fontSize:10, color:"rgba(255,255,255,0.5)", fontWeight:700 }}>🎫 月卡</div>
-                    <div style={{ fontSize:9, color:"rgba(255,255,255,0.35)" }}>到期 {expires.getMonth()+1}/{expires.getDate()}（剩{days}天）</div>
-                  </div>
-                  <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                    <span style={{ fontSize:18, fontWeight:900, color:"white" }}>{card.sessions} <span style={{ fontSize:11, color:"rgba(255,255,255,0.5)", fontWeight:400 }}>次</span></span>
-                    {hasPending ? (
-                      <span style={{ fontSize:10, background:"rgba(251,191,36,0.2)", color:"#fde68a", fontWeight:700, padding:"3px 8px", borderRadius:8 }}>⏳ 審核中</span>
-                    ) : card.sessions > 0 ? (
-                      <button onClick={() => { setShowCardModal(true); setCardMsg(""); setCardHours(1); }}
-                        style={{ fontSize:10, background:"rgba(255,255,255,0.15)", color:"white", fontWeight:900, padding:"4px 10px", borderRadius:8, border:"1px solid rgba(255,255,255,0.25)", cursor:"pointer" }}>
-                        申請使用
-                      </button>
-                    ) : (
-                      <span style={{ fontSize:10, color:"rgba(255,255,255,0.3)" }}>次數已用完</span>
-                    )}
-                  </div>
                 </div>
               );
             })()}

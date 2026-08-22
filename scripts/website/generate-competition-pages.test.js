@@ -1,0 +1,10 @@
+const assert = require('assert');
+const { slugify, sanitizePublicEvent, validatePublicEvent, buildSnapshot } = require('./competition-publication.cjs');
+assert.equal(slugify(' 2026 台南 射箭盃 '), '2026-台南-射箭盃');
+const clean = sanitizePublicEvent({status:'published',slug:'test-event',title:'測試賽',eventDate:'2026-08-17',participants:[{publicDisplayName:'射手 A',linkedMemberId:'PRIVATE-ID',score:'280',rank:'第 1 名'}]});
+assert.equal(clean.participants[0].publicDisplayName, '射手 A');
+assert.equal(Object.prototype.hasOwnProperty.call(clean.participants[0], 'linkedMemberId'), false);
+assert.deepEqual(validatePublicEvent(clean), []);
+assert.equal(buildSnapshot({events:[clean]}).events.length, 1);
+assert.equal(buildSnapshot({events:[{...clean,status:'draft'}]}).events.length, 0);
+console.log('competition publication tests passed');

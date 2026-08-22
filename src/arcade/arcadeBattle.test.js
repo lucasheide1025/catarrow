@@ -180,6 +180,28 @@ describe("arcadeBattle — 6 箭回合引擎", () => {
     expect(r.playerHp).toBe(Math.min(PLAYER_MAX_HP, 30 - r.counter + r.catEvent.healed));
   });
 
+  test("訪客 ATK/DEF 養成只做小幅加成", () => {
+    const wolf = ARCADE_MONSTERS.find((m) => m.id === "wolf");
+    const arrows = [5, 5, 5, 5, 5, 5];
+    const base = resolveRound({ ...baseState(wolf), playerAtk: 10, playerDef: 5 }, arrows, rng);
+    const grown = resolveRound({ ...baseState(wolf), playerAtk: 16, playerDef: 11 }, arrows, rng);
+    expect(grown.dmg).toBeGreaterThan(base.dmg);
+    expect(grown.counter).toBeLessThan(base.counter);
+  });
+
+  test("高生命訪客的治療可超過舊 100 HP 上限", () => {
+    const wolf = ARCADE_MONSTERS.find((m) => m.id === "wolf");
+    const meimei = arcadeCatById("meimei");
+    const r = resolveRound(
+      { playerHp: 120, playerMaxHp: 150, playerAtk: 10, playerDef: 5, cat: meimei, monster: wolf },
+      [5, 5, 5, 5, 5, 5],
+      () => 0
+    );
+    expect(r.catEvent.type).toBe("heal");
+    expect(r.playerHp).toBeGreaterThan(100);
+    expect(r.playerHp).toBeLessThanOrEqual(150);
+  });
+
   test("格擋型技能：反擊大幅降低", () => {
     const wolf = ARCADE_MONSTERS.find((m) => m.id === "wolf");
     const diandian = arcadeCatById("diandian");
@@ -214,6 +236,8 @@ describe("arcadeBattle — 6 箭回合引擎", () => {
     expect(gradeAdventure(60).grade).toBe("A");
     expect(gradeAdventure(40).grade).toBe("B");
     expect(gradeAdventure(10).grade).toBe("C");
+    expect(gradeAdventure(105, 150).grade).toBe("S");
+    expect(gradeAdventure(60, 150).grade).toBe("B");
   });
 
   test("rollChestChoices 回傳 3 個合法道具", () => {

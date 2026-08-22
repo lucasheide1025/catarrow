@@ -36,6 +36,12 @@ test("team members remain rewardable when they did not appear in the final attac
   assert.equal(isRewardableDungeonRoom(room,"teammate","m1"),true);
 });
 
+test("authoritative dungeon multi rewards only a defeated primary boss",()=>{
+  const room={combatVersion:2,dungeonMulti:true,status:"victory",members:{u1:{}},encounter:{primaryTargetId:"primary"},targets:{primary:{id:"boss_1",currentHp:0,alive:false},add_1:{id:"boss_1",currentHp:0,alive:false}}};
+  assert.equal(isRewardableDungeonRoom(room,"u1","boss_1"),true);
+  assert.equal(isRewardableDungeonRoom({...room,targets:{...room.targets,primary:{...room.targets.primary,currentHp:1,alive:true}}},"u1","boss_1"),false);
+});
+
 test("team coordination room preserves teammate reward eligibility after battle advances",()=>{
   const teamRoom={
     members:{host:{},teammate:{}},

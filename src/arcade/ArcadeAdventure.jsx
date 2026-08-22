@@ -17,7 +17,6 @@ import {
   MOON_BOSS,
   MOON_ROUTES,
   MOON_ROUTE_COUNT,
-  PLAYER_MAX_HP,
   abyssDeepBoss,
   abyssGrade,
   abyssMonsterForFloor,
@@ -39,14 +38,29 @@ import {
   drawArcadeShareCard, shareOrDownloadCanvas, downloadCanvas,
   shareToSocial, copyResultText, prepareShareBlob,
 } from "./arcadeShare";
-import { calcBattleXP, applyLevelUp } from "./arcadeShop";
+import { calcBattleXP } from "./arcadeShop";
+import { applyArcadeSettlement, getArcadePlayerStats } from "./arcadeProgression";
 
 const RESCUE_LABEL = { rescue: "救援！", heal: "💚 治療！", atk: "⚔️ 追擊！", def: "🛡️ 擋下！" };
 
-export default function ArcadeAdventure({ mode = "forest", profile, onSave, onExit, onToast }) {
+export default function ArcadeAdventure({
+  mode = "forest",
+  profile,
+  runId,
+  onSave,
+  onMutate,
+  onSettled,
+  onReplay,
+  onExit,
+  onToast,
+}) {
   const isMoon = mode === "moon";
   const isAbyss = mode === "abyss";
   const cat = arcadeCatById(profile.selectedCat);
+  const playerStats = getArcadePlayerStats(profile);
+  const playerMaxHp = playerStats.maxHp;
+  const fallbackRunId = useRef(`${profile.visitorId || "visitor"}-${mode}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`).current;
+  const settlementId = runId || fallbackRunId;
   const forest = useRef(buildAdventure()).current;
   const moon = useRef(buildMoonLabyrinth()).current;
 
@@ -64,7 +78,7 @@ export default function ArcadeAdventure({ mode = "forest", profile, onSave, onEx
   const [abyssLoot, setAbyssLoot] = useState(0);    // abyss 累積戰利品
   const [extraSkillBuff, setExtraSkillBuff] = useState(0);
 
-  const [playerHp, setPlayerHp] = useState(PLAYER_MAX_HP);
+  const [playerHp, setPlayerHp] = useState(playerMaxHp);
   const [monsterHp, setMonsterHp] = useState(() => monster.hp);
   const [arrows, setArrows] = useState(Array(ARROWS_PER_ROUND).fill(-1)); // -1=未填；王戰靶面用 null
   const [soloRing, setSoloRing] = useState(null); // 單人王戰弱點圈（靶面位置）
@@ -82,6 +96,8 @@ export default function ArcadeAdventure({ mode = "forest", profile, onSave, onEx
   const introSfxTimer = useRef(null);
   const [targetOpen, setTargetOpen] = useState(false);
   const [shotFx, setShotFx] = useState(null); // { index, label, stage }：六箭逐箭演出
+  const [settlementStatus, setSettlementStatus] = useState("idle"); // idle | saving | done | error
+  const settlementRef = useRef(false);
   const [summary, setSummary] = useState({
     kills: 0, damage: 0, treasures: 0, bossKills: 0, bestDamage: 0, coins: 0, xCount: 0, shotScores: [],
   });
@@ -154,6 +170,9 @@ export default function ArcadeAdventure({ mode = "forest", profile, onSave, onEx
     const r = resolveRound(
       {
         playerHp, monsterHp, cat, monster,
+        playerAtk: playerStats.atk,
+        playerDef: playerStats.def,
+        playerMaxHp,
         atkBuff: buffs.atkBuff,
         skillChanceBuff: buffs.skillChanceBuff + extraSkillBuff,
         ring: soloRing, // 王戰靶面弱點圈（一般關無效）
@@ -324,7 +343,7 @@ export default function ArcadeAdventure({ mode = "forest", profile, onSave, onEx
   }
 
   function applyEvent(ev) {
-    if (ev.id === "heal") setPlayerHp((h) => Math.min(PLAYER_MAX_HP, h + 20));
+    if (ev.id === "heal") setPlayerHp((h) => Math.min(playerMaxHp, h + 20));
     else if (ev.id === "ambush") setPlayerHp((h) => Math.max(0, h - 12));
     else if (ev.id === "coins") setSummary((s) => ({ ...s, coins: s.coins + 20 }));
     else if (ev.id === "catnip") setExtraSkillBuff((b) => b + 0.15);
@@ -394,7 +413,7 @@ export default function ArcadeAdventure({ mode = "forest", profile, onSave, onEx
     invDelta.current[itemId] = (invDelta.current[itemId] || 0) + 1;
     setSummary((s) => ({ ...s, treasures: s.treasures + 1 }));
     if (itemId === "cat_riceball") {
-      setPlayerHp((hp) => Math.min(PLAYER_MAX_HP, hp + 20));
+      setPlayerHp((hp) => Math.min(playerMaxHp, hp + 20));
     }
     sfxCoinDrop();
     if (isMoon) {
@@ -450,78 +469,80 @@ export default function ArcadeAdventure({ mode = "forest", profile, onSave, onEx
     introTimer.current = setTimeout(() => setBossIntro(null), 3600);
   }
 
-  function finishAndSave(finalCoins, { floors = 0 } = {}) {
-    const inv = { ...(profile.inventory || {}) };
-    for (const [k, n] of Object.entries(buffs.consumed)) {
-      if (n > 0) inv[k] = Math.max(0, (inv[k] || 0) - n);
-    }
-    for (const [k, n] of Object.entries(invDelta.current || {})) {
-      inv[k] = (inv[k] || 0) + n;
-    }
-    const stats = {
-      ...profile.statistics,
-      battles: profile.statistics.battles + 1,
-      kills: profile.statistics.kills + summary.kills,
-      bestDamage: Math.max(profile.statistics.bestDamage, summary.bestDamage),
-      treasures: profile.statistics.treasures + summary.treasures,
-      bestFloor: Math.max(profile.statistics.bestFloor, floors),
-      xCount: (profile.statistics.xCount || 0) + summary.xCount,
-    };
-    // M3：冒險結束結算 XP（依模式／評價／Boss 擊殺）→ 升級獎勵
-    const gradeNow = isAbyss ? abyssGrade(floor).grade : gradeAdventure(playerHp).grade;
+  async function settleAdventure() {
+    if ((phase !== "result" && phase !== "defeat") || settlementRef.current) return;
+    settlementRef.current = true;
+    setSettlementStatus("saving");
+
+    const defeated = phase === "defeat";
+    const clearedFloors = isAbyss ? (defeated ? Math.max(0, floor - 1) : floor) : 0;
+    const normalGrade = gradeAdventure(playerHp, playerMaxHp);
+    const gradeNow = isAbyss ? abyssGrade(clearedFloors).grade : normalGrade.grade;
+    const finalCoins = defeated
+      ? (isAbyss ? 0 : summary.coins)
+      : (isAbyss ? abyssLoot : Math.round(summary.coins * normalGrade.bonusMult));
     const xpGained = calcBattleXP({
       mode: isAbyss ? "abyss" : isMoon ? "moon" : "forest",
       grade: gradeNow,
       isTeam: false,
       bossKills: summary.bossKills || 0,
     });
-    const lv = applyLevelUp(profile, xpGained);
-    const updated = {
-      ...profile,
-      coins: profile.coins + finalCoins,
-      inventory: inv,
-      statistics: stats,
-      catLevel: lv.updated.catLevel,
-      xp: lv.updated.xp,
-      lastPlayedAt: Date.now(),
+    const settlement = {
+      id: settlementId,
+      coins: finalCoins,
+      xp: xpGained,
+      consumed: buffs.consumed,
+      inventoryDelta: invDelta.current || {},
+      stats: {
+        battles: 1,
+        kills: summary.kills,
+        treasures: summary.treasures,
+        xCount: summary.xCount,
+        bestDamage: summary.bestDamage,
+        bestFloor: clearedFloors,
+      },
     };
-    if (lv.levelsGained > 0 && onToast) {
-      onToast(`🎉 升級到 Lv.${lv.updated.catLevel}！${lv.rewards.map((r) => r.msg).join(" ")}`);
+
+    let settlementResult = null;
+    try {
+      if (onMutate) {
+        await onMutate((current) => {
+          settlementResult = applyArcadeSettlement(current, settlement);
+          return settlementResult.updated;
+        });
+      } else if (onSave) {
+        settlementResult = applyArcadeSettlement(profile, settlement);
+        await onSave(settlementResult.updated);
+      } else {
+        throw new Error("arcade_settlement_writer_missing");
+      }
+      if (!settlementResult?.alreadySettled && settlementResult?.levelsGained > 0 && onToast) {
+        onToast(`🎉 升級到 Lv.${settlementResult.updated.playerLevel}！${settlementResult.rewards.map((r) => r.msg).join(" ")}`);
+      }
+      if (onSettled) await onSettled();
+      setSettlementStatus("done");
+    } catch {
+      settlementRef.current = false;
+      setSettlementStatus("error");
     }
-    onSave(updated);
   }
 
-  function handleResultExit(coins) {
-    finishAndSave(coins, { floors: isAbyss ? floor : 0 });
-    onExit();
-  }
+  useEffect(() => {
+    if ((phase === "result" || phase === "defeat") && settlementStatus === "idle") settleAdventure();
+  }, [phase, settlementStatus]);
 
-  function handleDefeatExit() {
-    finishAndSave(isAbyss ? 0 : summary.coins, { floors: isAbyss ? Math.max(0, floor - 1) : 0 });
-    onExit();
-  }
-
-  function resetAdventure() {
-    setPhase("battle");
-    setFightIdx(0);
-    setRouteIdx(0);
-    setIsBossFight(false);
-    setEliteFight(false);
-    setEvent(null);
-    setFloor(1);
-    setLootMult(1);
-    setAbyssLoot(0);
-    setExtraSkillBuff(0);
-    const m = isAbyss ? abyssMonsterForFloor(1, 1) : isMoon ? moon.entry : forest.fights[0];
-    setMonster(m);
-    setMonsterHp(m.hp);
-    setPlayerHp(PLAYER_MAX_HP);
-    setResult(null);
-    setFx(null);
-    setArrows(freshArrowsFor(false));
-    setSoloRing(null);
-    setKillBurst(null);
-    setSummary({ kills: 0, damage: 0, treasures: 0, bossKills: 0, bestDamage: 0, coins: 0, xCount: 0, shotScores: [] });
+  function SettlementNotice() {
+    if (settlementStatus === "done") return null;
+    return (
+      <div className="arcade-note" style={{ marginTop: 12 }}>
+        {settlementStatus === "error" ? (
+          <>
+            ⚠️ 本機進度保存失敗。
+            <button type="button" className="arcade-quick-btn" style={{ marginLeft: 8 }} onClick={settleAdventure}>重新保存</button>
+          </>
+        ) : "💾 正在保存本機進度…"}
+      </div>
+    );
   }
 
   const bossBadge = monster.ability === "boss" ? " 👑" : "";
@@ -686,16 +707,17 @@ export default function ArcadeAdventure({ mode = "forest", profile, onSave, onEx
               <div className="arcade-stat"><div className="arcade-stat-v">🎯 {summary.xCount}</div><div className="arcade-stat-l">X 內十</div></div>
             </div>
             <ShootingPerformance performance={shootingPerf} />
+            <SettlementNotice />
             <div className="arcade-row" style={{ marginTop: 20 }}>
-              <button type="button" className="arcade-primary green" style={{ flex: 1 }} onClick={resetAdventure}>再探深淵</button>
-              <button type="button" className="arcade-primary blue" style={{ flex: 1 }} onClick={() => handleResultExit(abyssLoot)}>回大廳</button>
+              <button type="button" className="arcade-primary green" style={{ flex: 1 }} onClick={onReplay} disabled={settlementStatus !== "done"}>再探深淵</button>
+              <button type="button" className="arcade-primary blue" style={{ flex: 1 }} onClick={onExit} disabled={settlementStatus !== "done"}>回大廳</button>
             </div>
             <ResultShareCard data={shareData} />
           </div>
         </ArcadeStage>
       );
     }
-    const grade = gradeAdventure(playerHp);
+    const grade = gradeAdventure(playerHp, playerMaxHp);
     const finalCoins = Math.round(summary.coins * grade.bonusMult);
     const shareData = {
       nickname: profile.nickname,
@@ -735,12 +757,13 @@ export default function ArcadeAdventure({ mode = "forest", profile, onSave, onEx
           <div className="arcade-stats" style={{ marginTop: 10 }}>
             <div className="arcade-stat"><div className="arcade-stat-v">🎁 {summary.treasures}</div><div className="arcade-stat-l">寶箱</div></div>
             <div className="arcade-stat"><div className="arcade-stat-v">👑 {summary.bossKills}</div><div className="arcade-stat-l">Boss 擊殺</div></div>
-            <div className="arcade-stat"><div className="arcade-stat-v">❤️ {playerHp}/{PLAYER_MAX_HP}</div><div className="arcade-stat-l">剩餘生命</div></div>
+            <div className="arcade-stat"><div className="arcade-stat-v">❤️ {playerHp}/{playerMaxHp}</div><div className="arcade-stat-l">剩餘生命</div></div>
           </div>
           <ShootingPerformance performance={shootingPerf} />
+          <SettlementNotice />
           <div className="arcade-row" style={{ marginTop: 20 }}>
-            <button type="button" className="arcade-primary green" style={{ flex: 1 }} onClick={resetAdventure}>再打一場</button>
-            <button type="button" className="arcade-primary blue" style={{ flex: 1 }} onClick={() => handleResultExit(finalCoins)}>回大廳</button>
+            <button type="button" className="arcade-primary green" style={{ flex: 1 }} onClick={onReplay} disabled={settlementStatus !== "done"}>再打一場</button>
+            <button type="button" className="arcade-primary blue" style={{ flex: 1 }} onClick={onExit} disabled={settlementStatus !== "done"}>回大廳</button>
           </div>
           <ResultShareCard data={shareData} />
         </div>
@@ -769,9 +792,10 @@ export default function ArcadeAdventure({ mode = "forest", profile, onSave, onEx
             </div>
           )}
           <ShootingPerformance performance={shootingPerf} />
+          <SettlementNotice />
           <div className="arcade-row" style={{ marginTop: 20 }}>
-            <button type="button" className="arcade-primary" style={{ flex: 1 }} onClick={resetAdventure}>{isAbyss ? "再探深淵" : "再挑戰"}</button>
-            <button type="button" className="arcade-primary blue" style={{ flex: 1 }} onClick={handleDefeatExit}>回大廳</button>
+            <button type="button" className="arcade-primary" style={{ flex: 1 }} onClick={onReplay} disabled={settlementStatus !== "done"}>{isAbyss ? "再探深淵" : "再挑戰"}</button>
+            <button type="button" className="arcade-primary blue" style={{ flex: 1 }} onClick={onExit} disabled={settlementStatus !== "done"}>回大廳</button>
           </div>
         </div>
       </ArcadeStage>
@@ -780,7 +804,7 @@ export default function ArcadeAdventure({ mode = "forest", profile, onSave, onEx
 
   // battle
   const fxStage = fx?.stage || "idle";
-  const hpPct = Math.max(0, Math.min(100, (playerHp / PLAYER_MAX_HP) * 100));
+  const hpPct = Math.max(0, Math.min(100, (playerHp / playerMaxHp) * 100));
   const monsterPct = Math.max(0, Math.min(100, (monsterHp / monster.hp) * 100));
   const isActing = result && fxStage !== "settle";
   const isBoss = monster.ability === "boss";
@@ -864,7 +888,7 @@ export default function ArcadeAdventure({ mode = "forest", profile, onSave, onEx
               <div className="arcade-hpbar" style={{ flex: 1, margin: "0 8px" }}>
                 <div className="arcade-hpbar-fill hp-player" style={{ width: `${hpPct}%` }} />
               </div>
-              <span className="arcade-raid-playerbar-hp">❤️ {playerHp} / {PLAYER_MAX_HP}</span>
+              <span className="arcade-raid-playerbar-hp">❤️ {playerHp} / {playerMaxHp}</span>
             </div>
             {/* 頂部血條：王名＋HP＋漸層 */}
             <div className="arcade-raid-bossbar">
@@ -937,7 +961,7 @@ export default function ArcadeAdventure({ mode = "forest", profile, onSave, onEx
               </div>
             </div>
             <div className="arcade-hpbar"><div className="arcade-hpbar-fill hp-player" style={{ width: `${hpPct}%` }} /></div>
-            <div className="arcade-hp-text">❤️ {playerHp} / {PLAYER_MAX_HP}</div>
+            <div className="arcade-hp-text">❤️ {playerHp} / {playerMaxHp}</div>
             <div className="arcade-playerflash" />
             {fxStage === "counter" && result?.counter > 0 && <div className="arcade-float-dmg hurt">💢 {result.counter}</div>}
             {fxStage === "cat" && result?.catEvent?.type === "heal" && <div className="arcade-float-dmg heal">💚 +{result.catEvent.healed}</div>}

@@ -8,6 +8,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { GRID_SIZE, getBranchMapLayout, isAdjacent } from "../../lib/expeditionGrid";
 import { calculateDungeonDisplayedStats } from "../../lib/dungeonDisplayedStats";
+import { currentDungeonRouteOptions, ROUTE_ARCHETYPES } from "../../lib/dungeonRouteV2";
 import { isInlineRoom } from "../../lib/dungeonInlineRooms";
 
 const TYPE_ICONS = {
@@ -553,6 +554,8 @@ export function GridMapStage({
   difficulty = 1,
   family = "ghost", partyMembers = [], currentMemberId = "",
   inlineToast = null,
+  showSaveAndLeave = true,
+  showRetreat = true,
 }) {
   const [confirmExit, setConfirmExit] = useState(false);
   const theme = FAMILY_STYLES[family] || FAMILY_STYLES.ghost;
@@ -624,22 +627,22 @@ export function GridMapStage({
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <button onClick={handleSaveLeaveClick}
+          {showSaveAndLeave && <button onClick={handleSaveLeaveClick}
             style={{
               padding:"6px 12px", borderRadius:10, fontSize:11, fontWeight:700,
               background:"rgba(59,130,246,0.18)", color:"#93c5fd",
               border:"1px solid rgba(59,130,246,0.35)", cursor:"pointer",
             }}>
             💾 儲存並暫離
-          </button>
-          <button onClick={() => setConfirmExit(true)}
+          </button>}
+          {showRetreat && <button onClick={() => setConfirmExit(true)}
             style={{
               padding:"6px 12px", borderRadius:10, fontSize:11, fontWeight:700,
               background:"rgba(239,68,68,0.12)", color:"#f87171",
               border:"1px solid rgba(239,68,68,0.3)", cursor:"pointer",
             }}>
             🏳️ 撤退
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -851,6 +854,10 @@ export function BranchStage({
 }) {
   const [confirmExit, setConfirmExit] = useState(false);
   const theme = FAMILY_STYLES[family] || FAMILY_STYLES.ghost;
+  const routeV2 = branchFloor?.routeVersion === 2;
+  const routeOptions = routeV2 ? currentDungeonRouteOptions(branchFloor.route) : [];
+  const routeMarks = branchFloor.route?.marks || [];
+  const needsRouteChoice = routeV2 && routeMarks.length < 3 && branchStep >= routeMarks.length;
 
   return (
     <div style={{
@@ -875,7 +882,7 @@ export function BranchStage({
             </span>
           </div>
           <div style={{ fontSize:10, color:"rgba(255,255,255,0.35)", marginTop:2 }}>
-            {branchChoice ? `已選 ${branchFloor.branches[branchChoice].icon} ${branchFloor.branches[branchChoice].label}` : "三條岔路，選定後無法回頭"}
+            {routeV2 ? `路線印記 ${branchFloor.route?.marks?.length || 0}/3 · 每次選擇都會改變王關與戰利品` : branchChoice ? `已選 ${branchFloor.branches[branchChoice].icon} ${branchFloor.branches[branchChoice].label}` : "三條岔路，選定後無法回頭"}
           </div>
         </div>
         <button onClick={() => setConfirmExit(true)}
@@ -892,7 +899,7 @@ export function BranchStage({
         partyMembers={partyMembers} currentMemberId={currentMemberId} />
 
       {/* 2.5D 分支地圖（三條並排可見） */}
-      <div style={{ padding:"8px 0 0" }}>
+      {!routeV2 ? <div style={{ padding:"8px 0 0" }}>
         <DungeonBranchView
           branchFloor={branchFloor}
           branchChoice={branchChoice}
@@ -902,13 +909,21 @@ export function BranchStage({
           family={family}
           onChoose={onChoose}
         />
-      </div>
+      </div> : needsRouteChoice ? <div style={{padding:"18px 14px 4px",animation:"bs-fade .45s ease both"}}>
+        <div style={{display:"flex",gap:6,justifyContent:"center",marginBottom:14}}>{[0,1,2].map(i=><span key={i} style={{width:42,height:5,borderRadius:9,background:i<(branchFloor.route?.marks?.length||0)?theme.primary:"rgba(255,255,255,.14)"}} />)}</div>
+        <div style={{fontSize:12,color:"#cbd5e1",textAlign:"center",marginBottom:12}}>第 {(branchFloor.route?.marks?.length||0)+1} 次抉擇 · 風險與收益均會鎖定</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>{routeOptions.map(key=>{const x=ROUTE_ARCHETYPES[key];return <button key={key} disabled={!canControl} onClick={()=>onChoose(key)} style={{minHeight:172,padding:"15px 11px",borderRadius:18,textAlign:"left",color:"white",background:`linear-gradient(155deg,${theme.panelBg},rgba(0,0,0,.7))`,border:`1px solid ${theme.borderColor}`,opacity:canControl?1:.65}}><div style={{fontSize:30}}>{x.icon}</div><div style={{fontSize:15,fontWeight:950,margin:"7px 0"}}>{x.label}</div><div style={{fontSize:11,color:"#fda4af",lineHeight:1.45}}>風險 · {x.risk}</div><div style={{fontSize:11,color:"#86efac",lineHeight:1.45,marginTop:5}}>收益 · {x.reward}</div></button>})}</div>
+        {routeMarks.length>0&&<div style={{marginTop:12,fontSize:11,color:"#94a3b8",textAlign:"center"}}>已取得：{routeMarks.map(k=>ROUTE_ARCHETYPES[k].icon+ROUTE_ARCHETYPES[k].label).join(" · ")}</div>}
+      </div> : <div style={{padding:"14px 16px 6px"}}>
+        <div style={{display:"grid",gap:8}}>{branchSeq.map((room,index)=><div key={room.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:14,border:`1px solid ${index===branchStep?theme.primary:theme.borderColor}`,background:index<branchStep?"rgba(34,197,94,.09)":index===branchStep?theme.panelBg:"rgba(255,255,255,.035)",opacity:index>branchStep ? .55 : 1}}><span style={{fontSize:18}}>{index<branchStep?"✓":room.type==="boss_battle"?"👑":room.type==="treasure"?"🏆":"◆"}</span><div style={{flex:1,fontSize:13,fontWeight:850}}>{room.label}</div>{room.routeMark&&<span style={{fontSize:10,color:"#cbd5e1"}}>{ROUTE_ARCHETYPES[room.routeMark]?.label}</span>}</div>)}</div>
+        <div style={{marginTop:10,fontSize:11,color:"#94a3b8",textAlign:"center"}}>路線印記：{routeMarks.map(k=>ROUTE_ARCHETYPES[k].icon).join(" ")}</div>
+      </div>}
 
       {/* 行動列 */}
       <div style={{ padding:"12px 16px calc(7rem + env(safe-area-inset-bottom))" }}>
-        {!branchChoice ? (
+        {needsRouteChoice || !branchChoice ? (
           <div style={{ textAlign:"center", fontSize:12, color:"#94a3b8", lineHeight:1.6 }}>
-            {canControl ? "👆 點選一條岔路前進（選定後無法回頭）" : "等待隊長選擇路線…"}
+            {routeV2 ? (canControl ? "選擇一枚印記，完成三次決策後道路才會展開" : "等待隊長選擇路線印記…") : canControl ? "👆 點選一條岔路前進（選定後無法回頭）" : "等待隊長選擇路線…"}
           </div>
         ) : (
           <button onClick={onEnterNext} disabled={!canControl}

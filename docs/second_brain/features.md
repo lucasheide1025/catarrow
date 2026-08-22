@@ -1,3 +1,64 @@
+## 🔌 訪客 Arcade：5 位房號加入＋斷線返回戰鬥（2026-08-21）
+
+- ✅ 保留 QR 加入，新增大廳 5 位數房號「加入／返回」。
+- ✅ 進房前單次驗證 room + visitor membership；等待房可新加入，已開戰房只准原隊員重連。
+- ✅ 暫時網路/Firestore 錯誤保留 IndexedDB `currentTeamRoom` 與未送 arrows，不再誤清房。
+- ✅ same-round reload 恢復箭數；remote round 已前進則自動捨棄舊回合箭。
+- ✅ 即時同步失敗留在戰鬥並提供人工重新同步，不增加 polling。
+- ✅ waiting / fighting / route / result / defeat 常駐顯示房號。
+- ✅ 原隊員在結果房保留期間重新整理仍可返回結算；active outsider 仍拒絕。
+- ✅ Arcade 155 tests PASS；production build PASS。
+
+## 💰 會計自訂金額＋預約課次狀態隔離（2026-08-20）
+- 會計「記帳」的實收金額現在可自行輸入；方案仍會先帶入標準價／早鳥／月卡結果，教練可再改成實際收款數字，最後帳單與營收統計使用自訂後金額。
+- 修正同一學生同日「第一筆已下課／結帳 → 新增第二筆預約卻直接顯示已結帳／強制結帳」：新預約維持正常 `confirmed`，只有自己的 bookingId/checkin/billing linkage 才能改成 completed。
+- 一般結帳不再自動轉強制結帳；若該預約尚未有自己的已下課紀錄，只提示教練。需要提前結帳時必須明確點「⚡ 強制結帳」。
+- 舊資料相容採安全唯一判定；移除同學生同日多筆時「猜最近一筆」的 fallback，避免歷史 checkin／billing 再吃掉新預約。
+- 驗證：focused **4 suites / 18 tests PASS**；production build PASS。2026-08-20 已正式部署 `catarrow-6iuk9vhox-broudes-1864s-projects.vercel.app`（Ready），`student.catgroup.com.tw` 已指向此版且 HTTP 200，主 bundle=`main.0f3b697a.js`；會計／預約相關 lazy chunks 與本機 verified build SHA-256 完全一致。未 deploy Firebase Rules / Functions，未 commit / push。
+
+## 🎫 下課結算＋月卡審核制（2026-08-19）
+- 首頁與「練箭」共用 `ClassEndSettlementModal`：點下課後顯示今日累積箭數、箭露結算預覽、里程碑獎勵、月卡剩餘時數，並提供不使用／申請扣 1h／申請扣 2h。
+- 月卡扣抵維持後台審核制：1/2h 只建立 `monthlyCardRequests pending`，教練後台核准才實際扣 `monthlyCard.sessions`；已有待審或時數不足時禁止重複申請。教練帳號切射手模式與一般學生走同一流程。
+- `submitClassEnd()` 不修改月卡；`approveMonthlyCardRequest()` transaction 原子處理扣卡＋approved＋`use_approved` log。
+- 月卡後台會員列表新增「➖ 扣除次數」，可手動扣 1/2 次並記錄 `admin_deduct`；transaction 防止扣成負數。
+- 首頁固定顯示月卡剩餘 X 小時、到期日、剩餘天數，狀態標示「可申請扣抵」。1 session = 1 小時。
+- 驗證：**5 suites / 18 tests PASS**；Vercel production build PASS。2026-08-19 已部署 `catarrow-2g5dn3kbg-broudes-1864s-projects.vercel.app`，`student.catgroup.com.tw` 已指向此版；正式站 HTTP 200、bundle=`main.5cb251c5.js`。`firestore.rules` 已成功部署到正式 Firebase `catgroup-8d0bb`。未 commit / push。
+
+## 🎬 訪客 Arcade：完整戰鬥演出、人工重同步、射擊評價（2026-08-18）
+- 組隊 waiting／route／battle／連線錯誤等容易卡住畫面新增「🔄 重新同步」。這是人工救援，不是 polling；每次按下只額外讀取一次權威 team room，重新套用最新狀態並可重播最新 resolution。
+- 單人與組隊的怪物即使被第一回合秒殺，也不再直接跳寶箱或結果：完整播放射箭、命中、貓技能、怪物反應、擊破動畫與結算後才切換畫面。
+- 組隊攻擊演出從合併 TEAM DAMAGE 改為玩家依 roster **A→B→C→…逐一攻擊**；每位都有攻擊 banner、飛箭、命中、個人傷害與逐步扣血。`lastResolution` 保存本回合怪物 snapshot，避免最後一擊時下一隻怪提前出現在演出。
+- 結算新增「射擊表現」：命中率、穩定性、平均每箭、射擊評價 S/A/B/C，以及 20 條不同正向誇獎詞。射擊評價純展示，不影響既有冒險通關評價／金幣。
+- Local First 保持不變：單人逐箭只留本場記憶體；組隊 Firestore 不保存完整逐箭歷史，只增加少量 aggregate，當回合 BOSS 落點解析後清除。
+- 驗證：Arcade **139/139**；全專案 **233 suites / 2522 tests 全過**；production build `Compiled successfully`。狀態：**2026-08-18 已重新部署** `catarrow-b64t6vbeh-broudes-1864s-projects.vercel.app`（Ready），`student.catgroup.com.tw` alias 已確認切至此版；未 commit / push。
+
+## 👹 訪客 Arcade：怪物圖名一致＋學籍世界王外觀（2026-08-18）
+- `ARCADE_MONSTERS` 由 `sourceMonsterId` 同時決定名稱與 `/monsters/<id>.webp`，修掉原本手寫名稱配錯族群圖檔；組隊深淵衍生怪也從 canonical base name 產生名稱。
+- `buildVisitorWorldBoss(worldBossKey, combat)` 直接讀學籍 `WORLD_BOSSES` 的 `name/title/desc/pixelKey`，訪客只另給獨立 combat stats，學籍正式世界王數值不會被修改。
+- 三個單人訪客王：山魈頭領（貓森）／狼人首領（月夜）／怨靈大君（深淵）；HP=115、DEF=1、ATK=5/6/7，打斷門檻 36 分，弱點圈 bonus 1.35，完全沒中圈仍保留 80% 傷害。
+- 平衡驗收：第一次來的新手以 6 箭平均 5 分＝30 分／回合為保守基準，0 弱點命中時三王均第 5 回合擊敗且玩家仍存活；命中弱點或分數更高會更快。
+- 驗證：Arcade 131/131、全專案 231 suites / 2514 tests、production build PASS。狀態：**本機完成，未重新 deploy / commit / push**。
+
+## ⚔️ 訪客 Arcade 射手競技場 PvP v1（2026-08-18）
+- 新增最多 8 人 PvP：1v1、3～8 人大亂鬥、4/6/8 人團隊戰，3/6 箭回合制；10/X 有明顯傷害差，並用圍攻保護避免多人集火瞬殺。
+- 倒下不淘汰出局：轉「支援靈魂」後仍需射箭；團隊戰補同隊，大亂鬥／1v1 自動補最低 HP 存活者。
+- Local First：逐箭、本場未送資料、PvP `duelStats`、動畫都保留在各自 IndexedDB；`profileForCloud()` 明確禁止 `duelStats` 上傳 `arcadeProfiles`。
+- Cloud for Coordination：每人整場固定一顆 `arcadeRooms/DUELSUB_<code>_<sessionKey>_<encodedVisitorId>` 小摘要、每回合覆寫；只有房主對房內 2～8 顆 exact docs 持續監聽，其他人只讀 parent room；房主一回合只寫一次共享結算。無逐箭 Firestore、無 heartbeat、結束清理 0 額外 reads。
+- 每房另有隨機 `sessionKey` 隔離重複 5 位房號，避免異常關閉留下的舊 submission 在未來同房號／同回合時污染新場；不增加讀取。
+- QR：`?arcade&duel=XXXXX`；本機 resume 可接回房號、回合、未送箭、目標與本場統計。
+- 房主失聯 5 分鐘可接管；回合 4 分鐘可跳過未提交者；戰鬥中離開不阻塞全房。
+- 驗證：Arcade 128/128；全專案 231 suites / 2511 tests；production build PASS。
+- 狀態：**2026-08-18 已正式部署**。`student.catgroup.com.tw` 已指向 Vercel deployment `catarrow-k4b2e8eaj-broudes-1864s-projects.vercel.app`；`DUELSUB_*` 使用既有 production `arcadeRooms` 權限，匿名 write/delete 線上驗證成功。未 commit / push。
+
+## 官網帶隊比賽／賽事成果系統（2026-08-17）
+- 後台：`AdminWebsiteCms` 內的 `AdminWebsiteCompetitions`，來源 collection `websiteCompetitionResults`（admin-only）。
+- 公開：`website/assets/competition-results.json` → `npm run website:competitions` → `/competitions/` 與 `/competitions/<slug>/` 靜態頁、首頁最新賽事卡。
+- 定位：從第一次射箭到站上賽場的成長證明，不是單純戰績炫耀頁。公開匯出會剝除內部 `linkedMemberId`。
+- 一鍵發布：`AdminWebsiteCompetitions` 可呼叫 `asia-east1/publishCompetitionWebsite`；Function 僅允許 admin，重新讀 `websiteCompetitionResults`、server-side 清洗，再從 Functions 內的網站模板產生 `/competitions`、runtime、sitemap，最後透過 Vercel REST API 建立 `catarrow-archery` production deployment。
+- 安全：Vercel Token 僅存 Firebase Secret Manager `CAT_ARCHERY_VERCEL`（JSON：token/teamId/projectName），不進 repo／前端；JSON 匯出保留為 fallback。
+- Functions 部署：`firebase.json` predeploy 會跑 `npm run website:publisher:prepare`，同步最新 `website/` 與 generator 到 gitignored 的 `functions/website-template/`、`functions/website-publisher-tools/`。
+- 啟用狀態：程式已完成與測試通過；尚未設定 `CAT_ARCHERY_VERCEL`、尚未部署 `publishCompetitionWebsite` Function。
+
 # 📋 features — 功能清單
 > 最後更新：2026-07-25（稽核補記：補上先前漏列的功能，見下方 🔍 章節）
 

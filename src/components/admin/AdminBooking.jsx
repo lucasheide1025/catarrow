@@ -37,6 +37,7 @@ import BookingScheduleCard from "../booking/BookingScheduleCard";
 import BookingEmailSettings from "./BookingEmailSettings";
 import { Card, Btn, Inp, Modal, Spinner, Empty, useToast } from "../shared/UI";
 import { PAY_METHODS, EARLY_BIRD_DISC, EARLY_BIRD_MAX, defaultFirstTimeCount } from "../../lib/bookingPricing";
+import { billingRecordMatchesBooking, checkinAllowsRegularCheckout } from "../../lib/bookingCheckoutLink";
 
 const DOW_LABEL = ["日", "一", "二", "三", "四", "五", "六"];
 const PAYMENT_LABEL = { cash: "💵 現金", transfer: "🏦 轉帳", monthly: "💳 月卡" };
@@ -221,11 +222,9 @@ function CalendarTab({ toast }) {
     const billingRecords = billingSnap?.docs?.map(d => ({ id:d.id, ...d.data() })) || [];
     visibleBookings = await Promise.all(visibleBookings.map(async booking => {
       if (booking.billingRecordId) return booking;
-      const checkinId = booking.checkinId || (booking.memberId ? `${booking.memberId}_${booking.date}` : null);
-      const existing = billingRecords.find(record =>
-        record.bookingId === booking.id || (checkinId && record.checkinId === checkinId)
-      );
+      const existing = billingRecords.find(record => billingRecordMatchesBooking(booking, record));
       if (!existing) return booking;
+      const checkinId = booking.checkinId || (existing.bookingId === booking.id ? (existing.checkinId || null) : null);
       const linked = await completeBookingFromCheckin(booking.id, checkinId, existing.id);
       return linked.ok ? { ...booking, status:"completed", billingRecordId:existing.id, checkinId } : booking;
     }));
@@ -569,15 +568,19 @@ function SlotDetailModal({ slot, bookings, blocked, onClose, onChanged, toast })
       const checkinId = booking.checkinId || `${booking.memberId}_${booking.date}`;
       const checkinSnap = await getDoc(doc(db, "checkins", checkinId));
       const checkin = checkinSnap.exists() ? checkinSnap.data() : null;
-      if (!checkin?.classEnded) {
-        toast("此學生尚未按下課，暫時不能一般結帳（已自動啟用「⚡ 強制結帳」模式）", "warn");
-        setCheckoutTarget({ ...booking, checkinId, isForce: true });
+      if (!checkinAllowsRegularCheckout(booking, checkin, checkinId)) {
+        toast("此筆預約尚未完成下課；如需提前結帳，請使用「⚡ 強制結帳」。", "warn");
         return;
       }
-      let existingBillingId = checkin.billingRecordId || null;
-      if (!existingBillingId) {
-        const billingSnap = await getDocs(query(collection(db, "billingRecords"), where("checkinId", "==", checkinId), limit(1)));
-        existingBillingId = billingSnap.docs[0]?.id || null;
+      let existingBillingId = null;
+      const exactBillingSnap = await getDocs(query(collection(db, "billingRecords"), where("bookingId", "==", booking.id), limit(1)));
+      existingBillingId = exactBillingSnap.docs[0]?.id || null;
+      if (!existingBillingId && booking.checkinId) {
+        const billingSnap = await getDocs(query(collection(db, "billingRecords"), where("checkinId", "==", booking.checkinId), limit(5)));
+        const legacyMatch = billingSnap.docs
+          .map(d => ({ id:d.id, ...d.data() }))
+          .find(record => billingRecordMatchesBooking(booking, record));
+        existingBillingId = legacyMatch?.id || null;
       }
       if (existingBillingId) {
         const linked = await completeBookingFromCheckin(booking.id, checkinId, existingBillingId);

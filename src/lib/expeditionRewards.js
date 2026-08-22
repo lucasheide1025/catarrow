@@ -119,6 +119,16 @@ export function createExpeditionKillLoot(monster, lootMult, options = {}) {
   };
 }
 
+export function createDungeonEncounterLoot(encounter, lootMult, options = {}) {
+  const defeated=(encounter?.targets||[]).filter(target=>target && target.isRunePillar!==true && (target.alive===false||Number(target.currentHp)<=0));
+  if(!defeated.length)return emptyExpeditionLoot();
+  return defeated.reduce((total,target,index)=>{
+    const loot=createExpeditionKillLoot(target,lootMult,options);
+    const chests=index===0?loot.chests:loot.chests.filter(chest=>chest.family!=="coin");
+    return mergeExpeditionLoot(total,{...loot,chests});
+  },emptyExpeditionLoot());
+}
+
 export function emptyExpeditionLoot() {
   return {
     chests: [],

@@ -13,14 +13,15 @@ const SOLO_CHALLENGE = Object.freeze({
   standard:{ materialQty:5, cardChance:0.20, coinMult:1, coinChestChance:0.5 },
   hard:{ materialQty:7, cardChance:0.30, coinMult:1.5, coinChestChance:1 },
 });
+const MONSTER_TIER_XP = Object.freeze({ common:5, rare:10, elite:20, fierce:30, boss:50, mythic:80 });
 const POTION_CHEST_CHANCE=Object.freeze({common:.02,rare:.03,elite:.05,fierce:.08,boss:.12,mythic:.18});
 const COIN_CHEST_RANGE=Object.freeze({common:[20,50],rare:[60,120],elite:[150,250],fierce:[300,500],boss:[600,1000],mythic:[1200,2000]});
 function stableTimestamp(key){return 1700000000000+Math.floor(seededRoll(`${key}:timestamp`)*31536000000);}
 function buildSoloChests({battleId,memberId,monster,challenge}){
   const key=`${battleId}:${memberId}:${monster.id}:solo`,now=stableTimestamp(key),tierIndex=monster.tierIndex||1;
-  const chests=[{id:`${key}:material`,type:"family_mat",family:monster.family,tierIndex,tier:monster.tier,name:`T${tierIndex} 族系素材箱`,icon:"📦",from:"單人狩獵",ts:now}];
-  if(seededRoll(`${key}:coin-chest`)<challenge.coinChestChance){const range=COIN_CHEST_RANGE[monster.tier]||COIN_CHEST_RANGE.common;chests.push({id:`${key}:coin`,type:"coin",family:"coin",tier:monster.tier,coinTier:monster.tier,name:`${monster.tier} 金幣寶箱`,icon:"🪙",min:range[0],max:range[1],from:"單人狩獵",ts:now+1});}
-  if(seededRoll(`${key}:potion-chest`)<(POTION_CHEST_CHANCE[monster.tier]||.02))chests.push({id:`${key}:potion`,type:"potion",family:monster.family,tier:monster.tier,name:"藥水寶箱",icon:"🧪",from:"單人狩獵",ts:now+2});
+  const chests=[{id:`${key}:material`,type:"family_mat",family:monster.family,tierIndex,tier:monster.tier,name:`T${tierIndex} \u7cfb\u7d20\u6750\u7bb1`,icon:"\uD83D\uDCE6",from:"\u55ae\u4eba\u72e9\u7375",ts:now}];
+  if(seededRoll(`${key}:coin-chest`)<challenge.coinChestChance){const range=COIN_CHEST_RANGE[monster.tier]||COIN_CHEST_RANGE.common;chests.push({id:`${key}:coin`,type:"coin",family:"coin",tier:monster.tier,coinTier:monster.tier,name:`${monster.tier} \u91d1\u5e63\u5bf6\u7bb1`,icon:"\uD83E\uDE99",min:range[0],max:range[1],from:"solo_hunt",ts:now+1});}
+  if(seededRoll(`${key}:potion-chest`)<(POTION_CHEST_CHANCE[monster.tier]||.02))chests.push({id:`${key}:potion`,type:"potion",family:monster.family,tier:monster.tier,name:"\u85e5\u6c34\u5bf6\u7bb1",icon:"\uD83E\uDDEA",from:"\u55ae\u4eba\u72e9\u7375",ts:now+2});
   return chests;
 }
 const REWARD_TYPES = new Set(["solo_hunt"]);
@@ -63,21 +64,70 @@ function buildTrustedMonsterReward(input) {
     challengeLevel, cardChance, chests,
     materialTotals:{ [monster.material.id]:challenge.materialQty },
     card:cardDropped ? {
-      monsterId:monster.card.id || monster.id, name:monster.name, icon:monster.icon || "👾",
+      monsterId:monster.card.id || monster.id, name:monster.name, icon:monster.icon || "\uD83D\uDC3E",
       tier:monster.tier, family:monster.family,
     } : null,
     catalogVersion:catalog.version,
   };
 }
 
-function buildDungeonNormalCardClaim({ battleId, memberId, monsterId }) {
+function buildTrustedMultiMonsterReward(input) {
+  const battleId = requireId(input?.battleId, "invalid_battle_id");
+  const memberId = requireId(input?.memberId, "invalid_member_id");
+  const family = requireId(input?.family, "invalid_family");
+  const tierIndex = Number(input?.tierIndex);
+  if (!Number.isInteger(tierIndex) || tierIndex < 1 || tierIndex > 6) throw new Error("invalid_tier");
+  const monsterIds = Array.isArray(input?.monsterIds) ? input.monsterIds.map(value => requireId(value, "invalid_monster_id")) : [];
+  if (monsterIds.length !== 3 || new Set(monsterIds).size !== 3) throw new Error("invalid_multi_monster_set");
+  const expectedIds = catalog.monsters
+    .filter(monster => monster.family === family && Number(monster.tierIndex) === tierIndex && monster.encounter === "normal")
+    .slice(0, 3)
+    .map(monster => monster.id);
+  if (expectedIds.length !== 3 || expectedIds.some((id, index) => monsterIds[index] !== id)) throw new Error("multi_monster_set_mismatch");
+  const mode = String(input?.mode || "student");
+  if (!(mode in MODE_MULT)) throw new Error("invalid_reward_mode");
+  const challengeLevel = String(input?.challengeLevel || "standard");
+  if (!(challengeLevel in SOLO_CHALLENGE)) throw new Error("invalid_challenge_level");
+
+  const parts = monsterIds.map((monsterId, index) => buildTrustedMonsterReward({
+    battleId:`${battleId}_monster_${index}`,
+    memberId,
+    monsterId,
+    rewardType:"solo_hunt",
+    mode,
+    challengeLevel,
+  }));
+  const materialTotals = {};
+  const chests = [];
+  const cards = [];
+  let coins = 0;
+  let archerXP = 0;
+  for (const part of parts) {
+    const monster = MONSTERS.get(part.monsterId);
+    coins += part.coins;
+    archerXP += MONSTER_TIER_XP[monster?.tier] || 5;
+    for (const [materialId, quantity] of Object.entries(part.materialTotals || {})) {
+      materialTotals[materialId] = (materialTotals[materialId] || 0) + quantity;
+    }
+    chests.push(...(part.chests || []));
+    if (part.card) cards.push(part.card);
+  }
+  return {
+    claimId:[battleId, memberId, "multi_hunt"].map(encodeURIComponent).join("~"),
+    battleId, memberId, family, tierIndex, monsterIds, mode, challengeLevel,
+    coins, archerXP, materialTotals, chests, cards, catalogVersion:catalog.version,
+  };
+}
+
+function buildDungeonNormalCardClaim({ battleId, memberId, monsterId, targetInstanceId = "" }) {
   const safeBattleId=requireId(battleId,"invalid_battle_id"),safeMemberId=requireId(memberId,"invalid_member_id"),safeMonsterId=requireId(monsterId,"invalid_monster_id");
   const monster=MONSTERS.get(safeMonsterId);
   if(!monster||monster.encounter!=="normal")throw new Error("normal_monster_required");
   const chance=resolveCardDropChance({mode:"dungeon",encounter:"normal",baseChance:SOLO_CHALLENGE.standard.cardChance});
-  const dropped=seededRoll(`${safeBattleId}:${safeMemberId}:${safeMonsterId}:dungeon-card`)<chance;
-  return{claimId:[safeBattleId,safeMemberId,"dungeon_normal_card"].map(encodeURIComponent).join("~"),battleId:safeBattleId,memberId:safeMemberId,monsterId:safeMonsterId,chance,
-    card:dropped?{monsterId:monster.card.id||monster.id,name:monster.name,icon:monster.icon||"👾",tier:monster.tier,family:monster.family,encounter:monster.encounter,artKey:monster.artKey}:null};
+  const safeTarget=targetInstanceId?requireId(targetInstanceId,"invalid_target_instance"):"";
+  const dropped=seededRoll(`${safeBattleId}:${safeMemberId}:${safeMonsterId}:${safeTarget}:dungeon-card`)<chance;
+  return{claimId:[safeBattleId,safeMemberId,"dungeon_normal_card",...(safeTarget?[safeTarget]:[])].map(encodeURIComponent).join("~"),battleId:safeBattleId,memberId:safeMemberId,monsterId:safeMonsterId,targetInstanceId:safeTarget,chance,
+    card:dropped?{monsterId:monster.card.id||monster.id,name:monster.name,icon:monster.icon||"paw",tier:monster.tier,family:monster.family,encounter:monster.encounter,artKey:monster.artKey}:null};
 }
 
-module.exports = { buildDungeonNormalCardClaim, buildTrustedMonsterReward, seededRoll };
+module.exports = { buildDungeonNormalCardClaim, buildTrustedMonsterReward, buildTrustedMultiMonsterReward, seededRoll };

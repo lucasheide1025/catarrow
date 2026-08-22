@@ -14,10 +14,13 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "build": "react-scripts build",
+    "generate:combat-runtime": "node scripts/generate-combat-runtime.cjs",
+    "build": "node -e \"if (!process.env.VERCEL) require('./scripts/generate-combat-runtime.cjs')\" && react-scripts build",
     "test": "react-scripts test",
     "test:firestore-rules": "firebase emulators:exec --project demo-catarrow --only firestore \"node --test test/firestore-rules/**/*.test.mjs\"",
-    "prepare": "git config core.hooksPath .githooks || exit 0"
+    "prepare": "git config core.hooksPath .githooks || exit 0",
+    "website:competitions": "node scripts/website/generate-competition-pages.cjs",
+    "website:publisher:prepare": "node scripts/website/sync-function-template.cjs"
   },
   "browserslist": {
     "production": [

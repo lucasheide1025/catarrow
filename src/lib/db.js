@@ -28,8 +28,9 @@ import { SHOOTING_SCHEMA_VERSION, buildMonsterShootingRecord, buildPracticeShoot
 import { assertCostCapability, COST_CAPABILITIES, isCostCapabilityAllowed } from "./costControl";
 import { completeClassEndRushFlow, settleClassEndRushAward } from "./classEndRush";
 import { existingMonthlyCardPurchaseCount, nextMonthlyCardPurchaseCounters, purchaseCountFromMonthlyCardLogs } from "./monthlyCardStats";
+import { FREE_HUNT_RESET_SCOPE, resetFreeHuntUsage } from "./freeHuntQuota";
 import {
-  createRoundArrowRecorder, dailyArrowStorageKey, getLocalTodayArrows,
+  createIdempotentBattleRoundRecorder, createRoundArrowRecorder, dailyArrowStorageKey, getLocalTodayArrows,
   setLocalTodayArrows, subscribeLocalTodayArrows, taipeiDateKey,
 } from "./arrowProgress";
 export { dailyArrowStorageKey, getLocalTodayArrows, subscribeLocalTodayArrows, taipeiDateKey } from "./arrowProgress";
@@ -53,6 +54,7 @@ const C = {
   arrowCountEvents: "arrowCountEvents",
   memberPerformanceSync: "memberPerformanceSync",
   arrowRoundOperations: "arrowRoundOperations",
+  websiteCompetitionResults: "websiteCompetitionResults",
 };
 
 const todayArrowInitializations = new Map();
@@ -1055,6 +1057,7 @@ const recordRoundArrows = createRoundArrowRecorder({
 export function addRoundArrows(memberId, count, options) {
   return recordRoundArrows(memberId, count, options);
 }
+export const recordBattleRoundArrows = createIdempotentBattleRoundRecorder({ record:addRoundArrows });
 
 export async function resolveBadgeDispute(logId, operatorId, newCount, note) {
   await updateDoc(doc(db, C.badgeLogs, logId), { status: "resolved", resolvedAt: serverTimestamp(), resolvedBy: operatorId, resolvedNote: note, correctedCount: newCount });
@@ -1084,6 +1087,31 @@ export function subscribePendingBadgeLogs(memberId, callback) {
 export async function getCompetitions() {
   const snap = await getDocs(query(collection(db, C.competitions), orderBy("date", "desc")));
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+
+// 官網「帶隊比賽／賽事成果」內容層：與館內 competitions/results 計分流程刻意分離。
+// 公開官網不直接讀此 collection；管理者匯出經清洗的靜態 JSON 後再產生 website 頁面。
+export async function getWebsiteCompetitionResults() {
+  const snap = await getDocs(query(collection(db, C.websiteCompetitionResults), orderBy("eventDate", "desc")));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+export async function saveWebsiteCompetitionResult(data = {}) {
+  const source = { ...data };
+  const id = String(source.id || "").trim();
+  delete source.id;
+  const payload = { ...source, updatedAt: serverTimestamp() };
+  if (source.status === "published" && !source.publishedAt) payload.publishedAt = serverTimestamp();
+  if (id) {
+    await setDoc(doc(db, C.websiteCompetitionResults, id), payload, { merge: true });
+    return id;
+  }
+  const ref = await addDoc(collection(db, C.websiteCompetitionResults), { ...payload, createdAt: serverTimestamp() });
+  return ref.id;
+}
+export async function deleteWebsiteCompetitionResult(id) {
+  if (!id) throw new Error("缺少賽事紀錄 ID");
+  await deleteDoc(doc(db, C.websiteCompetitionResults, id));
 }
 
 // 圖鑑只讀少量活動目錄，不逐格查 Firestore；另加模組級 TTL / inflight 去重。
@@ -2019,23 +2047,47 @@ export async function markQuestDone(checkinId, questResult, memberId = null, che
   }
 }
 
-// 學生點「下課」→ 計入本次上課次數 +1
+// 學生點「下課」→ 計入本次上課次數 +1；月卡扣抵另走 monthlyCardRequests 後台審核。
 export async function submitClassEnd(memberId, checkinDocId) {
+  let classEnd = { endedNow:false };
   const rushAward = await completeClassEndRushFlow({
     persistClassEnd:async () => {
-      await updateDoc(doc(db, C_CHECKIN, checkinDocId), {
-        classEnded: true,
-        classEndedAt: serverTimestamp(),
-        finalConfirmed: true,
+      await runTransaction(db, async tx => {
+        const checkinRef = doc(db, C_CHECKIN, checkinDocId);
+        const memberRef = doc(db, C.members, memberId);
+        const checkinSnap = await tx.get(checkinRef);
+        const memberSnap = await tx.get(memberRef);
+        if (!checkinSnap.exists()) throw new Error("找不到本次報到紀錄。");
+        if (!memberSnap.exists()) throw new Error("找不到射手資料。");
+        const member = memberSnap.data() || {};
+        // 重送／斷線 retry：已下課就只讓後面的 rush/flush 重試，不能再加次數。
+        if (checkinSnap.data()?.classEnded) {
+          classEnd = { endedNow:false };
+          return;
+        }
+
+        tx.update(checkinRef, {
+          classEnded: true,
+          classEndedAt: serverTimestamp(),
+          finalConfirmed: true,
+        });
+        tx.update(memberRef, {
+          dailyQuestCount: increment(1),
+          eventPoints: increment(1),
+        });
+        classEnd = {
+          endedNow:true,
+          newDailyQuestCount:(Number(member.dailyQuestCount) || 0) + 1,
+        };
       });
+      invalidateMembersCache();
       try {
-        const member = await getMember(memberId);
-        const newCount = (member?.dailyQuestCount || 0) + 1;
-        await updateDoc(doc(db, C.members, memberId), { dailyQuestCount: increment(1), eventPoints: increment(1) });
-        const config = await getDailyQuestConfig();
-        const rewardEvery = config?.rewardEvery || 10;
-        if (newCount % rewardEvery === 0) {
-          await addBadge(memberId, "achievement", "silver", 1, memberId, `上課累積 ${newCount} 次`);
+        if (classEnd.endedNow) {
+          const config = await getDailyQuestConfig();
+          const rewardEvery = config?.rewardEvery || 10;
+          if (classEnd.newDailyQuestCount % rewardEvery === 0) {
+            await addBadge(memberId, "achievement", "silver", 1, memberId, `上課累積 ${classEnd.newDailyQuestCount} 次`);
+          }
         }
       } catch (e) { console.warn("submitClassEnd:", e?.message); }
       // 下課時 flush 所有累積在 localStorage 的射手表現資料到 Firestore
@@ -2052,7 +2104,7 @@ export async function submitClassEnd(memberId, checkinDocId) {
       }
     }
   });
-  return { rushAward };
+  return { rushAward, classEnd };
 }
 
 export async function retryClassEndShopRushAward(memberId) {
@@ -2741,10 +2793,7 @@ export async function getMonsterLogs(memberId, maxCount = 20) {
  
 // ─── 重置打怪每日次數（後台用）────────────────────────────
 export async function resetMonsterSession(memberId) {
-  try {
-    const id = `${memberId}_${monsterTodayStr()}`;
-    await deleteDoc(doc(db, C_MONSTER_SESSION, id));
-  } catch (e) { console.warn("resetMonsterSession:", e?.message); }
+  return resetFreeHuntQuota(memberId, FREE_HUNT_RESET_SCOPE.SINGLE);
 }
  
 // 組隊打怪每日上限（同一份文件存 partyCount 欄位，max = 5）
@@ -3578,14 +3627,51 @@ export async function resetAllDungeonUsed() {
 }
 
 export async function resetAllMonsterSessions() {
+  return resetAllFreeHuntQuotas(FREE_HUNT_RESET_SCOPE.SINGLE);
+}
+
+export async function resetFreeHuntQuota(memberId, scope = FREE_HUNT_RESET_SCOPE.ALL) {
+  if (!memberId) throw new Error("memberId is required");
+  if (!Object.values(FREE_HUNT_RESET_SCOPE).includes(scope)) throw new Error("invalid Free Hunt reset scope");
+  const memberRef = doc(db, C.members, memberId);
+  const date = new Date();
+  await runTransaction(db, async tx => {
+    const snap = await tx.get(memberRef);
+    if (!snap.exists()) throw new Error("member_not_found");
+    tx.update(memberRef, {
+      freeHuntUsage:resetFreeHuntUsage(snap.data(), scope, date),
+      updatedAt:serverTimestamp(),
+    });
+    if (scope !== FREE_HUNT_RESET_SCOPE.MULTI) {
+      tx.delete(doc(db, C_MONSTER_SESSION, `${memberId}_${monsterTodayStr()}`));
+    }
+  });
+  invalidateMembersCache();
+}
+
+export async function resetAllFreeHuntQuotas(scope = FREE_HUNT_RESET_SCOPE.ALL) {
+  if (!Object.values(FREE_HUNT_RESET_SCOPE).includes(scope)) throw new Error("invalid Free Hunt reset scope");
   assertCostCapability(COST_CAPABILITIES.bulkAdminWrites);
   const snap = await getDocs(collection(db, C.members));
-  const todayStr = monsterTodayStr();
-  const batch = writeBatch(db);
-  snap.docs.forEach(d => {
-    batch.delete(doc(db, C_MONSTER_SESSION, `${d.id}_${todayStr}`));
-  });
-  await batch.commit();
+  const date = new Date();
+  const today = monsterTodayStr();
+  const operationsPerMember = scope === FREE_HUNT_RESET_SCOPE.MULTI ? 1 : 2;
+  const chunkSize = Math.floor(450 / operationsPerMember);
+  for (let offset = 0; offset < snap.docs.length; offset += chunkSize) {
+    const batch = writeBatch(db);
+    snap.docs.slice(offset, offset + chunkSize).forEach(memberSnap => {
+      batch.update(memberSnap.ref, {
+        freeHuntUsage:resetFreeHuntUsage(memberSnap.data(), scope, date),
+        updatedAt:serverTimestamp(),
+      });
+      if (scope !== FREE_HUNT_RESET_SCOPE.MULTI) {
+        batch.delete(doc(db, C_MONSTER_SESSION, `${memberSnap.id}_${today}`));
+      }
+    });
+    await batch.commit();
+  }
+  invalidateMembersCache();
+  return snap.size;
 }
 
 // ─── 圖片收集卡包 ──────────────────────────────────────────
@@ -3958,34 +4044,46 @@ export function subscribeMonthlyCardLogs(memberId, callback) {
 // clientCard: profile.monthlyCard — 從 client 傳入，避免 getDoc
 // hasPending: 從 subscribeMyMonthlyRequests 的現有資料判斷
 export async function submitMonthlyCardRequest(memberId, memberName, hours, clientCard = null, hasPending = false) {
-  if (!memberId || ![1, 2, 3].includes(hours)) return { ok: false, reason: "參數錯誤" };
+  if (!memberId || ![1, 2].includes(hours)) return { ok: false, reason: "月卡扣抵只支援 1 或 2 小時" };
   try {
     if (hasPending) return { ok: false, reason: "已有待審核申請，請等待教練處理" };
     const card = clientCard;
-    if (!card?.active || card.sessions <= 0) return { ok: false, reason: "月卡無效或次數不足" };
+    if (!card?.active || Number(card.sessions || 0) < hours) return { ok: false, reason: "月卡無效或剩餘時數不足" };
     await addDoc(collection(db, C_MONTHLY), { memberId, memberName, hours, status: "pending", createdAt: serverTimestamp() });
     return { ok: true };
   } catch (e) { return { ok: false, reason: e?.message }; }
 }
 
-// 後台審核通過 → 扣1次
+// 後台審核通過 → 依申請扣 1／2 小時；申請狀態、會員月卡與 log 同一 transaction 完成。
 export async function approveMonthlyCardRequest(requestId, memberId, operatorId) {
   try {
     const reqRef = doc(db, C_MONTHLY, requestId);
-    const reqSnap = await getDoc(reqRef);
-    if (!reqSnap.exists() || reqSnap.data().status !== "pending") return { ok: false, reason: "申請不存在或已處理" };
-    const req = reqSnap.data();
     const memRef = doc(db, C.members, memberId);
-    const memSnap = await getDoc(memRef);
-    const card = memSnap.exists() ? (memSnap.data().monthlyCard || null) : null;
-    const hoursUsed = req.hours || 1;
-    if (!card?.active || card.sessions < hoursUsed) return { ok: false, reason: "月卡無效或點數不足" };
-    await updateDoc(memRef, { "monthlyCard.sessions": increment(-hoursUsed) });
+    let hoursUsed = 0;
+    await runTransaction(db, async tx => {
+      const reqSnap = await tx.get(reqRef);
+      const memSnap = await tx.get(memRef);
+      if (!reqSnap.exists() || reqSnap.data().status !== "pending") throw new Error("申請不存在或已處理");
+      if (!memSnap.exists()) throw new Error("找不到會員");
+      const req = reqSnap.data();
+      const card = memSnap.data().monthlyCard || null;
+      hoursUsed = Number(req.hours || 1);
+      if (![1, 2].includes(hoursUsed)) throw new Error("申請時數不正確");
+      if (!card?.active || Number(card.sessions || 0) < hoursUsed) throw new Error("月卡無效或剩餘時數不足");
+      tx.update(memRef, { "monthlyCard.sessions": Number(card.sessions || 0) - hoursUsed });
+      tx.update(reqRef, { status:"approved", reviewedAt:serverTimestamp() });
+      tx.set(doc(collection(db, C_MONTHLY_LOGS)), {
+        memberId,
+        memberName:req.memberName || memberId,
+        action:"use_approved",
+        delta:-hoursUsed,
+        note:`核准使用 ${hoursUsed} 小時（扣 ${hoursUsed} 次）`,
+        operatorId,
+        createdAt:serverTimestamp(),
+      });
+    });
     invalidateMembersCache();
-    await updateDoc(reqRef, { status: "approved", reviewedAt: serverTimestamp() });
-    await _logMonthlyCard(memberId, req.memberName || memberId, "use_approved", -hoursUsed,
-      `核准使用 ${hoursUsed} 小時（扣 ${hoursUsed} 點）`, operatorId);
-    return { ok: true };
+    return { ok:true, hoursUsed };
   } catch (e) { return { ok: false, reason: e?.message }; }
 }
 
@@ -4062,6 +4160,37 @@ export async function giftMonthlyCardSessions(memberId, memberName, sessions, op
       `贈送 ${sessions} 次`, operatorId);
     return { ok: true };
   } catch (e) { return { ok: false, reason: e?.message }; }
+}
+
+// 後台手動扣除月卡次數（1 session = 1 小時）。
+export async function deductMonthlyCardSessions(memberId, memberName, sessions, operatorId) {
+  const deduct = Number(sessions);
+  if (!memberId || ![1, 2].includes(deduct)) return { ok:false, reason:"扣除時數只支援 1 或 2 小時" };
+  try {
+    let sessionsAfter = 0;
+    await runTransaction(db, async tx => {
+      const memRef = doc(db, C.members, memberId);
+      const memSnap = await tx.get(memRef);
+      if (!memSnap.exists()) throw new Error("找不到會員");
+      const card = memSnap.data().monthlyCard || null;
+      const sessionsBefore = Math.max(0, Number(card?.sessions) || 0);
+      if (!card?.active) throw new Error("月卡目前未啟用");
+      if (sessionsBefore < deduct) throw new Error(`月卡只剩 ${sessionsBefore} 小時，不足扣除 ${deduct} 小時`);
+      sessionsAfter = sessionsBefore - deduct;
+      tx.update(memRef, { "monthlyCard.sessions":sessionsAfter });
+      tx.set(doc(collection(db, C_MONTHLY_LOGS)), {
+        memberId,
+        memberName:memberName || memberId,
+        action:"admin_deduct",
+        delta:-deduct,
+        note:`後台手動扣除 ${deduct} 小時`,
+        operatorId,
+        createdAt:serverTimestamp(),
+      });
+    });
+    invalidateMembersCache();
+    return { ok:true, sessionsAfter };
+  } catch (e) { return { ok:false, reason:e?.message }; }
 }
 
 // 訂閱待審核月卡申請（後台）

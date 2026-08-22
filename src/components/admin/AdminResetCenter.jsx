@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo } from "react";
 import {
   getMembers,
   resetDungeonUsed, resetAllDungeonUsed,
-  resetMonsterSession, resetAllMonsterSessions,
+  resetFreeHuntQuota, resetAllFreeHuntQuotas,
   resetCouncilDailyLimit, resetAllCouncilDailyLimits,
   forceEndTodayCheckins, resetCheckinCount, resetAllCheckinCounts,
 } from "../../lib/db";
@@ -11,6 +11,7 @@ import {
   subscribeActiveWorldBoss,
   resetWorldBossAttack, resetAllWorldBossAttacks,
 } from "../../lib/worldBossDb";
+import { FREE_HUNT_RESET_SCOPE, resetFreeHuntUsage } from "../../lib/freeHuntQuota";
 import { deleteAllDungeonRooms } from "../../lib/dungeonDb";
 import { grantDungeonScroll, grantDungeonToMember, EXCAVATION_FAMILIES, MAX_SAVED_DUNGEONS } from "../../lib/dungeonExcavation";
 import { deleteAllPartyRooms } from "../../lib/partyDb";
@@ -143,18 +144,36 @@ export default function AdminResetCenter() {
   }
 
   // ── 打怪次數重置 ─────────────────────────────────────────
-  async function handleResetMonsterOne(id, name) {
-    setBusyM(id); setMsg("");
-    await resetMonsterSession(id);
-    setMsg(`✅ ${name} 今日打怪次數已重置`);
-    setBusyM("");
+  async function handleResetMonsterOne(id, name, scope) {
+    const busyKey = `${id}:${scope}`;
+    setBusyM(busyKey); setMsg("");
+    try {
+      await resetFreeHuntQuota(id, scope);
+      setMembers(prev => prev.map(m => m.id === id
+        ? { ...m, freeHuntUsage:resetFreeHuntUsage(m, scope) }
+        : m));
+      const label = scope === FREE_HUNT_RESET_SCOPE.SINGLE ? "指定單怪" : scope === FREE_HUNT_RESET_SCOPE.MULTI ? "複數怪" : "全部狩獵";
+      setMsg(`✅ ${name} 的${label}次數已重置`);
+    } catch (e) {
+      setMsg(`❌ 重置失敗：${e?.message || "未知錯誤"}`);
+    } finally {
+      setBusyM("");
+    }
   }
-  async function handleResetMonsterAll() {
-    if (!window.confirm("確定重置所有成員的今日打怪次數？")) return;
-    setBusyM("all"); setMsg("");
-    await resetAllMonsterSessions();
-    setMsg("✅ 全員打怪次數已重置");
-    setBusyM("");
+  async function handleResetMonsterAll(scope) {
+    const label = scope === FREE_HUNT_RESET_SCOPE.SINGLE ? "指定單怪" : scope === FREE_HUNT_RESET_SCOPE.MULTI ? "複數怪" : "全部狩獵";
+    if (!window.confirm(`確定要重置所有會員的${label}次數嗎？`)) return;
+    const busyKey = `all:${scope}`;
+    setBusyM(busyKey); setMsg("");
+    try {
+      await resetAllFreeHuntQuotas(scope);
+      setMembers(prev => prev.map(m => ({ ...m, freeHuntUsage:resetFreeHuntUsage(m, scope) })));
+      setMsg(`✅ 所有會員的${label}次數已重置`);
+    } catch (e) {
+      setMsg(`❌ 重置失敗：${e?.message || "未知錯誤"}`);
+    } finally {
+      setBusyM("");
+    }
   }
 
   // ── 報到取消與次數重置 ───────────────────────────────────
@@ -442,18 +461,32 @@ export default function AdminResetCenter() {
           {/* ── 4. 打怪次數重置 ─────────────────────────────── */}
           {tab === "monster" && (
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="text-xs text-slate-400">重置射手的今日打怪次數</div>
-                <Btn v="warn" size="sm" onClick={handleResetMonsterAll} disabled={!!busyM}>
-                  {busyM === "all" ? "重置中…" : "全員打怪次數重置"}
-                </Btn>
+              <div className="text-xs text-slate-400">可分別重置指定單怪、複數怪，或兩種狩獵次數。</div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {[
+                  [FREE_HUNT_RESET_SCOPE.SINGLE, "全員指定單怪重置"],
+                  [FREE_HUNT_RESET_SCOPE.MULTI, "全員複數怪重置"],
+                  [FREE_HUNT_RESET_SCOPE.ALL, "全員狩獵全部重置"],
+                ].map(([scope, label]) => (
+                  <Btn key={scope} v="warn" size="sm" onClick={() => handleResetMonsterAll(scope)} disabled={!!busyM}>
+                    {busyM === `all:${scope}` ? "重置中…" : label}
+                  </Btn>
+                ))}
               </div>
               {sortedMembers.map(m => (
-                <Card key={m.id} className="p-3 bg-slate-800/90 border-slate-700/80 flex items-center justify-between gap-3">
-                  <span className="text-sm font-semibold text-white">{m.name || m.nickname}</span>
-                  <Btn v="secondary" size="sm" onClick={() => handleResetMonsterOne(m.id, m.name)} disabled={!!busyM}>
-                    {busyM === m.id ? "…" : "重置"}
-                  </Btn>
+                <Card key={m.id} className="p-3 bg-slate-800/90 border-slate-700/80 space-y-2">
+                  <div className="text-sm font-semibold text-white">{m.name || m.nickname}</div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      [FREE_HUNT_RESET_SCOPE.SINGLE, "指定單怪"],
+                      [FREE_HUNT_RESET_SCOPE.MULTI, "複數怪"],
+                      [FREE_HUNT_RESET_SCOPE.ALL, "全部"],
+                    ].map(([scope, label]) => (
+                      <Btn key={scope} v="secondary" size="sm" onClick={() => handleResetMonsterOne(m.id, m.name || m.nickname, scope)} disabled={!!busyM}>
+                        {busyM === `${m.id}:${scope}` ? "重置中…" : label}
+                      </Btn>
+                    ))}
+                  </div>
                 </Card>
               ))}
             </div>

@@ -1,0 +1,7 @@
+{"file":".trellis/spec/frontend/index.md","reason":"Frontend quality-check entry point."}
+{"file":".trellis/spec/frontend/hunt-battle-flow.md","reason":"Verify mobile battle, round authority, presentation, and rewards."}
+{"file":".trellis/spec/frontend/cat-companion.md","reason":"Verify canonical cat stats and bond use."}
+{"file":".trellis/spec/frontend/card-collection-system.md","reason":"Verify structured card effects and stable snapshots."}
+{"file":".trellis/spec/frontend/equipment-system.md","reason":"Verify canonical equipment totals."}
+{"file":".trellis/tasks/08-14-cat-battle-archetype-redesign/design.md","reason":"Check cat multiplayer semantics and deterministic resolution."}
+{"file":".trellis/tasks/08-14-hunt-battle-presentation-rebuild/design.md","reason":"Check consistency with battle event architecture."}

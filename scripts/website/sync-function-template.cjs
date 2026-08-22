@@ -1,0 +1,10 @@
+const fs = require('fs');
+const path = require('path');
+const ROOT = path.resolve(__dirname, '..', '..');
+const website = path.join(ROOT, 'website');
+const template = path.join(ROOT, 'functions', 'website-template');
+const tools = path.join(ROOT, 'functions', 'website-publisher-tools');
+fs.rmSync(template, {recursive:true, force:true}); fs.cpSync(website, template, {recursive:true});
+fs.rmSync(tools, {recursive:true, force:true}); fs.mkdirSync(tools, {recursive:true});
+for (const name of ['competition-publication.cjs','generate-competition-pages.cjs']) fs.copyFileSync(path.join(__dirname,name), path.join(tools,name));
+console.log(`Prepared Firebase publisher template from ${website}`);

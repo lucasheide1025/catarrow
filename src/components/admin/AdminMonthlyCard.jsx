@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import {
   subscribePendingMonthlyRequests,
   approveMonthlyCardRequest, rejectMonthlyCardRequest,
-  grantMonthlyCard, giftMonthlyCardSessions, repairMonthlyCardRenewCounts,
+  grantMonthlyCard, giftMonthlyCardSessions, deductMonthlyCardSessions, repairMonthlyCardRenewCounts,
   getMonthlyCardConfig, saveMonthlyCardConfig,
   subscribeMonthlyCardLogs, getMembers,
 } from "../../lib/db";
@@ -31,6 +31,7 @@ const ACTION_LABELS = {
   purchase:      "🎫 購買月卡",
   renew:         "🔄 續約月卡",
   gift_sessions: "🎁 贈送次數",
+  admin_deduct:  "➖ 手動扣除",
   use_approved:  "✅ 核准使用",
   use_rejected:  "🚫 拒絕申請",
 };
@@ -187,6 +188,34 @@ export default function AdminMonthlyCard({ adminProfile, pendingRequests }) {
     setGiftBusy(false);
   }
 
+  async function doDeduct(member) {
+    const name = member.nickname || member.name || "射手";
+    const current = Math.max(0, Number(member.monthlyCard?.sessions) || 0);
+    if (!member.monthlyCard?.active || current <= 0) {
+      setMsg(`❌ 「${name}」目前沒有可扣除的月卡次數`);
+      return;
+    }
+    const raw = window.prompt(`要扣除「${name}」幾次？（1 或 2）\n目前剩 ${current} 次`, "1");
+    if (raw == null) return;
+    const n = Number(raw);
+    if (![1, 2].includes(n)) { setMsg("❌ 只能扣除 1 或 2 次"); return; }
+    if (current < n) { setMsg(`❌ 目前只剩 ${current} 次`); return; }
+    if (!window.confirm(`確定手動扣除「${name}」${n} 次？\n扣除後剩 ${current - n} 次。`)) return;
+    setBusy(b => ({ ...b, [member.id]: "deduct" }));
+    setMsg("");
+    const res = await deductMonthlyCardSessions(member.id, name, n, operatorId);
+    if (res.ok) {
+      setMembers(prev => prev.map(m => m.id !== member.id ? m : ({
+        ...m,
+        monthlyCard:{ ...(m.monthlyCard || {}), sessions:res.sessionsAfter },
+      })));
+      setMsg(`✅ 已扣除「${name}」${n} 次，剩 ${res.sessionsAfter} 次`);
+    } else {
+      setMsg(`❌ ${res.reason}`);
+    }
+    setBusy(b => ({ ...b, [member.id]: null }));
+  }
+
   async function saveCfg() {
     setCfgBusy(true); setCfgMsg("");
     const res = await saveMonthlyCardConfig(cfg, operatorId);
@@ -305,6 +334,12 @@ export default function AdminMonthlyCard({ adminProfile, pendingRequests }) {
                     onClick={() => { setGiftTarget(m); setGiftN(3); setMsg(""); }}
                     className="flex-1 min-w-[80px]">
                     🎁 贈次數
+                  </Btn>
+                  <Btn v="secondary"
+                    disabled={!!busy[m.id] || !active || Number(card?.sessions || 0) <= 0}
+                    onClick={() => doDeduct(m)}
+                    className="flex-1 min-w-[80px]">
+                    {busy[m.id] === "deduct" ? "扣除中…" : "➖ 扣除次數"}
                   </Btn>
                   <button disabled={!!busy[m.id]} onClick={() => doRepairRenew(m)}
                     className="text-xs text-amber-400 underline px-2 disabled:opacity-50">

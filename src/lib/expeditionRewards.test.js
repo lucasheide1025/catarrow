@@ -1,5 +1,6 @@
 import {
   createExpeditionKillLoot,
+  createDungeonEncounterLoot,
   getExpeditionRewardPreview,
   normalizeExpeditionLootMultiplier,
   resolveExpeditionLootMultiplier,
@@ -12,6 +13,14 @@ describe("expedition route kill loot",()=>{
     const loot=createExpeditionKillLoot(monster,mult);
     expect(loot.chests.filter(chest=>chest.kind==="material")).toHaveLength(mult);
     expect(loot.chests.filter(chest=>chest.kind==="coin")).toHaveLength(mult);
+  });
+
+  test("multi encounter grants per-target materials but only one tile coin reward",()=>{
+    const targets=[0,1,2].map(index=>({...monster,instanceId:`target_${index}`,currentHp:0,alive:false}));
+    const loot=createDungeonEncounterLoot({targets},2);
+    expect(loot.chests.filter(chest=>chest.kind==="material")).toHaveLength(6);
+    expect(loot.chests.filter(chest=>chest.kind==="coin")).toHaveLength(2);
+    expect(loot.defeated).toHaveLength(3);
   });
 
   test.each([

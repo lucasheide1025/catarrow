@@ -1,5 +1,7 @@
 import {
   existingMonthlyCardPurchaseCount,
+  getMonthlyCardStatus,
+  getUsableMonthlyCardSessions,
   nextMonthlyCardPurchaseCounters,
   purchaseCountFromMonthlyCardLogs,
 } from "./monthlyCardStats";
@@ -25,4 +27,23 @@ test("repair derivation counts only paid purchase and renew logs", () => {
     { action:"purchase" }, { action:"purchase" }, { action:"renew" },
     { action:"gift_sessions" }, { action:"use_approved" },
   ])).toBe(3);
+});
+
+test("class end sees only active unexpired monthly-card sessions", () => {
+  const now = 1_700_000_000_000;
+  expect(getUsableMonthlyCardSessions(null, now)).toBe(0);
+  expect(getUsableMonthlyCardSessions({ active:false, sessions:5, expiresAt:{ seconds:(now + 86400000) / 1000 } }, now)).toBe(0);
+  expect(getUsableMonthlyCardSessions({ active:true, sessions:5, expiresAt:{ seconds:(now - 1000) / 1000 } }, now)).toBe(0);
+  expect(getUsableMonthlyCardSessions({ active:true, sessions:2, expiresAt:{ seconds:(now + 86400000) / 1000 } }, now)).toBe(2);
+});
+
+test("monthly card status exposes remaining hours and expiry for serialized timestamps", () => {
+  const now = 1_700_000_000_000;
+  const status = getMonthlyCardStatus({
+    active:true,
+    sessions:7,
+    expiresAt:{ seconds:(now + (5 * 86400000)) / 1000, nanoseconds:0 },
+  }, now);
+  expect(status).toMatchObject({ hasCard:true, state:"usable", sessions:7, usableSessions:7, daysRemaining:5 });
+  expect(status.expiresMs).toBe(now + (5 * 86400000));
 });

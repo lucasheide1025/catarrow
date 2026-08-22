@@ -151,3 +151,36 @@ export function tickDungeonStatuses(statusesByMember = {}, memberHP = {}, member
   }
   return { statuses: nextStatuses, memberHP: nextHP, poisonDamage };
 }
+
+// 回合末先讓「本回合開始前就存在」的狀態倒數，再把本回合新套用的技能/族系異常放進下一回合。
+// 這能避免 duration=1 的 Boss debuff 在施放當回合立刻被吃掉。
+export function mergeDungeonPostRoundStatuses(tickedStatuses = {}, abilityStatusResultsByMember = {}, familyStatusResults = []) {
+  const next = Object.fromEntries(
+    Object.entries(tickedStatuses || {}).map(([id, statuses]) => [id, [...(statuses || [])]])
+  );
+  for (const [memberId, results] of Object.entries(abilityStatusResultsByMember || {})) {
+    for (const result of results || []) {
+      if (!result?.finalStatus) continue;
+      next[memberId] = mergeCombatStatus(next[memberId] || [], result.finalStatus);
+    }
+  }
+  for (const result of familyStatusResults || []) {
+    if (!result?.finalStatus || !result?.targetId) continue;
+    next[result.targetId] = mergeCombatStatus(next[result.targetId] || [], result.finalStatus);
+  }
+  return next;
+}
+
+export function nextDungeonMonsterAbilityState(previousState = null, monsterEffect = null) {
+  const nextDuration = Number(monsterEffect?.reductionDuration) || 0;
+  const nextPct = Number(monsterEffect?.reductionPct) || 0;
+  if (nextDuration > 0 && Number.isFinite(nextPct)) {
+    return { reductionPct: nextPct, reductionDuration: nextDuration };
+  }
+  const previousDuration = Number(previousState?.reductionDuration) || 0;
+  const previousPct = Number(previousState?.reductionPct) || 0;
+  if (previousDuration > 1 && Number.isFinite(previousPct)) {
+    return { reductionPct: previousPct, reductionDuration: previousDuration - 1 };
+  }
+  return null;
+}

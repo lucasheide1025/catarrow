@@ -11,6 +11,10 @@
       "**/*.test.ts",
       "**/__tests__/**",
       "coverage"
+    ],
+    "predeploy": [
+      "npm run generate:combat-runtime",
+      "npm run website:publisher:prepare"
     ]
   },
   "firestore": {

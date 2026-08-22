@@ -58,3 +58,18 @@ export async function claimMonsterBattleReward(input) {
     throw error;
   }
 }
+
+export async function claimMultiMonsterBattleReward(input = {}) {
+  const callable = httpsCallable(getFunctions(app, "asia-east1"), "claimMultiMonsterBattleReward");
+  const response = await callable({
+    battleId:input.battleId,
+    roomId:input.roomId || undefined,
+    memberId:input.memberId,
+    family:input.family,
+    tierIndex:Number(input.tierIndex),
+    monsterIds:Array.isArray(input.monsterIds) ? input.monsterIds : [],
+    mode:input.mode || "student",
+    challengeLevel:input.challengeLevel || "standard",
+  });
+  return response.data;
+}

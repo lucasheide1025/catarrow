@@ -35,6 +35,7 @@ import { cachedFetch } from "../lib/localCache";
 import { levelFromXP, rankFromLevel } from "../lib/adventurerSystem";
 import { archerLevelFromXP, archerXPProgress } from "../lib/archerLevel";
 import { readHuntBattleResume, clearHuntBattleResume } from "../lib/huntBattleResume";
+import { resolveCombatResumePage } from "../lib/combatResumeRoute";
 import { getFreeHuntMonsterById } from "../lib/freeHuntCatalog";
 import MemberHome         from "../components/member/MemberHome";
 import MustReadGate       from "../components/member/MustReadGate";
@@ -66,6 +67,8 @@ const MemberInventoryHub = lazy(() => import("../components/member/MemberInvento
 const MemberRecordsHub   = lazy(() => import("../components/member/MemberRecordsHub"));
 const MemberPerformance  = lazy(() => import("../components/member/MemberPerformance"));
 const MonsterBattle      = lazy(() => import("../components/member/MonsterBattle"));
+const MultiMonsterBattle = lazy(() => import("../components/battle/MultiMonsterBattle"));
+const MultiMonsterPartyRoom = lazy(() => import("../components/battle/MultiMonsterPartyRoom"));
 const MonsterHandbook    = lazy(() => import("../components/member/MonsterHandbook"));
 const CardCollection     = lazy(() => import("../components/member/CardCollectionModern"));
 const EquipmentPage      = lazy(() => import("../components/member/EquipmentPage"));
@@ -88,7 +91,7 @@ const RaidKillCutscene   = lazy(() => import("../worldboss/ui/RaidKillCutscene")
 const MemberBooking      = lazy(() => import("../components/member/MemberBooking"));
 
 const CAN_SCORE = ["upcoming","open","ongoing"];
-const ADVENTURE_PAGES = ["adventure-hub","hunt","monster","party-quest","party-battle","duel","duel-room","dungeon","worldboss","guild","monsterdex"];
+const ADVENTURE_PAGES = ["adventure-hub","hunt","monster","multi-monster","multi-monster-party","party-quest","party-battle","duel","duel-room","dungeon","worldboss","guild","monsterdex"];
 const TRAINING_PAGES  = ["training-hub","comps","comp-detail","practice","performance"];
 const INVENTORY_PAGES = ["inventory-hub","coinshop","materials","cats","catbook","story","equipment","specialization-runes","cards","gacha"];
 const PROFILE_PAGES   = ["profile","learn","msgs","history","external","achievements","certexam","notifications","dex","guide","records-hub","leaderboard","bowsetting"];
@@ -104,6 +107,8 @@ const NAV_PRELOADS = {
   "hunt": () => {
     import("../components/member/FreeHunt");
     import("../components/member/MonsterBattle");
+    import("../components/battle/MultiMonsterBattle");
+    import("../components/battle/MultiMonsterPartyRoom");
   },
   "training-hub": () => {
     import("../components/member/MemberTrainingHub");
@@ -142,7 +147,12 @@ export default function MemberApp() {
   // ⚠️ 這個能力旗標本來就定義在 costControl.js，但一直沒有任何地方真的用它——等於警報升級了
   //    也沒省到。核心功能（通知/報到/認證/存檔）不在此列，永遠保留。
   const liveExtras = costAllows(COST_CAPABILITIES.nonessentialListeners);
-  const [page, setPageState]   = useState(()=>readHuntBattleResume() ? "hunt" : (sessionStorage.getItem("member_page")||"home"));
+  const [page, setPageState]   = useState(() => resolveCombatResumePage({
+    storedPage:sessionStorage.getItem("member_page"),
+    hasMultiMonsterPartySession:Boolean(sessionStorage.getItem("member_multi_monster_party_room")),
+    hasHuntResume:Boolean(readHuntBattleResume()),
+    fallbackPage:"home",
+  }));
   const setPage = useCallback((p) => startTransition(() => setPageState(p)), []);
   // 學生分級與系統鎖定（2026-07-04）
   const [maintenanceConfig, setMaintenanceConfig] = useState({ enabled:false, message:"" });
@@ -230,6 +240,10 @@ export default function MemberApp() {
   const [questCtx,     setQuestCtx]      = useState(null); // 公會任務導航上下文
   const [fromGuild,    setFromGuild]     = useState(false); // 是否從公會進入打怪
   const [huntContext,  setHuntContext]   = useState(null); // { monster, intent:"solo"|"create"|"join" }
+  const [multiMonsterContext, setMultiMonsterContext] = useState(null); // { family, tier }
+  const [multiMonsterPartySession, setMultiMonsterPartySession] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem("member_multi_monster_party_room") || "null"); } catch { return null; }
+  });
   const [huntResume, setHuntResume] = useState(() => readHuntBattleResume());
   const [autoResumeHuntBattle, setAutoResumeHuntBattle] = useState(false);
   useEffect(() => { if (page === "hunt") setHuntResume(readHuntBattleResume()); }, [page]);
@@ -302,20 +316,21 @@ export default function MemberApp() {
 
   const [classEndBusy, setClassEndBusy] = useState(false);
   async function handleHomeClassEnd() {
-    if (!profile?.id || !todayCheckin?.id || classEndBusy) return;
-    if (!window.confirm("確定要下課嗎？下課後會結算今天的箭數與獎勵。")) return;
+    if (!profile?.id || !todayCheckin?.id || classEndBusy) return false;
     setClassEndBusy(true);
     try {
-      await submitClassEnd(profile.id, todayCheckin.id);
-      if (todayArrowsGlobal > 0) {
+      const result = await submitClassEnd(profile.id, todayCheckin.id);
+      if (result?.classEnd?.endedNow !== false && todayArrowsGlobal > 0) {
         await Promise.allSettled([
           addArrowdew(profile.id, todayArrowsGlobal),
           checkAndGrantArrowMilestones(profile.id, todayArrowsGlobal),
         ]);
       }
+      return true;
     } catch (e) {
       console.error("class end:", e?.message);
       window.alert("下課結算失敗，請稍後再試。");
+      return false;
     } finally {
       setClassEndBusy(false);
     }
@@ -550,6 +565,20 @@ export default function MemberApp() {
     setFromGuild(false);
     setHuntContext({ monster, intent: host ? "create" : "join" });
     handleEnterPartyRoom(roomId, type, host);
+  }
+
+  function enterMultiMonsterParty(roomId, host, context = {}) {
+    const session = { roomId, isHost:Boolean(host), family:context.family || null, tier:context.tier || null, code:context.code || null };
+    sessionStorage.setItem("member_multi_monster_party_room", JSON.stringify(session));
+    setMultiMonsterPartySession(session);
+    setMultiMonsterContext(null);
+    setPage("multi-monster-party");
+  }
+
+  function leaveMultiMonsterParty() {
+    sessionStorage.removeItem("member_multi_monster_party_room");
+    setMultiMonsterPartySession(null);
+    setPage("hunt");
   }
 
   const _savedDuel = (() => { try { return JSON.parse(sessionStorage.getItem("duel_room") || "null"); } catch { return null; } })();
@@ -836,6 +865,12 @@ export default function MemberApp() {
             🎮 組隊進行中 — 點此回到房間
           </button>
         )}
+        {multiMonsterPartySession?.roomId && page !== "multi-monster-party" && (
+          <button onClick={() => setPage("multi-monster-party")}
+            style={{ display:"block", width:"100%", background:"linear-gradient(90deg,#c2410c,#7c2d12,#7c3aed)", color:"white", padding:"7px 16px", fontSize:"12px", fontWeight:"900", textAlign:"center", border:"none", cursor:"pointer", letterSpacing:"0.02em" }}>
+            ⚔️ 複數討伐隊伍進行中 ・ 點此回到戰場
+          </button>
+        )}
         {duelRoomId && page !== "duel-room" && (
           <button onClick={() => setPage("duel-room")}
             style={{ display:"block", width:"100%", background:"linear-gradient(90deg,#1d4ed8,#7c3aed)", color:"white", padding:"7px 16px", fontSize:"12px", fontWeight:"900", textAlign:"center", border:"none", cursor:"pointer", letterSpacing:"0.02em" }}>
@@ -898,12 +933,29 @@ export default function MemberApp() {
           setPage(nextPage);
         }} />}
         {page==="hunt" && <FreeHunt
-          onBack={() => { setHuntContext(null); setPage("adventure-hub"); }}
+          onBack={() => { setHuntContext(null); setMultiMonsterContext(null); setPage("adventure-hub"); }}
           onSolo={(monster) => openHuntMonster(monster, "solo")}
+          onMultiMonster={({ family, tierIndex }) => { setMultiMonsterContext({ family, tier: tierIndex }); setPage("multi-monster"); }}
           resumableBattle={huntResume}
           onResumeBattle={() => { const monster=getFreeHuntMonsterById(huntResume?.monsterId); if(monster){ setAutoResumeHuntBattle(true); setHuntContext({monster,intent:"solo"}); setPage("monster"); } }}
           onAbandonBattle={() => { if(window.confirm("確定放棄這場狩獵戰鬥？進度將無法復原。")){ clearHuntBattleResume(sessionStorage,{clearBattle:true}); setHuntResume(null); } }}
-          onEnterPartyRoom={enterFreeHuntParty} />}
+          onEnterPartyRoom={enterFreeHuntParty}
+          onEnterMultiPartyRoom={enterMultiMonsterParty} />}
+        {page==="multi-monster" && multiMonsterContext && <MultiMonsterBattle
+          family={multiMonsterContext.family}
+          tier={multiMonsterContext.tier}
+          playerStats={{ hp: profile?.hp || 200, maxHp: profile?.maxHp || 200, atk: profile?.atk || 15, def: profile?.def || 10 }}
+          memberProfile={profile}
+          sharedData={sharedPlayerData}
+          onBack={() => { setMultiMonsterContext(null); setPage("hunt"); }}
+          onWin={() => { setMultiMonsterContext(null); setPage("hunt"); }} />}
+        {page==="multi-monster-party" && multiMonsterPartySession?.roomId && <MultiMonsterPartyRoom
+          roomId={multiMonsterPartySession.roomId}
+          isHost={multiMonsterPartySession.isHost}
+          playerStats={{ hp: profile?.hp || 200, maxHp: profile?.maxHp || 200, atk: profile?.atk || 15, def: profile?.def || 10 }}
+          memberProfile={profile}
+          sharedData={sharedPlayerData}
+          onLeave={leaveMultiMonsterParty} />}
         {page==="training-hub"  && <MemberTrainingHub  onPageChange={setPage} onJoinParty={handleEnterPartyRoom} />}
         {page==="inventory-hub" && <MemberInventoryHub onPageChange={setPage} />}
         {page==="records-hub"   && <MemberRecordsHub   onPageChange={setPage} />}

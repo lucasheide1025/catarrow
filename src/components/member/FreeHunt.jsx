@@ -12,6 +12,7 @@ import {
   getFreeHuntMonsters,
 } from "../../lib/freeHuntCatalog";
 import { applySoloVariant, selectVariant, toLegacyBattleMonster } from "../../lib/monsterExpansionAdapter";
+import { FREE_HUNT_DAILY_LIMIT, FREE_HUNT_QUOTA_MODE, getFreeHuntRemaining } from "../../lib/freeHuntQuota";
 
 const PARTY_SIZE_GUIDE = Object.freeze([
   { players:1, label:"獨自建立", pressure:"怪物基準強度", reward:"素材箱 1＋金幣箱 1" },
@@ -38,33 +39,38 @@ function HuntMonsterArt({ monster }) {
   );
 }
 
-export default function FreeHunt({ onBack, onSolo, onEnterPartyRoom, resumableBattle = null, onResumeBattle, onAbandonBattle }) {
+export default function FreeHunt({ onBack, onSolo, onMultiMonster, onEnterPartyRoom, onEnterMultiPartyRoom, resumableBattle = null, onResumeBattle, onAbandonBattle }) {
   const { profile } = useAuth();
   const [family, setFamily] = useState(FREE_HUNT_FAMILIES[0]);
   const [tierIndex, setTierIndex] = useState(1);
   const [monsterId, setMonsterId] = useState(null);
   const [showJoinRooms, setShowJoinRooms] = useState(false);
+  const [showMultiJoinRooms, setShowMultiJoinRooms] = useState(false);
   const [openRooms, setOpenRooms] = useState([]);
   const [partyLoading, setPartyLoading] = useState(false);
   const [partyError, setPartyError] = useState("");
+  const [multiPartyMessage, setMultiPartyMessage] = useState("");
 
   const myId = profile?.id;
   const myName = profile?.nickname || profile?.name || "射手";
   const accountType = profile?.accountType || "official";
   const level = archerLevelFromXP(profile?.archerXP || 0);
+  const singleRemaining = getFreeHuntRemaining(profile, FREE_HUNT_QUOTA_MODE.SINGLE);
+  const multiRemaining = getFreeHuntRemaining(profile, FREE_HUNT_QUOTA_MODE.MULTI);
 
   const monsters = useMemo(() => getFreeHuntMonsters(family, tierIndex), [family, tierIndex]);
   const selected = monsters.find(monster => monster.id === monsterId) || null;
   const tierMeta = selected ? TIER_LABEL[selected.tier] : null;
   const familyMeta = FAMILIES[family];
   const joinRooms = filterPartyLobbyRooms(openRooms, { huntMonsterId:"__free_hunt__", tab:"join" });
+  const multiJoinRooms = filterPartyLobbyRooms(openRooms, { huntType:"multi", tab:"join" });
 
   useEffect(() => {
-    if (!showJoinRooms) return undefined;
+    if (!showJoinRooms && !showMultiJoinRooms) return undefined;
     cleanupStalePartyRooms();
     const unsub = subscribeOpenPartyRooms(setOpenRooms);
     return () => { unsub?.(); setOpenRooms([]); };
-  }, [showJoinRooms]);
+  }, [showJoinRooms, showMultiJoinRooms]);
 
   function chooseFamily(nextFamily) {
     setFamily(nextFamily);
@@ -78,6 +84,7 @@ export default function FreeHunt({ onBack, onSolo, onEnterPartyRoom, resumableBa
 
   async function createSelectedParty() {
     if (!selected || !myId || partyLoading) return;
+    if (singleRemaining <= 0) { setPartyError("今日指定單怪次數已用完（5/5）"); return; }
     setPartyLoading(true); setPartyError("");
     const rolledMonster = applySoloVariant(toLegacyBattleMonster(selected), selectVariant(), Math.random());
     const res = await createPartyRoom(myId, myName, "battle", {
@@ -105,6 +112,51 @@ export default function FreeHunt({ onBack, onSolo, onEnterPartyRoom, resumableBa
     setPartyLoading(false);
     if (res.ok) onEnterPartyRoom?.(res.roomId, "battle", false, roomMonster || null);
     else setPartyError(res.reason || "加入房間失敗");
+  }
+
+  async function createMultiParty() {
+    if (!myId || partyLoading) return;
+    if (multiRemaining <= 0) { setPartyError("今日複數討伐次數已用完（5/5）"); return; }
+    setPartyLoading(true);
+    setPartyError("");
+    setMultiPartyMessage("");
+    const res = await createPartyRoom(myId, myName, "battle", {
+      accountType,
+      level,
+      huntType:"multi",
+      multiMonster:true,
+      multiFamily:family,
+      multiTier:tierIndex,
+      huntDistanceM:Number(profile?.huntDistanceM) || 5,
+      huntTargetFmt:profile?.huntTargetFmt || "half_17",
+      bowType:profile?.bowType || "recurve_bare",
+    });
+    setPartyLoading(false);
+    if (res.ok) {
+      onEnterMultiPartyRoom?.(res.roomId, true, { family, tier:tierIndex, code:res.code });
+    } else {
+      setPartyError(res.reason || "建立複數討伐等待房失敗");
+    }
+  }
+
+  async function joinMultiRoom(room) {
+    if (!myId || partyLoading) return;
+    setPartyLoading(true);
+    setPartyError("");
+    setMultiPartyMessage("");
+    const res = await joinPartyRoom(room.code, myId, myName, {
+      accountType,
+      level,
+      huntDistanceM:Number(profile?.huntDistanceM) || 5,
+      huntTargetFmt:profile?.huntTargetFmt || "half_17",
+      bowType:profile?.bowType || "recurve_bare",
+    });
+    setPartyLoading(false);
+    if (res.ok) {
+      onEnterMultiPartyRoom?.(res.roomId, false, { family:room.multiFamily, tier:Number(room.multiTier) || tierIndex, code:room.code });
+    } else {
+      setPartyError(res.reason || "加入複數討伐等待房失敗");
+    }
   }
 
   return (
@@ -237,6 +289,73 @@ export default function FreeHunt({ onBack, onSolo, onEnterPartyRoom, resumableBa
             <div className="text-[10px] font-black uppercase tracking-[.22em] text-emerald-300">STEP 3</div>
             <div className="text-base font-black">指定討伐怪物</div>
           </div>
+          <div
+            data-multi-hunt-entry="true"
+            className="mb-4 w-full rounded-2xl border border-red-400/35 bg-gradient-to-r from-red-950/80 via-orange-950/65 to-slate-950/80 p-4 text-left shadow-xl"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-black uppercase tracking-[.22em] text-orange-300">MULTI HUNT</div>
+                <div className="mt-1 text-base font-black text-white">⚔️ 複數討伐戰</div>
+                <div className="mt-1 text-[11px] font-bold text-orange-100/75">{familyMeta?.icon} {familyMeta?.label} · T{tierIndex} · 固定 3 隻前排怪物同時登場</div>
+              </div>
+              <div className="shrink-0 rounded-xl border border-orange-300/25 bg-orange-400/10 px-3 py-2 text-xs font-black text-orange-200">3 怪同場</div>
+            </div>
+            <div className="mt-2 text-[10px] leading-relaxed text-slate-400">不需要指定單一怪物；三隻怪各自抽取弱化／普通／強悍，後排另有機率出現 0～2 根治療符文柱。</div>
+            <div className={`mt-2 text-[11px] font-black ${multiRemaining > 0 ? "text-emerald-300" : "text-red-300"}`}>今日複數討伐剩餘 {multiRemaining}/{FREE_HUNT_DAILY_LIMIT} 次 · 組隊只扣房主</div>
+            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <button
+                type="button"
+                data-multi-hunt-solo="true"
+                onClick={() => { if (multiRemaining > 0) onMultiMonster?.({ family, tierIndex }); }}
+                disabled={multiRemaining <= 0}
+                className="min-h-12 rounded-xl bg-gradient-to-r from-red-500 to-orange-500 px-3 text-sm font-black text-white shadow-lg active:scale-95 disabled:opacity-45"
+              >⚔️ 單人討伐</button>
+              <button
+                type="button"
+                data-multi-hunt-create-party="true"
+                onClick={createMultiParty}
+                disabled={partyLoading || !myId || multiRemaining <= 0}
+                className="min-h-12 rounded-xl border border-amber-300/35 bg-amber-400/10 px-3 text-sm font-black text-amber-100 active:scale-95 disabled:opacity-50"
+              >{partyLoading ? "建立中…" : "🤝 建立隊伍"}</button>
+              <button
+                type="button"
+                data-multi-hunt-join-party="true"
+                onClick={() => { setShowMultiJoinRooms(v => !v); setPartyError(""); setMultiPartyMessage(""); }}
+                className="min-h-12 rounded-xl border border-cyan-300/35 bg-cyan-400/10 px-3 text-sm font-black text-cyan-100 active:scale-95"
+              >🔎 {showMultiJoinRooms ? "收起隊伍" : "加入隊伍"}</button>
+            </div>
+            <div className="mt-2 text-[10px] text-orange-100/55">最多 8 人同步討伐；房主設定 3／6 箭後開戰，全隊共享怪物 HP、隊員狀態與每回合權威結算。</div>
+            {multiPartyMessage && <div className="mt-3 rounded-xl border border-emerald-400/25 bg-emerald-500/10 p-3 text-[11px] font-bold leading-relaxed text-emerald-100">{multiPartyMessage}</div>}
+            {showMultiJoinRooms && (
+              <div className="mt-3 flex flex-col gap-2 border-t border-orange-300/15 pt-3">
+                <div className="text-[10px] font-black uppercase tracking-[.18em] text-orange-200">等待中的複數討伐隊伍（{multiJoinRooms.length}）</div>
+                {multiJoinRooms.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-white/10 bg-black/10 p-4 text-center text-xs font-bold text-slate-500">目前沒有複數討伐等待房</div>
+                ) : multiJoinRooms.map(room => {
+                  const memberCount = Object.keys(room.members || {}).length;
+                  const hostName = room.members?.[room.hostId]?.name || "未知射手";
+                  const roomFamily = FAMILIES[room.multiFamily];
+                  const full = memberCount >= 8;
+                  return (
+                    <div key={room.id} className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/15 p-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-xs font-black text-white">{hostName} 的複數討伐隊伍</div>
+                        <div className="mt-0.5 text-[10px] font-bold text-orange-200">{roomFamily?.icon || "👾"} {roomFamily?.label || room.multiFamily || "未知族群"} · T{room.multiTier || "?"}</div>
+                        <div className="mt-0.5 text-[10px] text-slate-400">👤 {memberCount}/8 人 · 等待同步功能</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => joinMultiRoom(room)}
+                        disabled={partyLoading || full}
+                        className="rounded-lg bg-cyan-400 px-3 py-2 text-xs font-black text-slate-950 disabled:opacity-40"
+                      >{full ? "已滿" : partyLoading ? "…" : "加入"}</button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {monsters.map(monster => {
               const active = monster.id === monsterId;
@@ -276,9 +395,10 @@ export default function FreeHunt({ onBack, onSolo, onEnterPartyRoom, resumableBa
                   <div className="mt-1 text-[11px] text-amber-300">掉落：{selected.material?.name || "族群素材"}</div>
                 </div>
               </div>
-              <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                <button onClick={() => onSolo?.(selected)} className="min-h-12 rounded-2xl bg-gradient-to-r from-violet-500 to-indigo-500 px-3 font-black text-white shadow-lg active:scale-95">⚔️ 單人狩獵</button>
-                <button onClick={createSelectedParty} disabled={partyLoading || !myId} className="min-h-12 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 px-3 font-black text-slate-950 shadow-lg active:scale-95 disabled:opacity-50">{partyLoading ? "建立中…" : "🤝 建立隊伍"}</button>
+              <div className={`mt-3 text-center text-[11px] font-black ${singleRemaining > 0 ? "text-emerald-300" : "text-red-300"}`}>今日指定單怪剩餘 {singleRemaining}/{FREE_HUNT_DAILY_LIMIT} 次 · 組隊只扣房主</div>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <button onClick={() => { if (singleRemaining > 0) onSolo?.(selected); }} disabled={singleRemaining <= 0} className="min-h-12 rounded-2xl bg-gradient-to-r from-violet-500 to-indigo-500 px-3 font-black text-white shadow-lg active:scale-95 disabled:opacity-45">⚔️ 單人狩獵</button>
+                <button onClick={createSelectedParty} disabled={partyLoading || !myId || singleRemaining <= 0} className="min-h-12 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 px-3 font-black text-slate-950 shadow-lg active:scale-95 disabled:opacity-50">{partyLoading ? "建立中…" : "🤝 建立隊伍"}</button>
                 <button onClick={() => { setShowJoinRooms(v => !v); setPartyError(""); }}
                   className="min-h-12 rounded-2xl border border-cyan-400/35 bg-cyan-500/10 px-3 font-black text-cyan-100 active:scale-95">
                   🔎 {showJoinRooms ? "收起隊伍" : "加入隊伍"}

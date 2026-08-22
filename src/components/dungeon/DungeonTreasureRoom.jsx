@@ -95,6 +95,7 @@ export default function DungeonTreasureRoom({
   difficultyTier = 1,
   family = "treasure",
   bossVariant = "boss",
+  rewardMultiplier = 1,
 }) {
   const [phase, setPhase] = useState("enter"); // enter → fountain → cards → done
   const [showFountain, setShowFountain] = useState(false);
@@ -134,9 +135,11 @@ export default function DungeonTreasureRoom({
     result.extraItem = extraItem;
     result.kingVault = rollKingVaultReward(difficultyTier, family);
     result.coins += result.kingVault.coins;
+    result.coins = Math.max(0, Math.round(result.coins * Math.max(.5, Number(rewardMultiplier) || 1)));
+    if (result.arrowDew) result.arrowDew = Math.max(0, Math.round(result.arrowDew * Math.max(.5, Number(rewardMultiplier) || 1)));
     setLoot(result);
     if (typeof onLoot === "function") onLoot(result); // 只在生成時呼叫一次
-  }, [lootOverride]); // eslint-disable-line
+  }, [lootOverride, rewardMultiplier]); // eslint-disable-line
 
   const cards = useMemo(() => {
     if (!loot) return [];

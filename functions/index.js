@@ -3,6 +3,7 @@
 const { initializeApp } = require("firebase-admin/app");
 const { FieldPath, FieldValue, Timestamp, getFirestore } = require("firebase-admin/firestore");
 const { logger } = require("firebase-functions");
+const { defineSecret } = require("firebase-functions/params");
 const { onMessagePublished } = require("firebase-functions/v2/pubsub");
 const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
@@ -18,8 +19,9 @@ const {
   bookingMailEnvelope,
 } = require("./bookingEmail");
 const { buildReminderCycle, reminderMailId, inactivityVariables, shouldReplaceReminderCycle } = require("./bookingReminder");
-const { buildDungeonNormalCardClaim, buildTrustedMonsterReward } = require("./monsterReward");
+const { buildDungeonNormalCardClaim, buildTrustedMonsterReward, buildTrustedMultiMonsterReward } = require("./monsterReward");
 const { buildPartyReward } = require("./partyReward");
+const { FREE_HUNT_DAILY_LIMIT, assertMode:assertFreeHuntMode, consumeUsage:consumeFreeHuntUsage } = require("./freeHuntQuota");
 const { buildDungeonBossEnvelope, buildFamilyMaterialChests, isRewardableDungeonRoom, isRewardableTeamDungeonBossRoom, publicEnvelope, validateChoices } = require("./dungeonBossReward");
 const { GUEST_COMMON_EQUIPMENT, assertActiveGuest, starterPatch, purchasePatch } = require("./guestEquipment");
 const {
@@ -28,8 +30,73 @@ const {
 } = require("./bookingDayBefore");
 const guestReviews = require("./guestReviews");
 const marketingEmail = require("./marketingEmail");
+const competitionWebsitePublisher = require("./competitionWebsitePublisher");
+const multiMonsterPartyV2 = require("./multiMonsterPartyV2");
+const {buildDungeonMultiReward}=require("./dungeonMultiReward");
+const combatRuntime = require("./generated/combat/lib/multiMonsterLoadoutRuntime");
+const CAT_ARCHERY_VERCEL = defineSecret("CAT_ARCHERY_VERCEL");
 
 initializeApp();
+
+async function authoritativeMultiMonsterLoadouts(db, room) {
+  const ids=Object.keys(room.members||{}).sort();
+  const family=room.multiFamily||null;
+  const [configSnap,certCompetitionSnap,catalogCompetitionSnap]=await Promise.all([
+    db.doc("dexConfig/rounds").get(),
+    db.collection("competitions").where("type","==","年度檢定").get(),
+    db.collection("competitions").where("dexCatalog","==",true).get(),
+  ]);
+  const competitionMap=new Map();
+  for(const doc of [...certCompetitionSnap.docs,...catalogCompetitionSnap.docs])competitionMap.set(doc.id,{id:doc.id,...doc.data()});
+  const dexCompetitions=[...competitionMap.values()];
+  const pairs=await Promise.all(ids.map(async memberId=>{
+    const refs=["members","certifications","dexGrants","monsterDex","craftStats","chestStats","potionDex","cardCollections","guildProfiles","duelStats","equipSpecializations"].map(name=>db.doc(`${name}/${memberId}`));
+    const [docs,certs,cats]=await Promise.all([
+      db.getAll(...refs),
+      db.collection("certRecords").where("memberId","==",memberId).get(),
+      db.collection(`members/${memberId}/cats`).get(),
+    ]);
+    const data=Object.fromEntries(refs.map((ref,index)=>[ref.parent.id,docs[index].data()||{}]));
+    if(!docs[0].exists)throw new Error("member_not_found");
+    const guild=data.guildProfiles||{};
+    const sharedData={
+      certification:data.certifications||null,certRecords:certs.docs.map(doc=>({id:doc.id,...doc.data()})),
+      dexConfig:configSnap.data()||{physicalMax:10,pointMax:10},dexGrants:data.dexGrants?.items||[],
+      monsterDex:data.monsterDex?.monsters||{},craftStats:data.craftStats||{},chestStats:data.chestStats?.opens||{},
+      potionDex:data.potionDex||{},cardData:data.cardCollections||{cards:{},wbCards:{},equipped:[]},duelStats:data.duelStats||{},
+      cats:cats.docs.map(doc=>({catId:doc.id,...doc.data()})),guildRep:Math.max(0,Number(guild.rep)||0),guildExpeditionStats:guild.expeditions||{},dexCompetitions,
+    };
+    const persistedSpec=data.equipSpecializations||{};
+    const equipSpec=Object.fromEntries(["weapon","armor","accessory"].map(slot=>{
+      const trackId=persistedSpec[slot]?.activeTrackId;
+      const level=Math.max(0,Number(persistedSpec[slot]?.tracks?.[trackId]?.level)||0);
+      return [slot,trackId&&level>0?{trackId,level}:null];
+    }));
+    return [memberId,combatRuntime.buildMultiMonsterLoadout({member:{id:memberId,...data.members},sharedData,equipSpec,enemyFamily:family,enemyClass:"normal"})];
+  }));
+  return Object.fromEntries(pairs);
+}
+
+function taipeiFreeHuntDateKey(date = new Date()) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+    timeZone:"Asia/Taipei", year:"numeric", month:"2-digit", day:"2-digit",
+  }).formatToParts(date).filter(part => part.type !== "literal").map(part => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function safeFreeHuntId(value, code) {
+  const id = String(value || "").trim();
+  if (!id || id.includes("/") || id.length > 240) throw new HttpsError("invalid-argument", code);
+  return id;
+}
+
+async function requireOwnedMember(db, request, memberId) {
+  if (!request.auth?.uid) throw new HttpsError("unauthenticated", "login_required");
+  const snap=await db.doc(`members/${safeFreeHuntId(memberId,"invalid_member_id")}`).get();
+  const data=snap.data()||{};
+  if(!snap.exists||(data.uid!==request.auth.uid&&(!request.auth.token?.email||data.email!==request.auth.token.email)))throw new HttpsError("permission-denied","member_identity_mismatch");
+  return snap;
+}
 
 async function requireAdmin(request) {
   if (!request.auth?.uid || !(await getFirestore().doc(`admins/${request.auth.uid}`).get()).exists) {
@@ -265,6 +332,92 @@ exports.purchaseGuestEquipment = onCall({ region:"asia-east1" }, async request =
     if(member.uid!==request.auth.uid)throw new HttpsError("permission-denied","owner_mismatch");try{assertActiveGuest(member,Date.now());const result=purchasePatch(member,itemId);tx.update(ref,{...result.patch,updatedAt:FieldValue.serverTimestamp()});return{ok:true,item:result.item};}catch(e){throw new HttpsError("failed-precondition",e.message);}});
 });
 
+exports.consumeFreeHuntAttempt = onCall({ region:"asia-east1" }, async request => {
+  if (!request.auth?.uid) throw new HttpsError("unauthenticated", "login_required");
+  const memberId = safeFreeHuntId(request.data?.memberId, "invalid_member");
+  const battleId = safeFreeHuntId(request.data?.battleId, "invalid_free_hunt_battle");
+  let mode;
+  try { mode = assertFreeHuntMode(request.data?.mode); }
+  catch (error) { throw new HttpsError("invalid-argument", error.message); }
+  const rawRoomId = String(request.data?.roomId || "").trim();
+  const roomId = rawRoomId ? safeFreeHuntId(rawRoomId, "invalid_free_hunt_room") : null;
+  const claimId = [memberId, mode, battleId].map(encodeURIComponent).join("~");
+  const db = getFirestore();
+  const memberRef = db.doc(`members/${memberId}`);
+  const claimRef = db.doc(`freeHuntAttemptClaims/${claimId}`);
+  const roomRef = roomId ? db.doc(`partyRooms/${roomId}`) : null;
+  return db.runTransaction(async tx => {
+    const [memberSnap, claimSnap, roomSnap] = await tx.getAll(memberRef, claimRef, ...(roomRef ? [roomRef] : []));
+    if (!memberSnap.exists) throw new HttpsError("not-found", "member_not_found");
+    const member = memberSnap.data();
+    const ownsMember = member.uid === request.auth.uid || (request.auth.token.email && member.email === request.auth.token.email);
+    if (!ownsMember) throw new HttpsError("permission-denied", "free_hunt_owner_mismatch");
+    if (claimSnap.exists) {
+      const saved = claimSnap.data();
+      return { ok:true, duplicate:true, date:saved.date, count:saved.count, remaining:saved.remaining, limit:saved.limit || FREE_HUNT_DAILY_LIMIT };
+    }
+    if (roomRef) {
+      if (!roomSnap?.exists) throw new HttpsError("not-found", "free_hunt_room_not_found");
+      const room = roomSnap.data();
+      if (room.hostId !== memberId) throw new HttpsError("permission-denied", "free_hunt_host_only");
+      if (room.status !== "waiting") throw new HttpsError("failed-precondition", "free_hunt_room_not_waiting");
+      const isMulti = room.multiMonster === true || room.huntType === "multi";
+      const isSingle = room.type === "battle" && !isMulti && !!(room.huntMonsterId || room.monsterId);
+      if ((mode === "multi" && !isMulti) || (mode === "single" && !isSingle)) throw new HttpsError("failed-precondition", "free_hunt_room_mode_mismatch");
+    }
+    const date = taipeiFreeHuntDateKey();
+    let consumed;
+    try { consumed = consumeFreeHuntUsage(member.freeHuntUsage, mode, date); }
+    catch (error) {
+      if (error.message === "free_hunt_limit_reached") throw new HttpsError("resource-exhausted", "free_hunt_limit_reached");
+      throw new HttpsError("invalid-argument", error.message);
+    }
+    tx.update(memberRef, { freeHuntUsage:consumed.usage, updatedAt:FieldValue.serverTimestamp() });
+    tx.create(claimRef, { memberId, mode, battleId, roomId:roomId || null, date, count:consumed.count, remaining:consumed.remaining, limit:consumed.limit, createdAt:FieldValue.serverTimestamp() });
+    return { ok:true, duplicate:false, date, count:consumed.count, remaining:consumed.remaining, limit:consumed.limit };
+  });
+});
+
+function multiPartyCallableError(error) {
+  if(error instanceof HttpsError)return error;
+  const message=String(error?.message||error||"multi_party_failed");
+  const invalid=new Set(["invalid_arrows","invalid_target","stale_round","loadout_v2_required","unsupported_loadout_effect","invalid_loadout_stats"]);
+  return new HttpsError(invalid.has(message)?"failed-precondition":"aborted",message);
+}
+
+function multiBattleRoomRef(db, request) {
+  const roomId=safeFreeHuntId(request.data?.roomId,"invalid_room_id");
+  const dungeon=request.data?.dungeonMode===true;
+  return {roomId,dungeon,ref:db.doc(`${dungeon?"dungeonRooms":"partyRooms"}/${roomId}`)};
+}
+
+exports.startMultiMonsterPartyBattleV2 = onCall({region:"asia-east1"},async request=>{
+  const db=getFirestore(),{roomId,dungeon,ref}=multiBattleRoomRef(db,request),memberId=safeFreeHuntId(request.data?.memberId,"invalid_member_id");
+  await requireOwnedMember(db,request,memberId);
+  try{const initial=await ref.get();if(!initial.exists)throw new Error("room_not_found");const initialRoom=initial.data();if(initialRoom.hostId!==memberId)throw new Error("host_only");if(dungeon&&!(initialRoom.expeditionMode===true&&initialRoom.dungeonMulti===true))throw new Error("not_dungeon_multi_room");const loadouts=await authoritativeMultiMonsterLoadouts(db,initialRoom);return await db.runTransaction(async tx=>{const snap=await tx.get(ref);if(!snap.exists)throw new Error("room_not_found");const room=snap.data();if(room.hostId!==memberId)throw new Error("host_only");const members=Object.fromEntries(Object.entries(room.members||{}).map(([id,m])=>[id,{...m,loadoutSnapshot:loadouts[id],catId:loadouts[id]?.cat?.catId||"",catName:m.catName||"",catLevel:loadouts[id]?.cat?.catLevel||0,bondLv:loadouts[id]?.cat?.bondLv||0,catHP:loadouts[id]?.cat?.catHP||0,catATK:loadouts[id]?.cat?.catATK||0,catDEF:loadouts[id]?.cat?.catDEF||0,catBattleState:loadouts[id]?.cat?.battleState||null}]));const patch=multiMonsterPartyV2.startPatch({...room,members},roomId);if(patch)tx.update(ref,{...patch,battleStartedAt:FieldValue.serverTimestamp()});return{ok:true,alreadyStarted:!patch,combatVersion:2};});}catch(error){throw multiPartyCallableError(error);}
+});
+
+exports.submitMultiMonsterPartyRoundV2 = onCall({region:"asia-east1"},async request=>{
+  const db=getFirestore(),roomId=safeFreeHuntId(request.data?.roomId,"invalid_room_id"),memberId=safeFreeHuntId(request.data?.memberId,"invalid_member_id");
+  await requireOwnedMember(db,request,memberId);
+  try{return await db.runTransaction(async tx=>{const ref=multiBattleRoomRef(db,request).ref,snap=await tx.get(ref);if(!snap.exists)throw new Error("room_not_found");const room=snap.data(),submission=multiMonsterPartyV2.submissionPatch(room,roomId,memberId,request.data||{});room.members={...(room.members||{}),[memberId]:{...room.members[memberId],submission,ready:true}};const living=Object.values(room.members).filter(m=>m.alive!==false&&Number(m.hp)>0),ready=living.length>0&&living.every(m=>m.ready&&Number(m.submission?.round)===Number(room.round));if(ready){const resolved=multiMonsterPartyV2.resolveRound({...room,roundPhase:"resolving"},roomId);tx.update(ref,{roundPhase:"resolving",[`members.${memberId}.submission`]:submission,[`members.${memberId}.ready`]:true});tx.update(ref,resolved);return{ok:true,revision:submission.revision,resolved:true,resolutionId:resolved.lastResolution.resolutionId};}tx.update(ref,{[`members.${memberId}.submission`]:submission,[`members.${memberId}.ready`]:true});return{ok:true,revision:submission.revision,resolved:false};});}catch(error){throw multiPartyCallableError(error);}
+});
+
+exports.reviseMultiMonsterPartyRoundV2 = onCall({region:"asia-east1"},async request=>{
+  const db=getFirestore(),roomId=safeFreeHuntId(request.data?.roomId,"invalid_room_id"),memberId=safeFreeHuntId(request.data?.memberId,"invalid_member_id");await requireOwnedMember(db,request,memberId);
+  try{return await db.runTransaction(async tx=>{const ref=multiBattleRoomRef(db,request).ref,snap=await tx.get(ref);if(!snap.exists)throw new Error("room_not_found");const room=snap.data();if(room.status!=="active"||Number(room.round)!==Number(request.data?.round))throw new Error("stale_round");if(room.roundPhase!=="input")throw new Error("round_locked");if(!room.members?.[memberId])throw new Error("not_member");tx.update(ref,{[`members.${memberId}.ready`]:false});return{ok:true,revision:Number(room.members[memberId].submission?.revision)||0};});}catch(error){throw multiPartyCallableError(error);}
+});
+
+exports.leaveMultiMonsterPartyRoomV2 = onCall({region:"asia-east1"},async request=>{
+  const db=getFirestore(),roomId=safeFreeHuntId(request.data?.roomId,"invalid_room_id"),memberId=safeFreeHuntId(request.data?.memberId,"invalid_member_id");await requireOwnedMember(db,request,memberId);
+  try{return await db.runTransaction(async tx=>{const ref=multiBattleRoomRef(db,request).ref,snap=await tx.get(ref);if(!snap.exists)return{ok:true};const room=snap.data(),members={...(room.members||{})};if(!members[memberId])return{ok:true};delete members[memberId];const ids=Object.keys(members).sort();if(!ids.length){tx.update(ref,{members:{},status:"completed",roundPhase:"complete"});return{ok:true,completed:true};}const patch={members};if(room.hostId===memberId)patch.hostId=ids[0];tx.update(ref,patch);return{ok:true,newHostId:patch.hostId||room.hostId};});}catch(error){throw multiPartyCallableError(error);}
+});
+
+exports.cleanupMultiMonsterPartyRoomV2 = onCall({region:"asia-east1"},async request=>{
+  const db=getFirestore(),roomId=safeFreeHuntId(request.data?.roomId,"invalid_room_id"),memberId=safeFreeHuntId(request.data?.memberId,"invalid_member_id");await requireOwnedMember(db,request,memberId);
+  try{return await db.runTransaction(async tx=>{const ref=multiBattleRoomRef(db,request).ref,snap=await tx.get(ref);if(!snap.exists)return{ok:true};const room=snap.data();if(room.hostId!==memberId)throw new Error("host_only");if(!["victory","defeat","completed"].includes(room.status))throw new Error("battle_not_finished");const pending=!request.data?.dungeonMode&&room.status==="victory"&&Object.values(room.members||{}).some(m=>m.rewardClaimed!==true);if(pending&&request.data?.force!==true)throw new Error("rewards_pending");tx.delete(ref);return{ok:true};});}catch(error){throw multiPartyCallableError(error);}
+});
+
 exports.claimMonsterBattleReward = onCall({ region:"asia-east1" }, async request => {
   if (!request.auth?.uid) throw new HttpsError("unauthenticated", "請先登入");
   let reward;
@@ -309,6 +462,85 @@ exports.claimMonsterBattleReward = onCall({ region:"asia-east1" }, async request
   });
 });
 
+exports.claimMultiMonsterBattleReward = onCall({ region:"asia-east1" }, async request => {
+  if (!request.auth?.uid) throw new HttpsError("unauthenticated", "login_required");
+  let reward;
+  try { reward = buildTrustedMultiMonsterReward(request.data || {}); }
+  catch (error) { throw new HttpsError("invalid-argument", error.message); }
+
+  const roomId = String(request.data?.roomId || "").trim();
+  if (roomId && (roomId.includes("/") || roomId.length > 240)) throw new HttpsError("invalid-argument", "invalid_multi_room_id");
+  const db = getFirestore();
+  const memberRef = db.doc(`members/${reward.memberId}`);
+  const claimRef = db.doc(`monsterRewardClaims/${reward.claimId}`);
+  const inventoryRef = db.doc(`materialInventory/${reward.memberId}`);
+  const chestRef = db.doc(`chestInventory/${reward.memberId}`);
+  const cardRef = db.doc(`cardCollections/${reward.memberId}`);
+  const roomRef = roomId ? db.doc(`partyRooms/${roomId}`) : null;
+
+  return db.runTransaction(async transaction => {
+    const refs = [memberRef, claimRef, inventoryRef, chestRef, cardRef, ...(roomRef ? [roomRef] : [])];
+    const snaps = await transaction.getAll(...refs);
+    const [memberSnap, claimSnap, inventorySnap, chestSnap, cardSnap, roomSnap] = snaps;
+    if (!memberSnap.exists) throw new HttpsError("not-found", "member_not_found");
+    const member = memberSnap.data();
+    if (!(member.uid === request.auth.uid || (request.auth.token.email && member.email === request.auth.token.email))) {
+      throw new HttpsError("permission-denied", "reward_owner_mismatch");
+    }
+    if (claimSnap.exists) return { ok:true, duplicate:true, claimId:reward.claimId, reward:claimSnap.data().reward };
+
+    if (roomRef) {
+      if (!roomSnap?.exists) throw new HttpsError("not-found", "multi_party_room_not_found");
+      const room = roomSnap.data();
+      const targets = room.targets || {};
+      const order = Array.isArray(room.targetOrder) ? room.targetOrder : Object.keys(targets);
+      const fronts = order.map(id => targets[id]).filter(target => target?.position === "front" && target?.isRunePillar !== true);
+      const roomMonsterIds = fronts.map(target => target?.id);
+      const sameMonsters = roomMonsterIds.length === reward.monsterIds.length && roomMonsterIds.every((id, index) => id === reward.monsterIds[index]);
+      const defeated = fronts.length === 3 && fronts.every(target => target?.alive === false || Number(target?.currentHp) <= 0);
+      if (room.huntType !== "multi" || room.multiMonster !== true || room.status !== "victory" || !room.members?.[reward.memberId] || room.multiFamily !== reward.family || Number(room.multiTier) !== reward.tierIndex || !sameMonsters || !defeated) {
+        throw new HttpsError("failed-precondition", "multi_party_reward_not_verified");
+      }
+      if (roomId !== reward.battleId) throw new HttpsError("invalid-argument", "multi_party_battle_id_mismatch");
+    }
+
+    // Solo local battles have no authoritative room document. This endpoint verifies
+    // the exact catalog encounter identity and derives every reward value server-side.
+    // Full combat replay needs a shared server battle engine and is not claimed here.
+    const items = { ...(inventorySnap.data()?.items || {}) };
+    for (const [materialId, quantity] of Object.entries(reward.materialTotals || {})) items[materialId] = Math.max(0, Number(items[materialId]) || 0) + quantity;
+    transaction.set(inventoryRef, { items, updatedAt:FieldValue.serverTimestamp() }, { merge:true });
+    if (reward.chests?.length) transaction.set(chestRef, { chests:[...(chestSnap.data()?.chests || []), ...reward.chests], updatedAt:FieldValue.serverTimestamp() }, { merge:true });
+
+    if (reward.cards?.length) {
+      const collection = cardSnap.data() || {};
+      const cards = { ...(collection.cards || {}) };
+      for (const card of reward.cards) {
+        const existing = cards[card.monsterId];
+        cards[card.monsterId] = existing ? { ...existing, duplicates:(existing.duplicates || 0) + 1 } : { ...card, stars:1, duplicates:0, chosenStat:null, ts:Date.now() };
+      }
+      transaction.set(cardRef, { cards, wbCards:collection.wbCards || {}, equipped:collection.equipped || [], updatedAt:FieldValue.serverTimestamp() }, { merge:true });
+    }
+
+    const memberPatch = { updatedAt:FieldValue.serverTimestamp() };
+    if (reward.coins > 0) memberPatch.coins = FieldValue.increment(reward.coins);
+    if (reward.archerXP > 0) memberPatch.archerXP = FieldValue.increment(reward.archerXP);
+    transaction.update(memberRef, memberPatch);
+    if (roomRef) transaction.update(roomRef, { [`members.${reward.memberId}.rewardClaimed`]:true, [`members.${reward.memberId}.rewardClaimedAt`]:FieldValue.serverTimestamp() });
+
+    const publicReward = { coins:reward.coins, archerXP:reward.archerXP, materialTotals:reward.materialTotals, chests:reward.chests || [], cards:reward.cards || [] };
+    transaction.create(claimRef, {
+      battleId:reward.battleId,
+      memberId:reward.memberId,
+      rewardType:"multi_hunt",
+      reward:publicReward,
+      metadata:{ family:reward.family, tierIndex:reward.tierIndex, monsterIds:reward.monsterIds, catalogVersion:reward.catalogVersion, source:roomRef ? "verified_multi_party_room" : "catalog_verified_local_multi_hunt" },
+      claimedAt:FieldValue.serverTimestamp(),
+    });
+    return { ok:true, duplicate:false, claimId:reward.claimId, reward:publicReward };
+  });
+});
+
 exports.claimDungeonNormalCard = onCall({region:"asia-east1"},async request=>{
   if(!request.auth?.uid)throw new HttpsError("unauthenticated","login_required");
   let claim;
@@ -324,6 +556,36 @@ exports.claimDungeonNormalCard = onCall({region:"asia-east1"},async request=>{
     if(claim.card){const collection=cardSnap.data()||{},cards={...(collection.cards||{})},existing=cards[claim.card.monsterId];cards[claim.card.monsterId]=existing?{...existing,duplicates:(existing.duplicates||0)+1}:{...claim.card,stars:1,duplicates:0,chosenStat:null,ts:Date.now()};transaction.set(cardRef,{cards,wbCards:collection.wbCards||{},equipped:collection.equipped||[],updatedAt:FieldValue.serverTimestamp()},{merge:true});}
     transaction.create(claimRef,{battleId:claim.battleId,memberId:claim.memberId,rewardType:"dungeon_normal_card",cardId:claim.card?.monsterId||null,metadata:{monsterId:claim.monsterId,source:"verified_dungeon_room"},reward:{card:claim.card},claimedAt:FieldValue.serverTimestamp()});
     return{ok:true,duplicate:false,card:claim.card,chance:claim.chance};
+  });
+});
+
+exports.claimDungeonEncounterTargetCard = onCall({region:"asia-east1"},async request=>{
+  if(!request.auth?.uid)throw new HttpsError("unauthenticated","login_required");
+  let claim;
+  try{claim=buildDungeonNormalCardClaim(request.data||{});}catch(error){throw new HttpsError("invalid-argument",error.message);}
+  if(!claim.targetInstanceId)throw new HttpsError("invalid-argument","target_instance_required");
+  const db=getFirestore(),roomRef=db.doc(`dungeonRooms/${claim.battleId}`),memberRef=db.doc(`members/${claim.memberId}`),claimRef=db.doc(`monsterRewardClaims/${claim.claimId}`),cardRef=db.doc(`cardCollections/${claim.memberId}`);
+  return db.runTransaction(async transaction=>{const [roomSnap,memberSnap,claimSnap,cardSnap]=await transaction.getAll(roomRef,memberRef,claimRef,cardRef);if(!roomSnap.exists||!memberSnap.exists)throw new HttpsError("not-found","dungeon_battle_not_found");const room=roomSnap.data(),member=memberSnap.data(),target=room.targets?.[claim.targetInstanceId];if(!(member.uid===request.auth.uid||(request.auth.token.email&&member.email===request.auth.token.email)))throw new HttpsError("permission-denied","reward_owner_mismatch");if(!(room.expeditionMode===true&&room.dungeonMulti===true&&room.status==="victory"&&room.members?.[claim.memberId]&&target?.id===claim.monsterId&&(target.alive===false||Number(target.currentHp)<=0)))throw new HttpsError("failed-precondition","dungeon_target_not_rewardable");if(claimSnap.exists)return{ok:true,duplicate:true,card:claimSnap.data().reward?.card||null,chance:claim.chance};if(claim.card){const collection=cardSnap.data()||{},cards={...(collection.cards||{})},existing=cards[claim.card.monsterId];cards[claim.card.monsterId]=existing?{...existing,duplicates:(existing.duplicates||0)+1}:{...claim.card,stars:1,duplicates:0,chosenStat:null,ts:Date.now()};transaction.set(cardRef,{cards,wbCards:collection.wbCards||{},equipped:collection.equipped||[],updatedAt:FieldValue.serverTimestamp()},{merge:true});}transaction.create(claimRef,{battleId:claim.battleId,memberId:claim.memberId,rewardType:"dungeon_target_card",cardId:claim.card?.monsterId||null,metadata:{monsterId:claim.monsterId,targetInstanceId:claim.targetInstanceId,source:"verified_dungeon_multi_room"},reward:{card:claim.card},claimedAt:FieldValue.serverTimestamp()});return{ok:true,duplicate:false,card:claim.card,chance:claim.chance};});
+});
+
+exports.claimDungeonMultiSoloReward = onCall({region:"asia-east1"},async request=>{
+  if(!request.auth?.uid)throw new HttpsError("unauthenticated","login_required");
+  const battleId=safeFreeHuntId(request.data?.battleId,"invalid_battle_id"),memberId=safeFreeHuntId(request.data?.memberId,"invalid_member_id");
+  const db=getFirestore(),roomRef=db.doc(`dungeonRooms/${battleId}`),memberRef=db.doc(`members/${memberId}`),chestRef=db.doc(`chestInventory/${memberId}`),cardRef=db.doc(`cardCollections/${memberId}`);
+  return db.runTransaction(async tx=>{
+    const [roomSnap,memberSnap,chestSnap,cardSnap]=await tx.getAll(roomRef,memberRef,chestRef,cardRef);
+    if(!roomSnap.exists||!memberSnap.exists)throw new HttpsError("not-found","dungeon_multi_battle_not_found");
+    const member=memberSnap.data();if(!(member.uid===request.auth.uid||(request.auth.token.email&&member.email===request.auth.token.email)))throw new HttpsError("permission-denied","reward_owner_mismatch");
+    const savedPending=member.activeExpedition?.mapState?.pendingRoom;
+    if(savedPending?.multiBattleRoomId!==battleId||savedPending?.encounter?.encounterId!==roomSnap.data()?.encounter?.encounterId)throw new HttpsError("failed-precondition","dungeon_multi_run_mismatch");
+    let reward;try{reward=buildDungeonMultiReward({room:roomSnap.data(),battleId,memberId});}catch(error){throw new HttpsError("failed-precondition",error.message);}
+    const claimRef=db.doc(`monsterRewardClaims/${reward.claimId}`),claimSnap=await tx.get(claimRef);
+    if(claimSnap.exists)return{ok:true,duplicate:true,reward:claimSnap.data().reward};
+    tx.set(chestRef,{chests:[...(chestSnap.data()?.chests||[]),...reward.chests],updatedAt:FieldValue.serverTimestamp()},{merge:true});
+    if(reward.cards.length){const collection=cardSnap.data()||{},cards={...(collection.cards||{})};for(const card of reward.cards){const existing=cards[card.monsterId];cards[card.monsterId]=existing?{...existing,duplicates:(existing.duplicates||0)+1}:{...card,stars:1,duplicates:0,chosenStat:null,ts:Date.now()};}tx.set(cardRef,{cards,wbCards:collection.wbCards||{},equipped:collection.equipped||[],updatedAt:FieldValue.serverTimestamp()},{merge:true});}
+    const memberPatch={coins:FieldValue.increment(reward.coins),archerXP:FieldValue.increment(reward.archerXP),updatedAt:FieldValue.serverTimestamp()};for(const drop of reward.collectibles)memberPatch[`dungeonCollectibles.${drop.itemId}`]=FieldValue.increment(drop.qty);
+    tx.update(memberRef,memberPatch);tx.create(claimRef,{battleId,memberId,rewardType:"dungeon_multi_solo",reward,claimedAt:FieldValue.serverTimestamp()});tx.update(roomRef,{[`members.${memberId}.rewardClaimed`]:true});
+    return{ok:true,duplicate:false,reward};
   });
 });
 
@@ -1249,5 +1511,81 @@ exports.marketingEmailUnsubscribe = onRequest({ region:"asia-east1" }, async (re
   } catch (error) {
     logger.error("marketing unsubscribe failed", error);
     return res.status(500).send("取消通知時發生錯誤，請稍後再試。");
+  }
+});
+
+
+function websiteCompetitionIso(value) {
+  if (value?.toDate) return value.toDate().toISOString();
+  if (value instanceof Date) return value.toISOString();
+  return typeof value === "string" ? value : "";
+}
+
+exports.publishCompetitionWebsite = onCall({
+  region:"asia-east1",
+  timeoutSeconds:540,
+  memory:"1GiB",
+  secrets:[CAT_ARCHERY_VERCEL],
+}, async request => {
+  const uid = await requireAdmin(request);
+  const db = getFirestore();
+  const stateRef = db.doc("websitePublishState/competition");
+  const now = Timestamp.now();
+
+  await db.runTransaction(async tx => {
+    const state = await tx.get(stateRef);
+    const data = state.data() || {};
+    const startedMs = data.startedAt?.toMillis?.() || 0;
+    if (data.status === "running" && Date.now() - startedMs < 10 * 60 * 1000) {
+      throw new HttpsError("already-exists", "competition_publish_already_running");
+    }
+    tx.set(stateRef, { status:"running", startedAt:now, startedBy:uid, updatedAt:now }, { merge:true });
+  });
+
+  let workspace = "";
+  try {
+    const templateDir = require("path").join(__dirname, "website-template");
+    const toolsDir = require("path").join(__dirname, "website-publisher-tools");
+    if (!require("fs").existsSync(templateDir) || !require("fs").existsSync(toolsDir)) {
+      throw new Error("publisher_template_missing: run npm run website:publisher:prepare before deploying this function");
+    }
+
+    const snap = await db.collection("websiteCompetitionResults").get();
+    const sourceEvents = snap.docs.map(docSnap => {
+      const row = docSnap.data() || {};
+      return {
+        ...row,
+        publishedAt:websiteCompetitionIso(row.publishedAt),
+        updatedAt:websiteCompetitionIso(row.updatedAt),
+        createdAt:websiteCompetitionIso(row.createdAt),
+      };
+    });
+
+    workspace = competitionWebsitePublisher.createWorkspace();
+    const fs = require("fs"), path = require("path");
+    competitionWebsitePublisher.copyTree(templateDir, path.join(workspace, "website"));
+    competitionWebsitePublisher.copyTree(toolsDir, path.join(workspace, "scripts", "website"));
+
+    const publication = require(path.join(workspace, "scripts", "website", "competition-publication.cjs"));
+    const snapshot = publication.buildSnapshot(sourceEvents, new Date().toISOString());
+    fs.writeFileSync(path.join(workspace, "website", "assets", "competition-results.json"), JSON.stringify(snapshot, null, 2) + "\n", "utf8");
+    const generator = require(path.join(workspace, "scripts", "website", "generate-competition-pages.cjs"));
+    generator.generate();
+
+    const deployment = await competitionWebsitePublisher.deployDirectory(path.join(workspace, "website"), CAT_ARCHERY_VERCEL.value());
+    await stateRef.set({
+      status:"submitted", completedAt:Timestamp.now(), updatedAt:Timestamp.now(), completedBy:uid,
+      eventCount:snapshot.events.length, deploymentId:deployment.id, deploymentUrl:deployment.url,
+      deploymentState:deployment.readyState, fileCount:deployment.fileCount, error:FieldValue.delete(),
+    }, { merge:true });
+    logger.info("competition website deployment submitted", { uid, eventCount:snapshot.events.length, deploymentId:deployment.id, fileCount:deployment.fileCount });
+    return { ok:true, eventCount:snapshot.events.length, ...deployment };
+  } catch (error) {
+    logger.error("competition website publish failed", error);
+    await stateRef.set({ status:"failed", failedAt:Timestamp.now(), updatedAt:Timestamp.now(), failedBy:uid, error:String(error?.message || error).slice(0,1000) }, { merge:true });
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError("internal", "competition_publish_failed", { message:String(error?.message || error).slice(0,500) });
+  } finally {
+    if (workspace) { try { require("fs").rmSync(workspace, { recursive:true, force:true }); } catch {} }
   }
 });

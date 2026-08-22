@@ -1,6 +1,8 @@
 // src/arcade/arcadeDuelLogic.js — 射手競技場純邏輯
 // Local First：此檔不碰 Firestore。各手機都能用同一份摘要重算同一回合。
 
+import { applyArcadeCardProcs, arcadeEffectiveDefense, tickArcadeStatuses } from "./arcadeProgression";
+
 export const DUEL_MODES = Object.freeze({
   duel: { id: "duel", name: "1 VS 1", icon: "⚔️", min: 2, max: 2 },
   ffa: { id: "ffa", name: "大亂鬥", icon: "👑", min: 3, max: 8 },
@@ -91,17 +93,35 @@ export function spiritSupportAmount(submission) {
   return Math.max(0, Math.round(score * 0.25 + tens * 2 + xs * 4));
 }
 
+export function duelStatAdjustedDamage(baseDamage, attackerAtk = 10, defenderDef = 5) {
+  const base = Math.max(0, Number(baseDamage) || 0);
+  if (base <= 0) return 0;
+  const atk = Math.max(1, Number(attackerAtk) || 10);
+  const def = Math.max(0, Number(defenderDef) || 5);
+  const atkDelta = Math.round((atk - 10) * 0.75);
+  const defDelta = Math.round((def - 5) * 0.65);
+  return Math.max(1, base + atkDelta - defDelta);
+}
+
 export function buildInitialDuelCombat(players, { mode = "duel", arrowsPerRound = 3 } = {}) {
   const list = Object.values(players || {});
-  const maxHp = maxHpForArrows(arrowsPerRound, list.length);
+  const modeHp = maxHpForArrows(arrowsPerRound, list.length);
   const teams = mode === "team" ? assignDuelTeams(list) : {};
-  return Object.fromEntries(list.map((p) => [p.visitorId, {
-    hp: maxHp,
-    maxHp,
-    state: "alive",
-    team: mode === "team" ? teams[p.visitorId] : null,
-    forfeited: false,
-  }]));
+  return Object.fromEntries(list.map((p) => {
+    const maxHp = Math.max(1, Math.round(modeHp * (Math.max(1, Number(p.maxHp) || 100) / 100)));
+    return [p.visitorId, {
+      hp: maxHp,
+      maxHp,
+      level: Math.max(1, Number(p.level) || 1),
+      atk: Math.max(1, Number(p.atk) || 10),
+      def: Math.max(0, Number(p.def) || 5),
+      cardEffects: Array.isArray(p.cardEffects) ? p.cardEffects.slice(0, 2) : [],
+      statuses: [],
+      state: "alive",
+      team: mode === "team" ? teams[p.visitorId] : null,
+      forfeited: false,
+    }];
+  }));
 }
 
 function aliveIds(combat) {

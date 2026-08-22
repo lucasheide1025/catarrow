@@ -1,0 +1,29 @@
+{
+  "id": "multi-monster-mobile-battle-redesign",
+  "name": "multi-monster-mobile-battle-redesign",
+  "title": "重新設計多人複數怪手機戰鬥 UI 與加成整合",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "your-name",
+  "assignee": "your-name",
+  "createdAt": "2026-08-20",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "08-20-dungeon-random-multi-monster",
+    "08-21-hunt-shooting-environment-integration"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

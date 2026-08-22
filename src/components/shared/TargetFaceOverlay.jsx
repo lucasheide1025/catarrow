@@ -33,7 +33,7 @@ export function setBattleInputMode(mode) {
   localStorage.setItem("battle_input_mode", mode);
 }
 
-export function TargetSVG({ fmtId, R, onTap, arrows = [], active = true }) {
+export function TargetSVG({ fmtId, R, onTap, arrows = [], active = true, highlightRing = null }) {
   const SIZE = R * 2 + 6, CX = R + 3, CY = R + 3;
   const format = getTargetFaceFormat(fmtId);
   const rings = getTargetRings(format.id);
@@ -134,6 +134,12 @@ export function TargetSVG({ fmtId, R, onTap, arrows = [], active = true }) {
           <circle cx={CX} cy={CY} r={format.innerTenRatio * R}
             fill="none" stroke="rgba(30,30,30,.7)" strokeWidth={0.7} />
         )}
+        {highlightRing?.cx != null && highlightRing?.cy != null && (
+          <circle cx={CX + highlightRing.cx * R} cy={CY + highlightRing.cy * R}
+            r={Math.max(5, Number(highlightRing.radius || 0.13) * R)}
+            fill="rgba(248,113,113,.10)" stroke={highlightRing.color || "#f87171"}
+            strokeWidth={2.5} strokeDasharray="5 3" style={{ pointerEvents:"none" }} />
+        )}
         <line x1={CX-6} y1={CY} x2={CX+6} y2={CY} stroke="rgba(0,0,0,0.3)" strokeWidth={1} />
         <line x1={CX} y1={CY-6} x2={CX} y2={CY+6} stroke="rgba(0,0,0,0.3)" strokeWidth={1} />
         {active && <circle cx={CX} cy={CY} r={R + 2} fill="none" stroke="#22c55e" strokeWidth={2.5} />}
@@ -169,12 +175,13 @@ export function TargetFaceInput({
   arrowsPerRound = 6,
   onArrow,
   radius = 130,
+  highlightRing = null,
 }) {
   const format = getTargetFaceFormat(fmtId);
   if (format.layout !== "vertical_triple") {
     return (
       <TargetSVG fmtId={format.id} R={radius} arrows={arrowPositions}
-        active={arrowLabels.length < arrowsPerRound} onTap={onArrow} />
+        active={arrowLabels.length < arrowsPerRound} onTap={onArrow} highlightRing={highlightRing} />
     );
   }
 

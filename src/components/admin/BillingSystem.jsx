@@ -8,6 +8,7 @@ import {
   BILLING_PLANS, PAY_METHODS, EARLY_BIRD_MAX, EARLY_BIRD_DISC,
   isEarlyBirdArcher, finalBillPrice,
 } from "../../lib/bookingPricing";
+import { parseBillingAmount } from "../../lib/billingAmount";
 
 // 價格表與早鳥常數統一放 lib/bookingPricing.js（見該檔 BILLING_PLAN_CODES 註解）。
 // 這裡不再 re-export 共用常數：從 UI 元件 re-export 會形成循環 import，
@@ -32,6 +33,8 @@ export default function BillingSystem({ profile }) {
   const [discount, setDiscount] = useState(false);
   const [date,     setDate]     = useState(today);
   const [note,     setNote]     = useState("");
+  const [amountInput, setAmountInput] = useState("");
+  const [amountError, setAmountError] = useState("");
   const [submitting,setSubmitting] = useState(false);
   const [successMsg,setSuccessMsg] = useState("");
 
@@ -87,10 +90,20 @@ export default function BillingSystem({ profile }) {
 
   const basePrice  = PLANS.find(p => p.id === plan)?.price ?? 0;
   // 月卡付款 → 免費；早鳥每筆帳單只折抵一次（見 bookingPricing.finalBillPrice）
-  const finalPrice = finalBillPrice({ basePrice, earlyBird: discount, payMethod });
+  const autoFinalPrice = finalBillPrice({ basePrice, earlyBird: discount, payMethod });
+
+  // 選方案／切付款方式／切早鳥時先帶回系統預設價；之後教練可直接覆寫實收金額。
+  useEffect(() => {
+    if (!plan) { setAmountInput(""); setAmountError(""); return; }
+    setAmountInput(String(autoFinalPrice));
+    setAmountError("");
+  }, [plan, autoFinalPrice]);
 
   async function handleSubmit() {
     if (!memberQuery.trim() || !plan || submitting) return;
+    const parsedAmount = parseBillingAmount(amountInput);
+    if (!parsedAmount.ok) { setAmountError(parsedAmount.reason); return; }
+    const chargedAmount = parsedAmount.amount;
     setSubmitting(true);
     const [y, m, d] = date.split("-").map(Number);
     await addBillingRecord({
@@ -99,7 +112,7 @@ export default function BillingSystem({ profile }) {
       plan,
       basePrice,
       discount:      discount ? EARLY_BIRD_DISC : 0,
-      finalPrice,
+      finalPrice:     chargedAmount,
       paymentMethod: payMethod,
       year: y, month: m, day: d, date,
       note: note.trim(),
@@ -107,9 +120,9 @@ export default function BillingSystem({ profile }) {
       createdByName: profile?.name ?? "教練",
     });
     setSubmitting(false);
-    setSuccessMsg(`✓ 已記錄 ${memberQuery.trim()} · ${plan} NT$${finalPrice}`);
+    setSuccessMsg(`✓ 已記錄 ${memberQuery.trim()} · ${plan} NT$${chargedAmount}`);
     setTimeout(() => setSuccessMsg(""), 3500);
-    setPlan(null); setNote("");
+    setPlan(null); setNote(""); setAmountInput(""); setAmountError("");
   }
 
   // ── 統計 ──────────────────────────────────────────────────
@@ -268,8 +281,15 @@ export default function BillingSystem({ profile }) {
           {plan && (
             <div style={{ background:"#1e293b", border:"1px solid #334155", borderRadius:"12px", padding:"14px 16px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
               <div>
-                <div style={{ fontSize:"12px", color:"#94a3b8" }}>實收金額</div>
-                <div style={{ fontSize:"28px", fontWeight:900, color:"#38bdf8" }}>NT$ {finalPrice}</div>
+                <div style={{ fontSize:"12px", color:"#94a3b8" }}>實收金額（可自訂）</div>
+                <div style={{ display:"flex", alignItems:"baseline", gap:"6px" }}>
+                  <span style={{ fontSize:"22px", fontWeight:900, color:"#38bdf8" }}>NT$</span>
+                  <input type="number" min="0" step="1" inputMode="numeric" value={amountInput}
+                    onChange={e => { setAmountInput(e.target.value); setAmountError(""); }}
+                    style={{ width:"130px", background:"transparent", color:"#38bdf8", border:"none", borderBottom:"1px solid #475569", fontSize:"28px", fontWeight:900, outline:"none" }} />
+                </div>
+                {amountError && <div style={{ fontSize:"11px", color:"#f87171", marginTop:"3px" }}>{amountError}</div>}
+                <div style={{ fontSize:"10px", color:"#64748b", marginTop:"2px" }}>方案預設 NT${autoFinalPrice}，可直接改成實際收款金額</div>
                 {discount && <div style={{ fontSize:"11px", color:"#fbbf24" }}>早鳥折扣 -${EARLY_BIRD_DISC}</div>}
               </div>
               <button onClick={() => setDiscount(d => !d)}

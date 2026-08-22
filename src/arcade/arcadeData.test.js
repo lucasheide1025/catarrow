@@ -44,6 +44,10 @@ describe("arcadeData — 訪客冒險純資料層", () => {
     expect(p.selectedCat).toBe("baobao");
     expect(p.cats.baobao).toEqual({ id: "baobao", level: 1, xp: 0, bond: 0 });
     expect(p.statistics).toEqual({ battles: 0, kills: 0, bestDamage: 0, bestFloor: 0, treasures: 0, xCount: 0 });
+    expect(p.playerLevel).toBe(1);
+    expect(p.playerXp).toBe(0);
+    expect(p.equipment.weapon.itemId).toBe("starter_bow");
+    expect(p.cards.equipped).toHaveLength(2);
     expect(p.coins).toBe(0);
     expect(p.createdAt).toBeGreaterThan(0);
   });

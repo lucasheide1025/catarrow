@@ -356,6 +356,15 @@ Do not install temporary browser-automation packages into this project's live `n
 - Generate and persist the final boss when the dungeon descriptor is created. Selection UI, solo runs, and team coordination rooms must reuse that same boss.
 - A persisted boss already has its variant stats. Do not apply the boss multiplier a second time when starting a floor.
 
+## Multi-monster Dungeon Encounters
+
+- Persist a versioned encounter snapshot before entering combat. Normal monster rooms use the locked deterministic branch; elite and boss formations keep their persisted primary target and adds across refresh and team reconnect.
+- Legacy active rooms without an encounter snapshot remain single-monster rooms. Never regenerate an encounter merely because a new field is absent.
+- Dungeon multi combat uses a real `dungeonRooms` v2 document and authoritative Functions resolution. Legacy client round processing must not run against the same room.
+- A dungeon reward claim must validate the terminal room, current active-expedition battle/encounter identity, persisted primary target, target roles, family/tier, and all target deaths before deriving rewards.
+- Per-target material/card rewards and per-tile coin/XP/collectible rewards must share one idempotent server transaction and claim ledger. The client renders the authoritative receipt and must not repeat legacy grant calls.
+- Keep settlement retry available and block generic leave/close navigation until authoritative settlement succeeds. Victory presentation still completes before settlement UI is exposed.
+
 ## Expedition Loot and Claims
 
 - 地圖建立時鎖定寶箱倍率 `2～5`，畫面顯示值、單人即時入帳、組隊成員即時入帳與房主共享戰利品彙總必須使用同一個 `lootMult`。

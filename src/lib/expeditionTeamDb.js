@@ -23,6 +23,25 @@ import {
 
 const D = "dungeonRooms";
 
+// ⚠️ Firestore 拒收 undefined（巢狀也不行），而且是直接丟 exception 不是回錯誤碼——
+//    組隊探險房只要有任一欄位 undefined，房主寫入 400 → SDK 無窮重試 → 全隊卡死。
+//    2026-08-16 實戰案例：EXPANSION_MATERIALS 的 material 沒有 icon 欄位，
+//    createOrdinaryChestLoot 寫出 chestChoices[].material.icon = undefined，
+//    踩到寶箱房整隊永久卡住（正是使用者回報的「打完就卡死」）。
+//    修資料欄位治不了本，統一在寫入邊界深層剝掉 undefined 才是防護。
+function prune(value) {
+  if (Array.isArray(value)) return value.map(prune);
+  if (value && typeof value === "object" && !(value instanceof Date)) {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) {
+      if (v === undefined) continue; // 直接丟掉，不要寫成 null（讀回來時語意不同）
+      out[k] = prune(v);
+    }
+    return out;
+  }
+  return value;
+}
+
 // 等待中的組隊房間存活時間上限：超過視為殘房（房主直接關瀏覽器、cleanup 跑不到時的防禦）
 const STALE_WAITING_ROOM_MS = 2 * 60 * 60 * 1000; // 2 小時
 
@@ -348,6 +367,9 @@ export async function createTeamExpeditionBattleRoom({
   roomType = "monster",
   arrowsPerRound = 6,
   targetFmt = "full_110",
+  encounter = null,
+  dungeonSolo = false,
+  lootMult = 1,
 }) {
   try {
     if (!members?.length || !monster) return { ok: false, reason: "參數錯誤" };
@@ -364,6 +386,13 @@ export async function createTeamExpeditionBattleRoom({
       def: Math.round((monster.def || 5) * floorScale * partyScale),
       partyBonusPct,
     };
+    const scaledEncounter = encounter?.kind === "multi" ? {
+      ...encounter,
+      targets:encounter.targets.map(target=>{
+        const hp=Math.max(1,Math.round(Number(target.maxHp??target.maxHP??target.hp)||1)*floorScale*partyScale);
+        return {...target,hp,maxHp:hp,maxHP:hp,currentHp:hp,atk:Math.round((Number(target.atk)||10)*floorScale*partyScale),def:Math.round((Number(target.def)||5)*floorScale*partyScale)};
+      }),
+    } : encounter;
 
     if (!hostId || !members.some(m => m.memberId === hostId)) {
       return { ok: false, reason: "找不到組隊房主" };
@@ -403,7 +432,7 @@ export async function createTeamExpeditionBattleRoom({
     }
 
     const ref = await addDoc(collection(db, D), {
-      status: "active",
+      status: encounter?.kind === "multi" ? "waiting" : "active",
       mode: "student",
       hostId,
       currentFloor: floorIndex + 1,
@@ -412,6 +441,10 @@ export async function createTeamExpeditionBattleRoom({
       targetFmt: settings.targetFmt,
       rewardMult: 1.0,
       monster: finalMonster,
+      ...(scaledEncounter?.kind === "multi" ? {
+        encounter:prune(scaledEncounter), dungeonMulti:true, dungeonSolo:dungeonSolo===true, multiMonster:true, huntType:"multi",
+        multiFamily:monster.family, multiTier:Number(difficultyTier), encounterId:encounter.encounterId,dungeonLootMult:Math.max(1,Math.min(5,Number(lootMult)||1)),
+      } : {}),
       monsterHP: finalMonster.hp,
       monsterMaxHP: finalMonster.hp,
       round: 1,
@@ -438,7 +471,9 @@ export async function createTeamExpeditionBattleRoom({
 // ── 更新組隊遠征房間的協調欄位 ──────────────────────────
 export async function updateTeamExpeditionRoom(roomId, fields) {
   try {
-    await updateDoc(doc(db, D, roomId), fields);
+    // 深層剝除 undefined：任一欄位（含巢狀）是 undefined 就會被 Firestore 拒收（400），
+    // 房主端寫入失敗 → SDK 無窮重試 → 全隊卡在「等待房主」。
+    await updateDoc(doc(db, D, roomId), prune(fields));
     return { ok: true };
   } catch (e) {
     // 帶出 Firestore 的錯誤碼（invalid-argument / permission-denied…）：
@@ -455,6 +490,10 @@ export async function syncTeamExpeditionMembers(roomId, battleMembers, battleSum
       const snap = await tx.get(roomRef);
       if (!snap.exists()) throw new Error("組隊房間不存在");
       const data = snap.data();
+      const battleId = String(battleSummary?.battleId || "");
+      if (battleId && data.expeditionBattleClaims?.[battleId]) {
+        return { members:data.members || {}, loot:data.expeditionLoot || null, stats:data.expeditionStats || {}, duplicate:true };
+      }
       const current = data.members || {};
       const next = {};
       for (const [memberId, member] of Object.entries(current)) {
@@ -485,6 +524,7 @@ export async function syncTeamExpeditionMembers(roomId, battleMembers, battleSum
         members: next,
         ...(loot ? { expeditionLoot: loot } : {}),
         expeditionStats: stats,
+        ...(battleId ? { [`expeditionBattleClaims.${battleId}`]:true } : {}),
       });
       return { members: next, loot, stats };
     });

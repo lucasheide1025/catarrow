@@ -24,7 +24,7 @@ import { getMonsterScheduledAbility } from "../../lib/monsterSkillSchedule";
 import { mergeCombatStatus, resolveSoloMonsterAbility } from "../../lib/soloMonsterAbilityEngine";
 import { getSpecializationEffect } from "../../lib/equipmentSpecializationEngine";
 import { getEquipSpecializations } from "../../lib/equipSpecializationDb";
-import { addRoundArrows, subscribeCardCollection } from "../../lib/db";
+import { recordBattleRoundArrows, subscribeCardCollection } from "../../lib/db";
 import { getBreakRuleText } from "../../lib/combatSkillEngine";
 import { calcCardCombatEffectsFromCollection } from "../../lib/cardTalents";
 import { applyCompanion, buildCombatModifiers } from "../../lib/combatModifiers";
@@ -256,6 +256,16 @@ export function shouldStartPartyVictoryPresentation({partyMode=false,partyResult
   return partyMode&&partyResult==="win"&&resolutionKey>0&&completedKey===resolutionKey&&presentedKey!==resolutionKey;
 }
 
+export function getPartyResolutionAbilitySource(resolution) {
+  if (resolution?.ability?.resolvedKey) return { kind:"dungeon", ability:resolution.ability };
+  if (resolution?.monsterAbility?.scheduled) return { kind:"party", ability:resolution.monsterAbility };
+  return null;
+}
+
+export function shouldPlayPartyResolution({ partyMode=false, resolution=null, resolutionKey=0, seenKey=0 }={}) {
+  return !!partyMode && !!resolution && Number(resolutionKey)>0 && Number(resolutionKey)!==Number(seenKey);
+}
+
 function battleReducer(state, action) {
   switch(action.type){
     case"START_SCORING":return{...state,phase:PHASE.SCORING,arrowIdx:0,arrows:[],lastArrowDmg:0,lastArrowCrit:false,lastArrowPart:""};
@@ -321,7 +331,7 @@ function battleReducer(state, action) {
         if(overFaceCap)dmg=0;
       }
       const isCrit=overFaceCap||action.previewDamage===false?false:(isZombie?(part&&part.mult>=1.8):(isX||extraCrit));
-      const newArrows=[...state.arrows,{score,displayLabel:displayLabel||score,dmg,isCrit,part:isZombie?part:null,faceIndex,overFaceCap}];
+      const newArrows=[...state.arrows,{score,displayLabel:displayLabel||score,dmg,isCrit,part:isZombie?part:null,faceIndex,overFaceCap,nx:action.nx??null,ny:action.ny??null}];
       const guardMsgs=state.arrowIdx===0&&catGuardAtkBonus>0?[`🐾 守護反攻生效：本回合 ATK +${catGuardAtkBonus}`]:[];
       return{...state,arrows:newArrows,arrowIdx:state.arrowIdx+1,
       ...(guardMsgs.length?{messages:[...state.messages,...guardMsgs]}:{}),unlockedParts:isZombie?newUnlocked:(state.unlockedParts||new Set()),lastArrowDmg:dmg,lastArrowCrit:isCrit,lastArrowPart:isZombie&&part?`${part.icon} ${part.name} ×${part.mult}`:(numScore===0?"脫靶":(isX?"X環":`${numScore}環`))};
@@ -524,6 +534,8 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
     partyResolution=null, partyResolutionKey=0, partyPlayerId, partyMonsterMaxHp=0, partyMonsterShield=0, partyMonsterStatuses=[], partyAbilityPreview=null,
     partyResult=null, onConfirmPartyResult, autoConfirmPartyResult=false,
     externalBattle=false, externalRoundKey=0, externalLocked=false, externalDemo=null, battleId=null,
+    hideLeaveControl=false,
+    isolateStudentProgression=false,
     initialBattleSnapshot=null, onBattleSnapshot, outgoingDamageMultiplier=1, maxDamageArrowsPerFace=null,
   } = props;
 
@@ -536,8 +548,9 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
   // 卡片天賦＋族系套裝彙總（裝備卡變動即重算）
   const [cardFxRaw, setCardFx] = useState(undefined);
   // 🧪 後台模擬台可以直接指定卡片效果（正式對局是 null，走玩家真實的卡片）
-  const cardFx = cardFxOverride || cardFxRaw;
+  const cardFx = cardFxOverride ?? (isolateStudentProgression ? null : cardFxRaw);
   useEffect(() => {
+    if (isolateStudentProgression) { setCardFx(null); return undefined; }
     if (!authedProfile?.id) { setCardFx(null); return undefined; }
     return subscribeCardCollection(authedProfile.id, collection => {
       try { setCardFx(calcCardCombatEffectsFromCollection(collection, {
@@ -545,9 +558,10 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
         enemyClass:(monster?.bossTagged || (monster?.encounter && monster.encounter !== "normal")) ? "boss" : "monster",
       })); } catch { setCardFx(null); }
     });
-  }, [authedProfile?.id, monster?.family, monster?.bossTagged, monster?.encounter]);
+  }, [isolateStudentProgression, authedProfile?.id, monster?.family, monster?.bossTagged, monster?.encounter]);
   useEffect(() => {
     let cancelled = false;
+    if (isolateStudentProgression) { setEquipSpec(null); return undefined; }
     if (!authedProfile?.id) { setEquipSpec(null); return undefined; }
     getEquipSpecializations(authedProfile.id).then(spec => {
       if (cancelled) return;
@@ -559,7 +573,7 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
       setEquipSpec({ weapon: pick("weapon"), armor: pick("armor"), accessory: pick("accessory") });
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [authedProfile?.id]);
+  }, [isolateStudentProgression, authedProfile?.id]);
   const [animStep, setAnimStep] = useState(-1);
   const [teamFx, setTeamFx] = useState([]);
   const [roundEvent, setRoundEvent] = useState(null);
@@ -841,7 +855,7 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
   // 組隊結算只使用伺服器寫入的 log，絕不在前端預先猜測傷害。
   // 所有客戶端都會看到同一個順序：房主先手、隊友依序、最後怪物反擊。
   useEffect(()=>{
-    if(!partyMode || !partyResolution?.miniRounds?.length || partyResolutionKey===seenPartyResolutionKey.current)return;
+    if(!shouldPlayPartyResolution({partyMode,resolution:partyResolution,resolutionKey:partyResolutionKey,seenKey:seenPartyResolutionKey.current}))return;
     seenPartyResolutionKey.current=partyResolutionKey;
     let cancelled=false;
     const run=async()=>{
@@ -855,7 +869,8 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
       setPartyHistory([]);
       setPartyMonsterHp(partyResolution.monsterHPBefore ?? null);
       try {
-      for(const mini of partyResolution.miniRounds){
+      const miniRounds=Array.isArray(partyResolution?.miniRounds)?partyResolution.miniRounds:[];
+      for(const mini of miniRounds){
         if(cancelled)return;
         if(mini.isCounter){
           // Counter damage is resolved per survivor.  Showing a single team total
@@ -894,6 +909,9 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
           setPartyAction({type:"cat",damage:catDamage,cats:mini.playerLog||[]});
           setPartyMonsterHp(prev=>Math.max(0,(prev ?? partyResolution.monsterHPBefore ?? 0)-catDamage));
           await delay(2500);
+        }else if(mini.isAbility){
+          // 地下城怪物技能由下方統一技能段播放，避免把技能傷害誤當成玩家攻擊。
+          continue;
         }else{
           const attackers=(mini.playerLog||[]).filter(attacker=>attacker && (attacker.id || attacker.name));
           if(!attackers.length)continue;
@@ -917,8 +935,18 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
           }
         }
       }
-      const ability=partyResolution.monsterAbility;
-      if(ability?.scheduled){
+      const abilitySource=getPartyResolutionAbilitySource(partyResolution);
+      const dungeonAbility=abilitySource?.kind==="dungeon"?abilitySource.ability:null;
+      const ability=abilitySource?.kind==="party"?abilitySource.ability:null;
+      if(dungeonAbility){
+        const breakLabels={full:"完全破解",major:"大幅破解",partial:"部分破解",none:"破解失敗"};
+        const detailParts=[breakLabels[dungeonAbility.breakLevel]||"技能已結算"];
+        if((dungeonAbility.targetIds||[]).length) detailParts.push(`影響 ${dungeonAbility.targetIds.length} 人`);
+        if(dungeonAbility.monsterEffect?.reductionDuration>0) detailParts.push(`怪物減傷 ${dungeonAbility.monsterEffect.reductionPct||0}%`);
+        setPartyHistory(prev=>[...prev,`⚡ ${dungeonAbility.name||"怪物技能"}・${breakLabels[dungeonAbility.breakLevel]||"發動"}`].slice(-4));
+        setPartyPhase({type:"ability",title:`${dungeonAbility.enhanced?"強化・":""}${dungeonAbility.name||"怪物技能"}`,detail:detailParts.join("・"),icon:"⚡"});
+        await delay(2200);
+      } else if(ability?.scheduled){
         const breakLabels={full:"完全破解",major:"大幅破解",partial:"部分破解",none:"破解失敗"};
         const outcome=ability.resolved?.outcome?.level;
         const target=partyMembers.find(member=>member.id===ability.targetId);
@@ -1060,10 +1088,10 @@ const BattleScreen = forwardRef(function BattleScreen(props, ref) {
   const handleStartBattle=useCallback(()=>{shootingEndsRef.current=[];currentShootingEndRef.current=[];resolvedSoloAbilityKeys.current.clear();setSoloAbilityTelegraph(null);dispatch({type:"START",monster,diff:difficulty,battleMode,hideMonsterStats,equipSpec,cardFx,battleId,outgoingDamageMultiplier,playerHp:player?.hp??initBattle.playerHp,playerMaxHp:player?.maxHp??initBattle.playerMaxHp,playerAtk:player?.atk||initBattle.playerAtk,playerDef:player?.def||initBattle.playerDef});if(hasCat)setCatCurrentHP(catMaxHP);},[monster,difficulty,battleMode,hideMonsterStats,equipSpec,cardFx,battleId,outgoingDamageMultiplier,player?.hp,player?.maxHp,player?.atk,player?.def,hasCat,catMaxHP]);
 
   // ─── 回呼 ───
-  const handleScore=useCallback((input)=>{if(!isScoring)return;const landing=typeof input==="object"?input:null;const label=landing?.label??input;const normalized=scoreToValue(label,targetFormat);const score=label==="X"?"X":normalized===0?"M":String(normalized);sfxTap();currentShootingEndRef.current.push({label,landing});dispatch({type:"SCORE_ARROW",score,displayLabel:label,battleMode,arrowsPerRound,previewDamage:!partyMode,faceIndex:landing?.faceIndex||0,maxDamageArrowsPerFace,catGuardAtkBonus:getCatGuardAtkBonus(catBattleState,battle.round)});},[isScoring,battleMode,arrowsPerRound,partyMode,targetFormat,maxDamageArrowsPerFace,catBattleState,battle.round]);
+  const handleScore=useCallback((input)=>{if(!isScoring)return;const landing=typeof input==="object"?input:null;const label=landing?.label??input;const normalized=scoreToValue(label,targetFormat);const score=label==="X"?"X":normalized===0?"M":String(normalized);sfxTap();currentShootingEndRef.current.push({label,landing});dispatch({type:"SCORE_ARROW",score,displayLabel:label,battleMode,arrowsPerRound,previewDamage:!(partyMode||externalBattle),faceIndex:landing?.faceIndex||0,nx:landing?.nx??null,ny:landing?.ny??null,maxDamageArrowsPerFace,catGuardAtkBonus:getCatGuardAtkBonus(catBattleState,battle.round)});},[isScoring,battleMode,arrowsPerRound,partyMode,externalBattle,targetFormat,maxDamageArrowsPerFace,catBattleState,battle.round]);
   const handleUndo=useCallback(()=>{if(!isScoring)return;currentShootingEndRef.current.pop();dispatch({type:"UNDO_ARROW"});},[isScoring]);
   const handleSubmit=useCallback(()=>{if(!isScoring||battle.arrows.length<arrowsPerRound)return;if(partyMode&&partyRole==="rear"&&!partyRearChoice)return;const submissionKey=`${battleId||battle.battleId||monster?.id||"battle"}:${battle.round}`;if(!partyMode&&submittedSoloRoundRef.current===submissionKey)return;if(!partyMode)submittedSoloRoundRef.current=submissionKey;const rawEnd=currentShootingEndRef.current.slice();if(rawEnd.length)shootingEndsRef.current.push(rawEnd);currentShootingEndRef.current=[];if(onSubmit){onSubmit(battle.arrows.map(a=>{const s=a.score;return s==="X"?10:s==="M"?0:Number(s)||0;}),battle.arrows.map(a=>({...a})));if(partyMode)return;if(externalBattle){dispatch({type:"START_PLAYING"});return;}dispatch({type:"RESET",playerHp:player?.hp||initBattle.playerHp,playerMaxHp:player?.maxHp||initBattle.playerMaxHp,playerAtk:player?.atk||initBattle.playerAtk,playerDef:player?.def||initBattle.playerDef});setSkipBigRound(false);setCounterReducePct(0);setUsedPotionInfo(null);setShowPotionPanel(false);return;}/* 單機 standalone 路徑：每回合送出即累積箭數（今日+終身;MonsterBattle 舊 submitRound 已不在此流程） */
-if(authedProfile?.id&&battle.arrows.length){addRoundArrows(authedProfile.id,battle.arrows.length,{accountType:authedProfile?.accountType||"official"}).catch(()=>{});}
+if(authedProfile?.id&&battle.arrows.length){recordBattleRoundArrows({memberId:authedProfile.id,battleId:battleId||battle.battleId||monster?.id,round:battle.round,count:battle.arrows.length,accountType:authedProfile?.accountType||"official"}).catch(()=>{});}
 let abilityResolution=null;if(battleId&&monster?.signatureSkillId){const ability=resolveSoloMonsterAbility({battleId,monster,round:battle.round,arrows:battle.arrows.map(a=>a.score),targetFmt:targetFormat,monsterHpRatio:battle.monsterMaxHp>0?battle.monsterHp/battle.monsterMaxHp:1});const key=ability.resolved?.resolvedKey||soloAbilityTelegraph?.key;if(key&&!resolvedSoloAbilityKeys.current.has(key)){resolvedSoloAbilityKeys.current.add(key);abilityResolution=ability.resolved?{...ability.resolved,name:ability.resolved.name||ability.scheduled?.name||"怪物技能"}:null;}}let catOutcome=null;if(hasCat&&catId&&catCurrentHP>0){catOutcome=resolveCatRound({catId,catLevel,bondLevel:catBondLv,catAtk:catATK,catMaxHp:catMaxHP,companionAttackPct:catCombatModifiers.companionAttackPct,companionHealingPct:catCombatModifiers.companionHealingPct,playerHp:battle.playerHp,playerMaxHp:battle.playerMaxHp,monsterHp:battle.monsterHp,monsterMaxHp:battle.monsterMaxHp,monsterBossTagged:battle.monsterBossTagged,round:battle.round,scores:battle.arrows.map(a=>a.score),mode:battle.monsterBossTagged?"boss":"normal",state:catBattleState});setCatBattleState(catOutcome.state);setCatMsg(`🐾 ${catName}：${describeCatOutcome(catOutcome)}`);setTimeout(()=>setCatMsg(null),3000);}setSoloAbilityTelegraph(null);dispatch({type:"SUBMIT_ROUND",skipCounter:skipBigRound,counterReduce:counterReducePct,arrowsPerRound,abilityResolution,catOutcome});},[isScoring,battle.arrows,battle.round,battle.monsterHp,battle.monsterMaxHp,battle.playerHp,battle.playerMaxHp,battle.monsterBossTagged,skipBigRound,counterReducePct,arrowsPerRound,onSubmit,partyMode,partyRole,partyRearChoice,externalBattle,player?.hp,player?.maxHp,player?.atk,player?.def,battleId,monster,soloAbilityTelegraph,targetFormat,authedProfile?.id,hasCat,catId,catCurrentHP,catLevel,catBondLv,catATK,catMaxHP,catBattleState,catName,catCombatModifiers.companionAttackPct,catCombatModifiers.companionHealingPct]);
   const handleNextRound=useCallback(()=>{dispatch({type:"NEXT_ROUND"});setSkipBigRound(false);setCounterReducePct(0);setUsedPotionInfo(null);},[]);
   useEffect(()=>{if(!isRoundRes||partyMode||externalBattle||skillFx)return undefined;const timer=setTimeout(handleNextRound,2200);return()=>clearTimeout(timer);},[isRoundRes,partyMode,externalBattle,skillFx,handleNextRound]);
@@ -1439,8 +1467,8 @@ let abilityResolution=null;if(battleId&&monster?.signatureSkillId){const ability
       {isRoundRes&&<Btn label="下一回合" primary onClick={handleNextRound} icon={<span style={{fontSize:16,flexShrink:0}}>➡️</span>}/>}
       {(isWon||isLost)&&<Btn label="再來一次" primary onClick={handleReset} icon={<span style={{fontSize:16,flexShrink:0}}>🔄</span>}/>}
       <Btn label={usedPotionInfo?"已用藥水":"藥　水"} disabled={!inBattle||isScoring||!!usedPotionInfo||partyControlsLocked} onClick={()=>setShowPotionPanel(true)} icon={usedPotionInfo?.potion ? <ConsumableIcon potion={usedPotionInfo.potion} size={18} /> : <span style={{fontSize:16,flexShrink:0}}>🧪</span>}/>
-      {onLeaveBattle&&inBattle&&<Btn label="離開戰鬥" danger onClick={handleLeave} icon={<span style={{fontSize:16,flexShrink:0}}>↩</span>}/>}
-      {!onLeaveBattle&&!partyMode&&inBattle&&<Btn label="重置" onClick={handleReset} icon={<span style={{fontSize:16,flexShrink:0}}>↺</span>}/>}
+      {!hideLeaveControl&&onLeaveBattle&&inBattle&&<Btn label="離開戰鬥" danger onClick={handleLeave} icon={<span style={{fontSize:16,flexShrink:0}}>↩</span>}/>}
+      {!hideLeaveControl&&!onLeaveBattle&&!partyMode&&inBattle&&<Btn label="重置" onClick={handleReset} icon={<span style={{fontSize:16,flexShrink:0}}>↺</span>}/>}
     </div>
 
     {/* ── 藥水面板 ── */}

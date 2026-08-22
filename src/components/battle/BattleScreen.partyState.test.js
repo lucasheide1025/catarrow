@@ -15,7 +15,7 @@ jest.mock("../../hooks/useAuth", () => ({
   useAuth: () => ({ profile:null }),
 }));
 
-const { battleReducer, resolvePartySelectedAlly, shouldSyncPartyPlayer, getPartyHuntPresentationPhase, getPartyHuntVisibility, getDisplayedMonsterShield, shouldStartPartyVictoryPresentation, getMonsterVariantPresentation, getMonsterTaxonomyPresentation } = require("./BattleScreen");
+const { battleReducer, resolvePartySelectedAlly, shouldSyncPartyPlayer, getPartyHuntPresentationPhase, getPartyHuntVisibility, getDisplayedMonsterShield, shouldStartPartyVictoryPresentation, getMonsterVariantPresentation, getMonsterTaxonomyPresentation, getPartyResolutionAbilitySource, shouldPlayPartyResolution } = require("./BattleScreen");
 
 describe("BattleScreen party authoritative state", () => {
   test("狩獵與地下城的階級和族系只顯示中文",()=>{
@@ -77,6 +77,32 @@ describe("BattleScreen party authoritative state", () => {
     expect(next.playerMaxHp).toBe(100);
     expect(next.monsterHp).toBe(321);
     expect(next.monsterMaxHp).toBe(500);
+  });
+
+  test("地下城與一般組隊技能共用同一個演出來源解析",()=>{
+    expect(getPartyResolutionAbilitySource({ability:{resolvedKey:"dungeon:2",name:"裂浪"}})).toMatchObject({kind:"dungeon"});
+    expect(getPartyResolutionAbilitySource({monsterAbility:{scheduled:{name:"護甲"}}})).toMatchObject({kind:"party"});
+    expect(getPartyResolutionAbilitySource({})).toBeNull();
+  });
+
+  test("地下城技能即使沒有 miniRounds 也必須啟動 resolution 演出生命週期",()=>{
+    const resolution={miniRounds:[],ability:{resolvedKey:"dungeon:exam:2",name:"考試壓力"}};
+    expect(shouldPlayPartyResolution({partyMode:true,resolution,resolutionKey:2,seenKey:1})).toBe(true);
+  });
+
+  test("一般怪族系異常即使沒有 miniRounds 也必須啟動 resolution 演出生命週期",()=>{
+    const resolution={familyStatusResults:[{family:"exam",statusId:"pressure",outcome:"applied"}]};
+    expect(shouldPlayPartyResolution({partyMode:true,resolution,resolutionKey:3,seenKey:2})).toBe(true);
+  });
+
+  test("相同 resolution key 不重播",()=>{
+    expect(shouldPlayPartyResolution({partyMode:true,resolution:{miniRounds:[]},resolutionKey:4,seenKey:4})).toBe(false);
+  });
+
+  test("沒有有效 resolution 或 key 時不啟動",()=>{
+    expect(shouldPlayPartyResolution({partyMode:true,resolution:null,resolutionKey:5,seenKey:0})).toBe(false);
+    expect(shouldPlayPartyResolution({partyMode:true,resolution:{},resolutionKey:0,seenKey:0})).toBe(false);
+    expect(shouldPlayPartyResolution({partyMode:false,resolution:{},resolutionKey:5,seenKey:0})).toBe(false);
   });
 
   test("START preserves a valid zero HP instead of replacing it with max HP", () => {

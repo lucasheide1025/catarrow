@@ -141,7 +141,18 @@ export function redZoneCount(arrows) {
 // arrows: 長度 6 的 0~10 陣列
 // rng: 注入亂數（測試可固定）
 export function resolveRound(state, arrows, rng = Math.random) {
-  const { playerHp, cat, monster, atkBuff = 1, skillChanceBuff = 0 } = state;
+  const {
+    playerHp,
+    cat,
+    monster,
+    atkBuff = 1,
+    skillChanceBuff = 0,
+    playerAtk = 10,
+    playerDef = 5,
+    playerMaxHp = PLAYER_MAX_HP,
+    equippedCards = [],
+    monsterStatuses = [],
+  } = state;
   const monsterHpBefore = state.monsterHp ?? monster.hp;
   const scores = arrows.map(scoreOfArrow); // -1=未填視為 0；11=X 內十計 10
   const total = scores.reduce((a, b) => a + b, 0);
@@ -150,6 +161,25 @@ export function resolveRound(state, arrows, rng = Math.random) {
   let breakApplied = false;
   let bossInterrupted = false;
   let dodge = false;
+
+  const liveStatuses = (Array.isArray(monsterStatuses) ? monsterStatuses : [])
+    .filter((status) => status && Number(status.duration) > 0)
+    .map((status) => ({
+      ...status,
+      level: Math.max(1, Math.min(3, Number(status.level) || 1)),
+    }));
+  const statusDamage = liveStatuses.reduce((sum, status) => {
+    if (status.status === "poison") return sum + 2 + status.level;
+    if (status.status === "burn") return sum + 3 + status.level * 2;
+    return sum;
+  }, 0);
+  if (statusDamage > 0) log.push({ kind: "info", text: `異常狀態造成 ${statusDamage} 傷害` });
+  let nextMonsterStatuses = liveStatuses
+    .map((status) => ({ ...status, duration: Number(status.duration) - 1 }))
+    .filter((status) => status.duration > 0);
+  const armorBreakLevel = liveStatuses
+    .filter((status) => status.status === "armorBreak")
+    .reduce((max, status) => Math.max(max, status.level), 0);
 
   let dmg = total;
 
@@ -178,9 +208,16 @@ export function resolveRound(state, arrows, rng = Math.random) {
   }
 
   // 怪物防禦
-  if (monster.def > 0) {
-    const reduced = Math.max(0, dmg - monster.def);
+  const effectiveMonsterDef = Math.max(0, (Number(monster.def) || 0) - armorBreakLevel);
+  if (effectiveMonsterDef > 0) {
+    const reduced = Math.max(0, dmg - effectiveMonsterDef);
     if (reduced !== dmg) dmg = reduced;
+  }
+
+  const playerAtkBonus = total > 0 ? Math.max(0, Math.floor((Number(playerAtk) - 10) * 1.25)) : 0;
+  if (playerAtkBonus > 0) {
+    dmg += playerAtkBonus;
+    log.push({ kind: "info", text: `⚔️ 射手能力加成 +${playerAtkBonus}` });
   }
 
   // 單人 Boss 靶面弱點圈（世界王語意）：射進圈 → 傷害加成；全脫圈仍保留 80% 傷害。
@@ -214,7 +251,34 @@ export function resolveRound(state, arrows, rng = Math.random) {
     log.push({ kind: "cat", text: catEvent.text });
   }
 
-  const monsterHp = Math.max(0, monsterHpBefore - dmg);
+  const highQualityHit = scores.some((score) => score >= 9);
+  if (highQualityHit) {
+    for (const card of Array.isArray(equippedCards) ? equippedCards : []) {
+      if (!card || !["poison", "burn", "armorBreak"].includes(card.status)) continue;
+      const level = Math.max(1, Math.min(3, Number(card.level) || 1));
+      const defaultChance = [0.15, 0.20, 0.25][level - 1];
+      const chance = Number.isFinite(Number(card.chance)) ? Number(card.chance) : defaultChance;
+      if (rng() >= chance) continue;
+      const duration = card.status === "poison" ? 3 : 2;
+      const existingIndex = nextMonsterStatuses.findIndex((status) => status.status === card.status);
+      const applied = { status: card.status, level, duration, sourceCardId: card.id || card.status };
+      if (existingIndex >= 0) {
+        const existing = nextMonsterStatuses[existingIndex];
+        nextMonsterStatuses[existingIndex] = {
+          ...existing,
+          ...applied,
+          level: Math.max(existing.level || 1, level),
+          duration: Math.max(existing.duration || 0, duration),
+        };
+      } else {
+        nextMonsterStatuses.push(applied);
+      }
+      const label = card.status === "poison" ? "中毒" : card.status === "burn" ? "灼熱" : "破甲";
+      log.push({ kind: "info", text: `${label}觸發（${duration} 回合）` });
+    }
+  }
+
+  const monsterHp = Math.max(0, monsterHpBefore - statusDamage - dmg);
   const victory = monsterHp <= 0;
 
   // 怪物反擊
@@ -239,6 +303,8 @@ export function resolveRound(state, arrows, rng = Math.random) {
       if (catEvent && catEvent.type === "def") {
         c = Math.max(0, Math.round(c * (1 - catEvent.reduction)));
       }
+      const playerDefMitigation = Math.max(0, Math.floor((Number(playerDef) - 5) * 0.5));
+      if (playerDefMitigation > 0) c = Math.max(0, c - playerDefMitigation);
       counter = c;
       log.push({ kind: "enemy", text: `💢 ${monster.name} 反擊 -${counter}` });
     }
@@ -248,7 +314,7 @@ export function resolveRound(state, arrows, rng = Math.random) {
   // 治療技能：反擊後補血
   if (catEvent && catEvent.type === "heal") {
     healAfter = catEvent.healed;
-    playerHpAfter = Math.min(PLAYER_MAX_HP, playerHpAfter + catEvent.healed);
+    playerHpAfter = Math.min(playerMaxHp, playerHpAfter + catEvent.healed);
   }
   const defeat = playerHpAfter <= 0;
 
@@ -256,7 +322,7 @@ export function resolveRound(state, arrows, rng = Math.random) {
     arrows, total, dmg, monsterHp, playerHp: playerHpAfter,
     victory, defeat, log, catEvent,
     stealthReduced, breakApplied, dodge, bossInterrupted, counter,
-    weakHits, ringMet,
+    weakHits, ringMet, monsterStatuses: nextMonsterStatuses, statusDamage, effectiveMonsterDef,
   };
 }
 
@@ -281,8 +347,8 @@ function rollCatSkill(cat, dmg, rng) {
 }
 
 // ── 冒險評價（§25）：依剩餘生命比例 ─────────────────────────
-export function gradeAdventure(playerHp) {
-  const pct = playerHp / PLAYER_MAX_HP;
+export function gradeAdventure(playerHp, playerMaxHp = PLAYER_MAX_HP) {
+  const pct = playerHp / Math.max(1, playerMaxHp);
   if (pct >= 0.7) return { grade: "S", bonusMult: 1.5, label: "無傷大冒險！" };
   if (pct >= 0.5) return { grade: "A", bonusMult: 1.3, label: "漂亮的冒險！" };
   if (pct >= 0.3) return { grade: "B", bonusMult: 1.1, label: "穩穩的冒險！" };

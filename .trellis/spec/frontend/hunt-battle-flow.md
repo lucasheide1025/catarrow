@@ -11,6 +11,18 @@ Free Hunt solo and party battles share the same mobile-first interaction and set
 - Guard submission synchronously as well as in rendered state. A rapid double tap must not create two resolutions.
 - Presentation consumes resolved events and must never perform combat calculation. A cat action appears at most once per round.
 - Preserve the waiting phase for player rest. After the resolved presentation delay, solo battle advances to the next input round automatically.
+- Multi-monster party rooms use a versioned, server-authoritative loadout snapshot and round resolver. Clients submit only arrows, attack mode, target, and revision; they must not write combat HP, targets, snapshots, resolutions, or outcomes directly.
+- The server rebuilds each active-room loadout from authoritative member, certification, dex, equipment/specialization, card, cat, guild, and duel sources. A client-provided snapshot may be used as a request hint only and must never be the source of combat authority.
+- Browser ESM and Functions CJS combat calculations are generated from the same runtime source. The Functions predeploy pipeline must regenerate the artifact, and golden parity tests must fail when browser and server results drift.
+- Active rooms freeze their combat/effect version. Reconnect, card changes, cat changes, and equipment upgrades must not switch formulas mid-battle.
+
+## Arrow progress contract
+
+- Every successful authoritative round submission records the number of actually shot arrows exactly once for today's local arrow count and official cloud progression.
+- Use a stable member + battle/sortie + round identity. Draft entry, failed submission, revision before lock, presentation replay, reconnect, reward claim, and duplicate retry must not add arrows again.
+- Free Hunt solo, Free Hunt party, solo multi-monster, party multi-monster, and the current World Boss flow all use the same idempotent battle-round recorder.
+- Guest and kid accounts still increment the local today count; official cloud progress remains gated by the existing account-type policy.
+- Consumables, support actions, and other non-arrow battle events must not be included in the arrow count.
 
 ## Mobile presentation
 
@@ -33,3 +45,6 @@ Free Hunt solo and party battles share the same mobile-first interaction and set
 - A round with a cat produces one cat presentation.
 - Disconnect during reward claim: no preview appears, and retry uses the same claim ID.
 - Unknown catalog IDs use a safe localized fallback instead of exposing raw variables.
+- Forge a client loadout with higher stats or different cards/cat: the v2 room still uses the server-rebuilt snapshot.
+- Submit, retry, reconnect, and replay one battle round: today's arrow count increases only once by the submitted arrow length.
+- A World Boss round containing consumable actions counts only its actual arrows.

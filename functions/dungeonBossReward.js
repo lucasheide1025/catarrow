@@ -104,6 +104,7 @@ function validateChoices(envelope, selectedOptionIds) {
 }
 
 function hasDungeonWinProof(room){
+  if(room?.combatVersion===2&&room?.dungeonMulti===true&&room?.status==="victory") return true;
   if(room?.result==="win") return true;
   const logs=room?.log||[];
   const lastLog=logs[logs.length-1];
@@ -114,7 +115,12 @@ function isRewardableDungeonRoom(room,memberId,monsterId){
   // Team membership is the participation proof. A rear/support member may
   // legitimately have no playerLog entry in the killing round, but must still
   // receive the same boss reward as the attacking members.
-  return Boolean(room?.members?.[memberId]&&hasDungeonWinProof(room)&&Number(room.monsterHP)<=0&&(room.monster?.id||room.monsterId)===monsterId);
+  const primaryId=room?.encounter?.primaryTargetId||"primary";
+  const primary=room?.targets?.[primaryId];
+  const v2PrimaryDefeated=room?.combatVersion===2&&room?.dungeonMulti===true
+    && primary?.id===monsterId&&(primary.alive===false||Number(primary.currentHp)<=0);
+  const legacyDefeated=Number(room?.monsterHP)<=0&&(room?.monster?.id||room?.monsterId)===monsterId;
+  return Boolean(room?.members?.[memberId]&&hasDungeonWinProof(room)&&(v2PrimaryDefeated||legacyDefeated));
 }
 
 function isRewardableTeamDungeonBossRoom(teamRoom,battleId,memberId,monsterId){
