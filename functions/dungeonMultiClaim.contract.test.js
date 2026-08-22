@@ -15,5 +15,6 @@ test("solo dungeon multi claim ledger and every grant share one transaction",()=
   assert.match(body,/tx\.set\(chestRef/);
   assert.match(body,/tx\.set\(cardRef/);
   assert.match(body,/tx\.update\(memberRef/);
+  assert.match(body,/hasDungeonMultiRunProof/);
   assert.match(body,/buildDungeonMultiReward/);
 });

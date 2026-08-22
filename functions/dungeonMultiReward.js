@@ -7,6 +7,33 @@ const monsters=new Map(catalog.monsters.map(monster=>[monster.id,monster]));
 const tierXp={common:5,rare:10,elite:20,fierce:30,boss:50,mythic:80};
 const collectibleByFamily={ghost:"shadow_stone",mountain:"rough_stone",insect:"chitin_shard",workplace:"id_card",exam:"exam_paper",temple:"stone_tablet"};
 
+function hasDungeonMultiRunProof({room,battleId,memberId,activeExpedition}){
+  const savedPending=activeExpedition?.mapState?.pendingRoom;
+  const roomEncounterId=String(room?.encounter?.encounterId||"").trim();
+  const savedEncounterId=String(savedPending?.encounter?.encounterId||"").trim();
+  if(String(savedPending?.multiBattleRoomId||"")===String(battleId||"")&&roomEncounterId&&savedEncounterId===roomEncounterId)return true;
+
+  const runId=String(activeExpedition?.expansionRunId||"").trim();
+  const logicalRoomId=String(savedPending?.id||"").trim();
+  const roomFloor=Number(room?.expeditionFloorIndex);
+  const savedFloor=Number(activeExpedition?.mapState?.floorIndex);
+  const roomFamily=String(room?.multiFamily||room?.monster?.family||"").trim();
+  const savedFamily=String(activeExpedition?.family||"").trim();
+  const roomTier=Number(room?.multiTier??room?.expeditionDifficulty);
+  const savedTier=Number(activeExpedition?.difficultyTier);
+  if(!runId||!logicalRoomId||!roomEncounterId||!Number.isInteger(roomFloor)||roomFloor<0)return false;
+  if(savedEncounterId&&savedEncounterId!==roomEncounterId)return false;
+  if(room?.encounterId&&String(room.encounterId)!==roomEncounterId)return false;
+  if(roomEncounterId!==`dungeon:${runId}:${roomFloor}:${logicalRoomId}`)return false;
+  if(!(room?.dungeonSolo===true&&room?.dungeonMulti===true&&room?.expeditionMode===true&&room?.combatVersion===2&&room?.status==="victory"))return false;
+  const roomMemberIds=Object.keys(room?.members||{});
+  if(room?.hostId!==memberId||roomMemberIds.length!==1||roomMemberIds[0]!==memberId)return false;
+  if(!savedFamily||savedFamily!==roomFamily)return false;
+  if(!Number.isFinite(savedTier)||!Number.isFinite(roomTier)||savedTier!==roomTier)return false;
+  if(!Number.isInteger(savedFloor)||savedFloor!==roomFloor)return false;
+  return true;
+}
+
 function buildDungeonMultiReward({room,battleId,memberId}){
   if(!(room?.dungeonSolo===true&&room?.dungeonMulti===true&&room?.combatVersion===2&&room?.status==="victory"))throw new Error("dungeon_multi_not_terminal");
   if(!room.members?.[memberId])throw new Error("dungeon_multi_not_member");
@@ -51,4 +78,4 @@ function buildDungeonMultiReward({room,battleId,memberId}){
   return{claimId:[battleId,memberId,"dungeon_multi_solo"].map(encodeURIComponent).join("~"),coins,archerXP,materialTotals,chests,cards,collectibles:collectible?[collectible]:[],primaryMonsterId:primary.id,targetInstanceIds:targets.map(target=>target.instanceId)};
 }
 
-module.exports={buildDungeonMultiReward};
+module.exports={buildDungeonMultiReward,hasDungeonMultiRunProof};

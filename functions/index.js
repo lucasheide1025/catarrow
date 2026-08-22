@@ -32,7 +32,7 @@ const guestReviews = require("./guestReviews");
 const marketingEmail = require("./marketingEmail");
 const competitionWebsitePublisher = require("./competitionWebsitePublisher");
 const multiMonsterPartyV2 = require("./multiMonsterPartyV2");
-const {buildDungeonMultiReward}=require("./dungeonMultiReward");
+const {buildDungeonMultiReward,hasDungeonMultiRunProof}=require("./dungeonMultiReward");
 const combatRuntime = require("./generated/combat/lib/multiMonsterLoadoutRuntime");
 const CAT_ARCHERY_VERCEL = defineSecret("CAT_ARCHERY_VERCEL");
 
@@ -581,9 +581,9 @@ exports.claimDungeonMultiSoloReward = onCall({region:"asia-east1"},async request
     const [roomSnap,memberSnap,chestSnap,cardSnap]=await tx.getAll(roomRef,memberRef,chestRef,cardRef);
     if(!roomSnap.exists||!memberSnap.exists)throw new HttpsError("not-found","dungeon_multi_battle_not_found");
     const member=memberSnap.data();if(!(member.uid===request.auth.uid||(request.auth.token.email&&member.email===request.auth.token.email)))throw new HttpsError("permission-denied","reward_owner_mismatch");
-    const savedPending=member.activeExpedition?.mapState?.pendingRoom;
-    if(savedPending?.multiBattleRoomId!==battleId||savedPending?.encounter?.encounterId!==roomSnap.data()?.encounter?.encounterId)throw new HttpsError("failed-precondition","dungeon_multi_run_mismatch");
-    let reward;try{reward=buildDungeonMultiReward({room:roomSnap.data(),battleId,memberId});}catch(error){throw new HttpsError("failed-precondition",error.message);}
+    const room=roomSnap.data();
+    if(!hasDungeonMultiRunProof({room,battleId,memberId,activeExpedition:member.activeExpedition}))throw new HttpsError("failed-precondition","dungeon_multi_run_mismatch");
+    let reward;try{reward=buildDungeonMultiReward({room,battleId,memberId});}catch(error){throw new HttpsError("failed-precondition",error.message);}
     const claimRef=db.doc(`monsterRewardClaims/${reward.claimId}`),claimSnap=await tx.get(claimRef);
     if(claimSnap.exists)return{ok:true,duplicate:true,reward:claimSnap.data().reward};
     tx.set(chestRef,{chests:[...(chestSnap.data()?.chests||[]),...reward.chests],updatedAt:FieldValue.serverTimestamp()},{merge:true});
